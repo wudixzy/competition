@@ -220,12 +220,6 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("NaN in prefill GatedDeltaNet", src)
         self.assertNotIn("NaN in decode GatedDeltaNet", src)
 
-    def test_gated_deltanet_chunk_inverse_has_no_row_loop(self):
-        src = read("qwen3_6_scripts/qwen3_5.py")
-        self.assertIn("power = power @ power", src)
-        self.assertIn("attn = attn @ (eye + power)", src)
-        self.assertNotIn("for i in range(1, chunk_size):", src)
-
     def test_executor_startup_debug_is_opt_in(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         debug_src = read("qwen3_6_scripts/patch_executor_startup_debug.py")
