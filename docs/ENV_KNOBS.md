@@ -1,0 +1,15 @@
+# BI100 Environment Knobs
+
+| Name | Default | Range | Purpose | Task |
+| --- | --- | --- | --- | --- |
+| `BI100_ALLOW_PREFIX_GUARD_CAP` | `0` | boolean | Debug-only cap for undersized prefix block tables; default raises because truncation corrupts attention. | T3 |
+| `BI100_DNN_CHUNK` | `4096` | `64..65536` | Caps GatedDeltaNet prefill sub-sequence chunk size to balance memory and launch overhead. | T3 |
+| `BI100_EXECUTOR_STARTUP_DEBUG` | `0` | boolean | Adds executor startup logs for TP=4 init/load stalls. | T1 |
+| `BI100_FORCE_PAGED_ATTN_V2` | `0` | boolean | Explicit opt-in to route paged attention to V2 instead of the stable BI100 V1 default. | T3 |
+| `BI100_GDN_ALLOW_NAN_ZERO` | `0` | boolean | Diagnostic-only replacement of non-finite GDN values with zero; invalid for final scoring. | T3 |
+| `BI100_PREFIX_BLOCKS_PER_TILE` | `32` | `1..1024` | Prefix attention K/V block tile count for the PyTorch online-softmax fallback. | T3 |
+| `BI100_PROFILE` | `0` | boolean | Enables lightweight CUDA-synchronized timers for BI100 hotspot profiling. | T4 |
+| `BI100_PROFILE_INCLUDE_STARTUP` | `0` | boolean | Includes vLLM synthetic startup `profile_run()` in BI100 timers; default skips it so profiling focuses on real requests and avoids perturbing startup dummy runs. | T5 |
+| `BI100_PYTORCH_DECODE_THRESHOLD` | `32768` | `1..262144` | Routes long-context decode to the pure PyTorch paged attention fallback. | T3 |
+| `BI100_UNSET_CUDA_VISIBLE_DEVICES` | `1` | boolean shell flag | Lets the contest container expose all four GPUs by default while allowing debug runs to preserve a caller-specified visibility mask. | T1 |
+| `NUM_GPU_BLOCKS_OVERRIDE` | empty | positive integer accepted by vLLM | Optional launch-service pass-through to `--num-gpu-blocks-override`; used with the T5 profile-run mitigation to skip only synthetic memory profiling when a conservative measured block count is supplied. | T5 |

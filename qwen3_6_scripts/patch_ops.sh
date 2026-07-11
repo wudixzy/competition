@@ -1,0 +1,164 @@
+# BI-V100 patch script for Qwen3.6-35B-A3B (Qwen3_5 MoE architecture)
+#
+# Triton situation on BI-V100:
+#   - Standard Triton 2.3.1 is already present in the image.
+#   - HAS_TRITON = False (hardcoded in vendor vllm), but Triton is still used
+#     for TP-mode cache management (custom_cache_manager / libentry).
+#   - The vendor's triton_utils/__init__.py, custom_cache_manager.py, libentry.py
+#     are already correct for standard Triton 2.3.1 — do NOT overwrite them.
+#   - DO NOT install BI-V150 corex Triton 2.1.0 (pkgs/triton): that causes
+#     GPU hang on BI-V100 because the Triton CUDA PTX kernels are incompatible.
+
+# Recommended server start command for TP=4 support 100K, needs chunked prefill
+# CUDA_VISIBLE_DEVICES="4,5,6,7" VLLM_ENGINE_ITERATION_TIMEOUT_S=3600 python3 -m vllm.entrypoints.openai.api_server \
+#     --model /workspace/models/Qwen3.6-35B-A3B --port 1111 --served-model-name llm \
+#     --max-model-len 100000 --trust-remote-code -tp 4 --gpu-memory-utilization 0.90 \
+#     --max-num-seqs 1 --disable-log-requests --disable-frontend-multiprocessing \
+#     --max-num-batched-tokens 8192 --enable-chunked-prefill --enable-prefix-caching \
+#     --max-seq-len-to-capture 32768 --enable-auto-tool-choice \
+#     --tool-call-parser qwen3_coder --reasoning-parser qwen3
+#
+# With prefix caching (GDN align-mode, requires chunked prefill):
+# CUDA_VISIBLE_DEVICES="4,5,6,7" VLLM_ENGINE_ITERATION_TIMEOUT_S=3600 python3 -m vllm.entrypoints.openai.api_server \
+#     --model /workspace/models/Qwen3.6-35B-A3B --port 1111 --served-model-name llm \
+#     --max-model-len 100000 --trust-remote-code -tp 4 --gpu-memory-utilization 0.90 \
+#     --max-num-seqs 1 --disable-log-requests --disable-frontend-multiprocessing \
+#     --max-num-batched-tokens 8192 --enable-chunked-prefill --enable-prefix-caching \
+#     --max-seq-len-to-capture 32768 --enable-auto-tool-choice \
+#     --tool-call-parser qwen3_coder --reasoning-parser qwen3
+
+set -euo pipefail
+
+# --- transformers: Qwen3_5 tokenizer / model files --------------------------
+TRANSFORMERS_REQUIRED_VERSION="4.55.3"
+if ! python3 - "$TRANSFORMERS_REQUIRED_VERSION" <<'PY'
+import sys
+import transformers
+
+required = sys.argv[1]
+raise SystemExit(0 if transformers.__version__ == required else 1)
+PY
+then
+  WHEEL_DIR="./wheels"
+  if ! ls "${WHEEL_DIR}/transformers-${TRANSFORMERS_REQUIRED_VERSION}"*.whl >/dev/null 2>&1; then
+    echo "transformers ${TRANSFORMERS_REQUIRED_VERSION} is required, but no offline wheel was found in ${WHEEL_DIR}" >&2
+    exit 2
+  fi
+  python3 -m pip install --no-index --no-deps --find-links="${WHEEL_DIR}" \
+    "transformers==${TRANSFORMERS_REQUIRED_VERSION}"
+fi
+
+python3 - "$TRANSFORMERS_REQUIRED_VERSION" <<'PY'
+import sys
+import transformers
+
+required = sys.argv[1]
+if transformers.__version__ != required:
+    raise SystemExit(
+        f"transformers version mismatch: expected {required}, got {transformers.__version__}")
+print(f"[ok] transformers {transformers.__version__}")
+PY
+
+python3 - <<'PY' > /tmp/qwen36_patch_paths.env
+from patch_utils import package_root, shell_env_line
+
+print(shell_env_line("VLLM_ROOT", package_root("vllm")))
+print(shell_env_line("TRANSFORMERS_ROOT", package_root("transformers")))
+PY
+source /tmp/qwen36_patch_paths.env
+
+echo "VLLM_ROOT=${VLLM_ROOT}"
+echo "TRANSFORMERS_ROOT=${TRANSFORMERS_ROOT}"
+
+cp ./bi100_env.py "${VLLM_ROOT}/bi100_env.py"
+cp ./bi100_profile.py "${VLLM_ROOT}/bi100_profile.py"
+
+# --- paged_attn.py: replace forward_prefix with pure-PyTorch fallback -------
+# The Triton context_attention_fwd kernel hangs BI-V100 GPUs permanently
+# (standard Triton 2.3.1 PTX is not supported by the corex runtime either).
+# Our paged_attn.py bypasses it entirely via _forward_prefix_pytorch, which
+# utilizes K-tiling techniques, and also have _forward_decode_pytorch to bypass kernel
+# when context length is high
+cp ./paged_attn.py "${VLLM_ROOT}/attention/ops/paged_attn.py"
+
+# --- model_runner.py: fix prefix_cache_hit stays True in chunked-prefill chunk 2+ ---
+# Bug: _compute_for_prefix_cache_hit Case 1 (prefix_cache_len <= context_len)
+# leaves prefix_cache_hit=True. Then _add_seq_group uses block_table=computed_block_nums
+# (only the original prefix blocks), ignoring chunk-1 KV cache blocks.
+# _forward_prefix_pytorch then gets an undersized block_tables and crashes with
+# "amax(): Expected reduction dim -1 to have non-zero size" on the 2nd tile.
+# Fix: set prefix_cache_hit=False for Case 1 so the full block_tables is used.
+python3 ./patch_model_runner.py
+
+# --- worker.py: allow explicit KV block override to skip BI100 dummy profile -
+# Used only for T5 batch scanning when vLLM's synthetic profile_run trips GDN
+# non-finite checks. Real inference remains fail-fast.
+python3 ./patch_worker_profile_override.py
+
+# --- executor startup debug hooks -------------------------------------------
+# Opt-in diagnostics for BI100 multiprocess startup stalls. Normal runs are
+# unchanged unless BI100_EXECUTOR_STARTUP_DEBUG=1 is set.
+python3 ./patch_executor_startup_debug.py
+
+cp -r ./qwen3_5 "${TRANSFORMERS_ROOT}/models/"
+cp -r ./qwen3_5_moe "${TRANSFORMERS_ROOT}/models/"
+python3 ./patch_transformers_qwen3_5.py
+
+# --- vllm model: Qwen3.6-35B-A3B (Qwen3_5 MoE arch) -------------------------
+cp ./mamba_cache.py "${VLLM_ROOT}/model_executor/models/"
+cp ./qwen3_5.py "${VLLM_ROOT}/model_executor/models/qwen3_5.py"
+python3 ./patch_vllm_qwen3_5.py
+
+# --- sequence.py: fix completion_tokens inflation under chunked prefill ------
+# Bug: get_output_token_ids_to_return(delta=True) with num_new_tokens=0
+# returns _cached_all_token_ids[-0:] == [0:] (the ENTIRE prompt+output list).
+# Each prefill chunk step adds prompt_len to previous_num_tokens, so a 10K
+# prompt processed in 3 chunks inflates completion_tokens by ~30K.
+# Also adds num_cached_tokens field to RequestMetrics for prefix-cache stats.
+cp ./sequence.py "${VLLM_ROOT}/sequence.py"
+
+# --- scheduler.py: record num_cached_tokens in RequestMetrics ----------------
+# Sets seq_group.metrics.num_cached_tokens = prefix_cache_len on first prefill
+# when --enable-prefix-caching is active, so serving_chat.py can report it in
+# usage.prompt_tokens_details.cached_tokens (OpenAI-compatible API response).
+cp ./scheduler.py "${VLLM_ROOT}/core/scheduler.py"
+
+# --- xformers: bypass cudnnFlashAttnForward (head_dim=256 > 128 limit) ------
+# Injects _run_sdpa_fallback (pure matmul+softmax) into xformers.py.
+# Required because head_dim=256 > 128 and ixformer flash attention either
+# crashes (is_causal=True) or produces wrong output (attn_mask path).
+# The fallback uses query_start_loc to derive actual query lengths, so it
+# works correctly during profiling runs with chunked-prefill-style batches.
+# also bypasses auto chunked prefill on
+python3 ./patch_xformers_sdpa_seq.py
+
+# --- tool parser: Qwen3 XML tool call format ---------------------------------
+# Registers "qwen3_coder" parser for Qwen3.6 XML-style tool calls:
+#   <tool_call><function=name><parameter=key>\nvalue\n</parameter></function></tool_call>
+# Use at server start: --tool-call-parser qwen3_coder --enable-auto-tool-choice
+cp ./qwen3coder_tool_parser.py "${VLLM_ROOT}/entrypoints/openai/tool_parsers/"
+python3 ./patch_vllm_tool_parser.py
+
+# --- reasoning parser: Qwen3 <think>...</think> split ------------------------
+# Adds --reasoning-parser qwen3 support.
+# Routes thinking tokens to reasoning_content, rest to content in the delta.
+# Works together with --tool-call-parser qwen3_coder (think → tool call flow).
+cp -r ./reasoning "${VLLM_ROOT}/"
+cp ./protocol.py "${VLLM_ROOT}/entrypoints/openai/protocol.py"
+cp ./cli_args.py "${VLLM_ROOT}/entrypoints/openai/cli_args.py"
+cp ./serving_chat.py "${VLLM_ROOT}/entrypoints/openai/serving_chat.py"
+cp ./api_server.py "${VLLM_ROOT}/entrypoints/openai/api_server.py"
+cp ./chat_utils.py "${VLLM_ROOT}/entrypoints/chat_utils.py"
+
+find . -path './wheels' -prune -o -name '*.py' -print0 | xargs -0 python3 -m py_compile
+python3 - <<'PY'
+import importlib
+
+for module in [
+    "vllm.entrypoints.openai.protocol",
+    "vllm.entrypoints.openai.serving_chat",
+    "vllm.model_executor.models.qwen3_5",
+]:
+    importlib.import_module(module)
+print("[ok] patched vllm imports")
+PY
