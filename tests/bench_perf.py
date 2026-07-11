@@ -100,7 +100,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument("--requests", type=int, default=8)
-    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--stagger-s", type=float, default=0.25)
     parser.add_argument("--max-tokens", type=int, default=64)
     parser.add_argument("--prompt-repeat", type=int, default=126)

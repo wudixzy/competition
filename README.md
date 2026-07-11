@@ -104,6 +104,10 @@ dict/list 正常 JSON 编码以及 `None` 返回 `{}`。
 `test_preflight_unit.py` 覆盖 BI100 CUDA/NCCL 预检查脚本的参数解析、CoreX
 环境拼接、timeout 输出清洗和本地端口选择等纯 Python 辅助逻辑。
 
+当前 T5-T9 的固定契约执行方案见
+[`docs/OPTIMIZATION_PLAN_T5_T9.md`](docs/OPTIMIZATION_PLAN_T5_T9.md)。旧的并发、
+`max_num_seqs` 和 GPU-block override 实验不作为正式评测基线。
+
 远端 smoke 与 benchmark
 
 `tests/smoke_api.py` 和 `tests/bench_perf.py` 只使用 Python 标准库，
@@ -112,8 +116,8 @@ dict/list 正常 JSON 编码以及 `None` 返回 `{}`。
 ```bash
 python tests/smoke_api.py --base http://127.0.0.1:8000 --mode quick
 python tests/bench_perf.py --base http://127.0.0.1:8000 \
-  --label A --requests 8 --workers 4 --stagger-s 0.25 \
-  --max-tokens 64 --prompt-salt A-clean --out bench-A.json
+  --label fixed-contract --requests 8 --workers 1 --stagger-s 0 \
+  --max-tokens 64 --prompt-salt fixed-contract --out bench-fixed.json
 ```
 
 `smoke_api.py --mode quick` 覆盖基础 chat、thinking=false 三种格式、

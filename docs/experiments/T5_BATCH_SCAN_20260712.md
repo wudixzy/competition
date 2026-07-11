@@ -1,5 +1,11 @@
 # T5 Batch Scan - 2026-07-12
 
+> **INVALID FOR OFFICIAL COMPARISON.** This historical diagnostic used
+> `NUM_GPU_BLOCKS_OVERRIDE=18000` and benchmark `workers=4`. The evaluator
+> contract is fixed at `max_num_seqs=1`, has no GPU-block override, and uses
+> `concurrency=1`. Do not use these metrics as the T5 baseline. The useful
+> finding is the exact-contract synthetic-profile non-finite failure.
+
 ## Fixed Protocol
 
 - Remote: `ssh-987372d0.default.gpu.phanthy.com`
@@ -45,12 +51,11 @@ fully green.
 - Prompt/completion/cached tokens: `14624 / 512 / 12768`
 - Errors: none
 
-S1 reproduces the historical correct baseline (weighted score approximately
-650) on the clean replacement instance.
+S1 reproduces the historical diagnostic score (approximately 650) on the clean
+replacement instance, but it is not a fixed-contract baseline.
 
 ## Matrix
 
 | Config | max_num_seqs | Smoke | TTFT P90 | Output P10 | Input TPS | Cache hit | Weighted | Result |
 | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | S1 | 1 | 14/14 | 29.2953 | 1.7261 | 192.2301 | 87.31% | 661.0310 | baseline |
-

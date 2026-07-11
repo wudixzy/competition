@@ -279,7 +279,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("python3 -m py_compile", src)
         self.assertIn("patched vllm imports", src)
 
-    def test_worker_profile_override_patch_is_explicit_and_scoped(self):
+    def test_worker_profile_override_patch_is_diagnostic_only(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         patch_src = read("qwen3_6_scripts/patch_worker_profile_override.py")
         launch_src = read("launch_service")
@@ -291,9 +291,10 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("[BI100] skipping worker.profile_run", patch_src)
         self.assertIn("required=True", patch_src)
         self.assertIn("already_contains=", patch_src)
-        self.assertIn("DEFAULT_NUM_GPU_BLOCKS_OVERRIDE", launch_src)
-        self.assertIn("--num-gpu-blocks-override", launch_src)
+        self.assertNotIn("DEFAULT_NUM_GPU_BLOCKS_OVERRIDE", launch_src)
+        self.assertNotIn("--num-gpu-blocks-override", launch_src)
         self.assertIn("NUM_GPU_BLOCKS_OVERRIDE", docs)
+        self.assertIn("invalid for official comparison", docs)
 
     def test_tool_parser_patch_is_exercised(self):
         src = read("qwen3_6_scripts/patch_vllm_tool_parser.py")
@@ -353,7 +354,7 @@ class P0StaticCoverageTest(unittest.TestCase):
             "DEFAULT_SERVED_MODEL_NAME": "llm",
             "DEFAULT_MAX_MODEL_LEN": "100000",
             "DEFAULT_TENSOR_PARALLEL_SIZE": "4",
-            "DEFAULT_GPU_MEMORY_UTILIZATION": "0.90",
+            "DEFAULT_GPU_MEMORY_UTILIZATION": "0.9",
             "DEFAULT_MAX_NUM_SEQS": "1",
             "DEFAULT_MAX_NUM_BATCHED_TOKENS": "8192",
             "DEFAULT_MAX_SEQ_LEN_TO_CAPTURE": "32768",
@@ -378,6 +379,42 @@ class P0StaticCoverageTest(unittest.TestCase):
         ]:
             self.assertIn(token, src)
             self.assertIn(token, yaml)
+
+        for forbidden_override in [
+                "MAX_MODEL_LEN:-",
+                "TENSOR_PARALLEL_SIZE:-",
+                "GPU_MEMORY_UTILIZATION:-",
+                "MAX_NUM_SEQS:-",
+                "MAX_NUM_BATCHED_TOKENS:-",
+                "MAX_SEQ_LEN_TO_CAPTURE:-",
+        ]:
+            self.assertNotIn(forbidden_override, src)
+        self.assertIn('DEFAULT_PORT="8000"', src)
+        self.assertIn("export VLLM_ENGINE_ITERATION_TIMEOUT_S=3600", src)
+
+    def test_benchmark_defaults_to_evaluator_concurrency(self):
+        src = read("tests/bench_perf.py")
+        self.assertIn('parser.add_argument("--workers", type=int, default=1)',
+                      src)
+
+    def test_submission_contract_is_fixed(self):
+        yaml = read("computility-run.yaml")
+        expected_fragments = [
+            "concurrency: 1",
+            "    - '100000'",
+            "    - '0.9'",
+            "    - -tp",
+            "    - '4'",
+            "    - --max-num-seqs",
+            "    - '1'",
+            "    - --max-num-batched-tokens",
+            "    - '8192'",
+            "    - --max-seq-len-to-capture",
+            "    - '32768'",
+            "      value: 3600",
+        ]
+        for fragment in expected_fragments:
+            self.assertIn(fragment, yaml)
 
     def test_launch_service_uses_full_corex_environment(self):
         src = read("launch_service")
