@@ -72,6 +72,23 @@ def _check_gdn_finite(tensor: torch.Tensor, *, layer_idx: int,
     return torch.nan_to_num(tensor, nan=0.0, posinf=0.0, neginf=0.0)
 
 
+def _trace_startup_tensor(tensor: torch.Tensor, *, layer_idx: int,
+                          stage: str) -> torch.Tensor:
+    """Report the first unstable stage during vLLM's synthetic profile."""
+    if os.environ.get("BI100_IN_STARTUP_PROFILE") != "1":
+        return tensor
+    finite = torch.isfinite(tensor)
+    if not finite.all():
+        bad = (~finite).float().mean().item()
+        raise RuntimeError(
+            f"non-finite values in startup-{stage} GatedDeltaNet layer "
+            f"{layer_idx} (frac={bad:.4f})")
+    max_abs = tensor.float().abs().max().item() if tensor.numel() else 0.0
+    logger.info("[BI100 startup GDN] layer=%d stage=%s max_abs=%.6e",
+                layer_idx, stage, max_abs)
+    return tensor
+
+
 def _torch_causal_conv1d_update(
     hidden_states: torch.Tensor,   # (batch, channels, seq=1)
     conv_state: torch.Tensor,       # (batch, channels, state_len)  modified in-place
@@ -336,12 +353,18 @@ class GatedDeltaNet(nn.Module):
         local_conv_dim = self.conv_dim // tp_size
 
         is_prefill = attn_metadata.num_prefill_tokens > 0
+        _trace_startup_tensor(hidden_states, layer_idx=self.layer_idx,
+                              stage="input")
 
         # Compute all projections for every token at once (batched, efficient)
         mixed_qkv_all, _ = self.in_proj_qkv(hidden_states)  # (total, local_conv_dim)
         z_all, _ = self.in_proj_z(hidden_states)             # (total, local_val_dim)
         b_all, _ = self.in_proj_b(hidden_states)             # (total, local_num_v)
         a_all, _ = self.in_proj_a(hidden_states)             # (total, local_num_v)
+        _trace_startup_tensor(mixed_qkv_all, layer_idx=self.layer_idx,
+                              stage="qkv-projection")
+        _trace_startup_tensor(z_all, layer_idx=self.layer_idx,
+                              stage="gate-projection")
 
         if is_prefill:
             seq_starts = attn_metadata.query_start_loc.tolist()
@@ -377,6 +400,9 @@ class GatedDeltaNet(nn.Module):
                     padded, self.conv1d_weight,
                     bias=None, padding=0, groups=local_conv_dim)
                 mixed_qkv_conv = F.silu(mixed_qkv_conv)
+                _trace_startup_tensor(
+                    mixed_qkv_conv, layer_idx=self.layer_idx,
+                    stage="causal-conv")
                 # (1, seq_len, local_conv_dim)
                 mixed_qkv_conv = mixed_qkv_conv.squeeze(0).transpose(0, 1).unsqueeze(0)
 
@@ -421,6 +447,8 @@ class GatedDeltaNet(nn.Module):
                     temporal_state[si].copy_(cur_state[0])
                 # [1, seq_len, num_v_heads, head_v_dim]
                 core_out = torch.cat(core_out_parts, dim=1)
+                _trace_startup_tensor(core_out, layer_idx=self.layer_idx,
+                                      stage="delta-rule")
 
                 # Gate + norm + output proj
                 z = z_all[s:e].reshape(seq_len, local_num_v, self.head_v_dim)
