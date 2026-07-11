@@ -37,3 +37,23 @@ fixed command will change. Do not claim support above 100K under this contract.
 Stop before proceeding when a fix requires changing the evaluator command,
 zero-filling non-finite values, changing model semantics, or accepting a parity,
 tool-call, cache-correctness, or hardware failure.
+
+## T5 result
+
+Two consecutive no-override startups completed successfully. vLLM allocated
+18,275 GPU blocks (about 292K tokens at 16 tokens/block), full smoke passed
+14/14, and the valid 8-request `workers=1` baseline recorded:
+
+```text
+success_rate=1.0
+ttft_p90=2.5836 s
+output_tps_p10=5.7213
+input_tps=231.4230
+cache_tps=201.3813
+cache_hit_rate=0.870187
+weighted_proxy_score=856.6219
+```
+
+One older startup produced a layer-6 GDN non-finite value. It has not reproduced
+in the two qualification starts and remains a stability watch item, not a reason
+to add a GPU-block override.

@@ -18,6 +18,21 @@ synthetic profile 的 non-finite failure，再建立无 override 的单并发基
 支持 262144；实测每卡权重 16.2303 GB，18,000 个 cache blocks 曾报告约 288K
 token 容量，因此四卡显存并非明显障碍。100K 限制是否与数据集冲突需主办方确认。
 
+T5 fixed-contract qualification 随后连续两次无 override 启动成功。正式验证目录：
+
+```text
+/root/qwen36-bi100-submission/bench_runs/20260711_194713_e00de43_T5_fixed_qualification
+startup: 80 s, GPU blocks=18275, num_gpu_blocks_override=None
+full smoke: 14/14 PASS
+benchmark: requests=8, workers=1, success_rate=1.0
+TTFT P90=2.5836 s, Output TPS P10=5.7213
+Input TPS=231.4230, Cache TPS=201.3813, Cache hit=0.870187
+Weighted proxy score=856.6219
+```
+
+此前 layer 6 synthetic-profile non-finite 在两次复测中均未重现，暂列稳定性观察项；
+不得因此恢复 GPU-block override。T5 已完成，当前进入 T6 长 prefill/GDN 剖析。
+
 ## 2026-07-12 干净实例 T1-T4 重建
 
 当前唯一远端目标为 `ssh-987372d0.default.gpu.phanthy.com`，远端代码目录为

@@ -59,3 +59,12 @@ replacement instance, but it is not a fixed-contract baseline.
 | Config | max_num_seqs | Smoke | TTFT P90 | Output P10 | Input TPS | Cache hit | Weighted | Result |
 | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | S1 | 1 | 14/14 | 29.2953 | 1.7261 | 192.2301 | 87.31% | 661.0310 | baseline |
+
+## Superseding fixed-contract baseline
+
+The valid baseline is stored at
+`bench_runs/20260711_194713_e00de43_T5_fixed_qualification`. It used no GPU-block
+override and benchmark `workers=1`: full smoke 14/14, TTFT P90 2.5836 s,
+output TPS P10 5.7213, input TPS 231.4230, cache TPS 201.3813, cache hit
+0.870187, and weighted proxy score 856.6219. vLLM's normal profile allocated
+18,275 GPU blocks.
