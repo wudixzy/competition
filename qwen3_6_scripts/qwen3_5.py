@@ -135,11 +135,18 @@ def _torch_chunk_gated_delta_rule(
     g = g.cumsum(dim=-1)
     decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)).tril().exp().float()).tril()
     attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask).masked_fill(mask_upper, 0)
-    for i in range(1, chunk_size):
-        row = attn[..., i, :i].clone()
-        sub = attn[..., :i, :i].clone()
-        attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
-    attn = attn + torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
+    eye = torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
+
+    # attn is strictly lower triangular, so attn**chunk_size is exactly zero.
+    # Compute (I - attn)^-1 with a finite doubling product instead of 63
+    # sequential row updates: (I+A)(I+A^2)(I+A^4)...
+    power = attn
+    attn = eye + power
+    covered_terms = 2
+    while covered_terms < chunk_size:
+        power = power @ power
+        attn = attn @ (eye + power)
+        covered_terms *= 2
     value = attn @ v_beta
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
 
