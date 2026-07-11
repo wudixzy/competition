@@ -33,6 +33,12 @@ Weighted proxy score=856.6219
 此前 layer 6 synthetic-profile non-finite 在两次复测中均未重现，暂列稳定性观察项；
 不得因此恢复 GPU-block override。T5 已完成，当前进入 T6 长 prefill/GDN 剖析。
 
+T6 profiling 的 8K/16K 请求显示 routed MoE 为最大热点，GDN prefill 次之。
+`3e6df10` 尝试以 Neumann doubling 向量化 GDN chunk inverse，小规模 parity 通过，
+但真实 startup profile 在 layer 0 出现 14.7%-46.9% non-finite。该变化已由
+`865ec8a` 撤回并按重大问题门禁暂停；详见
+`docs/experiments/T6_GDN_INVERSE_20260712.md`。
+
 ## 2026-07-12 干净实例 T1-T4 重建
 
 当前唯一远端目标为 `ssh-987372d0.default.gpu.phanthy.com`，远端代码目录为

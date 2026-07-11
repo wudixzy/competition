@@ -57,3 +57,12 @@ weighted_proxy_score=856.6219
 One older startup produced a layer-6 GDN non-finite value. It has not reproduced
 in the two qualification starts and remains a stability watch item, not a reason
 to add a GPU-block override.
+
+## T6 checkpoint
+
+8K/16K profiling showed routed MoE as the largest measured hotspot, followed by
+GDN prefill and full attention. The first GDN inverse-vectorization experiment
+passed small parity but produced non-finite values at layer 0 in the real startup
+profile. It was reverted in `865ec8a`; see
+`docs/experiments/T6_GDN_INVERSE_20260712.md`. T6 is paused for review before a
+different numerical approach is selected.
