@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import time
 import urllib.error
 import urllib.request
@@ -384,18 +385,69 @@ FULL_ONLY_TESTS: list[Callable[[str], None]] = [
 ]
 
 
+def run_smoke_tests(base: str,
+                    tests: list[Callable[[str], None]],
+                    *,
+                    mode: str,
+                    json_out: str = "") -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    report: dict[str, Any] = {
+        "mode": mode,
+        "base": base,
+        "ok": False,
+        "tests": results,
+    }
+
+    def write_report() -> None:
+        if json_out:
+            pathlib.Path(json_out).write_text(
+                json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+    for test in tests:
+        t0 = time.perf_counter()
+        try:
+            test(base)
+        except Exception as exc:
+            elapsed = time.perf_counter() - t0
+            results.append({
+                "name": test.__name__,
+                "ok": False,
+                "elapsed_s": elapsed,
+                "error": repr(exc),
+            })
+            write_report()
+            print(f"[FAIL] {test.__name__} {elapsed:.2f}s: {exc!r}",
+                  flush=True)
+            raise
+        elapsed = time.perf_counter() - t0
+        results.append({
+            "name": test.__name__,
+            "ok": True,
+            "elapsed_s": elapsed,
+            "error": "",
+        })
+        print(f"[PASS] {test.__name__} {elapsed:.2f}s", flush=True)
+
+    report["ok"] = True
+    write_report()
+    return report
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument("--mode", choices=["quick", "full"], default="quick")
+    parser.add_argument("--json-out", default="")
     args = parser.parse_args()
 
     get_models(args.base)
     tests = QUICK_TESTS + (FULL_ONLY_TESTS if args.mode == "full" else [])
-    for test in tests:
-        t0 = time.perf_counter()
-        test(args.base)
-        print(f"[PASS] {test.__name__} {time.perf_counter() - t0:.2f}s", flush=True)
+    run_smoke_tests(args.base,
+                    tests,
+                    mode=args.mode,
+                    json_out=args.json_out)
 
 
 if __name__ == "__main__":

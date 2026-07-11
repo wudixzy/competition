@@ -1,6 +1,7 @@
 import json
 import pathlib
 import sys
+import tempfile
 import unittest
 from io import BytesIO
 from unittest.mock import patch
@@ -122,6 +123,36 @@ class StreamingClientTest(unittest.TestCase):
 
         self.assertEqual(status, 500)
         self.assertEqual(data, {"raw": "非 JSON 错误"})
+
+    def test_smoke_runner_writes_machine_readable_success_report(self):
+        def passing(base: str) -> None:
+            self.assertEqual(base, "http://unit.test")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp) / "smoke.json"
+            report = smoke_api.run_smoke_tests(
+                "http://unit.test", [passing], mode="quick", json_out=str(out))
+
+            self.assertTrue(report["ok"])
+            persisted = json.loads(out.read_text())
+            self.assertTrue(persisted["ok"])
+            self.assertEqual(persisted["tests"][0]["name"], "passing")
+            self.assertTrue(persisted["tests"][0]["ok"])
+
+    def test_smoke_runner_persists_failure_before_raising(self):
+        def failing(base: str) -> None:
+            raise RuntimeError("expected failure")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp) / "smoke.json"
+            with self.assertRaisesRegex(RuntimeError, "expected failure"):
+                smoke_api.run_smoke_tests(
+                    "http://unit.test", [failing], mode="full", json_out=str(out))
+
+            persisted = json.loads(out.read_text())
+            self.assertFalse(persisted["ok"])
+            self.assertFalse(persisted["tests"][0]["ok"])
+            self.assertIn("expected failure", persisted["tests"][0]["error"])
 
 
 if __name__ == "__main__":
