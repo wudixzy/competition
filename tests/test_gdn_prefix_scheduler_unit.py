@@ -1,0 +1,67 @@
+import ast
+import pathlib
+import typing
+import unittest
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SCHEDULER = ROOT / "qwen3_6_scripts" / "scheduler.py"
+
+
+def _load_helpers():
+    tree = ast.parse(SCHEDULER.read_text(), filename=str(SCHEDULER))
+    names = {
+        "_select_gdn_prefix_checkpoint",
+        "_make_gdn_prefix_checkpoint",
+        "_limit_gdn_blocks_to_strict_prefix",
+    }
+    functions = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in names
+    ]
+    module = ast.Module(body=functions, type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {
+        "Iterable": typing.Iterable,
+        "List": typing.List,
+        "Optional": typing.Optional,
+        "Tuple": typing.Tuple,
+    }
+    exec(compile(module, str(SCHEDULER), "exec"), namespace)
+    return namespace
+
+
+class GdnPrefixSchedulerTest(unittest.TestCase):
+
+    def test_selects_longest_available_prefix(self):
+        helpers = _load_helpers()
+        select = helpers["_select_gdn_prefix_checkpoint"]
+        self.assertEqual(
+            select([(1, 2), (1, 2, 3, 4)], [1, 2, 3, 4, 5]),
+            [1, 2, 3, 4])
+
+    def test_rejects_prefix_without_state(self):
+        helpers = _load_helpers()
+        select = helpers["_select_gdn_prefix_checkpoint"]
+        self.assertEqual(select([(7, 8)], [1, 2, 3]), [])
+
+    def test_checkpoint_requires_exact_block_boundary(self):
+        helpers = _load_helpers()
+        make = helpers["_make_gdn_prefix_checkpoint"]
+        self.assertIsNone(make(list(range(300)), 3678, 16))
+        self.assertEqual(make(list(range(300)), 3664, 16), tuple(range(229)))
+
+    def test_checkpoint_rejects_short_block_table(self):
+        helpers = _load_helpers()
+        make = helpers["_make_gdn_prefix_checkpoint"]
+        self.assertIsNone(make([1, 2], 48, 16))
+
+    def test_full_hit_is_limited_to_strict_prefix(self):
+        helpers = _load_helpers()
+        limit = helpers["_limit_gdn_blocks_to_strict_prefix"]
+        self.assertEqual(limit(list(range(230)), 3680, 16), list(range(229)))
+        self.assertEqual(limit([1], 1, 16), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

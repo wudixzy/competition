@@ -1161,7 +1161,8 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
             query_len = attn_metadata.num_prefill_tokens
             total_processed = context_len + query_len
             num_complete_blocks = total_processed // self._block_size
-            if (num_complete_blocks > 0
+            if (total_processed % self._block_size == 0
+                    and num_complete_blocks > 0
                     and attn_metadata.block_tables.shape[1] >= num_complete_blocks):
                 save_key = tuple(
                     attn_metadata.block_tables[0, :num_complete_blocks]

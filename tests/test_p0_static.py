@@ -226,6 +226,17 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("torch.bincount(", src)
         self.assertNotIn("mask = (topk_ids == eid)", src)
 
+    def test_scheduler_gates_kv_hits_on_exact_gdn_state(self):
+        scheduler_src = read("qwen3_6_scripts/scheduler.py")
+        model_src = read("qwen3_6_scripts/qwen3_5.py")
+        self.assertIn("_select_gdn_prefix_checkpoint", scheduler_src)
+        self.assertIn("_make_gdn_prefix_checkpoint", scheduler_src)
+        self.assertIn("_gdn_prefix_checkpoints", scheduler_src)
+        self.assertIn("total_processed % self._block_size == 0", model_src)
+        smoke_src = read("tests/smoke_api.py")
+        self.assertIn("_message(cached) == _message(uncached)", smoke_src)
+        self.assertIn('"seed": 123', smoke_src)
+
     def test_executor_startup_debug_is_opt_in(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         debug_src = read("qwen3_6_scripts/patch_executor_startup_debug.py")
