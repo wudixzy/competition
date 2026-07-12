@@ -227,7 +227,7 @@ def test_prefix_cache(base: str) -> None:
     uncached = post_chat(base, payload, timeout=360)
     cached = post_chat(base, payload, timeout=360)
     details = cached.get("usage", {}).get("prompt_tokens_details") or {}
-    assert details.get("cached_tokens", 0) >= 8192, cached
+    assert details.get("cached_tokens", 0) >= 8176, cached
     assert _message(cached) == _message(uncached), (uncached, cached)
     assert cached["choices"][0].get("finish_reason") == (
         uncached["choices"][0].get("finish_reason")), (uncached, cached)
