@@ -2,7 +2,7 @@ import enum
 import os
 import random
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import (Callable, Deque, Dict, Iterable, List, Optional, Set,
                     Tuple, Union)
@@ -25,6 +25,40 @@ ENABLE_ARTIFICIAL_PREEMPT = bool(
     os.getenv("VLLM_TEST_ENABLE_ARTIFICIAL_PREEMPT", False))  # noqa
 ARTIFICIAL_PREEMPTION_PROB = 0.5
 ARTIFICIAL_PREEMPTION_MAX_CNT = 500
+
+
+def _select_gdn_prefix_checkpoint(
+        checkpoint_keys: Iterable[Tuple[int, ...]],
+        computed_block_nums: List[int]) -> List[int]:
+    """Return the longest computed prefix with an exact GDN state."""
+    best: Tuple[int, ...] = ()
+    for key in checkpoint_keys:
+        key_len = len(key)
+        if (key_len > len(best)
+                and key_len <= len(computed_block_nums)
+                and tuple(computed_block_nums[:key_len]) == key):
+            best = key
+    return list(best)
+
+
+def _make_gdn_prefix_checkpoint(
+        block_table: List[int], total_computed_tokens: int,
+        block_size: int) -> Optional[Tuple[int, ...]]:
+    """Build a key only when model state and KV blocks share a boundary."""
+    if (total_computed_tokens <= 0
+            or total_computed_tokens % block_size != 0):
+        return None
+    num_blocks = total_computed_tokens // block_size
+    if len(block_table) < num_blocks:
+        return None
+    return tuple(block_table[:num_blocks])
+
+
+def _limit_gdn_blocks_to_strict_prefix(
+        computed_block_nums: List[int], prompt_len: int,
+        block_size: int) -> List[int]:
+    max_blocks = max(0, (prompt_len - 1) // block_size)
+    return computed_block_nums[:max_blocks]
 
 
 class PreemptionMode(enum.Enum):
@@ -351,6 +385,11 @@ class Scheduler:
         # can and must be released after the current step.
         # This is used to evict the finished requests from the Mamba cache.
         self._finished_requests_ids: List[str] = list()
+        # Mirrors each worker's GDN state LRU. Only these physical KV prefixes
+        # are safe to skip because they have an exact recurrent-state snapshot.
+        self._gdn_prefix_checkpoints: OrderedDict[
+            Tuple[int, ...], None] = OrderedDict()
+        self._gdn_prefix_checkpoint_max = 16
         # Time at previous scheduling step
         self.prev_time = 0.0
         # Did we schedule a prompt at previous step?
@@ -1266,6 +1305,24 @@ class Scheduler:
                 common_computed_block_nums = (
                     self.block_manager.get_common_computed_block_ids(
                         seq_group.get_seqs(status=SequenceStatus.RUNNING)))
+                if seq_group.is_prefill():
+                    # vLLM's full-hit path recomputes the last token. A GDN
+                    # checkpoint at the end of the prompt is therefore one
+                    # token too far ahead; only consider strict prefixes.
+                    prompt_seq = seq_group.get_seqs(
+                        status=SequenceStatus.RUNNING)[0]
+                    common_computed_block_nums = (
+                        _limit_gdn_blocks_to_strict_prefix(
+                            common_computed_block_nums,
+                            prompt_seq.data.get_len(),
+                            self.cache_config.block_size))
+                    common_computed_block_nums = (
+                        _select_gdn_prefix_checkpoint(
+                            self._gdn_prefix_checkpoints.keys(),
+                            common_computed_block_nums))
+                    if common_computed_block_nums:
+                        self._gdn_prefix_checkpoints.move_to_end(
+                            tuple(common_computed_block_nums))
 
             do_sample = True
             is_prompt = seq_group.is_prefill()
@@ -1292,6 +1349,27 @@ class Scheduler:
                 if (token_chunk_size + num_computed_tokens <
                         seqs[0].data.get_len()):
                     do_sample = False
+
+                checkpoint_key = _make_gdn_prefix_checkpoint(
+                    block_tables[seqs[0].seq_id],
+                    num_computed_tokens + token_chunk_size,
+                    self.cache_config.block_size)
+                # On a new request with a prefix hit, attention metadata only
+                # carries the reused blocks, so the worker cannot save a new
+                # longer checkpoint in this pass. Subsequent chunks use the
+                # full block table and can extend the checkpoint LRU.
+                can_save_checkpoint = (
+                    checkpoint_key is not None
+                    and (not is_first_prefill
+                         or not common_computed_block_nums))
+                if can_save_checkpoint:
+                    assert checkpoint_key is not None
+                    if checkpoint_key in self._gdn_prefix_checkpoints:
+                        self._gdn_prefix_checkpoints.move_to_end(checkpoint_key)
+                    self._gdn_prefix_checkpoints[checkpoint_key] = None
+                    while (len(self._gdn_prefix_checkpoints)
+                           > self._gdn_prefix_checkpoint_max):
+                        self._gdn_prefix_checkpoints.popitem(last=False)
 
             # It assumes the scheduled_seq_groups is ordered by
             # prefill < decoding.

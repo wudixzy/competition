@@ -213,18 +213,26 @@ def test_bad_request_4xx(base: str) -> None:
 
 
 def test_prefix_cache(base: str) -> None:
-    prefix = "请记住以下材料：" + ("信创模盒 BI100 prefix cache 测试材料。" * 260)
+    # Long enough to create an exact 8192-token GDN checkpoint before the
+    # unaligned final chunk. Cached replay must be token-identical.
+    prefix = "请记住以下材料：" + ("信创模盒 BI100 prefix cache 测试材料。" * 620)
     payload = {
         "model": "llm",
         "messages": [{"role": "user", "content": prefix + "\n问题：材料主题是什么？"}],
         "max_tokens": 32,
         "thinking": False,
         "temperature": 0,
+        "seed": 123,
     }
-    post_chat(base, payload, timeout=240)
-    data = post_chat(base, payload, timeout=240)
-    details = data.get("usage", {}).get("prompt_tokens_details") or {}
-    assert details.get("cached_tokens", 0) > 0, data
+    uncached = post_chat(base, payload, timeout=360)
+    cached = post_chat(base, payload, timeout=360)
+    details = cached.get("usage", {}).get("prompt_tokens_details") or {}
+    assert details.get("cached_tokens", 0) >= 8192, cached
+    assert _message(cached) == _message(uncached), (uncached, cached)
+    assert cached["choices"][0].get("finish_reason") == (
+        uncached["choices"][0].get("finish_reason")), (uncached, cached)
+    assert cached["usage"].get("completion_tokens") == (
+        uncached["usage"].get("completion_tokens")), (uncached, cached)
 
 
 def test_stop(base: str) -> None:
