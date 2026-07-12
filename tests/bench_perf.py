@@ -80,8 +80,9 @@ def post_stream(base: str, payload: dict[str, Any], timeout: float) -> RequestRe
         return RequestResult(False, time.perf_counter() - t0, ttft, 0, 0, 0, repr(exc))
 
 
-def make_payload(prompt: str, max_tokens: int) -> dict[str, Any]:
-    return {
+def make_payload(prompt: str, max_tokens: int,
+                 seed: int | None = None) -> dict[str, Any]:
+    payload = {
         "model": "llm",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
@@ -90,6 +91,9 @@ def make_payload(prompt: str, max_tokens: int) -> dict[str, Any]:
         "stream": True,
         "stream_options": {"include_usage": True},
     }
+    if seed is not None:
+        payload["seed"] = seed
+    return payload
 
 
 def score(output_tps_p10: float, input_tps: float, cache_tps: float) -> float:
@@ -105,6 +109,7 @@ def main() -> None:
     parser.add_argument("--max-tokens", type=int, default=64)
     parser.add_argument("--prompt-repeat", type=int, default=126)
     parser.add_argument("--prompt-salt", default="")
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--timeout-s", type=float, default=360)
     parser.add_argument("--label", default="custom")
     parser.add_argument("--out", default="")
@@ -116,7 +121,10 @@ def main() -> None:
         ("BI100 Qwen3.6 prefix cache benchmark material. " * args.prompt_repeat)
     )
     prompt = prefix + "\n问题：请用一小段话概括材料主题。"
-    payloads = [make_payload(prompt, args.max_tokens) for _ in range(args.requests)]
+    payloads = [
+        make_payload(prompt, args.max_tokens, args.seed)
+        for _ in range(args.requests)
+    ]
 
     wall_t0 = time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:

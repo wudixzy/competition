@@ -86,6 +86,11 @@ class StreamingClientTest(unittest.TestCase):
             2.0 * 16.796 + 3.0 * 2.799 + 4.0 * 0.56,
         )
 
+    def test_benchmark_payload_adds_seed_only_when_requested(self):
+        self.assertNotIn("seed", bench_perf.make_payload("prompt", 8))
+        self.assertEqual(
+            bench_perf.make_payload("prompt", 8, seed=123)["seed"], 123)
+
     def test_smoke_request_json_preserves_json_http_error_body(self):
         error = HTTPError(
             url="http://unit.test/v1/chat/completions",
