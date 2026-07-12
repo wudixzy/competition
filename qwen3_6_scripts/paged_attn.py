@@ -23,6 +23,23 @@ _PREFIX_BLOCKS_PER_TILE = env_int(
 _FORCE_PAGED_ATTN_V2 = env_bool("BI100_FORCE_PAGED_ATTN_V2", False)
 
 
+def _strict_prefix_query_segments(
+    context_len: int,
+    query_len: int,
+    block_size: int,
+) -> List[Tuple[int, int, int]]:
+    """Split a query at the strict prefix-cache checkpoint, if it crosses it."""
+    if query_len <= 0:
+        return []
+    total_len = context_len + query_len
+    strict_prefix_len = ((total_len - 1) // block_size) * block_size
+    split = strict_prefix_len - context_len
+    if 0 < split < query_len:
+        return [(0, split, context_len),
+                (split, query_len, strict_prefix_len)]
+    return [(0, query_len, context_len)]
+
+
 @dataclass
 class PagedAttentionMetadata:
     """Metadata for PagedAttention."""
@@ -358,8 +375,9 @@ class PagedAttention:
         """Pure-PyTorch prefix-attention with K-tiling (Flash-Attention online softmax).
 
         Memory complexity: O(q_len), independent of kv_len.
-        With chunked prefill (q_len ≤ max_num_batched_tokens = 4096) peak
-        per layer ≈ 96 MB regardless of context length.
+        Query segments end at the same strict block boundary used by prefix
+        caching. This keeps online-softmax reduction partitions identical when
+        an otherwise equivalent request reuses that prefix.
 
         Algorithm: Flash Attention online softmax.
         Q is reshaped once to [kv_h, gqa, q_len, d] (24 MB) and held for all
@@ -403,7 +421,6 @@ class PagedAttention:
             scale        = head_dim ** -0.5
             orig_dtype   = query.dtype
             output       = torch.empty_like(query)
-            dev          = query.device
 
             for i in range(batch_size):
                 ctx_len = int(context_lens[i].item())
@@ -411,152 +428,31 @@ class PagedAttention:
                 q_end   = int(query_start_loc[i + 1].item())
                 q_len   = q_end - q_start
 
-                with bi100_timer(profile_name):
-                    q_i = query[q_start:q_end]   # [q_len, q_h,  d]
-                    k_i = key  [q_start:q_end]   # [q_len, kv_h, d]
-                    v_i = value[q_start:q_end]
-
-                    # Q reshaped and scaled once; held for all K-tiles.
-                    # [kv_h, gqa, q_len, d] fp32  —  24 MB for q_len=4096, d=256
-                    q_seq = (q_i.permute(1, 0, 2)
-                               .float()
-                               .view(num_kv_heads, gqa_ratio, q_len, head_dim)
-                               .mul_(scale))
-
-                # Flash-Attention online-softmax accumulators.
-                # m, l : [kv_h, gqa, q_len]     fp32  — <0.1 MB
-                # o    : [kv_h, gqa, q_len, d]  fp32  — 24 MB
-                m = torch.full((num_kv_heads, gqa_ratio, q_len),
-                               float('-inf'), dtype=torch.float32, device=dev)
-                l = torch.zeros_like(m)
-                o = torch.zeros((num_kv_heads, gqa_ratio, q_len, head_dim),
-                                dtype=torch.float32, device=dev)
-
-                # --------------------------------------------------------------
-                # Phase 1 — context tokens (positions 0 … ctx_len-1).
-                #
-                # Every context key has absolute position < ctx_len; every
-                # query has position ≥ ctx_len.  k_pos < q_pos is always True
-                # → no causal mask needed for pure context tiles.
-                # --------------------------------------------------------------
-                if ctx_len > 0:
-                    num_ctx_blocks = (ctx_len + block_size - 1) // block_size
-                    # Safety: if block_tables is too narrow this indicates a
-                    # prefix_cache_hit + chunked-prefill bug in model_runner.py
-                    # (Case 1 leaves prefix_cache_hit=True but block_table is
-                    # only computed_block_nums, not the full context blocks).
-                    # patch_model_runner.py fixes the root cause; this guard
-                    # prevents a zero-dim amax() crash if it still slips through.
-                    num_ctx_blocks = PagedAttention._validate_prefix_block_table(
-                        i, num_ctx_blocks, block_tables.shape[1], ctx_len)
-                    for tile_blk in range(0, num_ctx_blocks, _BLOCKS_PER_TILE):
-                        blk_end = min(tile_blk + _BLOCKS_PER_TILE, num_ctx_blocks)
-                        blk_ids = block_tables[i, tile_blk:blk_end]
-
-                        # Gather K/V for this tile.
-                        # key_cache  [blk_ids]: [n, kv_h, d//x, blk_sz, x]
-                        # value_cache[blk_ids]: [n, kv_h, d,    blk_sz]
-                        k_tile = (key_cache[blk_ids]
-                                  .permute(0, 3, 1, 2, 4)
-                                  .contiguous()
-                                  .view(-1, num_kv_heads, head_dim))
-                        v_tile = (value_cache[blk_ids]
-                                  .permute(0, 3, 1, 2)
-                                  .contiguous()
-                                  .view(-1, num_kv_heads, head_dim))
-
-                        # Trim padding in the last block of the tile.
-                        valid = (min(blk_end * block_size, ctx_len)
-                                 - tile_blk * block_size)
-                        k_tile = k_tile[:valid]   # [valid, kv_h, d]
-                        v_tile = v_tile[:valid]
-
-                        # k_t: [kv_h, 1, d, valid]   (broadcast over gqa_ratio)
-                        # v_t: [kv_h, 1, valid, d]
-                        k_t = (k_tile.permute(1, 0, 2)
-                                     .unsqueeze(1)
-                                     .transpose(-1, -2)
-                                     .float())
-                        v_t = (v_tile.permute(1, 0, 2)
-                                     .unsqueeze(1)
-                                     .float())
-                        del k_tile, v_tile
-
-                        # Scores: [kv_h, gqa, q_len, valid]
-                        s = torch.matmul(q_seq, k_t)
-                        del k_t
-                        # No causal mask: all context keys precede all queries.
-
-                        # Online softmax update — Flash-Attention Algorithm 1.
-                        # exp_s = s - new_max  (in-place exp after del s)
-                        m_blk = s.amax(dim=-1)
-                        m_new = torch.maximum(m, m_blk)
-                        exp_s = s - m_new.unsqueeze(-1)
-                        del s
-                        exp_s.exp_()
-                        corr  = torch.exp(m - m_new)
-                        m.copy_(m_new)
-                        del m_blk, m_new
-                        l.mul_(corr).add_(exp_s.sum(dim=-1))
-                        o.mul_(corr.unsqueeze(-1)).add_(
-                            torch.matmul(exp_s, v_t))
-                        del exp_s, v_t, corr
-
-                # --------------------------------------------------------------
-                # Phase 2 — current-chunk tokens (positions ctx_len … ctx_len+q_len-1).
-                #
-                # Causal mask: query at relative position j sees key at relative
-                # position k only when k ≤ j.  Tiles of tile_sz tokens each.
-                # --------------------------------------------------------------
-                for kc_start in range(0, q_len, tile_sz):
-                    kc_end = min(kc_start + tile_sz, q_len)
-                    kc_len = kc_end - kc_start
-
-                    k_blk = k_i[kc_start:kc_end]   # [kc_len, kv_h, d]
-                    v_blk = v_i[kc_start:kc_end]
-
-                    k_t = (k_blk.permute(1, 0, 2)
-                                 .unsqueeze(1)
-                                 .transpose(-1, -2)
-                                 .float())   # [kv_h, 1, d, kc_len]
-                    v_t = (v_blk.permute(1, 0, 2)
-                                 .unsqueeze(1)
-                                 .float())   # [kv_h, 1, kc_len, d]
-
-                    s = torch.matmul(q_seq, k_t)   # [kv_h, gqa, q_len, kc_len]
-                    del k_t
-
-                    # Causal mask: key at (kc_start+k) must not exceed query j.
-                    k_rel = torch.arange(kc_start, kc_end, device=dev)
-                    q_rel = torch.arange(q_len, device=dev)
-                    mask  = k_rel.unsqueeze(0) > q_rel.unsqueeze(1)  # [q_len, kc_len]
-                    s.masked_fill_(mask.unsqueeze(0).unsqueeze(0), float('-inf'))
-                    del mask, k_rel, q_rel
-
-                    # Online softmax update (identical to context phase).
-                    m_blk = s.amax(dim=-1)
-                    m_new = torch.maximum(m, m_blk)
-                    exp_s = s - m_new.unsqueeze(-1)
-                    del s
-                    exp_s.exp_()
-                    corr  = torch.exp(m - m_new)
-                    m.copy_(m_new)
-                    del m_blk, m_new
-                    l.mul_(corr).add_(exp_s.sum(dim=-1))
-                    o.mul_(corr.unsqueeze(-1)).add_(
-                        torch.matmul(exp_s, v_t))
-                    del exp_s, v_t, corr
-
-                # --------------------------------------------------------------
-                # Finalize: normalize running output by normalization factor.
-                # o: [kv_h, gqa, q_len, d]  →  [q_len, q_h, d]
-                # --------------------------------------------------------------
-                o.div_(l.unsqueeze(-1))
-                output[q_start:q_end] = (
-                    o.view(num_q_heads, q_len, head_dim)
-                     .permute(1, 0, 2)
-                     .to(orig_dtype)
-                )
+                for seg_start, seg_end, seg_ctx_len in (
+                        _strict_prefix_query_segments(
+                            ctx_len, q_len, block_size)):
+                    absolute_start = q_start + seg_start
+                    absolute_end = q_start + seg_end
+                    with bi100_timer(profile_name):
+                        output[absolute_start:absolute_end] = (
+                            PagedAttention._forward_prefix_segment_pytorch(
+                                query[absolute_start:absolute_end],
+                                key[absolute_start:absolute_end],
+                                value[absolute_start:absolute_end],
+                                key_cache,
+                                value_cache,
+                                block_tables,
+                                i,
+                                seg_ctx_len,
+                                num_q_heads,
+                                num_kv_heads,
+                                head_dim,
+                                gqa_ratio,
+                                block_size,
+                                tile_sz,
+                                scale,
+                                orig_dtype,
+                            ))
 
         except Exception as e:
             print(f"[paged_attn ERROR] {type(e).__name__}: {e}",
@@ -564,6 +460,117 @@ class PagedAttention:
             traceback.print_exc(file=sys.stderr)
             raise
         return output
+
+    @staticmethod
+    def _forward_prefix_segment_pytorch(
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        key_cache: torch.Tensor,
+        value_cache: torch.Tensor,
+        block_tables: torch.Tensor,
+        seq_index: int,
+        ctx_len: int,
+        num_q_heads: int,
+        num_kv_heads: int,
+        head_dim: int,
+        gqa_ratio: int,
+        block_size: int,
+        tile_sz: int,
+        scale: float,
+        orig_dtype,
+    ) -> torch.Tensor:
+        """Run online-softmax attention for one strict-prefix query segment."""
+        q_len = query.shape[0]
+        dev = query.device
+        q_seq = (query.permute(1, 0, 2)
+                      .float()
+                      .view(num_kv_heads, gqa_ratio, q_len, head_dim)
+                      .mul_(scale))
+        m = torch.full((num_kv_heads, gqa_ratio, q_len),
+                       float('-inf'), dtype=torch.float32, device=dev)
+        l = torch.zeros_like(m)
+        o = torch.zeros((num_kv_heads, gqa_ratio, q_len, head_dim),
+                        dtype=torch.float32, device=dev)
+
+        if ctx_len > 0:
+            num_ctx_blocks = (ctx_len + block_size - 1) // block_size
+            num_ctx_blocks = PagedAttention._validate_prefix_block_table(
+                seq_index, num_ctx_blocks, block_tables.shape[1], ctx_len)
+            for tile_blk in range(0, num_ctx_blocks,
+                                  _PREFIX_BLOCKS_PER_TILE):
+                blk_end = min(tile_blk + _PREFIX_BLOCKS_PER_TILE,
+                              num_ctx_blocks)
+                blk_ids = block_tables[seq_index, tile_blk:blk_end]
+                k_tile = (key_cache[blk_ids]
+                          .permute(0, 3, 1, 2, 4)
+                          .contiguous()
+                          .view(-1, num_kv_heads, head_dim))
+                v_tile = (value_cache[blk_ids]
+                          .permute(0, 3, 1, 2)
+                          .contiguous()
+                          .view(-1, num_kv_heads, head_dim))
+                valid = (min(blk_end * block_size, ctx_len)
+                         - tile_blk * block_size)
+                k_t = (k_tile[:valid].permute(1, 0, 2)
+                       .unsqueeze(1).transpose(-1, -2).float())
+                v_t = (v_tile[:valid].permute(1, 0, 2)
+                       .unsqueeze(1).float())
+                del k_tile, v_tile
+                PagedAttention._update_online_softmax(q_seq, k_t, v_t,
+                                                      m, l, o)
+
+        for key_start in range(0, q_len, tile_sz):
+            key_end = min(key_start + tile_sz, q_len)
+            k_t = (key[key_start:key_end].permute(1, 0, 2)
+                   .unsqueeze(1).transpose(-1, -2).float())
+            v_t = (value[key_start:key_end].permute(1, 0, 2)
+                   .unsqueeze(1).float())
+            scores = torch.matmul(q_seq, k_t)
+            del k_t
+            key_positions = torch.arange(key_start, key_end, device=dev)
+            query_positions = torch.arange(q_len, device=dev)
+            mask = key_positions.unsqueeze(0) > query_positions.unsqueeze(1)
+            scores.masked_fill_(mask.unsqueeze(0).unsqueeze(0), float('-inf'))
+            del mask, key_positions, query_positions
+            PagedAttention._update_online_softmax_from_scores(
+                scores, v_t, m, l, o)
+
+        o.div_(l.unsqueeze(-1))
+        return (o.view(num_q_heads, q_len, head_dim)
+                .permute(1, 0, 2).to(orig_dtype))
+
+    @staticmethod
+    def _update_online_softmax(
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        running_max: torch.Tensor,
+        running_sum: torch.Tensor,
+        running_output: torch.Tensor,
+    ) -> None:
+        scores = torch.matmul(query, key)
+        PagedAttention._update_online_softmax_from_scores(
+            scores, value, running_max, running_sum, running_output)
+
+    @staticmethod
+    def _update_online_softmax_from_scores(
+        scores: torch.Tensor,
+        value: torch.Tensor,
+        running_max: torch.Tensor,
+        running_sum: torch.Tensor,
+        running_output: torch.Tensor,
+    ) -> None:
+        block_max = scores.amax(dim=-1)
+        new_max = torch.maximum(running_max, block_max)
+        exp_scores = scores - new_max.unsqueeze(-1)
+        del scores
+        exp_scores.exp_()
+        correction = torch.exp(running_max - new_max)
+        running_max.copy_(new_max)
+        running_sum.mul_(correction).add_(exp_scores.sum(dim=-1))
+        running_output.mul_(correction.unsqueeze(-1)).add_(
+            torch.matmul(exp_scores, value))
 
     @staticmethod
     def swap_blocks(

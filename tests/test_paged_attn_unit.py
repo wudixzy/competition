@@ -119,6 +119,28 @@ def _load_paged_attn(**env):
 
 class PagedAttentionUnitTest(unittest.TestCase):
 
+    def test_strict_prefix_segments_match_cache_boundaries(self):
+        module = _load_paged_attn()
+        segment = module._strict_prefix_query_segments
+        self.assertEqual(segment(0, 8192, 16), [
+            (0, 8176, 0),
+            (8176, 8192, 8176),
+        ])
+        self.assertEqual(segment(8192, 520, 16), [
+            (0, 512, 8192),
+            (512, 520, 8704),
+        ])
+        self.assertEqual(segment(8176, 16, 16), [
+            (0, 16, 8176),
+        ])
+
+    def test_strict_prefix_segments_handle_empty_and_short_queries(self):
+        module = _load_paged_attn()
+        segment = module._strict_prefix_query_segments
+        self.assertEqual(segment(0, 0, 16), [])
+        self.assertEqual(segment(17, 1, 16), [(0, 1, 17)])
+        self.assertEqual(segment(31, 2, 16), [(0, 1, 31), (1, 2, 32)])
+
     def test_attention_env_defaults_are_stable(self):
         module = _load_paged_attn()
         self.assertEqual(module.PagedAttention._PYTORCH_DECODE_THRESHOLD, 32768)
