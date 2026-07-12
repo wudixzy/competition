@@ -65,6 +65,17 @@ capture，小规模和 3663-token case 通过，但原始 8712-token payload 在
 仅增加 14.9MiB。T8 保留，证据见
 `docs/experiments/T8_GDN_PREFIX_BOUNDARY_ISSUE_20260712.md`。
 
+T9 最终提交 `3f3f021` 修复分阶段 GDN checkpoint 的 usage 低报：旧实现只记录
+首次 8176 tokens，现按每轮 checkpoint 相对已计算位置累计真实跳过量，不改变模型
+张量路径。8712-token 样本报告 `cached=8688`，耗时 19.69s→6.66s；99500-token
+样本报告 `cached=99296`，耗时 158.63s→19.67s，且两次完整响应一致。
+
+最终固定命令重启、冷启动确定性、四卡 CUDA/NCCL、100/100 package tests 和 full
+smoke 14/14 全部通过，日志无 non-finite/OOM/CUDA error。`computility-run.yaml`
+SHA256 仍为 `5f07f437...e517c0f`。宿主机没有 Docker CLI，无法执行 image build，
+已验证离线 wheel hash、patch 输入、py_compile 和导入门禁。详见
+`docs/experiments/T9_QUALIFICATION_20260712.md`。
+
 ## 2026-07-12 干净实例 T1-T4 重建
 
 当前唯一远端目标为 `ssh-987372d0.default.gpu.phanthy.com`，远端代码目录为

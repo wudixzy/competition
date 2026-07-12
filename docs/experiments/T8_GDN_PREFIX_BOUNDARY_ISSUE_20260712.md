@@ -110,3 +110,16 @@ equivalence is the deciding gate, so T8 is retained.
 
 Remote evidence:
 `bench_runs/20260712_084530_a63a1ef_T8_original_replay`.
+
+## Staged usage accounting
+
+The 99,500-token T9 test revealed that API usage reported only the first 8,176
+cached tokens even though the request was 7.66x faster. Long prefixes restore a
+sequence of strict GDN checkpoints; the scheduler previously assigned
+`num_cached_tokens` only during the first prefill stage. `3f3f021` accumulates
+each checkpoint jump relative to the already-computed position. This is a
+metrics correction and does not change model execution.
+
+After the fix, the 8,712-token sample reports 8,688 cached tokens and the
+99,500-token sample reports 99,296. Both remain response-identical to their
+uncached runs.

@@ -141,6 +141,8 @@ Output TPS P10、Input TPS、Cache TPS、缓存命中率和加权分。
 
 `long_context_api.py` 精确构造 99,500-token chat prompt，在固定 100K 合同边界内
 验证首次 prefill、近全量 prefix hit、API usage 和两次响应等价性。
+GDN state 需要按 chunk 分阶段恢复；`cached_tokens` 会累计每阶段实际跳过的 token，
+而不是只报告第一个 8,176-token checkpoint。
 
 BI100 预启动检查
 

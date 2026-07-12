@@ -91,10 +91,28 @@ reverted. The retained implementation uses exact scheduler checkpoints
 the full-attention fallback at the same point (`b22fd8f`). `a63a1ef` also makes
 query scaling non-mutating for fp32 inputs.
 
-The original 8,712-token failure now produces identical responses with
-`cached_tokens=0/8176`; request time fell from 19.53 s to 6.62 s. Attention,
+The original 8,712-token failure now produces identical responses with staged
+`cached_tokens=0/8688`; request time fell from 19.69 s to 6.66 s. Attention,
 GDN, and MoE parity, four-card CUDA/NCCL, exact startup, full smoke 14/14,
 aligned/unaligned interleaving, and 17-entry LRU eviction all pass. GPU memory
 stayed flat, and RSS stabilized after the expected CPU state-cache allocation.
 T8 is retained; full evidence is in
 `docs/experiments/T8_GDN_PREFIX_BOUNDARY_ISSUE_20260712.md`.
+
+## T9 result
+
+The final fixed-contract qualification passed package syntax/compile checks,
+100/100 non-GPU tests, four-card CUDA/NCCL, exact no-override restart, cold
+determinism, and full API smoke 14/14. Three repeated `workers=1` benchmark
+runs completed successfully and remained stable. `computility-run.yaml` stayed
+byte-identical to the T7 winner at SHA256
+`5f07f4377dcdde3bb858012bedc014f60e84a82a61e9696bee830fec1e517c0f`.
+
+At the contract boundary, a 99,500-token prompt returned identical uncached and
+cached responses. `3f3f021` accumulates the tokens skipped across staged GDN
+checkpoint restores, so usage now reports 99,296 cached tokens instead of only
+the first 8,176-token stage. Latency fell from 158.625 s to 19.670 s (8.06x).
+GPU memory and process state remained healthy, with no non-finite, OOM, or CUDA
+errors. The host has no Docker CLI, so image construction was not executable;
+the offline wheel hash, patch inputs, py_compile, imports, and package tests were
+verified instead. See `docs/experiments/T9_QUALIFICATION_20260712.md`.
