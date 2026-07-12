@@ -47,17 +47,23 @@ A/B 的 weighted 平均提升 7.67%，TTFT P90 平均改善 16.01%，Input/Cache
 
 T8 审计发现现有 GDN prefix-state cache 的重大边界错误：3678-token prompt 的
 state 在处理完整 prompt 后保存，却使用只覆盖 3664 tokens（229×16）的 physical
-block key。缓存命中后恢复了超前 14 tokens 的 state 并再次处理这 14 tokens，导致
-相同 payload/seed 的 completion 从 32 tokens 变为 18 tokens。初始 T8 实验已由
-`42fc9b7` 撤回，当前暂停讨论 boundary-exact state capture；详见
-`docs/experiments/T8_GDN_PREFIX_BOUNDARY_ISSUE_20260712.md`。
+block key。缓存命中后恢复了超前 14 tokens 的 state 并再次处理这 14 tokens。初始
+实验由 `42fc9b7` 撤回，避免把错误实现留在稳定基线。
 
 后续 `c05fd52`/`9f95cb5` 已实现 scheduler checkpoint mirror 与 GDN 精确边界
 capture，小规模和 3663-token case 通过，但原始 8712-token payload 在 cached=8176
 时仍由 18/stop 变为 32/length。四 rank DEBUG 均确认 GDN state 命中，因此剩余差异
 来自 full attention：首次请求在 8192 current chunk 内计算末尾 16 tokens，缓存请求
 按 8176 context + 16 current 计算，online-softmax 归约分区不同。两提交已由
-`d837caa`/`4161d3f` 撤回，恢复 T7 winner。
+`d837caa`/`4161d3f` 撤回，恢复 T7 winner 后重新设计完整方案。
+
+最终 T8 由 `0e52374`/`0ec0607` 保证 scheduler 与 GDN state 使用同一严格边界，
+`b22fd8f` 将 PyTorch full attention 在该边界分段，`a63a1ef` 修复 fp32 query 原地
+缩放。原始 8712-token payload 在 `cached=0/8176` 时响应完全一致，耗时从
+19.53s 降至 6.62s。Full smoke 14/14、attention/GDN/MoE parity、四卡 CUDA/NCCL、
+对齐/未对齐交错前缀和 17 项 LRU 驱逐均通过；GPU 显存不增长，后续三轮基准 RSS
+仅增加 14.9MiB。T8 保留，证据见
+`docs/experiments/T8_GDN_PREFIX_BOUNDARY_ISSUE_20260712.md`。
 
 ## 2026-07-12 干净实例 T1-T4 重建
 

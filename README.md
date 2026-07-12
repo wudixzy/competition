@@ -118,6 +118,8 @@ python tests/smoke_api.py --base http://127.0.0.1:8000 --mode quick
 python tests/bench_perf.py --base http://127.0.0.1:8000 \
   --label fixed-contract --requests 8 --workers 1 --stagger-s 0 \
   --max-tokens 64 --prompt-salt fixed-contract --out bench-fixed.json
+python tests/prefix_cache_stress.py --base http://127.0.0.1:8000 \
+  --eviction-count 17 --json-out prefix-cache-stress.json
 ```
 
 `smoke_api.py --mode quick` 覆盖基础 chat、thinking=false 三种格式、
@@ -130,6 +132,10 @@ python tests/bench_perf.py --base http://127.0.0.1:8000 \
 `bench_perf.py` 会为每轮生成唯一或显式指定的 prompt salt，避免上一轮
 benchmark 预热 prefix cache 后污染结果。输出字段包括请求成功率、TTFT P90、
 Output TPS P10、Input TPS、Cache TPS、缓存命中率和加权分。
+
+`prefix_cache_stress.py` 使用本地 tokenizer 构造 16-token 对齐和未对齐长前缀，
+验证 A/B/A/B 交错会话隔离，并以 17 个不同前缀覆盖 GDN checkpoint LRU 的驱逐、
+安全重算和刷新后再次命中。
 
 BI100 预启动检查
 

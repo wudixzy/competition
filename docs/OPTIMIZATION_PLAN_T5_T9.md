@@ -75,17 +75,26 @@ A/B pairs, weighted proxy score improved by 7.67% on average, TTFT P90 improved
 by 16.01%, and input/cache TPS improved by 7.96%. The change is retained; see
 `docs/experiments/T7_MOE_GROUPING_20260712.md`.
 
-## T8 blocker
+## T8 result
 
 The current GDN prefix-state cache saves state after the whole prompt while its
 key covers only complete 16-token KV blocks. An unaligned 3,678-token prompt was
 stored under the 3,664-token boundary, and a cached replay produced different
 output from the identical uncached request. The initial T8 experiment was
-reverted by `42fc9b7`. T8 is paused for a boundary-exact state-capture design;
-see `docs/experiments/T8_GDN_PREFIX_BOUNDARY_ISSUE_20260712.md`.
+reverted by `42fc9b7` while a boundary-exact design was developed.
 
 The first boundary-capture implementation proved that GDN state restoration
 alone is insufficient: the uncached and cached full-attention paths partition
 the online-softmax reduction differently. Those experimental commits were
-reverted. T8 now requires matching full-attention segmentation at the same
-strict checkpoint boundary before state capture can be accepted.
+reverted. The retained implementation uses exact scheduler checkpoints
+(`0e52374`), captures recurrent state at that boundary (`0ec0607`), and splits
+the full-attention fallback at the same point (`b22fd8f`). `a63a1ef` also makes
+query scaling non-mutating for fp32 inputs.
+
+The original 8,712-token failure now produces identical responses with
+`cached_tokens=0/8176`; request time fell from 19.53 s to 6.62 s. Attention,
+GDN, and MoE parity, four-card CUDA/NCCL, exact startup, full smoke 14/14,
+aligned/unaligned interleaving, and 17-entry LRU eviction all pass. GPU memory
+stayed flat, and RSS stabilized after the expected CPU state-cache allocation.
+T8 is retained; full evidence is in
+`docs/experiments/T8_GDN_PREFIX_BOUNDARY_ISSUE_20260712.md`.

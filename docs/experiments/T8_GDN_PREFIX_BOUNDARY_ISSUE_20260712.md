@@ -74,3 +74,39 @@ must partition uncached full attention at the same strict checkpoint boundary as
 GDN, so suffix tokens use identical context/current tiling before their state is
 cached. This touches the core paged-attention fallback and requires explicit
 approval plus dedicated attention parity tests.
+
+## Final resolution
+
+After approval, the boundary changes were reapplied as `0e52374` and `0ec0607`.
+`b22fd8f` splits each full-attention query at the strict prefix-cache boundary,
+so uncached and cached suffixes use the same context/current online-softmax
+partition. The first CoreX parity run exposed an independent fp32 aliasing bug:
+`.float().mul_(scale)` modified an already-fp32 query in place. `a63a1ef`
+changed this to non-mutating scaling and added input-immutability coverage.
+
+The final gates passed:
+
+- paged-attention unit 7/7 and real CoreX attention parity 1/1, no skips;
+- GDN capture 4/4, scheduler 6/6, MoE parity 3/3, GDN parity 2/2;
+- CUDA GPU0-3 and NCCL rank0-3;
+- exact fixed-command startup without GPU-block or performance overrides;
+- full API smoke 14/14 with exact cached/uncached message comparison;
+- aligned 10,592-token and unaligned 10,599-token interleaved prefixes;
+- 17-prefix LRU pressure, safe miss after eviction, and hit after refresh.
+
+The original 8,712-token payload now gives identical messages, finish reasons,
+and token counts for `cached_tokens=0` and `cached_tokens=8176`. Request time was
+19.53 s uncached and 6.62 s cached. Stress testing left all four GPU memory
+figures unchanged. Process-group RSS rose about 392 MiB while filling the state
+LRU, then only 14.9 MiB over the following three benchmark rounds.
+
+Three exact-parameter comparisons against the historical T7 runs require care:
+R1 had comparable completion length and improved TTFT P90 by 24.57%, output TPS
+P10 by 12.69%, and weighted score by 1.76%, with wall time unchanged. Historical
+R2/R3 stopped at 85/141 completion tokens, while corrected T8 generated the full
+512 tokens. Their wall/weighted changes are therefore dominated by changed
+output length and are not valid prefill regressions. Correct cached/uncached
+equivalence is the deciding gate, so T8 is retained.
+
+Remote evidence:
+`bench_runs/20260712_084530_a63a1ef_T8_original_replay`.
