@@ -226,13 +226,6 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("torch.bincount(", src)
         self.assertNotIn("mask = (topk_ids == eid)", src)
 
-    def test_gdn_prefix_restore_skips_existing_sequence(self):
-        model_src = read("qwen3_6_scripts/qwen3_5.py")
-        cache_src = read("qwen3_6_scripts/mamba_cache.py")
-        self.assertIn("current_run_new_sequence_flags", cache_src)
-        self.assertIn("_is_new_single_sequence", model_src)
-        self.assertIn('bi100_timer("gdn_prefix.save")', model_src)
-
     def test_executor_startup_debug_is_opt_in(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         debug_src = read("qwen3_6_scripts/patch_executor_startup_debug.py")

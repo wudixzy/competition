@@ -1113,16 +1113,13 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
         # conv_states:     (num_linear_layers, batch, local_conv_dim, kernel-1)
         # temporal_states: (num_linear_layers, batch, local_num_v, k_dim, v_dim)
         conv_states, temporal_states = mamba_tensors
-        _is_new_single_sequence = (
-            len(self.mamba_cache.current_run_new_sequence_flags) == 1
-            and self.mamba_cache.current_run_new_sequence_flags[0]
-        )
 
         # ── GDN prefix-cache align mode: inject saved state on prefix hit ─────
         # Conditions: prefill pass, batch=1, context_len > 0 (prefix cached or
         # previous chunk already processed), block_tables available.
-        # Restore only for a newly allocated request. Subsequent chunks of the
-        # same request already carry the state in the active Mamba cache slot.
+        # We always attempt a lookup: for subsequent chunked-prefill chunks the
+        # key matches our own saved state (same data already in slot → no-op).
+        # For a true cross-request prefix hit the key matches a previous request.
         _is_single_seq_prefill = (
             attn_metadata is not None
             and attn_metadata.num_prefill_tokens > 0
@@ -1140,8 +1137,7 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
                     lookup_key = tuple(
                         attn_metadata.block_tables[0, :num_prefix_blocks]
                         .cpu().tolist())
-                    if (_is_new_single_sequence
-                            and lookup_key in self._gdn_prefix_cache):
+                    if lookup_key in self._gdn_prefix_cache:
                         saved_conv, saved_temporal = self._gdn_prefix_cache[lookup_key]
                         with bi100_timer("gdn_prefix.restore"):
                             conv_states[:, 0].copy_(
@@ -1173,11 +1169,10 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
                 # Move to end (LRU: most recent = last) and update value
                 if save_key in self._gdn_prefix_cache:
                     self._gdn_prefix_cache.move_to_end(save_key)
-                with bi100_timer("gdn_prefix.save"):
-                    self._gdn_prefix_cache[save_key] = (
-                        conv_states[:, 0].cpu().clone(),
-                        temporal_states[:, 0].cpu().clone(),
-                    )
+                self._gdn_prefix_cache[save_key] = (
+                    conv_states[:, 0].cpu().clone(),
+                    temporal_states[:, 0].cpu().clone(),
+                )
                 # Evict oldest entries beyond max
                 while len(self._gdn_prefix_cache) > self._gdn_prefix_cache_max:
                     self._gdn_prefix_cache.popitem(last=False)

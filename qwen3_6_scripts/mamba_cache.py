@@ -5,11 +5,6 @@ import torch
 from vllm.attention.backends.abstract import AttentionMetadata
 
 
-def _is_new_cache_entry(mapping: Dict[str, Dict[int, int]], request_id: str,
-                        seq_id: int) -> bool:
-    return request_id not in mapping or seq_id not in mapping[request_id]
-
-
 class MambaCacheManager:
 
     def __init__(self, dtype, num_mamba_layers, max_batch_size,
@@ -29,7 +24,6 @@ class MambaCacheManager:
         # Maps between the request id and a dict that maps between the seq_id
         # and its index inside the self.mamba_cache
         self.mamba_cache_indices_mapping: Dict[str, Dict[int, int]] = {}
-        self.current_run_new_sequence_flags: List[bool] = []
 
     def current_run_tensors(self, input_ids: torch.Tensor,
                             attn_metadata: AttentionMetadata, **kwargs):
@@ -145,11 +139,6 @@ class MambaCacheManager:
             (req_id, seq_id)
             for req_id, seq_ids in request_ids_to_seq_ids.items()
             for seq_id in seq_ids
-        ]
-        self.current_run_new_sequence_flags = [
-            _is_new_cache_entry(self.mamba_cache_indices_mapping,
-                                request_id, seq_id)
-            for request_id, seq_id in request_ids_to_seq_ids_flatten
         ]
         batch_size = len(request_ids_to_seq_ids_flatten)
         for dest_index, (request_id,
