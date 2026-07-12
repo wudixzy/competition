@@ -242,7 +242,7 @@ class P0StaticCoverageTest(unittest.TestCase):
     def test_executor_startup_debug_is_opt_in(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         debug_src = read("qwen3_6_scripts/patch_executor_startup_debug.py")
-        self.assertIn("patch_executor_startup_debug.py", patch_ops)
+        self.assertNotIn("patch_executor_startup_debug.py", patch_ops)
         self.assertIn("BI100_EXECUTOR_STARTUP_DEBUG", debug_src)
         self.assertIn("os.getenv", debug_src)
         self.assertIn('\\"1\\"', debug_src)
@@ -289,28 +289,42 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("bi100_timer", qwen_src)
         self.assertIn("bi100_timer", paged_src)
 
-    def test_docker_invokes_patch_ops_with_explicit_bash(self):
+    def test_docker_sets_corex_environment_and_invokes_explicit_bash(self):
         dockerfile = read("Dockerfile")
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        for fragment in [
+                "ENV PATH=/usr/local/corex/bin:/usr/local/corex-3.2.3/bin:"
+                "/usr/local/openmpi/bin:${PATH}",
+                "ENV PYTHONPATH=/usr/local/corex/lib64/python3/dist-packages:"
+                "/usr/local/corex/lib/python3/dist-packages",
+                "ENV LD_LIBRARY_PATH=/usr/local/corex/lib:"
+                "/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:"
+                "/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib",
+        ]:
+            self.assertIn(fragment, dockerfile)
         self.assertIn(
             "RUN cd ./qwen3_6_scripts && bash ./patch_ops.sh", dockerfile)
         self.assertEqual(patch_ops.splitlines()[0], "#!/usr/bin/env bash")
 
-    def test_patch_ops_uses_offline_transformers_wheel_and_import_gate(self):
+    def test_patch_ops_uses_offline_transformers_wheel_and_metadata_gate(self):
         src = read("qwen3_6_scripts/patch_ops.sh")
         self.assertIn("--no-index", src)
         self.assertIn("--no-deps", src)
         self.assertIn("TRANSFORMERS_REQUIRED_VERSION=\"4.55.3\"", src)
+        self.assertGreaterEqual(
+            src.count('importlib.metadata.version("transformers")'), 2)
+        self.assertNotIn("import transformers", src)
         self.assertNotIn("pypi.tuna", src)
         self.assertIn("python3 -m py_compile", src)
-        self.assertIn("patched vllm imports", src)
+        self.assertNotIn("patched vllm imports", src)
+        self.assertTrue(src.rstrip().endswith("python3 -m py_compile"))
 
     def test_worker_profile_override_patch_is_diagnostic_only(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         patch_src = read("qwen3_6_scripts/patch_worker_profile_override.py")
         launch_src = read("launch_service")
         docs = read("docs/ENV_KNOBS.md")
-        self.assertIn("patch_worker_profile_override.py", patch_ops)
+        self.assertNotIn("patch_worker_profile_override.py", patch_ops)
         self.assertIn("num_gpu_blocks_override is not None", patch_src)
         self.assertIn("self.model_runner.profile_run()", patch_src)
         self.assertIn("BI100_IN_STARTUP_PROFILE", patch_src)

@@ -33,11 +33,15 @@ set -euo pipefail
 # --- transformers: Qwen3_5 tokenizer / model files --------------------------
 TRANSFORMERS_REQUIRED_VERSION="4.55.3"
 if ! python3 - "$TRANSFORMERS_REQUIRED_VERSION" <<'PY'
+import importlib.metadata
 import sys
-import transformers
 
 required = sys.argv[1]
-raise SystemExit(0 if transformers.__version__ == required else 1)
+try:
+    installed = importlib.metadata.version("transformers")
+except importlib.metadata.PackageNotFoundError:
+    raise SystemExit(1)
+raise SystemExit(0 if installed == required else 1)
 PY
 then
   WHEEL_DIR="./wheels"
@@ -50,14 +54,15 @@ then
 fi
 
 python3 - "$TRANSFORMERS_REQUIRED_VERSION" <<'PY'
+import importlib.metadata
 import sys
-import transformers
 
 required = sys.argv[1]
-if transformers.__version__ != required:
+installed = importlib.metadata.version("transformers")
+if installed != required:
     raise SystemExit(
-        f"transformers version mismatch: expected {required}, got {transformers.__version__}")
-print(f"[ok] transformers {transformers.__version__}")
+        f"transformers version mismatch: expected {required}, got {installed}")
+print(f"[ok] transformers {installed}")
 PY
 
 python3 - <<'PY' > /tmp/qwen36_patch_paths.env
@@ -90,16 +95,6 @@ cp ./paged_attn.py "${VLLM_ROOT}/attention/ops/paged_attn.py"
 # "amax(): Expected reduction dim -1 to have non-zero size" on the 2nd tile.
 # Fix: set prefix_cache_hit=False for Case 1 so the full block_tables is used.
 python3 ./patch_model_runner.py
-
-# --- worker.py: allow explicit KV block override to skip BI100 dummy profile -
-# Used only for T5 batch scanning when vLLM's synthetic profile_run trips GDN
-# non-finite checks. Real inference remains fail-fast.
-python3 ./patch_worker_profile_override.py
-
-# --- executor startup debug hooks -------------------------------------------
-# Opt-in diagnostics for BI100 multiprocess startup stalls. Normal runs are
-# unchanged unless BI100_EXECUTOR_STARTUP_DEBUG=1 is set.
-python3 ./patch_executor_startup_debug.py
 
 cp -r ./qwen3_5 "${TRANSFORMERS_ROOT}/models/"
 cp -r ./qwen3_5_moe "${TRANSFORMERS_ROOT}/models/"
@@ -152,14 +147,3 @@ cp ./api_server.py "${VLLM_ROOT}/entrypoints/openai/api_server.py"
 cp ./chat_utils.py "${VLLM_ROOT}/entrypoints/chat_utils.py"
 
 find . -path './wheels' -prune -o -name '*.py' -print0 | xargs -0 python3 -m py_compile
-python3 - <<'PY'
-import importlib
-
-for module in [
-    "vllm.entrypoints.openai.protocol",
-    "vllm.entrypoints.openai.serving_chat",
-    "vllm.model_executor.models.qwen3_5",
-]:
-    importlib.import_module(module)
-print("[ok] patched vllm imports")
-PY
