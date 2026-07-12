@@ -45,6 +45,13 @@ mask/nonzero 扫描改为一次 stable sort+bincount，保持 expert GEMM 和 de
 A/B 的 weighted 平均提升 7.67%，TTFT P90 平均改善 16.01%，Input/Cache TPS
 平均提升 7.96%，因此保留。详见 `docs/experiments/T7_MOE_GROUPING_20260712.md`。
 
+T8 审计发现现有 GDN prefix-state cache 的重大边界错误：3678-token prompt 的
+state 在处理完整 prompt 后保存，却使用只覆盖 3664 tokens（229×16）的 physical
+block key。缓存命中后恢复了超前 14 tokens 的 state 并再次处理这 14 tokens，导致
+相同 payload/seed 的 completion 从 32 tokens 变为 18 tokens。初始 T8 实验已由
+`42fc9b7` 撤回，当前暂停讨论 boundary-exact state capture；详见
+`docs/experiments/T8_GDN_PREFIX_BOUNDARY_ISSUE_20260712.md`。
+
 ## 2026-07-12 干净实例 T1-T4 重建
 
 当前唯一远端目标为 `ssh-987372d0.default.gpu.phanthy.com`，远端代码目录为

@@ -74,3 +74,12 @@ hardware, exact-startup, and full-smoke gates passed. Across three strict seeded
 A/B pairs, weighted proxy score improved by 7.67% on average, TTFT P90 improved
 by 16.01%, and input/cache TPS improved by 7.96%. The change is retained; see
 `docs/experiments/T7_MOE_GROUPING_20260712.md`.
+
+## T8 blocker
+
+The current GDN prefix-state cache saves state after the whole prompt while its
+key covers only complete 16-token KV blocks. An unaligned 3,678-token prompt was
+stored under the 3,664-token boundary, and a cached replay produced different
+output from the identical uncached request. The initial T8 experiment was
+reverted by `42fc9b7`. T8 is paused for a boundary-exact state-capture design;
+see `docs/experiments/T8_GDN_PREFIX_BOUNDARY_ISSUE_20260712.md`.
