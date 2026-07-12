@@ -90,6 +90,7 @@ def main() -> int:
     parser.add_argument("--target-prompt-tokens", type=int, default=99500)
     parser.add_argument("--max-tokens", type=int, default=16)
     parser.add_argument("--max-model-len", type=int, default=100000)
+    parser.add_argument("--min-cached-tokens", type=int, default=98304)
     parser.add_argument("--timeout-s", type=float, default=1800)
     parser.add_argument("--run-id", default=str(time.time_ns()))
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -110,29 +111,30 @@ def main() -> int:
         "seed": 20260712,
     }
 
-    first, first_elapsed = post_chat(args.base, payload, args.timeout_s)
-    second, second_elapsed = post_chat(args.base, payload, args.timeout_s)
-    first_summary = summarize(first, first_elapsed)
-    second_summary = summarize(second, second_elapsed)
-    assert first_summary["prompt_tokens"] == args.target_prompt_tokens, first_summary
-    assert second_summary["prompt_tokens"] == args.target_prompt_tokens, second_summary
-    assert first_summary["cached_tokens"] == 0, first_summary
-    assert second_summary["cached_tokens"] >= 98304, second_summary
-    assert_equivalent(first, second)
-
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    first, first_elapsed = post_chat(args.base, payload, args.timeout_s)
     (args.output_dir / "long_context_response1.json").write_text(
         json.dumps(first, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    second, second_elapsed = post_chat(args.base, payload, args.timeout_s)
     (args.output_dir / "long_context_response2.json").write_text(
         json.dumps(second, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    first_summary = summarize(first, first_elapsed)
+    second_summary = summarize(second, second_elapsed)
     report = {
         "target_prompt_tokens": args.target_prompt_tokens,
         "max_tokens": args.max_tokens,
+        "min_cached_tokens": args.min_cached_tokens,
         "first": first_summary,
         "second": second_summary,
     }
     (args.output_dir / "long_context_summary.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    assert first_summary["prompt_tokens"] == args.target_prompt_tokens, first_summary
+    assert second_summary["prompt_tokens"] == args.target_prompt_tokens, second_summary
+    assert first_summary["cached_tokens"] == 0, first_summary
+    assert_equivalent(first, second)
+    assert second_summary["cached_tokens"] >= args.min_cached_tokens, second_summary
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
