@@ -486,7 +486,7 @@ class PagedAttention:
         q_seq = (query.permute(1, 0, 2)
                       .float()
                       .view(num_kv_heads, gqa_ratio, q_len, head_dim)
-                      .mul_(scale))
+                      .mul(scale))
         m = torch.full((num_kv_heads, gqa_ratio, q_len),
                        float('-inf'), dtype=torch.float32, device=dev)
         l = torch.zeros_like(m)

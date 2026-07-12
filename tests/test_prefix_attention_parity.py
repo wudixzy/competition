@@ -42,6 +42,9 @@ class PrefixAttentionParityTest(unittest.TestCase):
         query = torch.randn(token_count, num_q_heads, head_dim)
         key = torch.randn(token_count, num_kv_heads, head_dim)
         value = torch.randn(token_count, num_kv_heads, head_dim)
+        original_query = query.clone()
+        original_key = key.clone()
+        original_value = value.clone()
 
         num_blocks = (token_count + block_size - 1) // block_size
         padded_key = torch.zeros(
@@ -80,6 +83,9 @@ class PrefixAttentionParityTest(unittest.TestCase):
             torch.tensor([token_count - 1]),
         )
 
+        torch.testing.assert_close(query, original_query, rtol=0, atol=0)
+        torch.testing.assert_close(key, original_key, rtol=0, atol=0)
+        torch.testing.assert_close(value, original_value, rtol=0, atol=0)
         torch.testing.assert_close(
             full_output[-1:], cached_output, rtol=0, atol=0)
 
