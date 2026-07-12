@@ -66,3 +66,11 @@ passed small parity but produced non-finite values at layer 0 in the real startu
 profile. It was reverted in `865ec8a`; see
 `docs/experiments/T6_GDN_INVERSE_20260712.md`. T6 is paused for review before a
 different numerical approach is selected.
+
+## T7 result
+
+Commit `9cb31f3` groups MoE prefill routes once with a stable sort. All parity,
+hardware, exact-startup, and full-smoke gates passed. Across three strict seeded
+A/B pairs, weighted proxy score improved by 7.67% on average, TTFT P90 improved
+by 16.01%, and input/cache TPS improved by 7.96%. The change is retained; see
+`docs/experiments/T7_MOE_GROUPING_20260712.md`.
