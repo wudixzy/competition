@@ -289,6 +289,13 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("bi100_timer", qwen_src)
         self.assertIn("bi100_timer", paged_src)
 
+    def test_docker_invokes_patch_ops_with_explicit_bash(self):
+        dockerfile = read("Dockerfile")
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        self.assertIn(
+            "RUN cd ./qwen3_6_scripts && bash ./patch_ops.sh", dockerfile)
+        self.assertEqual(patch_ops.splitlines()[0], "#!/usr/bin/env bash")
+
     def test_patch_ops_uses_offline_transformers_wheel_and_import_gate(self):
         src = read("qwen3_6_scripts/patch_ops.sh")
         self.assertIn("--no-index", src)
