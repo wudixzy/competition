@@ -83,3 +83,9 @@ stored under the 3,664-token boundary, and a cached replay produced different
 output from the identical uncached request. The initial T8 experiment was
 reverted by `42fc9b7`. T8 is paused for a boundary-exact state-capture design;
 see `docs/experiments/T8_GDN_PREFIX_BOUNDARY_ISSUE_20260712.md`.
+
+The first boundary-capture implementation proved that GDN state restoration
+alone is insufficient: the uncached and cached full-attention paths partition
+the online-softmax reduction differently. Those experimental commits were
+reverted. T8 now requires matching full-attention segmentation at the same
+strict checkpoint boundary before state capture can be accepted.

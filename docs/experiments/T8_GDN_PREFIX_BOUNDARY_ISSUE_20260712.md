@@ -48,3 +48,29 @@ must capture per-layer GDN state before the final partial block, then prove:
 
 Disabling prefix caching would restore correctness but discard a workload lever
 covering about 65.6% of input tokens, so it is only a diagnostic fallback.
+
+## Boundary-capture follow-up
+
+Commits `c05fd52` and `9f95cb5` added a scheduler checkpoint mirror and captured
+all GDN states at strict block boundaries. Unit tests, MoE/GDN parity, hardware,
+NCCL, startup, and full smoke passed. A reconstructed 3,663-token case also
+matched exactly with 3,648 cached tokens.
+
+The original 8,712-token payload still diverged with an 8,176-token checkpoint:
+
+```text
+uncached: completion=18, finish=stop
+cached:   completion=32, finish=length
+```
+
+DEBUG logs proved that all four ranks restored the intended GDN checkpoint.
+The remaining mismatch is the full-attention partition: the uncached request
+computes the last 16 tokens inside an 8,192-token current chunk, while cached
+replay computes them as 8,176 context tokens plus 16 current tokens. The custom
+online-softmax fallback uses a different reduction partition in those paths.
+
+Both follow-up commits were reverted (`d837caa`, `4161d3f`). A complete solution
+must partition uncached full attention at the same strict checkpoint boundary as
+GDN, so suffix tokens use identical context/current tiling before their state is
+cached. This touches the core paged-attention fallback and requires explicit
+approval plus dedicated attention parity tests.
