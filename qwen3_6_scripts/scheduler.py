@@ -42,16 +42,13 @@ def _select_gdn_prefix_checkpoint(
 
 
 def _make_gdn_prefix_checkpoint(
-        block_table: List[int], previous_computed_tokens: int,
-        total_computed_tokens: int,
+        block_table: List[int], total_computed_tokens: int,
         block_size: int) -> Optional[Tuple[int, ...]]:
-    """Build the last complete-block key strictly before this step's end."""
-    if total_computed_tokens <= 1:
+    """Build a key only when model state and KV blocks share a boundary."""
+    if (total_computed_tokens <= 0
+            or total_computed_tokens % block_size != 0):
         return None
-    boundary_tokens = ((total_computed_tokens - 1) // block_size) * block_size
-    if boundary_tokens <= previous_computed_tokens:
-        return None
-    num_blocks = boundary_tokens // block_size
+    num_blocks = total_computed_tokens // block_size
     if len(block_table) < num_blocks:
         return None
     return tuple(block_table[:num_blocks])
@@ -1309,19 +1306,15 @@ class Scheduler:
                     self.block_manager.get_common_computed_block_ids(
                         seq_group.get_seqs(status=SequenceStatus.RUNNING)))
                 if seq_group.is_prefill():
-                    # vLLM's full-hit path recomputes the last token. Limit
-                    # candidates to a strict prefix of this scheduled step,
-                    # not merely a strict prefix of the complete prompt.
+                    # vLLM's full-hit path recomputes the last token. A GDN
+                    # checkpoint at the end of the prompt is therefore one
+                    # token too far ahead; only consider strict prefixes.
                     prompt_seq = seq_group.get_seqs(
                         status=SequenceStatus.RUNNING)[0]
-                    scheduled_seq_len = min(
-                        prompt_seq.data.get_len(),
-                        prompt_seq.data.get_num_computed_tokens()
-                        + token_chunk_size)
                     common_computed_block_nums = (
                         _limit_gdn_blocks_to_strict_prefix(
                             common_computed_block_nums,
-                            scheduled_seq_len,
+                            prompt_seq.data.get_len(),
                             self.cache_config.block_size))
                     common_computed_block_nums = (
                         _select_gdn_prefix_checkpoint(
@@ -1359,7 +1352,6 @@ class Scheduler:
 
                 checkpoint_key = _make_gdn_prefix_checkpoint(
                     block_tables[seqs[0].seq_id],
-                    num_computed_tokens,
                     num_computed_tokens + token_chunk_size,
                     self.cache_config.block_size)
                 # On a new request with a prefix hit, attention metadata only

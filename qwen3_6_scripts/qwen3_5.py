@@ -72,24 +72,6 @@ def _check_gdn_finite(tensor: torch.Tensor, *, layer_idx: int,
     return torch.nan_to_num(tensor, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-def _gdn_capture_offset(context_len: int, query_len: int,
-                        block_size: int) -> Optional[int]:
-    if query_len <= 1:
-        return None
-    boundary = ((context_len + query_len - 1) // block_size) * block_size
-    offset = boundary - context_len
-    return offset if 0 < offset < query_len else None
-
-
-def _gdn_segment_ends(seq_len: int, chunk_size: int,
-                      capture_offset: Optional[int]) -> List[int]:
-    ends = list(range(chunk_size, seq_len, chunk_size))
-    ends.append(seq_len)
-    if capture_offset is not None and 0 < capture_offset < seq_len:
-        ends.append(capture_offset)
-    return sorted(set(ends))
-
-
 def _torch_causal_conv1d_update(
     hidden_states: torch.Tensor,   # (batch, channels, seq=1)
     conv_state: torch.Tensor,       # (batch, channels, state_len)  modified in-place
@@ -321,8 +303,6 @@ class GatedDeltaNet(nn.Module):
         # Gated RMSNorm on head_v_dim — replicated (head_v_dim=128 is small)
         self.norm = Qwen3_5RMSNormGated(self.head_v_dim,
                                         eps=text_cfg.rms_norm_eps)
-        self.captured_conv_state: Optional[torch.Tensor] = None
-        self.captured_temporal_state: Optional[torch.Tensor] = None
 
     def _conv1d_weight_loader(self, param: torch.Tensor,
                               loaded_weight: torch.Tensor) -> None:
@@ -347,7 +327,6 @@ class GatedDeltaNet(nn.Module):
         attn_metadata: AttentionMetadata,
         conv_state: torch.Tensor,          # (batch, local_conv_dim, kernel-1)  in-place
         temporal_state: torch.Tensor,      # (batch, local_v_heads, k_dim, v_dim)  in-place
-        capture_offset: Optional[int] = None,
     ) -> torch.Tensor:
         tp_size = get_tensor_model_parallel_world_size()
         local_key_dim = self.key_dim // tp_size
@@ -355,8 +334,6 @@ class GatedDeltaNet(nn.Module):
         local_num_v = self.num_v_heads // tp_size
         local_num_k = self.num_k_heads // tp_size
         local_conv_dim = self.conv_dim // tp_size
-        self.captured_conv_state = None
-        self.captured_temporal_state = None
 
         is_prefill = attn_metadata.num_prefill_tokens > 0
 
@@ -396,12 +373,6 @@ class GatedDeltaNet(nn.Module):
 
                 # Causal conv: left-pad with previous conv state (not zeros).
                 padded = torch.cat([prev_conv, mixed_qkv], dim=2)
-                seq_capture_offset = capture_offset if si == 0 else None
-                if (seq_capture_offset is not None
-                        and 0 < seq_capture_offset < seq_len):
-                    self.captured_conv_state = padded[
-                        0, :, seq_capture_offset:
-                        seq_capture_offset + state_len].clone()
                 mixed_qkv_conv = F.conv1d(
                     padded, self.conv1d_weight,
                     bias=None, padding=0, groups=local_conv_dim)
@@ -432,11 +403,9 @@ class GatedDeltaNet(nn.Module):
                 # State is chained via initial_state / output_final_state.
                 cur_state = temporal_state[si:si + 1].clone()
                 core_out_parts = []
-                segment_ends = _gdn_segment_ends(
-                    seq_len, _DNN_CHUNK_SIZE, seq_capture_offset)
-                sc_start = 0
                 with bi100_timer(f"L{self.layer_idx}.gdn.prefill"):
-                    for sc_end in segment_ends:
+                    for sc_start in range(0, seq_len, _DNN_CHUNK_SIZE):
+                        sc_end = min(sc_start + _DNN_CHUNK_SIZE, seq_len)
                         c_out, cur_state = _torch_chunk_gated_delta_rule(
                             q[:, sc_start:sc_end],
                             k[:, sc_start:sc_end],
@@ -448,9 +417,6 @@ class GatedDeltaNet(nn.Module):
                             use_qk_l2norm_in_kernel=True,
                         )
                         core_out_parts.append(c_out)
-                        if sc_end == seq_capture_offset:
-                            self.captured_temporal_state = cur_state[0].clone()
-                        sc_start = sc_end
                 if cur_state is not None:
                     temporal_state[si].copy_(cur_state[0])
                 # [1, seq_len, num_v_heads, head_v_dim]
@@ -949,7 +915,6 @@ class Qwen3_5DecoderLayer(nn.Module):
         # Only for linear_attention layers:
         conv_state: Optional[torch.Tensor] = None,
         temporal_state: Optional[torch.Tensor] = None,
-        gdn_capture_offset: Optional[int] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if residual is None:
             residual = hidden_states
@@ -959,8 +924,7 @@ class Qwen3_5DecoderLayer(nn.Module):
 
         if self.layer_type == "linear_attention":
             hidden_states = self.linear_attn(
-                hidden_states, attn_metadata, conv_state, temporal_state,
-                capture_offset=gdn_capture_offset)
+                hidden_states, attn_metadata, conv_state, temporal_state)
         else:
             hidden_states = self.self_attn(
                 positions, hidden_states, kv_cache, attn_metadata)
@@ -1004,15 +968,12 @@ class Qwen3_5Model(nn.Module):
         attn_metadata: AttentionMetadata,
         conv_states: torch.Tensor,     # (num_linear_layers, batch, ...)
         temporal_states: torch.Tensor, # (num_linear_layers, batch, ...)
-        gdn_capture_offset: Optional[int] = None,
     ) -> torch.Tensor:
         hidden_states = self.embed_tokens(input_ids)
         residual = None
 
         attn_idx = 0
         linear_idx = 0
-        captured_conv_states = []
-        captured_temporal_states = []
         for layer in self.layers:
             if layer.layer_type == "linear_attention":
                 hidden_states, residual = layer(
@@ -1022,15 +983,7 @@ class Qwen3_5Model(nn.Module):
                     residual=residual,
                     conv_state=conv_states[linear_idx],
                     temporal_state=temporal_states[linear_idx],
-                    gdn_capture_offset=gdn_capture_offset,
                 )
-                if gdn_capture_offset is not None:
-                    assert layer.linear_attn.captured_conv_state is not None
-                    assert layer.linear_attn.captured_temporal_state is not None
-                    captured_conv_states.append(
-                        layer.linear_attn.captured_conv_state)
-                    captured_temporal_states.append(
-                        layer.linear_attn.captured_temporal_state)
                 linear_idx += 1
             else:
                 kv_cache = kv_caches[attn_idx]
@@ -1043,12 +996,6 @@ class Qwen3_5Model(nn.Module):
                 attn_idx += 1
 
         hidden_states, _ = self.norm(hidden_states, residual)
-        self.captured_conv_states = (
-            torch.stack(captured_conv_states)
-            if captured_conv_states else None)
-        self.captured_temporal_states = (
-            torch.stack(captured_temporal_states)
-            if captured_temporal_states else None)
         return hidden_states
 
 
@@ -1202,26 +1149,20 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
                                      context_len, num_prefix_blocks)
         # ── End inject ──────────────────────────────────────────────────────────
 
-        gdn_capture_offset = None
-        if _is_single_seq_prefill:
-            context_len = int(attn_metadata.context_lens_tensor[0].item())
-            query_len = attn_metadata.num_prefill_tokens
-            gdn_capture_offset = _gdn_capture_offset(
-                context_len, query_len, self._block_size)
-
         hidden_states = self.model(
             input_ids, positions, kv_caches, attn_metadata,
-            conv_states, temporal_states,
-            gdn_capture_offset=gdn_capture_offset)
+            conv_states, temporal_states)
 
         # ── GDN prefix-cache align mode: save state after this prefill chunk ───
         # Save state keyed by ALL complete KV blocks processed so far.
         # Next requests reusing this prefix will restore from here.
-        if _is_single_seq_prefill and gdn_capture_offset is not None:
+        if _is_single_seq_prefill:
             context_len = int(attn_metadata.context_lens_tensor[0].item())
-            boundary = context_len + gdn_capture_offset
-            num_complete_blocks = boundary // self._block_size
-            if (num_complete_blocks > 0
+            query_len = attn_metadata.num_prefill_tokens
+            total_processed = context_len + query_len
+            num_complete_blocks = total_processed // self._block_size
+            if (total_processed % self._block_size == 0
+                    and num_complete_blocks > 0
                     and attn_metadata.block_tables.shape[1] >= num_complete_blocks):
                 save_key = tuple(
                     attn_metadata.block_tables[0, :num_complete_blocks]
@@ -1229,11 +1170,9 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
                 # Move to end (LRU: most recent = last) and update value
                 if save_key in self._gdn_prefix_cache:
                     self._gdn_prefix_cache.move_to_end(save_key)
-                assert self.model.captured_conv_states is not None
-                assert self.model.captured_temporal_states is not None
                 self._gdn_prefix_cache[save_key] = (
-                    self.model.captured_conv_states.cpu().clone(),
-                    self.model.captured_temporal_states.cpu().clone(),
+                    conv_states[:, 0].cpu().clone(),
+                    temporal_states[:, 0].cpu().clone(),
                 )
                 # Evict oldest entries beyond max
                 while len(self._gdn_prefix_cache) > self._gdn_prefix_cache_max:

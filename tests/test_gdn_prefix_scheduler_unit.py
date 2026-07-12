@@ -48,27 +48,18 @@ class GdnPrefixSchedulerTest(unittest.TestCase):
     def test_checkpoint_requires_exact_block_boundary(self):
         helpers = _load_helpers()
         make = helpers["_make_gdn_prefix_checkpoint"]
-        self.assertEqual(
-            make(list(range(300)), 0, 3678, 16), tuple(range(229)))
-        self.assertEqual(
-            make(list(range(300)), 0, 3680, 16), tuple(range(229)))
+        self.assertIsNone(make(list(range(300)), 3678, 16))
+        self.assertEqual(make(list(range(300)), 3664, 16), tuple(range(229)))
 
     def test_checkpoint_rejects_short_block_table(self):
         helpers = _load_helpers()
         make = helpers["_make_gdn_prefix_checkpoint"]
-        self.assertIsNone(make([1], 0, 48, 16))
-
-    def test_checkpoint_requires_new_complete_block(self):
-        helpers = _load_helpers()
-        make = helpers["_make_gdn_prefix_checkpoint"]
-        self.assertIsNone(make(list(range(600)), 8192, 8200, 16))
-        self.assertEqual(
-            make(list(range(600)), 8192, 8712, 16), tuple(range(544)))
+        self.assertIsNone(make([1, 2], 48, 16))
 
     def test_full_hit_is_limited_to_strict_prefix(self):
         helpers = _load_helpers()
         limit = helpers["_limit_gdn_blocks_to_strict_prefix"]
-        self.assertEqual(limit(list(range(512)), 8192, 16), list(range(511)))
+        self.assertEqual(limit(list(range(230)), 3680, 16), list(range(229)))
         self.assertEqual(limit([1], 1, 16), [])
 
 
