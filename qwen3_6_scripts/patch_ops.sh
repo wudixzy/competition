@@ -30,6 +30,11 @@
 
 set -euo pipefail
 
+build_stage() { printf '[BI100 BUILD] %s\n' "$1" >&2; }
+
+build_stage "patch script entered"
+
+build_stage "checking offline transformers dependency"
 # --- transformers: Qwen3_5 tokenizer / model files --------------------------
 TRANSFORMERS_REQUIRED_VERSION="4.55.3"
 if ! python3 - "$TRANSFORMERS_REQUIRED_VERSION" <<'PY'
@@ -65,6 +70,7 @@ if installed != required:
 print(f"[ok] transformers {installed}")
 PY
 
+build_stage "discovering Python package roots"
 python3 - <<'PY' > /tmp/qwen36_patch_paths.env
 from patch_utils import package_root, shell_env_line
 
@@ -76,6 +82,7 @@ source /tmp/qwen36_patch_paths.env
 echo "VLLM_ROOT=${VLLM_ROOT}"
 echo "TRANSFORMERS_ROOT=${TRANSFORMERS_ROOT}"
 
+build_stage "installing BI100 runtime modules"
 cp ./bi100_env.py "${VLLM_ROOT}/bi100_env.py"
 cp ./bi100_profile.py "${VLLM_ROOT}/bi100_profile.py"
 
@@ -96,10 +103,15 @@ cp ./paged_attn.py "${VLLM_ROOT}/attention/ops/paged_attn.py"
 # Fix: set prefix_cache_hit=False for Case 1 so the full block_tables is used.
 python3 ./patch_model_runner.py
 
+build_stage "installing executor startup diagnostics"
+python3 ./patch_executor_startup_debug.py
+
+build_stage "installing transformers Qwen3.5 model support"
 cp -r ./qwen3_5 "${TRANSFORMERS_ROOT}/models/"
 cp -r ./qwen3_5_moe "${TRANSFORMERS_ROOT}/models/"
 python3 ./patch_transformers_qwen3_5.py
 
+build_stage "installing vLLM Qwen3.6 model implementation"
 # --- vllm model: Qwen3.6-35B-A3B (Qwen3_5 MoE arch) -------------------------
 cp ./mamba_cache.py "${VLLM_ROOT}/model_executor/models/"
 cp ./qwen3_5.py "${VLLM_ROOT}/model_executor/models/qwen3_5.py"
@@ -119,6 +131,7 @@ cp ./sequence.py "${VLLM_ROOT}/sequence.py"
 # usage.prompt_tokens_details.cached_tokens (OpenAI-compatible API response).
 cp ./scheduler.py "${VLLM_ROOT}/core/scheduler.py"
 
+build_stage "installing scheduler and attention patches"
 # --- xformers: bypass cudnnFlashAttnForward (head_dim=256 > 128 limit) ------
 # Injects _run_sdpa_fallback (pure matmul+softmax) into xformers.py.
 # Required because head_dim=256 > 128 and ixformer flash attention either
@@ -128,6 +141,7 @@ cp ./scheduler.py "${VLLM_ROOT}/core/scheduler.py"
 # also bypasses auto chunked prefill on
 python3 ./patch_xformers_sdpa_seq.py
 
+build_stage "installing API parsers and serving modules"
 # --- tool parser: Qwen3 XML tool call format ---------------------------------
 # Registers "qwen3_coder" parser for Qwen3.6 XML-style tool calls:
 #   <tool_call><function=name><parameter=key>\nvalue\n</parameter></function></tool_call>
@@ -146,4 +160,6 @@ cp ./serving_chat.py "${VLLM_ROOT}/entrypoints/openai/serving_chat.py"
 cp ./api_server.py "${VLLM_ROOT}/entrypoints/openai/api_server.py"
 cp ./chat_utils.py "${VLLM_ROOT}/entrypoints/chat_utils.py"
 
+build_stage "compiling submission Python sources"
 find . -path './wheels' -prune -o -name '*.py' -print0 | xargs -0 python3 -m py_compile
+build_stage "patch script completed"

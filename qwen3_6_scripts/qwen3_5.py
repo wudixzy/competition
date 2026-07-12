@@ -4,7 +4,19 @@
 
 from collections import OrderedDict
 import os
+import sys
+import time
 from typing import Dict, Iterable, List, Optional, Tuple
+
+def _bi100_model_trace(message: str) -> None:
+    if os.getenv("BI100_EXECUTOR_STARTUP_DEBUG") == "1":
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        rank = os.getenv("RANK", os.getenv("LOCAL_RANK", "?"))
+        print(f"[BI100 STARTUP] {stamp} pid={os.getpid()} rank={rank} {message}",
+              file=sys.stderr, flush=True)
+
+
+_bi100_model_trace("qwen3_5 stdlib imports complete; importing torch and vLLM")
 
 import torch
 import torch.nn.functional as F
@@ -43,6 +55,8 @@ from vllm.bi100_profile import bi100_timer
 from vllm.model_executor.models.interfaces import HasInnerState, SupportsLoRA
 
 logger = init_logger(__name__)
+
+_bi100_model_trace("qwen3_5 runtime imports complete")
 
 _ALLOW_GDN_NAN_ZERO = env_bool("BI100_GDN_ALLOW_NAN_ZERO", False)
 _DNN_CHUNK_SIZE = env_int("BI100_DNN_CHUNK", 4096, 64, 65536)
@@ -1082,6 +1096,7 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
         scheduler_config: Optional[SchedulerConfig] = None,
         prefix: str = "",
     ) -> None:
+        _bi100_model_trace("Qwen3_5ForCausalLM initialization begin")
         super().__init__()
         self.config = config
         self.scheduler_config = scheduler_config
@@ -1130,6 +1145,8 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
         self._gdn_prefix_cache_max: int = 16   # ~16 × 16 MB ≈ 256 MB CPU RAM
         self._block_size: int = (cache_config.block_size
                                   if cache_config is not None else 16)
+        self._startup_forward_traced = False
+        _bi100_model_trace("Qwen3_5ForCausalLM initialization complete")
 
     def _get_mamba_cache_shape(self):
         tp_size = get_tensor_model_parallel_world_size()
@@ -1148,6 +1165,9 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
         intermediate_tensors: Optional[IntermediateTensors] = None,
         **kwargs,
     ) -> torch.Tensor:
+        if not self._startup_forward_traced:
+            self._startup_forward_traced = True
+            _bi100_model_trace("first model forward entered")
         if self.mamba_cache is None:
             if self.scheduler_config is not None:
                 max_batch_size = _get_graph_batch_size(
@@ -1271,6 +1291,8 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
         return self.mamba_cache.get_seqlen_agnostic_capture_inputs(batch_size)
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
+        _bi100_model_trace("dense load_weights begin")
+        loaded_count = 0
         stacked_params_mapping = [
             # (param_name, weight_name, shard_id)
             ("gate_up_proj", "gate_proj", 0),
@@ -1279,6 +1301,7 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
         params_dict = dict(self.named_parameters())
 
         for name, loaded_weight in weights:
+            loaded_count += 1
             # Skip vision and MTP branches
             if (name.startswith("model.visual")
                     or name.startswith("mtp.")
@@ -1321,6 +1344,7 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA):
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
                 weight_loader(param, loaded_weight)
+        _bi100_model_trace(f"dense load_weights complete items={loaded_count}")
 
 
 # ---------------------------------------------------------------------------
@@ -1334,6 +1358,8 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLM):
     """
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
+        _bi100_model_trace("MoE load_weights begin")
+        loaded_count = 0
         # Checkpoint key format for this model (transformers Qwen3_5MoeExperts):
         #   mlp.experts.gate_up_proj  shape (num_experts, 2*intermediate, hidden)
         #   mlp.experts.down_proj     shape (num_experts, hidden, intermediate)
@@ -1359,6 +1385,7 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLM):
         params_dict = dict(self.named_parameters())
 
         for name, loaded_weight in weights:
+            loaded_count += 1
             # Skip vision and MTP branches
             if (name.startswith("model.visual")
                     or name.startswith("mtp.")
@@ -1465,3 +1492,4 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLM):
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 weight_loader(param, loaded_weight)
+        _bi100_model_trace(f"MoE load_weights complete items={loaded_count}")

@@ -242,7 +242,7 @@ class P0StaticCoverageTest(unittest.TestCase):
     def test_executor_startup_debug_is_opt_in(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         debug_src = read("qwen3_6_scripts/patch_executor_startup_debug.py")
-        self.assertNotIn("patch_executor_startup_debug.py", patch_ops)
+        self.assertIn("patch_executor_startup_debug.py", patch_ops)
         self.assertIn("BI100_EXECUTOR_STARTUP_DEBUG", debug_src)
         self.assertIn("os.getenv", debug_src)
         self.assertIn('\\"1\\"', debug_src)
@@ -250,6 +250,21 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("[BI100 worker]", debug_src)
         self.assertIn("required=True", debug_src)
         self.assertIn("already_contains=", debug_src)
+
+    def test_benchmark_startup_trace_has_critical_stages(self):
+        api_src = read("qwen3_6_scripts/api_server.py")
+        model_src = read("qwen3_6_scripts/qwen3_5.py")
+        for marker in ["api_server stdlib imports complete",
+                       "engine client construction completed",
+                       "starting HTTP server"]:
+            self.assertIn(marker, api_src)
+        for marker in ["qwen3_5 stdlib imports complete",
+                       "Qwen3_5ForCausalLM initialization begin",
+                       "first model forward entered",
+                       "MoE load_weights complete"]:
+            self.assertIn(marker, model_src)
+        self.assertIn("flush=True", api_src)
+        self.assertIn("flush=True", model_src)
 
     def test_env_knobs_are_registered_and_strongly_validated(self):
         env_src = read("qwen3_6_scripts/bi100_env.py")
@@ -304,6 +319,11 @@ class P0StaticCoverageTest(unittest.TestCase):
             self.assertIn(fragment, dockerfile)
         self.assertIn(
             "RUN cd ./qwen3_6_scripts && bash ./patch_ops.sh", dockerfile)
+        for name in ["VLLM_ENGINE_ITERATION_TIMEOUT_S=3600",
+                     "PYTHONUNBUFFERED=1", "PYTHONFAULTHANDLER=1",
+                     "BI100_EXECUTOR_STARTUP_DEBUG=1"]:
+            self.assertIn(name, dockerfile)
+        self.assertIn("[BI100 BUILD]", patch_ops)
         self.assertEqual(patch_ops.splitlines()[0], "#!/usr/bin/env bash")
 
     def test_patch_ops_uses_offline_transformers_wheel_and_metadata_gate(self):
@@ -317,7 +337,8 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("pypi.tuna", src)
         self.assertIn("python3 -m py_compile", src)
         self.assertNotIn("patched vllm imports", src)
-        self.assertTrue(src.rstrip().endswith("python3 -m py_compile"))
+        self.assertTrue(
+            src.rstrip().endswith('build_stage "patch script completed"'))
 
     def test_worker_profile_override_patch_is_diagnostic_only(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")

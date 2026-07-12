@@ -6,12 +6,24 @@ import os
 import regex as re
 import signal
 import socket
+import sys
 import tempfile
+import time
 from argparse import Namespace
 from contextlib import asynccontextmanager
 from functools import partial
 from http import HTTPStatus
 from typing import AsyncIterator, Set
+
+
+def _bi100_startup_trace(message: str) -> None:
+    if os.getenv("BI100_EXECUTOR_STARTUP_DEBUG") == "1":
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        print(f"[BI100 STARTUP] {stamp} pid={os.getpid()} {message}",
+              file=sys.stderr, flush=True)
+
+
+_bi100_startup_trace("api_server stdlib imports complete; loading runtime dependencies")
 
 import uvloop
 from fastapi import APIRouter, FastAPI, Request
@@ -70,6 +82,8 @@ logger = init_logger('vllm.entrypoints.openai.api_server')
 
 _running_tasks: Set[asyncio.Task] = set()
 
+_bi100_startup_trace("api_server runtime imports complete")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -101,12 +115,15 @@ async def lifespan(app: FastAPI):
 async def build_async_engine_client(
         args: Namespace) -> AsyncIterator[EngineClient]:
 
+    _bi100_startup_trace("building AsyncEngineArgs")
     # Context manager to handle engine_client lifecycle
     # Ensures everything is shutdown and cleaned up on error/exit
     engine_args = AsyncEngineArgs.from_cli_args(args)
 
+    _bi100_startup_trace("entering engine client construction")
     async with build_async_engine_client_from_engine_args(
             engine_args, args.disable_frontend_multiprocessing) as engine:
+        _bi100_startup_trace("engine client construction completed")
         yield engine
 
 
@@ -527,6 +544,7 @@ def init_app_state(
 
 
 async def run_server(args, **uvicorn_kwargs) -> None:
+    _bi100_startup_trace("run_server entered")
     logger.info("vLLM API server version %s", VLLM_VERSION)
     logger.info("args: %s", args)
 
@@ -559,12 +577,17 @@ async def run_server(args, **uvicorn_kwargs) -> None:
 
     signal.signal(signal.SIGTERM, signal_handler)
 
+    _bi100_startup_trace("starting engine client context")
     async with build_async_engine_client(args) as engine_client:
+        _bi100_startup_trace("building FastAPI application")
         app = build_app(args)
 
+        _bi100_startup_trace("requesting model config from engine")
         model_config = await engine_client.get_model_config()
+        _bi100_startup_trace("model config received; initializing app state")
         init_app_state(engine_client, model_config, app.state, args)
 
+        _bi100_startup_trace("starting HTTP server")
         shutdown_task = await serve_http(
             app,
             host=args.host,
@@ -584,6 +607,7 @@ async def run_server(args, **uvicorn_kwargs) -> None:
 
 
 if __name__ == "__main__":
+    _bi100_startup_trace("api_server __main__ entered")
     # NOTE(simon):
     # This section should be in sync with vllm/scripts.py for CLI entrypoints.
     parser = FlexibleArgumentParser(
@@ -591,5 +615,8 @@ if __name__ == "__main__":
     parser = make_arg_parser(parser)
     args = parser.parse_args()
     validate_parsed_serve_args(args)
+    _bi100_startup_trace(
+        f"arguments parsed model={args.model} tp={args.tensor_parallel_size} "
+        f"max_model_len={args.max_model_len}")
 
     uvloop.run(run_server(args))
