@@ -120,6 +120,8 @@ python tests/bench_perf.py --base http://127.0.0.1:8000 \
   --max-tokens 64 --prompt-salt fixed-contract --out bench-fixed.json
 python tests/prefix_cache_stress.py --base http://127.0.0.1:8000 \
   --eviction-count 17 --json-out prefix-cache-stress.json
+python tests/long_context_api.py --base http://127.0.0.1:8000 \
+  --target-prompt-tokens 99500 --output-dir long-context-artifacts
 ```
 
 `smoke_api.py --mode quick` 覆盖基础 chat、thinking=false 三种格式、
@@ -136,6 +138,9 @@ Output TPS P10、Input TPS、Cache TPS、缓存命中率和加权分。
 `prefix_cache_stress.py` 使用本地 tokenizer 构造 16-token 对齐和未对齐长前缀，
 验证 A/B/A/B 交错会话隔离，并以 17 个不同前缀覆盖 GDN checkpoint LRU 的驱逐、
 安全重算和刷新后再次命中。
+
+`long_context_api.py` 精确构造 99,500-token chat prompt，在固定 100K 合同边界内
+验证首次 prefill、近全量 prefix hit、API usage 和两次响应等价性。
 
 BI100 预启动检查
 
