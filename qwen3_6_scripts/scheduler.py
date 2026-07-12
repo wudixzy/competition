@@ -64,6 +64,15 @@ def _limit_gdn_blocks_to_strict_prefix(
     return computed_block_nums[:max_blocks]
 
 
+def _accumulate_gdn_cached_tokens(
+        current_cached_tokens: Optional[int], num_computed_tokens: int,
+        selected_block_count: int, block_size: int) -> int:
+    """Count tokens skipped by staged GDN checkpoint restores."""
+    selected_tokens = selected_block_count * block_size
+    newly_cached_tokens = max(0, selected_tokens - num_computed_tokens)
+    return (current_cached_tokens or 0) + newly_cached_tokens
+
+
 class PreemptionMode(enum.Enum):
     """Preemption modes.
 
@@ -1342,12 +1351,14 @@ class Scheduler:
                 assert len(seqs) == 1
                 num_computed_tokens = seqs[0].data.get_num_computed_tokens()
                 is_first_prefill = num_computed_tokens == 0
-                if (is_first_prefill
-                        and self.cache_config.enable_prefix_caching
+                if (self.cache_config.enable_prefix_caching
                         and seq_group.metrics is not None):
                     seq_group.metrics.num_cached_tokens = (
-                        len(common_computed_block_nums)
-                        * self.cache_config.block_size)
+                        _accumulate_gdn_cached_tokens(
+                            seq_group.metrics.num_cached_tokens,
+                            num_computed_tokens,
+                            len(common_computed_block_nums),
+                            self.cache_config.block_size))
                 # In the next iteration, all prompt tokens are not computed.
                 # It means the prefill is chunked, and we don't need sampling.
                 # NOTE: We use get_len instead of get_prompt_len because when

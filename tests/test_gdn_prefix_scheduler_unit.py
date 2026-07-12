@@ -14,6 +14,7 @@ def _load_helpers():
         "_select_gdn_prefix_checkpoint",
         "_make_gdn_prefix_checkpoint",
         "_limit_gdn_blocks_to_strict_prefix",
+        "_accumulate_gdn_cached_tokens",
     }
     functions = [
         node for node in tree.body
@@ -70,6 +71,20 @@ class GdnPrefixSchedulerTest(unittest.TestCase):
         limit = helpers["_limit_gdn_blocks_to_strict_prefix"]
         self.assertEqual(limit(list(range(512)), 8192, 16), list(range(511)))
         self.assertEqual(limit([1], 1, 16), [])
+
+    def test_staged_checkpoint_hits_accumulate_actual_skips(self):
+        accumulate = _load_helpers()["_accumulate_gdn_cached_tokens"]
+        cached = accumulate(None, 0, 511, 16)
+        self.assertEqual(cached, 8176)
+        cached = accumulate(cached, 8192, 1023, 16)
+        self.assertEqual(cached, 16352)
+        cached = accumulate(cached, 16384, 1535, 16)
+        self.assertEqual(cached, 24528)
+
+    def test_checkpoint_behind_computed_position_is_not_counted(self):
+        accumulate = _load_helpers()["_accumulate_gdn_cached_tokens"]
+        self.assertEqual(accumulate(None, 8192, 511, 16), 0)
+        self.assertEqual(accumulate(8176, 16384, 1023, 16), 8176)
 
 
 if __name__ == "__main__":
