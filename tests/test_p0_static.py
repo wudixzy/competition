@@ -220,6 +220,12 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("NaN in prefill GatedDeltaNet", src)
         self.assertNotIn("NaN in decode GatedDeltaNet", src)
 
+    def test_moe_prefill_groups_routes_once(self):
+        src = read("qwen3_6_scripts/qwen3_5.py")
+        self.assertIn("torch.argsort(flat_eids, stable=True)", src)
+        self.assertIn("torch.bincount(", src)
+        self.assertNotIn("mask = (topk_ids == eid)", src)
+
     def test_executor_startup_debug_is_opt_in(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         debug_src = read("qwen3_6_scripts/patch_executor_startup_debug.py")

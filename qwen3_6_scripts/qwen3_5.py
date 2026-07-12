@@ -814,21 +814,33 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             out = (expert_out * ws.unsqueeze(-1)).sum(0, keepdim=True).to(
                 hidden_states.dtype)                           # (1, H)
         else:
-            # General path (prefill / multi-seq): loop over unique active experts.
-            # At most T*top_k unique experts, always <= num_experts.
+            # General path (prefill / multi-seq): group assignments once. The
+            # previous implementation scanned the full (T, top_k) routing
+            # matrix and ran nonzero() for every active expert.
             out = torch.zeros_like(hidden_states)
-            unique_eids = topk_ids.view(-1).unique().tolist()
-            for eid in unique_eids:
-                eid = int(eid)
-                mask = (topk_ids == eid)                       # (T, top_k)
-                tok_ids, topk_pos = mask.nonzero(as_tuple=True)
+            flat_eids = topk_ids.reshape(-1)
+            order = torch.argsort(flat_eids, stable=True)
+            sorted_tok_ids = torch.arange(
+                T, device=topk_ids.device).repeat_interleave(self.top_k)[order]
+            sorted_weights = topk_weights.reshape(-1)[order]
+            expert_counts = torch.bincount(
+                flat_eids, minlength=w13.shape[0]).tolist()
+
+            start = 0
+            for eid, count in enumerate(expert_counts):
+                end = start + count
+                if count == 0:
+                    start = end
+                    continue
+                tok_ids = sorted_tok_ids[start:end]
                 tokens = hidden_states[tok_ids]                # (n, H)
                 gate_up = F.linear(tokens, w13[eid])           # (n, 2*I)
                 gate, up = gate_up.chunk(2, dim=-1)
                 act = F.silu(gate) * up                        # (n, I)
                 expert_out = F.linear(act, w2[eid])            # (n, H)
-                weights = topk_weights[tok_ids, topk_pos].unsqueeze(-1)
+                weights = sorted_weights[start:end].unsqueeze(-1)
                 out.index_add_(0, tok_ids, (expert_out * weights).to(out.dtype))
+                start = end
 
         return out  # partial, all-reduce done in forward()
 

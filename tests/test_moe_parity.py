@@ -55,9 +55,9 @@ def _load_production_experts():
 @unittest.skipIf(torch is None, f"torch unavailable: {_TORCH_IMPORT_ERROR}")
 class MoEParityTest(unittest.TestCase):
 
-    def test_pure_pytorch_experts_matches_reference(self):
-        torch.manual_seed(5678)
-        tokens, hidden, experts, inter, top_k = 5, 16, 7, 9, 3
+    def _assert_shape_matches_reference(self, tokens, hidden, experts, inter,
+                                        top_k, seed):
+        torch.manual_seed(seed)
         hidden_states = torch.randn(tokens, hidden)
         router_logits = torch.randn(tokens, experts)
         w13 = torch.randn(experts, 2 * inter, hidden)
@@ -73,6 +73,15 @@ class MoEParityTest(unittest.TestCase):
             hidden_states, router_logits, w13, w2, top_k)
 
         self.assertLess(torch.max(torch.abs(actual - expected)).item(), 1e-3)
+
+    def test_pure_pytorch_experts_matches_reference(self):
+        self._assert_shape_matches_reference(5, 16, 7, 9, 3, 5678)
+
+    def test_single_token_fast_path_matches_reference(self):
+        self._assert_shape_matches_reference(1, 16, 7, 9, 3, 9012)
+
+    def test_sparse_expert_population_matches_reference(self):
+        self._assert_shape_matches_reference(17, 16, 31, 8, 2, 3456)
 
 
 if __name__ == "__main__":
