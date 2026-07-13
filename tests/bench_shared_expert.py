@@ -86,7 +86,7 @@ def main() -> int:
 
     def fused_projection_post_gate() -> torch.Tensor:
         projected = F.linear(hidden, fused_weight)
-        activation = activate(projected[:, :-1])
+        activation = activate(projected[:, :-1].contiguous())
         output = F.linear(activation, w2)
         return output * torch.sigmoid(projected[:, -1:])
 
@@ -97,7 +97,7 @@ def main() -> int:
 
     def fused_projection_pre_gate() -> torch.Tensor:
         projected = F.linear(hidden, fused_weight)
-        activation = activate(projected[:, :-1])
+        activation = activate(projected[:, :-1].contiguous())
         return F.linear(
             activation * torch.sigmoid(projected[:, -1:]), w2,
         )
