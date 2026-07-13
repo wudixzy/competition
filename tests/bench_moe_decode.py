@@ -120,12 +120,26 @@ def main() -> int:
             w2_selected, activation.unsqueeze(-1)).squeeze(-1)
         return (expert_out * weights.unsqueeze(-1)).sum(0, keepdim=True)
 
+    def compute_loop_views(expert_ids: list[int]) -> torch.Tensor:
+        outputs = []
+        for position, expert_id in enumerate(expert_ids):
+            gate_up = F.linear(hidden, w13[expert_id])
+            gate, up = gate_up.chunk(2, dim=-1)
+            activation = F.silu(gate) * up
+            outputs.append(F.linear(activation, w2[expert_id]))
+        expert_out = torch.cat(outputs, dim=0)
+        return (expert_out * weights.unsqueeze(-1)).sum(0, keepdim=True)
+
+    fixed_ids = list(range(args.top_k))
+
     with torch.no_grad():
         flat_reference = compute_flat(selected_w13, selected_w2)
         bmm_candidate = compute_bmm(selected_w13, selected_w2)
         current_reference = compute_flat(w13[eids], w2[eids])
+        loop_candidate = compute_loop_views(fixed_ids)
         if not all(torch.isfinite(output).all().item() for output in (
-                flat_reference, bmm_candidate, current_reference)):
+                flat_reference, bmm_candidate, current_reference,
+                loop_candidate)):
             raise RuntimeError("non-finite MoE output; benchmark parity is invalid")
         route_full = torch.softmax(logits.float(), dim=-1)
         route_weights, route_ids = torch.topk(
@@ -144,6 +158,10 @@ def main() -> int:
             ).max().item()),
             "current_max_abs": float(
                 (flat_reference - current_reference).abs().max().item()),
+            "loop_max_abs": float(
+                (flat_reference - loop_candidate).abs().max().item()),
+            "loop_mean_abs": float(
+                (flat_reference - loop_candidate).abs().mean().item()),
             "all_outputs_finite": True,
             "route_ids_equal": bool(torch.equal(route_ids, selected_ids)),
             "route_weight_max_abs": float(
@@ -162,6 +180,8 @@ def main() -> int:
                 torch.index_select(w2, 0, eids),
             ),
             "double_bmm_advanced": lambda: compute_bmm(w13[eids], w2[eids]),
+            "loop_views_fixed_ids": lambda: compute_loop_views(fixed_ids),
+            "loop_views_sync_ids": lambda: compute_loop_views(eids.tolist()),
             "compute_flat_preselected": lambda: compute_flat(
                 selected_w13, selected_w2),
             "compute_bmm_preselected": lambda: compute_bmm(
