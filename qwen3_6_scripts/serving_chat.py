@@ -128,6 +128,10 @@ class OpenAIServingChat(OpenAIServing):
         ChatCompletion API.
 
         """
+        if not request.messages:
+            return self.create_error_response(
+                "messages must contain at least one message")
+
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
             logger.error("Error with model %s", error_check_ret)

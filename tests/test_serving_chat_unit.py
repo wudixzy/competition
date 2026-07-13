@@ -5,6 +5,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SERVING_CHAT = ROOT / "qwen3_6_scripts" / "serving_chat.py"
+SERVING_CHAT_SOURCE = SERVING_CHAT.read_text()
 
 
 def _load_serialize_tool_arguments():
@@ -37,6 +38,19 @@ class ServingChatUnitTest(unittest.TestCase):
 
     def test_tool_arguments_none_defaults_to_empty_object(self):
         self.assertEqual(self.serialize(None), "{}")
+
+    def test_empty_messages_are_rejected_before_async_work(self):
+        guard = 'if not request.messages:'
+        guard_pos = SERVING_CHAT_SOURCE.index(guard)
+        self.assertIn("messages must contain at least one message",
+                      SERVING_CHAT_SOURCE)
+        for later_operation in [
+                "await self._check_model(request)",
+                "await self.engine_client.get_tokenizer(lora_request)",
+                "parse_chat_messages_futures(",
+        ]:
+            self.assertLess(
+                guard_pos, SERVING_CHAT_SOURCE.index(later_operation))
 
 
 if __name__ == "__main__":
