@@ -897,20 +897,23 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         return out  # partial, all-reduce done in forward()
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        router_logits, _ = self.gate(hidden_states)
+        with bi100_timer("moe.router_linear"):
+            router_logits, _ = self.gate(hidden_states)
         with bi100_timer("moe.routed"):
             routed_out = self._pure_pytorch_experts(hidden_states, router_logits)
 
-        gate_up, _ = self.shared_expert_gate_up(hidden_states)
-        shared_out = self.act_fn(gate_up)
-        shared_out, _ = self.shared_expert_down(shared_out)
-        # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style)
-        gate_score, _ = self.shared_expert_gate(hidden_states)  # (T, 1)
-        shared_out = shared_out * torch.sigmoid(gate_score)
+        with bi100_timer("moe.shared"):
+            gate_up, _ = self.shared_expert_gate_up(hidden_states)
+            shared_out = self.act_fn(gate_up)
+            shared_out, _ = self.shared_expert_down(shared_out)
+            # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style)
+            gate_score, _ = self.shared_expert_gate(hidden_states)  # (T, 1)
+            shared_out = shared_out * torch.sigmoid(gate_score)
 
         out = routed_out + shared_out
         if self.experts.tp_size > 1:
-            out = tensor_model_parallel_all_reduce(out)
+            with bi100_timer("moe.all_reduce"):
+                out = tensor_model_parallel_all_reduce(out)
         return out
 
 

@@ -307,6 +307,13 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("[BI100_PROFILE]", profile_src)
         self.assertIn("bi100_timer", qwen_src)
         self.assertIn("bi100_timer", paged_src)
+        for marker in [
+                "moe.router_linear",
+                "moe.routed",
+                "moe.shared",
+                "moe.all_reduce",
+        ]:
+            self.assertIn(marker, qwen_src)
 
     def test_docker_sets_corex_environment_and_invokes_explicit_bash(self):
         dockerfile = read("Dockerfile")
