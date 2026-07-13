@@ -13,5 +13,6 @@
 | `BI100_PROFILE_INCLUDE_STARTUP` | `0` | boolean | Includes vLLM synthetic startup `profile_run()` in BI100 timers; default skips it so profiling focuses on real requests and avoids perturbing startup dummy runs. | T5 |
 | `BI100_PYTORCH_DECODE_THRESHOLD` | `32768` | `1..262144` | Routes long-context decode to the pure PyTorch paged attention fallback. | T3 |
 | `BI100_UNSET_CUDA_VISIBLE_DEVICES` | `1` | boolean shell flag | Lets the contest container expose all four GPUs by default while allowing debug runs to preserve a caller-specified visibility mask. | T1 |
+| `ENABLE_CUSTOM_IPC` | `1` | boolean | Enables IxFormer CUDA-IPC all-reduce for same-node TP. Set `0` to restore the IxFormer NCCL path. E-COLL-01 measured +44.6% decode TPS P10 with 328 fewer GPU KV blocks; reduction order is quality-equivalent but not bit-exact. | E-COLL-01 |
 
 `NUM_GPU_BLOCKS_OVERRIDE` was used in an earlier diagnostic run but is no longer exposed by `launch_service`. Skipping vLLM synthetic profiling violates the fixed competition launch contract and is invalid for official comparison.
