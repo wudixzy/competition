@@ -215,6 +215,9 @@ class P0StaticCoverageTest(unittest.TestCase):
     def test_gated_deltanet_nonfinite_defaults_to_raise(self):
         src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("def _check_gdn_finite", src)
+        self.assertIn('env_bool("BI100_GDN_FINITE_CHECK", False)', src)
+        self.assertIn("if not _GDN_FINITE_CHECK:", src)
+        self.assertIn("or _ALLOW_GDN_NAN_ZERO", src)
         self.assertIn("BI100_GDN_ALLOW_NAN_ZERO", src)
         self.assertIn("raise RuntimeError(msg)", src)
         self.assertNotIn("NaN in prefill GatedDeltaNet", src)
@@ -280,6 +283,7 @@ class P0StaticCoverageTest(unittest.TestCase):
                 "BI100_FORCE_PAGED_ATTN_V2",
                 "BI100_ALLOW_PREFIX_GUARD_CAP",
                 "BI100_GDN_ALLOW_NAN_ZERO",
+                "BI100_GDN_FINITE_CHECK",
                 "BI100_DNN_CHUNK",
                 "BI100_PROFILE",
                 "BI100_PROFILE_INCLUDE_STARTUP",

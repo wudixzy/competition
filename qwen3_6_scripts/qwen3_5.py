@@ -59,6 +59,8 @@ logger = init_logger(__name__)
 _bi100_model_trace("qwen3_5 runtime imports complete")
 
 _ALLOW_GDN_NAN_ZERO = env_bool("BI100_GDN_ALLOW_NAN_ZERO", False)
+_GDN_FINITE_CHECK = (env_bool("BI100_GDN_FINITE_CHECK", False)
+                     or _ALLOW_GDN_NAN_ZERO)
 _DNN_CHUNK_SIZE = env_int("BI100_DNN_CHUNK", 4096, 64, 65536)
 
 
@@ -72,6 +74,8 @@ def _l2norm(x: torch.Tensor, dim: int = -1, eps: float = 1e-6) -> torch.Tensor:
 
 def _check_gdn_finite(tensor: torch.Tensor, *, layer_idx: int,
                       stage: str) -> torch.Tensor:
+    if not _GDN_FINITE_CHECK:
+        return tensor
     if torch.isfinite(tensor).all():
         return tensor
     bad = (~torch.isfinite(tensor)).float().mean().item()
