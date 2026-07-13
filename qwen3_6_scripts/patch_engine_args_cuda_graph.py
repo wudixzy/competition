@@ -1,9 +1,11 @@
-"""Restore vLLM's CLI-controlled eager/CUDA Graph selection.
+"""Switch vLLM between CLI-controlled and vendor-forced eager execution.
 
 The CoreX vLLM image hard-codes ``enforce_eager=True`` while constructing
 ``ModelConfig``.  That silently ignores the evaluator's normal CLI default and
 prevents the existing decode-only CUDA Graph path from ever being exercised.
 """
+
+import argparse
 
 from patch_utils import package_root, replace_once
 
@@ -21,10 +23,23 @@ CLI_CONTROLLED_BLOCK = """\
             max_context_len_to_capture=self.max_context_len_to_capture,"""
 
 
-replace_once(
-    ARG_UTILS,
-    VENDOR_BLOCK,
-    CLI_CONTROLLED_BLOCK,
-    required=True,
-    already_contains="enforce_eager=self.enforce_eager,",
-)
+parser = argparse.ArgumentParser()
+parser.add_argument("--restore-vendor-eager", action="store_true")
+args = parser.parse_args()
+
+if args.restore_vendor_eager:
+    replace_once(
+        ARG_UTILS,
+        CLI_CONTROLLED_BLOCK,
+        VENDOR_BLOCK,
+        required=True,
+        already_contains="            enforce_eager=True,\n",
+    )
+else:
+    replace_once(
+        ARG_UTILS,
+        VENDOR_BLOCK,
+        CLI_CONTROLLED_BLOCK,
+        required=True,
+        already_contains="enforce_eager=self.enforce_eager,",
+    )

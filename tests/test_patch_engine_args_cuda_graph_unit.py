@@ -32,12 +32,15 @@ def _make_fake_vllm(root: pathlib.Path, arg_utils_text: str) -> pathlib.Path:
     return target
 
 
-def _run_patch(fake_root: pathlib.Path) -> subprocess.CompletedProcess:
+def _run_patch(
+    fake_root: pathlib.Path,
+    *args: str,
+) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(
         [str(fake_root), str(SCRIPTS), env.get("PYTHONPATH", "")])
     return subprocess.run(
-        [sys.executable, str(PATCH_SCRIPT)],
+        [sys.executable, str(PATCH_SCRIPT), *args],
         cwd=SCRIPTS,
         env=env,
         text=True,
@@ -63,6 +66,10 @@ class EngineArgsCudaGraphPatchUnitTest(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertIn("[skip] already patched", second.stdout)
             self.assertEqual(patched, target.read_text())
+
+            restored = _run_patch(root, "--restore-vendor-eager")
+            self.assertEqual(restored.returncode, 0, restored.stderr)
+            self.assertEqual(VENDOR_BLOCK, target.read_text())
 
     def test_patch_fails_fast_for_unknown_vendor_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
