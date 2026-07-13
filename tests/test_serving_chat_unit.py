@@ -1,11 +1,17 @@
 import ast
 import json
 import pathlib
+import types
 import unittest
+from typing import Optional
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SERVING_CHAT = ROOT / "qwen3_6_scripts" / "serving_chat.py"
 SERVING_CHAT_SOURCE = SERVING_CHAT.read_text()
+CHAT_UTILS = ROOT / "qwen3_6_scripts" / "chat_utils.py"
+CHAT_UTILS_SOURCE = CHAT_UTILS.read_text()
+QWEN_MODEL = ROOT / "qwen3_6_scripts" / "qwen3_5.py"
+QWEN_MODEL_SOURCE = QWEN_MODEL.read_text()
 
 
 def _load_serialize_tool_arguments():
@@ -19,6 +25,23 @@ def _load_serialize_tool_arguments():
     namespace = {"json": json}
     exec(compile(module, str(SERVING_CHAT), "exec"), namespace)
     return namespace["_serialize_tool_arguments"]
+
+
+def _load_chat_placeholder_method():
+    tree = ast.parse(CHAT_UTILS_SOURCE, filename=str(CHAT_UTILS))
+    class_node = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "BaseMultiModalItemTracker")
+    function = next(
+        node for node in class_node.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_placeholder_str")
+    module = ast.Module(body=[function], type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {"ModalityStr": str, "Optional": Optional}
+    exec(compile(module, str(CHAT_UTILS), "exec"), namespace)
+    return namespace["_placeholder_str"]
 
 
 class ServingChatUnitTest(unittest.TestCase):
@@ -51,6 +74,26 @@ class ServingChatUnitTest(unittest.TestCase):
         ]:
             self.assertLess(
                 guard_pos, SERVING_CHAT_SOURCE.index(later_operation))
+
+    def test_qwen36_image_placeholder_uses_native_vision_tokens(self):
+        placeholder_str = _load_chat_placeholder_method()
+        tracker = types.SimpleNamespace(
+            _model_config=types.SimpleNamespace(
+                hf_config=types.SimpleNamespace(model_type="qwen3_5_moe")),
+            _tokenizer=None,
+        )
+        self.assertEqual(
+            placeholder_str(tracker, "image", 1),
+            "<|vision_start|><|image_pad|><|vision_end|>",
+        )
+
+    def test_qwen36_cached_image_tokens_use_visual_suffix(self):
+        self.assertIn("if num_placeholders:", QWEN_MODEL_SOURCE)
+        self.assertIn("image_embeds[-num_placeholders:]", QWEN_MODEL_SOURCE)
+        self.assertNotIn(
+            "image token count ({num_placeholders}) does not match",
+            QWEN_MODEL_SOURCE,
+        )
 
 
 if __name__ == "__main__":

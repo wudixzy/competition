@@ -34,13 +34,16 @@ Deploy:
   python3 modified_scripts/patch_xformers_sdpa_seq.py
 """
 
-from patch_utils import package_root, replace_once
+from patch_utils import package_root, replace_one_of, replace_once
 
 VLLM_ROOT = package_root("vllm")
 XFORMERS_PATH = VLLM_ROOT / "attention" / "backends" / "xformers.py"
 ARG_UTILS_PATH = VLLM_ROOT / "engine" / "arg_utils.py"
 LOGITS_PROC_PATH = (
     VLLM_ROOT / "model_executor" / "layers" / "logits_processor.py")
+OUTLINES_DECODING_PATH = (
+    VLLM_ROOT / "model_executor" / "guided_decoding" /
+    "outlines_decoding.py")
 
 # _apply_logits_processors crashes when seq_groups is None (intermediate
 # chunked-prefill chunks on the driver rank). Add an early-return guard.
@@ -62,6 +65,58 @@ def _apply_logits_processors(
     found_logits_processors = False\
 """
 
+# Outlines' UNESCAPED_STRING accepts raw JSON control characters, including
+# newlines and tabs. The generated text can therefore satisfy the CFG while
+# still failing json.loads(). Use the RFC 8259 string character constraints.
+_JSON_STRING_OLD_BLOCK = """\
+| UNESCAPED_STRING
+| SIGNED_NUMBER      -> number
+| "true"             -> true
+| "false"            -> false
+| "null"             -> null
+
+array  : "[" [value ("," value)*] "]"
+object : "{" [pair ("," pair)*] "}"
+pair   : UNESCAPED_STRING ":" value
+
+%import common.UNESCAPED_STRING
+%import common.SIGNED_NUMBER
+%import common.WS
+
+%ignore WS\
+"""
+
+_JSON_STRING_V1_BLOCK = r'''| JSON_STRING
+| SIGNED_NUMBER      -> number
+| "true"             -> true
+| "false"            -> false
+| "null"             -> null
+
+array  : "[" [value ("," value)*] "]"
+object : "{" [pair ("," pair)*] "}"
+pair   : JSON_STRING ":" value
+
+JSON_STRING: /"(\\["\\\/bfnrt]|\\u[0-9a-fA-F]{4}|[^"\\\x00-\x1f])*"/
+%import common.SIGNED_NUMBER
+%import common.WS
+
+%ignore WS'''
+
+_JSON_STRING_NEW_BLOCK = r'''| JSON_STRING
+| SIGNED_NUMBER      -> number
+| "true"             -> true
+| "false"            -> false
+| "null"             -> null
+
+array  : "[" _ws [value (_ws "," _ws value)*] _ws "]"
+object : "{" _ws [pair (_ws "," _ws pair)*] _ws "}"
+pair   : JSON_STRING _ws ":" _ws value
+_ws    : JSON_WS?
+
+JSON_STRING: /"(\\["\\\/bfnrt]|\\u[0-9a-fA-F]{4}|[^"\\\x00-\x1f])*"/
+JSON_WS: /[ \t\r\n]{1,4}/
+%import common.SIGNED_NUMBER'''
+
 # vllm 0.6.3 自动开启 chunked prefill 的原始块
 _ARG_OLD_BLOCK = """\
                 if (is_gpu and not use_sliding_window and not use_spec_decode
@@ -82,6 +137,31 @@ _ARG_NEW_BLOCK = """\
                         and not self.enable_prompt_adapter):
                     pass  # skip auto-enable: Q-tiling in _run_sdpa_fallback
                           # handles long-context memory without chunked prefill\
+"""
+
+_MM_PREFIX_OLD_BLOCK = """\
+        if model_config.is_multimodal_model:
+            if self.enable_prefix_caching:
+                logger.warning(
+                    "--enable-prefix-caching is currently not "
+                    "supported for multimodal models and has been disabled.")
+            self.enable_prefix_caching = False\
+"""
+
+_MM_PREFIX_NEW_BLOCK = """\
+        if model_config.is_multimodal_model:
+            architectures = getattr(model_config.hf_config,
+                                    "architectures", []) or []
+            qwen36_native_vision = "Qwen3_5MoeForCausalLM" in architectures
+            if self.enable_prefix_caching and qwen36_native_vision:
+                logger.info(
+                    "Keeping prefix caching enabled for the Qwen3.6 native "
+                    "vision path.")
+            elif self.enable_prefix_caching:
+                logger.warning(
+                    "--enable-prefix-caching is currently not "
+                    "supported for multimodal models and has been disabled.")
+                self.enable_prefix_caching = False\
 """
 
 FALLBACK_METHOD = '''
@@ -247,6 +327,12 @@ def patch_arg_utils(path):
         _ARG_NEW_BLOCK,
         required=True,
         already_contains="skip auto-enable: Q-tiling")
+    replace_once(
+        path,
+        _MM_PREFIX_OLD_BLOCK,
+        _MM_PREFIX_NEW_BLOCK,
+        required=True,
+        already_contains="Keeping prefix caching enabled for the Qwen3.6")
 
 
 def patch_logits_processor(path):
@@ -256,6 +342,17 @@ def patch_logits_processor(path):
         _LP_NEW_BLOCK,
         required=True,
         already_contains="intermediate chunked-prefill chunk")
+
+
+def patch_outlines_json_grammar(path):
+    replace_one_of(
+        path,
+        [
+            (_JSON_STRING_V1_BLOCK, _JSON_STRING_NEW_BLOCK),
+            (_JSON_STRING_OLD_BLOCK, _JSON_STRING_NEW_BLOCK),
+        ],
+        required=True,
+        already_contains="JSON_WS:")
 
 
 def main():
@@ -270,6 +367,10 @@ def main():
     print("\n=== patch_logits_processor (seq_groups=None guard for chunked prefill) ===")
     print(f"Target: {LOGITS_PROC_PATH}")
     patch_logits_processor(LOGITS_PROC_PATH)
+
+    print("\n=== patch_outlines_json_grammar (reject raw control chars) ===")
+    print(f"Target: {OUTLINES_DECODING_PATH}")
+    patch_outlines_json_grammar(OUTLINES_DECODING_PATH)
 
     print("\nDone.")
 

@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import io
 import json
 import pathlib
 import time
 import urllib.error
 import urllib.request
 from typing import Any, Callable
+
+from PIL import Image
 
 
 Json = dict[str, Any]
@@ -372,6 +376,54 @@ def test_seed_determinism(base: str) -> None:
     assert first == second, (first, second)
 
 
+def _solid_png_data_url(rgb: tuple[int, int, int]) -> str:
+    image = Image.new("RGB", (256, 256), color=rgb)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def test_image_semantics(base: str) -> None:
+    def identify(rgb: tuple[int, int, int], prompt: str,
+                 max_tokens: int = 16) -> tuple[str, Json]:
+        data = post_chat(base, {
+            "model": "llm",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": _solid_png_data_url(rgb)},
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt,
+                    },
+                ],
+            }],
+            "max_tokens": max_tokens,
+            "thinking": False,
+            "temperature": 0,
+        }, timeout=360)
+        return _assert_content(data), data
+
+    color_prompt = "图片的主体是什么颜色？只回答中文颜色名称。"
+    red, _ = identify((255, 0, 0), color_prompt)
+    green, _ = identify((0, 255, 0), color_prompt)
+    assert "红" in red, red
+    assert "绿" in green, green
+    assert red != green, (red, green)
+
+    description, _ = identify(
+        (255, 0, 0),
+        "请用不少于二十个汉字描述图片主体颜色和画面构成。",
+        max_tokens=64,
+    )
+    assert "红" in description, description
+    assert len(description.strip()) > 15, description
+
+
 QUICK_TESTS: list[Callable[[str], None]] = [
     test_basic_chat,
     test_thinking_disabled_variants,
@@ -390,6 +442,7 @@ FULL_ONLY_TESTS: list[Callable[[str], None]] = [
     test_multilingual_multiturn,
     test_sampling_boundaries,
     test_seed_determinism,
+    test_image_semantics,
 ]
 
 

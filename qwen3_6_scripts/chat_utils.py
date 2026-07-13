@@ -172,7 +172,8 @@ class BaseMultiModalItemTracker(ABC, Generic[_T]):
                 return "<image>"
             if model_type == "mllama":
                 return "<|image|>"
-            if model_type in ("qwen2_vl","qwen2_5_vl"):
+            if model_type in ("qwen2_vl", "qwen2_5_vl", "qwen3_5",
+                              "qwen3_5_moe"):
                 return "<|vision_start|><|image_pad|><|vision_end|>"
             if model_type == "molmo":
                 return ""

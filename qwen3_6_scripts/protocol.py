@@ -324,7 +324,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
         guided_json_from_schema = None
         if self.response_format is not None:
             if self.response_format.type == "json_object":
-                guided_json_object = True
+                # The generic CFG backend has a stateful first-request bug in
+                # this vLLM/Outlines build. A generic object schema has the
+                # same API semantics and uses the stable regex backend.
+                guided_json_from_schema = {"type": "object"}
             elif (self.response_format.type == "json_schema"
                   and self.response_format.json_schema is not None
                   and self.response_format.json_schema.json_schema is not None):
@@ -694,7 +697,8 @@ class CompletionRequest(OpenAIBaseModel):
         guided_json_from_schema = None
         if self.response_format is not None:
             if self.response_format.type == "json_object":
-                guided_json_object = True
+                # Keep CompletionRequest aligned with ChatCompletionRequest.
+                guided_json_from_schema = {"type": "object"}
             elif (self.response_format.type == "json_schema"
                   and self.response_format.json_schema is not None
                   and self.response_format.json_schema.json_schema is not None):

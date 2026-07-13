@@ -7,6 +7,9 @@ from typing import Any, Dict
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PROTOCOL_PATH = ROOT / "qwen3_6_scripts" / "protocol.py"
+if not PROTOCOL_PATH.exists():
+    PROTOCOL_PATH = pathlib.Path(__file__).resolve().parent / "staging_protocol.py"
+PROTOCOL_SOURCE = PROTOCOL_PATH.read_text()
 
 for _site in (
         "/usr/local/corex/lib64/python3/dist-packages",
@@ -220,6 +223,18 @@ class ProtocolUnitTest(unittest.TestCase):
                     guided_json={"type": "object"},
                 )
                 self.assertEqual(request.tool_choice, tool_choice)
+
+    def test_json_object_uses_generic_schema_regex_backend(self):
+        request = self.request(response_format={"type": "json_object"})
+        sampling = request.to_sampling_params(default_max_tokens=32)
+        guided = sampling.kwargs["guided_decoding"]
+        self.assertEqual(guided.kwargs["json"], {"type": "object"})
+        self.assertIsNone(guided.kwargs["json_object"])
+        self.assertEqual(
+            PROTOCOL_SOURCE.count(
+                'guided_json_from_schema = {"type": "object"}'),
+            2,
+        )
 
 
 if __name__ == "__main__":
