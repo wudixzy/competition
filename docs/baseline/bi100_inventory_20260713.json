@@ -1,0 +1,38 @@
+{
+  "captured_at": "2026-07-13",
+  "host": "cc-987372d0-c700-4ae8-8dc8-e6d0e10fb22d-0",
+  "kernel": "Linux 5.15.0-119-generic x86_64",
+  "python": "3.10.12",
+  "gpu": {
+    "model": "Iluvatar BI-V100-50C-200G",
+    "count": 4,
+    "qualification_inventory_source": "baseline_artifacts/t9-qualified-20260712.tar.gz"
+  },
+  "runtime": {
+    "torch": "2.1.0+corex.3.2.3",
+    "vllm": "0.6.3+corex.3.2.3",
+    "transformers": "4.55.3",
+    "ixformer": "0.4.0+corex.3.2.3"
+  },
+  "runtime_roots": {
+    "torch": "/usr/local/corex/lib64/python3/dist-packages/torch",
+    "vllm": "/usr/local/corex/lib64/python3/dist-packages/vllm",
+    "transformers": "/usr/local/lib/python3.10/site-packages/transformers",
+    "ixformer": "/usr/local/corex/lib64/python3/dist-packages/ixformer"
+  },
+  "toolchain": {
+    "gcc": "/usr/bin/gcc",
+    "gxx": "/usr/bin/g++",
+    "cmake": "/usr/local/bin/cmake",
+    "ninja": null,
+    "ixcc": null,
+    "nvcc": null
+  },
+  "model": {
+    "path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "size": "67G",
+    "safetensors_shards": 26,
+    "config_sha256": "cb30bf4e6205013f03c30fb0e275a6ffec6ecf2002410d401e35b20e8701e69c"
+  },
+  "contract_sha256": "5f07f4377dcdde3bb858012bedc014f60e84a82a61e9696bee830fec1e517c0f"
+}
