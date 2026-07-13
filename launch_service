@@ -4,6 +4,7 @@ set -euo pipefail
 export PYTHONPATH=/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages:${PYTHONPATH:-}
 export LD_LIBRARY_PATH=/usr/local/corex/lib:/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib:${LD_LIBRARY_PATH:-}
 export PATH=/usr/local/corex/bin:/usr/local/corex-3.2.3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/corex/lib64/python3/dist-packages/bin:/usr/local/openmpi/bin:${PATH:-}
+export ENABLE_CUSTOM_IPC=${ENABLE_CUSTOM_IPC:-1}
 export JAVA_HOME=/root/apps/jdk1.8.0_411
 export JRE_HOME=/root/apps/jdk1.8.0_411/jre
 export JMETER_HOME=/root/apps/apache-jmeter-5.6.3
