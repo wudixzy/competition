@@ -40,6 +40,32 @@ def _strict_prefix_query_segments(
     return [(0, query_len, context_len)]
 
 
+def _prefix_context_tile_spans(
+    block_context_len: int,
+    prefix_query_len: int,
+    tile_size: int,
+) -> List[Tuple[int, int, int, int]]:
+    """Map context tiles to block-cache and preceding-query token ranges.
+
+    Each tuple is ``(block_start, block_end, prefix_start, prefix_end)``.
+    Concatenating both ranges reconstructs one tile in the logical context.
+    Keeping tiles aligned to absolute token positions makes cold segmented
+    prefill use the same online-softmax partitions as a warm cached request.
+    """
+    if block_context_len < 0 or prefix_query_len < 0 or tile_size <= 0:
+        raise ValueError("context lengths must be non-negative and tile_size > 0")
+    spans = []
+    total_context_len = block_context_len + prefix_query_len
+    for tile_start in range(0, total_context_len, tile_size):
+        tile_end = min(tile_start + tile_size, total_context_len)
+        block_start = min(tile_start, block_context_len)
+        block_end = min(tile_end, block_context_len)
+        prefix_start = max(0, tile_start - block_context_len)
+        prefix_end = max(0, tile_end - block_context_len)
+        spans.append((block_start, block_end, prefix_start, prefix_end))
+    return spans
+
+
 @dataclass
 class PagedAttentionMetadata:
     """Metadata for PagedAttention."""
@@ -428,7 +454,7 @@ class PagedAttention:
                 q_end   = int(query_start_loc[i + 1].item())
                 q_len   = q_end - q_start
 
-                for seg_start, seg_end, seg_ctx_len in (
+                for seg_start, seg_end, _seg_ctx_len in (
                         _strict_prefix_query_segments(
                             ctx_len, q_len, block_size)):
                     absolute_start = q_start + seg_start
@@ -439,11 +465,13 @@ class PagedAttention:
                                 query[absolute_start:absolute_end],
                                 key[absolute_start:absolute_end],
                                 value[absolute_start:absolute_end],
+                                key[q_start:absolute_start],
+                                value[q_start:absolute_start],
                                 key_cache,
                                 value_cache,
                                 block_tables,
                                 i,
-                                seg_ctx_len,
+                                ctx_len,
                                 num_q_heads,
                                 num_kv_heads,
                                 head_dim,
@@ -466,11 +494,13 @@ class PagedAttention:
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
+        prefix_key: torch.Tensor,
+        prefix_value: torch.Tensor,
         key_cache: torch.Tensor,
         value_cache: torch.Tensor,
         block_tables: torch.Tensor,
         seq_index: int,
-        ctx_len: int,
+        block_context_len: int,
         num_q_heads: int,
         num_kv_heads: int,
         head_dim: int,
@@ -493,32 +523,44 @@ class PagedAttention:
         o = torch.zeros((num_kv_heads, gqa_ratio, q_len, head_dim),
                         dtype=torch.float32, device=dev)
 
-        if ctx_len > 0:
-            num_ctx_blocks = (ctx_len + block_size - 1) // block_size
+        if block_context_len > 0:
+            num_ctx_blocks = (block_context_len + block_size - 1) // block_size
             num_ctx_blocks = PagedAttention._validate_prefix_block_table(
-                seq_index, num_ctx_blocks, block_tables.shape[1], ctx_len)
-            for tile_blk in range(0, num_ctx_blocks,
-                                  _PREFIX_BLOCKS_PER_TILE):
-                blk_end = min(tile_blk + _PREFIX_BLOCKS_PER_TILE,
-                              num_ctx_blocks)
-                blk_ids = block_tables[seq_index, tile_blk:blk_end]
-                k_tile = (key_cache[blk_ids]
-                          .permute(0, 3, 1, 2, 4)
-                          .contiguous()
-                          .view(-1, num_kv_heads, head_dim))
-                v_tile = (value_cache[blk_ids]
-                          .permute(0, 3, 1, 2)
-                          .contiguous()
-                          .view(-1, num_kv_heads, head_dim))
-                valid = (min(blk_end * block_size, ctx_len)
-                         - tile_blk * block_size)
-                k_t = (k_tile[:valid].permute(1, 0, 2)
-                       .unsqueeze(1).transpose(-1, -2).float())
-                v_t = (v_tile[:valid].permute(1, 0, 2)
-                       .unsqueeze(1).float())
-                del k_tile, v_tile
-                PagedAttention._update_online_softmax(q_seq, k_t, v_t,
-                                                      m, l, o)
+                seq_index, num_ctx_blocks, block_tables.shape[1],
+                block_context_len)
+
+        for block_start, block_end, prefix_start, prefix_end in (
+                _prefix_context_tile_spans(
+                    block_context_len, prefix_key.shape[0], tile_sz)):
+            k_parts = []
+            v_parts = []
+            if block_end > block_start:
+                first_block = block_start // block_size
+                last_block = (block_end + block_size - 1) // block_size
+                blk_ids = block_tables[seq_index, first_block:last_block]
+                k_blocks = (key_cache[blk_ids]
+                            .permute(0, 3, 1, 2, 4)
+                            .contiguous()
+                            .view(-1, num_kv_heads, head_dim))
+                v_blocks = (value_cache[blk_ids]
+                            .permute(0, 3, 1, 2)
+                            .contiguous()
+                            .view(-1, num_kv_heads, head_dim))
+                offset = block_start - first_block * block_size
+                length = block_end - block_start
+                k_parts.append(k_blocks[offset:offset + length])
+                v_parts.append(v_blocks[offset:offset + length])
+            if prefix_end > prefix_start:
+                k_parts.append(prefix_key[prefix_start:prefix_end])
+                v_parts.append(prefix_value[prefix_start:prefix_end])
+            k_context = (k_parts[0] if len(k_parts) == 1
+                         else torch.cat(k_parts, dim=0))
+            v_context = (v_parts[0] if len(v_parts) == 1
+                         else torch.cat(v_parts, dim=0))
+            k_t = (k_context.permute(1, 0, 2)
+                   .unsqueeze(1).transpose(-1, -2).float())
+            v_t = v_context.permute(1, 0, 2).unsqueeze(1).float()
+            PagedAttention._update_online_softmax(q_seq, k_t, v_t, m, l, o)
 
         for key_start in range(0, q_len, tile_sz):
             key_end = min(key_start + tile_sz, q_len)

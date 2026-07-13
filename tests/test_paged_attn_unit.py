@@ -141,6 +141,26 @@ class PagedAttentionUnitTest(unittest.TestCase):
         self.assertEqual(segment(17, 1, 16), [(0, 1, 17)])
         self.assertEqual(segment(31, 2, 16), [(0, 1, 31), (1, 2, 32)])
 
+    def test_context_tiles_join_block_cache_and_preceding_query(self):
+        module = _load_paged_attn()
+        spans = module._prefix_context_tile_spans
+        cold = spans(11296, 320, 512)
+        warm = spans(11616, 0, 512)
+        self.assertEqual(cold[-1], (11264, 11296, 0, 320))
+        self.assertEqual(warm[-1], (11264, 11616, 0, 0))
+        self.assertEqual(
+            sum((b1 - b0) + (p1 - p0) for b0, b1, p0, p1 in cold),
+            11616)
+
+    def test_context_tile_spans_validate_inputs(self):
+        module = _load_paged_attn()
+        spans = module._prefix_context_tile_spans
+        self.assertEqual(spans(0, 0, 512), [])
+        with self.assertRaises(ValueError):
+            spans(-1, 0, 512)
+        with self.assertRaises(ValueError):
+            spans(0, 1, 0)
+
     def test_attention_env_defaults_are_stable(self):
         module = _load_paged_attn()
         self.assertEqual(module.PagedAttention._PYTORCH_DECODE_THRESHOLD, 32768)

@@ -105,6 +105,86 @@ class PrefixAttentionParityTest(unittest.TestCase):
         torch.testing.assert_close(
             full_output, dense_output, rtol=1e-5, atol=1e-5)
 
+    def test_segmented_prefill_uses_preceding_query_beyond_block_table(self):
+        torch.manual_seed(20260713)
+        context_len = 16
+        query_len = 17
+        total_len = context_len + query_len
+        block_size = 16
+        num_q_heads = 2
+        num_kv_heads = 1
+        head_dim = 8
+
+        query = torch.randn(query_len, num_q_heads, head_dim)
+        context_key = torch.randn(context_len, num_kv_heads, head_dim)
+        context_value = torch.randn_like(context_key)
+        query_key = torch.randn(query_len, num_kv_heads, head_dim)
+        query_value = torch.randn_like(query_key)
+
+        def make_cache(key_tokens, value_tokens):
+            num_blocks = (key_tokens.shape[0] + block_size - 1) // block_size
+            padded_key = torch.zeros(
+                num_blocks * block_size, num_kv_heads, head_dim)
+            padded_value = torch.zeros_like(padded_key)
+            padded_key[:key_tokens.shape[0]] = key_tokens
+            padded_value[:value_tokens.shape[0]] = value_tokens
+            key_cache = (padded_key.view(
+                num_blocks, block_size, num_kv_heads, head_dim // 4, 4)
+                .permute(0, 2, 3, 1, 4).contiguous())
+            value_cache = (padded_value.view(
+                num_blocks, block_size, num_kv_heads, head_dim)
+                .permute(0, 2, 3, 1).contiguous())
+            return key_cache, value_cache
+
+        cold_key_cache, cold_value_cache = make_cache(
+            context_key, context_value)
+        cold_output = self.paged_attention._forward_prefix_pytorch(
+            query,
+            query_key,
+            query_value,
+            cold_key_cache,
+            cold_value_cache,
+            torch.tensor([[0]]),
+            torch.tensor([0, query_len]),
+            torch.tensor([total_len]),
+            torch.tensor([context_len]),
+        )
+
+        full_key = torch.cat([context_key, query_key], dim=0)
+        full_value = torch.cat([context_value, query_value], dim=0)
+        warm_key_cache, warm_value_cache = make_cache(full_key, full_value)
+        warm_output = self.paged_attention._forward_prefix_pytorch(
+            query[-1:],
+            query_key[-1:],
+            query_value[-1:],
+            warm_key_cache,
+            warm_value_cache,
+            torch.arange(2).view(1, -1),
+            torch.tensor([0, 1]),
+            torch.tensor([total_len]),
+            torch.tensor([total_len - 1]),
+        )
+
+        expanded_key = full_key.expand(-1, num_q_heads, -1)
+        expanded_value = full_value.expand(-1, num_q_heads, -1)
+        dense_outputs = []
+        scale = head_dim ** -0.5
+        for index in range(query_len):
+            absolute_position = context_len + index
+            scores = torch.einsum(
+                "hd,thd->ht", query[index] * scale,
+                expanded_key[:absolute_position + 1])
+            weights = torch.softmax(scores, dim=-1)
+            dense_outputs.append(torch.einsum(
+                "ht,thd->hd", weights,
+                expanded_value[:absolute_position + 1]))
+        dense_output = torch.stack(dense_outputs)
+
+        torch.testing.assert_close(
+            cold_output, dense_output, rtol=1e-5, atol=1e-5)
+        torch.testing.assert_close(
+            cold_output[-1:], warm_output, rtol=0, atol=0)
+
 
 if __name__ == "__main__":
     unittest.main()
