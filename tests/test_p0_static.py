@@ -321,7 +321,7 @@ class P0StaticCoverageTest(unittest.TestCase):
             "RUN cd ./qwen3_6_scripts && bash ./patch_ops.sh", dockerfile)
         for name in ["VLLM_ENGINE_ITERATION_TIMEOUT_S=3600",
                      "PYTHONUNBUFFERED=1", "PYTHONFAULTHANDLER=1",
-                     "BI100_EXECUTOR_STARTUP_DEBUG=1"]:
+                     "BI100_EXECUTOR_STARTUP_DEBUG=0"]:
             self.assertIn(name, dockerfile)
         self.assertIn("[BI100 BUILD]", patch_ops)
         self.assertEqual(patch_ops.splitlines()[0], "#!/usr/bin/env bash")
