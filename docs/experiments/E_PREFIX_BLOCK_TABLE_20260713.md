@@ -70,8 +70,51 @@ now validates only the 11,296 tokens that must actually be present there.
 - all non-GPU unit tests: 65/65 pass;
 - fixed evaluator YAML: unchanged.
 
+## Four-GPU runtime validation
+
+The patched CoreX site package started successfully on four BI100 GPUs. All
+26 checkpoint shards loaded, the engine exposed 18,271 GPU blocks, and the
+health endpoint became ready without a fatal error.
+
+The API boundary regression used a 11,617-token prompt and forced the final
+strict prefix split after 320 current-query tokens. The runtime reused 8,176
+tokens from an earlier request, so the remaining current-query contribution was
+larger than the original 320-token failure and exercised the same mixed-source
+context path.
+
+With one generated token, partial-cache and warm-cache requests both returned
+`It` with the same message hash:
+
+```text
+partial cache  cached=8176   elapsed=7.457s
+warm cache     cached=11600  elapsed=1.822s
+```
+
+No block-table error, `AsyncEngineDeadError`, non-finite value, OOM, CUDA, or
+NCCL error occurred. The full API smoke suite passed 14/14 cases, including
+streaming, reasoning, tool calls, prefix caching, sampling, and determinism.
+
+The 99,500-token contract-boundary test also passed:
+
+```text
+cold  prompt=99500 cached=0     elapsed=158.035s
+warm  prompt=99500 cached=99296 elapsed=19.664s
+```
+
+Cold and warm messages had the same SHA-256 hash. The service remained healthy
+after all tests.
+
+## Residual numerical variation
+
+An exploratory 16-token boundary run had the same first token and first 55
+characters on partial-cache and warm-cache paths, then greedy decoding chose
+different continuations. This is consistent with floating-point reduction-order
+variation being amplified during autoregressive decoding; it is not consistent
+with the previous missing-context failure, which affected the first prefill
+output. The one-token boundary test and the 99.5K multi-token test were exact.
+
 ## Decision
 
-Candidate keep, pending four-GPU service restart, 11.6K regression, full smoke,
-and long cold/warm output comparison. Performance optimization remains paused
-until the 881-request availability blocker is closed.
+Keep and submit. The candidate closes the evaluation's 99% request-failure
+blocker while retaining strict context validation. Continue performance work
+only after this availability fix is preserved as a rollback point.
