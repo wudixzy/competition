@@ -54,6 +54,72 @@ def _stream_chunks() -> list[dict | str]:
 
 class StreamingClientTest(unittest.TestCase):
 
+    def test_benchmark_first_event_supports_all_output_delta_types(self):
+        deltas = [
+            {"content": "answer"},
+            {"reasoning_content": "thinking"},
+            {"tool_calls": [{"index": 0, "function": {"name": "search"}}]},
+        ]
+        for delta in deltas:
+            with self.subTest(delta=delta), patch(
+                    "urllib.request.urlopen",
+                    return_value=FakeStreamResponse([
+                        {"choices": [{"delta": {"role": "assistant"}}]},
+                        {"choices": [{"delta": delta}]},
+                        {"choices": [], "usage": {
+                            "prompt_tokens": 10,
+                            "completion_tokens": 1,
+                        }},
+                        "[DONE]",
+                    ])), patch(
+                        "bench_perf.time.perf_counter",
+                        side_effect=[10.0, 10.05, 10.25, 10.75, 10.9, 11.0]):
+                result = bench_perf.post_stream(
+                    "http://unit.test",
+                    bench_perf.make_payload("prompt", 8),
+                    timeout=1,
+                )
+
+            self.assertTrue(result.ok, result.error)
+            self.assertEqual(result.ttft_s, 0.25)
+            self.assertEqual(result.output_event_times_s, [0.25])
+            for actual, expected in zip(
+                    result.sse_event_times_s, [0.05, 0.25, 0.75, 0.9]):
+                self.assertAlmostEqual(actual, expected)
+
+    def test_benchmark_reports_decode_itl_and_both_scores(self):
+        results = [
+            bench_perf.RequestResult(
+                True, 10.0, 2.0, 100, 16, 40,
+                output_event_times_s=[2.0, 3.0, 5.0, 9.0],
+                sse_event_times_s=[1.9, 2.0, 3.0, 5.0, 9.0, 9.9]),
+            bench_perf.RequestResult(
+                True, 8.0, 1.0, 100, 14, 60,
+                output_event_times_s=[1.0, 2.0, 4.0, 7.0]),
+        ]
+
+        report = bench_perf.summarize_results(
+            results, request_count=2, workers=1, wall_s=20.0, label="unit")
+
+        self.assertAlmostEqual(report["first_event_p90_s"], 1.9)
+        self.assertAlmostEqual(report["output_tps_decode_p10"], 2.0)
+        self.assertAlmostEqual(report["output_rate_e2e_p10"], 1.615)
+        self.assertAlmostEqual(report["prompt_tps_total"], 10.0)
+        self.assertAlmostEqual(report["prompt_tps_uncached"], 5.0)
+        self.assertAlmostEqual(report["cache_tps"], 5.0)
+        self.assertAlmostEqual(report["inter_token_latency_p50_s"], 2.0)
+        self.assertAlmostEqual(report["inter_token_latency_p90_s"], 3.5)
+        self.assertAlmostEqual(
+            report["score_overlap"], bench_perf.score(2.0, 10.0, 5.0))
+        self.assertAlmostEqual(
+            report["score_disjoint"], bench_perf.score(2.0, 5.0, 5.0))
+        self.assertEqual(
+            report["request_metrics"][0]["output_event_times_s"],
+            [2.0, 3.0, 5.0, 9.0])
+        self.assertEqual(
+            report["request_metrics"][0]["sse_event_times_s"],
+            [1.9, 2.0, 3.0, 5.0, 9.0, 9.9])
+
     def test_smoke_streaming_accepts_usage_only_chunks(self):
         with patch("urllib.request.urlopen",
                    return_value=FakeStreamResponse(_stream_chunks())):
