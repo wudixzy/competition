@@ -62,6 +62,7 @@ _ALLOW_GDN_NAN_ZERO = env_bool("BI100_GDN_ALLOW_NAN_ZERO", False)
 _GDN_FINITE_CHECK = (env_bool("BI100_GDN_FINITE_CHECK", False)
                      or _ALLOW_GDN_NAN_ZERO)
 _DNN_CHUNK_SIZE = env_int("BI100_DNN_CHUNK", 4096, 64, 65536)
+_MOE_FUSE_SHARED_GATE = env_bool("BI100_MOE_FUSE_SHARED_GATE", False)
 
 
 # ---------------------------------------------------------------------------
@@ -815,6 +816,9 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         # Without this, shared expert is always fully active → wrong logits.
         self.shared_expert_gate = ReplicatedLinear(
             hidden_size, 1, bias=False, quant_config=quant_config)
+        self.register_buffer(
+            "_shared_gate_up_fused_weight", None, persistent=False,
+        )
 
     def _pure_pytorch_experts(
         self,
@@ -901,11 +905,25 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         with bi100_timer("moe.routed"):
             routed_out = self._pure_pytorch_experts(hidden_states, router_logits)
 
-        gate_up, _ = self.shared_expert_gate_up(hidden_states)
+        if _MOE_FUSE_SHARED_GATE:
+            fused_weight = self._shared_gate_up_fused_weight
+            if fused_weight is None:
+                # Inference weights are immutable after loading, so cache this
+                # concatenation instead of rebuilding it for every token.
+                fused_weight = torch.cat((
+                    self.shared_expert_gate_up.weight,
+                    self.shared_expert_gate.weight,
+                ), dim=0).contiguous()
+                self._shared_gate_up_fused_weight = fused_weight
+            projected = F.linear(hidden_states, fused_weight)
+            gate_up = projected[..., :-1].contiguous()
+            gate_score = projected[..., -1:]
+        else:
+            gate_up, _ = self.shared_expert_gate_up(hidden_states)
+            gate_score, _ = self.shared_expert_gate(hidden_states)
         shared_out = self.act_fn(gate_up)
         shared_out, _ = self.shared_expert_down(shared_out)
         # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style)
-        gate_score, _ = self.shared_expert_gate(hidden_states)  # (T, 1)
         shared_out = shared_out * torch.sigmoid(gate_score)
 
         out = routed_out + shared_out
