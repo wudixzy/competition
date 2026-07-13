@@ -106,6 +106,9 @@ python3 ./patch_model_runner.py
 build_stage "installing executor startup diagnostics"
 python3 ./patch_executor_startup_debug.py
 
+build_stage "restoring CLI-controlled CUDA Graph selection"
+python3 ./patch_engine_args_cuda_graph.py
+
 build_stage "installing transformers Qwen3.5 model support"
 cp -r ./qwen3_5 "${TRANSFORMERS_ROOT}/models/"
 cp -r ./qwen3_5_moe "${TRANSFORMERS_ROOT}/models/"

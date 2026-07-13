@@ -254,6 +254,17 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("required=True", debug_src)
         self.assertIn("already_contains=", debug_src)
 
+    def test_cuda_graph_patch_restores_cli_control(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        patch_src = read("qwen3_6_scripts/patch_engine_args_cuda_graph.py")
+        unit_src = read("tests/test_patch_engine_args_cuda_graph_unit.py")
+        self.assertIn("patch_engine_args_cuda_graph.py", patch_ops)
+        self.assertIn("enforce_eager=True,", patch_src)
+        self.assertIn("enforce_eager=self.enforce_eager,", patch_src)
+        self.assertIn("required=True", patch_src)
+        self.assertIn("already_contains=", patch_src)
+        self.assertIn("test_patch_restores_cli_value_and_is_idempotent", unit_src)
+
     def test_benchmark_startup_trace_has_critical_stages(self):
         api_src = read("qwen3_6_scripts/api_server.py")
         model_src = read("qwen3_6_scripts/qwen3_5.py")
