@@ -92,10 +92,19 @@ from vllm.logger import init_logger
 from vllm.bi100_env import env_bool, env_int
 from vllm.bi100_profile import bi100_timer
 
+try:
+    from vllm import corex_gdn_recurrent as _corex_gdn_recurrent
+except ImportError:
+    _corex_gdn_recurrent = None
+
 from vllm.model_executor.models.interfaces import (HasInnerState, SupportsLoRA,
                                                    SupportsMultiModal)
 
 logger = init_logger(__name__)
+
+_USE_COREX_GDN_RECURRENT = (
+    _corex_gdn_recurrent is not None
+    and env_bool("BI100_GDN_COREX_RECURRENT", True))
 
 _bi100_model_trace("qwen3_5 runtime imports complete")
 
@@ -1038,30 +1047,25 @@ class GatedDeltaNet(nn.Module):
             bt  = beta.squeeze(1).float()                   # (B, H_v)
 
             with bi100_timer(f"L{self.layer_idx}.gdn.decode"):
-                # Decay state in-place: (B, H_v, k_dim, v_dim) *= scalar per head
-                temporal_state.mul_(g_t[:, :, None, None])
-
-                # Reshape to batched-matmul layout: (B*H_v, k_dim, v_dim)
-                ts_flat = temporal_state.view(-1, self.head_k_dim, self.head_v_dim)
-                BH = ts_flat.shape[0]
-
-                # kv_mem = k_t @ temporal_state  shape: (B*H_v, 1, k_dim) @ (B*H_v, k_dim, v_dim)
-                kv_mem = torch.bmm(
-                    k_t.view(BH, 1, self.head_k_dim), ts_flat
-                ).view(num_seqs, local_num_v, self.head_v_dim)  # (B, H_v, v_dim)
-
-                delta = (v_t - kv_mem) * bt[:, :, None]         # (B, H_v, v_dim)
-
-                # State update: temporal_state += outer(k_t, delta)  fused, no intermediate
-                ts_flat.baddbmm_(
-                    k_t.view(BH, self.head_k_dim, 1),
-                    delta.view(BH, 1, self.head_v_dim),
-                )
-
-                # Output: core_out = q_t @ updated temporal_state
-                core_out = torch.bmm(
-                    q_t.view(BH, 1, self.head_k_dim), ts_flat
-                ).view(num_seqs, local_num_v, self.head_v_dim)
+                if _USE_COREX_GDN_RECURRENT:
+                    core_out = _corex_gdn_recurrent.recurrent_update(
+                        temporal_state, q_t, k_t, v_t, g_t, bt)
+                else:
+                    temporal_state.mul_(g_t[:, :, None, None])
+                    ts_flat = temporal_state.view(
+                        -1, self.head_k_dim, self.head_v_dim)
+                    BH = ts_flat.shape[0]
+                    kv_mem = torch.bmm(
+                        k_t.view(BH, 1, self.head_k_dim), ts_flat
+                    ).view(num_seqs, local_num_v, self.head_v_dim)
+                    delta = (v_t - kv_mem) * bt[:, :, None]
+                    ts_flat.baddbmm_(
+                        k_t.view(BH, self.head_k_dim, 1),
+                        delta.view(BH, 1, self.head_v_dim),
+                    )
+                    core_out = torch.bmm(
+                        q_t.view(BH, 1, self.head_k_dim), ts_flat
+                    ).view(num_seqs, local_num_v, self.head_v_dim)
             # core_out: (B, H_v, v_dim) = (num_seqs, local_num_v, head_v_dim) already
 
             z = z_all.reshape(num_seqs, local_num_v, self.head_v_dim)

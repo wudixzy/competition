@@ -232,6 +232,20 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("self.in_proj_b = ColumnParallelLinear", src)
         self.assertNotIn("self.in_proj_a = ColumnParallelLinear", src)
 
+    def test_gdn_corex_recurrent_has_build_and_reference_fallback(self):
+        src = read("qwen3_6_scripts/qwen3_5.py")
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        build = read("qwen3_6_scripts/build_corex_gdn.sh")
+        kernel = read("qwen3_6_scripts/corex_gdn_recurrent.cu")
+        self.assertIn("build_corex_gdn.sh", patch_ops)
+        self.assertIn("--cuda-gpu-arch=ivcore10", build)
+        self.assertIn("-D_GLIBCXX_USE_CXX11_ABI=0", build)
+        self.assertIn("gdn_recurrent_kernel", kernel)
+        self.assertIn("at::cuda::getCurrentCUDAStream()", kernel)
+        self.assertIn("BI100_GDN_COREX_RECURRENT", src)
+        self.assertIn("_corex_gdn_recurrent.recurrent_update", src)
+        self.assertIn("ts_flat.baddbmm_", src)
+
     def test_moe_prefill_groups_routes_once(self):
         src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("torch.argsort(flat_eids, stable=True)", src)
