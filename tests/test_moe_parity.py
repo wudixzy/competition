@@ -56,10 +56,10 @@ def _load_production_experts():
 class MoEParityTest(unittest.TestCase):
 
     def _assert_shape_matches_reference(self, tokens, hidden, experts, inter,
-                                        top_k, seed):
+                                        top_k, seed, router_scale=1.0):
         torch.manual_seed(seed)
         hidden_states = torch.randn(tokens, hidden)
-        router_logits = torch.randn(tokens, experts)
+        router_logits = torch.randn(tokens, experts) * router_scale
         w13 = torch.randn(experts, 2 * inter, hidden)
         w2 = torch.randn(experts, hidden, inter)
         fake_self = types.SimpleNamespace(
@@ -82,6 +82,10 @@ class MoEParityTest(unittest.TestCase):
 
     def test_sparse_expert_population_matches_reference(self):
         self._assert_shape_matches_reference(17, 16, 31, 8, 2, 3456)
+
+    def test_large_router_logits_match_full_softmax_reference(self):
+        self._assert_shape_matches_reference(
+            3, 16, 256, 8, 8, 7890, router_scale=80.0)
 
 
 if __name__ == "__main__":

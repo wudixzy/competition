@@ -1332,11 +1332,12 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         Output is partial (pre-all-reduce), same contract as FusedMoE
         with reduce_results=False.
         """
-        # Routing: softmax → topk → renormalise
-        routing_weights = torch.softmax(router_logits.float(), dim=-1)
-        topk_weights, topk_ids = torch.topk(
-            routing_weights, self.top_k, dim=-1)           # (T, top_k)
-        topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
+        # Softmax is monotonic, so selecting logits first is equivalent to
+        # full-expert softmax -> top-k -> renormalise while normalising only K
+        # values. This saves one 256-wide softmax in the decode hot path.
+        topk_logits, topk_ids = torch.topk(
+            router_logits.float(), self.top_k, dim=-1)     # (T, top_k)
+        topk_weights = torch.softmax(topk_logits, dim=-1)
         topk_weights = topk_weights.to(hidden_states.dtype)
 
         w13 = self.experts.w13_weight  # (E, 2*I, H)
