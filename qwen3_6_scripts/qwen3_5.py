@@ -744,6 +744,47 @@ class Qwen3_5RMSNormGated(nn.Module):
         return (hs * F.silu(gate.to(torch.float32))).to(input_dtype)
 
 
+def _load_gdn_projection_weight(params_dict, name: str,
+                                loaded_weight: torch.Tensor,
+                                text_cfg) -> bool:
+    projections = {
+        "in_proj_qkv": None,
+        "in_proj_z": 3,
+        "in_proj_b": 4,
+        "in_proj_a": 5,
+    }
+    source = next((projection for projection in projections
+                   if f".linear_attn.{projection}." in name), None)
+    if source is None:
+        return False
+
+    target_name = name.replace(
+        f".linear_attn.{source}.",
+        ".linear_attn.in_proj_qkvzba.",
+    )
+    if target_name not in params_dict:
+        raise ValueError(f"missing fused GDN projection parameter: {target_name}")
+    param = params_dict[target_name]
+    weight_loader = getattr(param, "weight_loader", default_weight_loader)
+
+    if source == "in_proj_qkv":
+        key_dim = (text_cfg.linear_num_key_heads
+                   * text_cfg.linear_key_head_dim)
+        value_dim = (text_cfg.linear_num_value_heads
+                     * text_cfg.linear_value_head_dim)
+        shard_sizes = (key_dim, key_dim, value_dim)
+        if loaded_weight.shape[0] != sum(shard_sizes):
+            raise ValueError(
+                "unexpected fused QKV output size: "
+                f"{loaded_weight.shape[0]} != {sum(shard_sizes)}")
+        for shard_id, shard in enumerate(
+                torch.split(loaded_weight, shard_sizes, dim=0)):
+            weight_loader(param, shard, shard_id)
+    else:
+        weight_loader(param, loaded_weight, projections[source])
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Gated DeltaNet  (linear_attention layers)
 # ---------------------------------------------------------------------------
@@ -770,21 +811,12 @@ class GatedDeltaNet(nn.Module):
 
         tp_size = get_tensor_model_parallel_world_size()
 
-        # Sharded projections — MergedColumnParallelLinear shards each of q/k/v
-        # independently so each TP rank gets [q_shard, k_shard, v_shard].
-        # Plain ColumnParallelLinear would shard contiguously, giving rank 0
-        # [q_all, k_partial] — completely wrong Q/K/V after the split below.
-        self.in_proj_qkv = MergedColumnParallelLinear(
-            self.hidden_size, [self.key_dim, self.key_dim, self.value_dim],
-            bias=False, quant_config=quant_config)
-        self.in_proj_z = ColumnParallelLinear(
-            self.hidden_size, self.value_dim,
-            bias=False, quant_config=quant_config)
-        self.in_proj_b = ColumnParallelLinear(
-            self.hidden_size, self.num_v_heads,
-            bias=False, quant_config=quant_config)
-        self.in_proj_a = ColumnParallelLinear(
-            self.hidden_size, self.num_v_heads,
+        # Keep each logical projection independently TP-sharded while executing
+        # one GEMM. Per-rank output order is [q, k, v, z, beta, decay].
+        self.in_proj_qkvzba = MergedColumnParallelLinear(
+            self.hidden_size,
+            [self.key_dim, self.key_dim, self.value_dim, self.value_dim,
+             self.num_v_heads, self.num_v_heads],
             bias=False, quant_config=quant_config)
         self.out_proj = RowParallelLinear(
             self.value_dim, self.hidden_size,
@@ -846,11 +878,12 @@ class GatedDeltaNet(nn.Module):
 
         is_prefill = attn_metadata.num_prefill_tokens > 0
 
-        # Compute all projections for every token at once (batched, efficient)
-        mixed_qkv_all, _ = self.in_proj_qkv(hidden_states)  # (total, local_conv_dim)
-        z_all, _ = self.in_proj_z(hidden_states)             # (total, local_val_dim)
-        b_all, _ = self.in_proj_b(hidden_states)             # (total, local_num_v)
-        a_all, _ = self.in_proj_a(hidden_states)             # (total, local_num_v)
+        projected, _ = self.in_proj_qkvzba(hidden_states)
+        mixed_qkv_all, z_all, b_all, a_all = torch.split(
+            projected,
+            [local_conv_dim, local_val_dim, local_num_v, local_num_v],
+            dim=-1,
+        )
 
         if is_prefill:
             seq_starts = attn_metadata.query_start_loc.tolist()
@@ -1883,6 +1916,10 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
             if "rotary_emb.inv_freq" in name:
                 continue
 
+            if _load_gdn_projection_weight(
+                    params_dict, name, loaded_weight, self.text_cfg):
+                continue
+
             # Remap conv1d.weight → conv1d_weight
             # The conv has depth (1) dim in the checkpoint that we handle separately
             if ".linear_attn.conv1d.weight" in name:
@@ -1997,6 +2034,10 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLM):
                 name = "model." + name[len("model.language_model."):]
 
             if "rotary_emb.inv_freq" in name:
+                continue
+
+            if _load_gdn_projection_weight(
+                    params_dict, name, loaded_weight, self.text_cfg):
                 continue
 
             if ".linear_attn.conv1d.weight" in name:

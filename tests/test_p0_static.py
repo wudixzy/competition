@@ -223,6 +223,15 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("NaN in prefill GatedDeltaNet", src)
         self.assertNotIn("NaN in decode GatedDeltaNet", src)
 
+    def test_gdn_input_projections_are_single_merged_gemm(self):
+        src = read("qwen3_6_scripts/qwen3_5.py")
+        self.assertIn("def _load_gdn_projection_weight", src)
+        self.assertIn("self.in_proj_qkvzba = MergedColumnParallelLinear", src)
+        self.assertIn("projected, _ = self.in_proj_qkvzba(hidden_states)", src)
+        self.assertNotIn("self.in_proj_z = ColumnParallelLinear", src)
+        self.assertNotIn("self.in_proj_b = ColumnParallelLinear", src)
+        self.assertNotIn("self.in_proj_a = ColumnParallelLinear", src)
+
     def test_moe_prefill_groups_routes_once(self):
         src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("torch.argsort(flat_eids, stable=True)", src)
