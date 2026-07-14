@@ -39,7 +39,14 @@ patch idempotence/fail-closed unit tests  2/2
 Python compilation                       pass
 patch_ops.sh syntax                      pass
 diff whitespace                         pass
+P0 static                               40/40
+remote CoreX client tests               10/10
 ```
+
+Local broad unit discovery ran 77 tests: 69 passed, seven Torch-dependent
+tests skipped because the local Conda environment has no Torch, and the only
+collection error was the same environment's missing Pillow. The affected
+client suite passed 10/10 under the authoritative remote CoreX environment.
 
 ## Runtime stop conditions
 
