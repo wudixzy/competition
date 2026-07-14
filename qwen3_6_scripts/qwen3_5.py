@@ -63,6 +63,7 @@ from vllm.model_executor.layers.activation import SiluAndMul
 from vllm.model_executor.layers.layernorm import GemmaRMSNorm
 from vllm.model_executor.layers.linear import (ColumnParallelLinear,
                                                MergedColumnParallelLinear,
+                                               QKVParallelLinear,
                                                ReplicatedLinear,
                                                RowParallelLinear)
 from vllm.model_executor.layers.fused_moe import FusedMoE
@@ -785,6 +786,31 @@ def _load_gdn_projection_weight(params_dict, name: str,
     return True
 
 
+def _load_attention_qgkv_weight(params_dict, name: str,
+                                loaded_weight: torch.Tensor) -> bool:
+    shard_ids = {
+        "q_proj": "q",
+        "k_proj": "k",
+        "v_proj": "v",
+    }
+    source = next((projection for projection in shard_ids
+                   if f".self_attn.{projection}." in name), None)
+    if source is None:
+        return False
+
+    target_name = name.replace(
+        f".self_attn.{source}.",
+        ".self_attn.qkv_proj.",
+    )
+    if target_name not in params_dict:
+        raise ValueError(
+            f"missing fused attention projection parameter: {target_name}")
+    param = params_dict[target_name]
+    weight_loader = getattr(param, "weight_loader", default_weight_loader)
+    weight_loader(param, loaded_weight, shard_ids[source])
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Gated DeltaNet  (linear_attention layers)
 # ---------------------------------------------------------------------------
@@ -1102,50 +1128,22 @@ class Qwen3_5FullAttention(nn.Module):
         self.local_num_heads = self.num_heads // tp_size
         self.scaling = self.head_dim ** -0.5
 
-        # When num_kv_heads < tp_size we cannot shard KV further (would give
-        # fractional heads per rank).  Use ReplicatedLinear so every rank holds
-        # all KV heads; local_num_kv_heads equals the full count.
-        # When num_kv_heads >= tp_size standard ColumnParallel sharding applies.
-        if tp_size > self.num_kv_heads:
-            # GQA-aware TP sharding: ixformer kernel only supports num_kv_heads=1
-            # per rank.  With num_kv_heads=2 < tp_size=4 we cannot shard KV
-            # evenly, but we CAN assign each rank the ONE KV head that serves
-            # its Q heads:
-            #   q_per_kv = num_heads // num_kv_heads  (e.g. 16//2 = 8)
-            #   Rank r uses KV head  r * local_num_heads // q_per_kv
-            # e.g. ranks 0,1 → KV head 0;  ranks 2,3 → KV head 1.
-            # We replicate all KV heads to every rank and select in forward().
-            self.proj_kv_heads = self.num_kv_heads  # heads available from projection
-            self.local_num_kv_heads = 1             # heads after rank-local selection
-            self.q_per_kv_global = self.num_heads // self.num_kv_heads
-            self.k_proj = ReplicatedLinear(
-                self.hidden_size, self.num_kv_heads * self.head_dim,
-                bias=False, quant_config=quant_config)
-            self.v_proj = ReplicatedLinear(
-                self.hidden_size, self.num_kv_heads * self.head_dim,
-                bias=False, quant_config=quant_config)
-        else:
-            # Standard sharding: each rank gets num_kv_heads // tp_size heads.
-            self.local_num_kv_heads = self.num_kv_heads // tp_size
-            self.proj_kv_heads = self.local_num_kv_heads  # already sharded
-            self.q_per_kv_global = None
-            self.k_proj = ColumnParallelLinear(
-                self.hidden_size, self.num_kv_heads * self.head_dim,
-                bias=False, quant_config=quant_config,
-                prefix=f"{prefix}.k_proj")
-            self.v_proj = ColumnParallelLinear(
-                self.hidden_size, self.num_kv_heads * self.head_dim,
-                bias=False, quant_config=quant_config,
-                prefix=f"{prefix}.v_proj")
-
+        # q_proj stores [q, gate] per attention head. Treat each half as a
+        # virtual Q head so QKVParallelLinear preserves the existing contiguous
+        # TP shard while selecting/replicating the rank-local KV head.
+        self.qkv_proj = QKVParallelLinear(
+            self.hidden_size,
+            self.head_dim,
+            total_num_heads=self.num_heads * 2,
+            total_num_kv_heads=self.num_kv_heads,
+            bias=False,
+            quant_config=quant_config,
+            prefix=f"{prefix}.qkv_proj",
+        )
+        self.local_num_kv_heads = self.qkv_proj.num_kv_heads
+        self.local_qg_dim = self.local_num_heads * self.head_dim * 2
         self.local_q_dim = self.local_num_heads * self.head_dim
         self.local_kv_dim = self.local_num_kv_heads * self.head_dim
-
-        # q_proj includes gate: output = num_heads * head_dim * 2
-        self.q_proj = ColumnParallelLinear(
-            self.hidden_size, self.num_heads * self.head_dim * 2,
-            bias=False, quant_config=quant_config,
-            prefix=f"{prefix}.q_proj")
         self.o_proj = RowParallelLinear(
             self.num_heads * self.head_dim, self.hidden_size,
             bias=False, quant_config=quant_config,
@@ -1189,33 +1187,22 @@ class Qwen3_5FullAttention(nn.Module):
     ) -> torch.Tensor:
         total_tokens = hidden_states.shape[0]
 
-        # q_proj output includes gate (dim doubled)
-        qg, _ = self.q_proj(hidden_states)  # (total, local_num_heads * head_dim * 2)
+        projected, _ = self.qkv_proj(hidden_states)
+        qg, k, v = torch.split(
+            projected,
+            [self.local_qg_dim, self.local_kv_dim, self.local_kv_dim],
+            dim=-1,
+        )
         qg = qg.view(total_tokens, self.local_num_heads, self.head_dim * 2)
         q = qg[:, :, :self.head_dim].reshape(total_tokens, -1)
         gate = qg[:, :, self.head_dim:].reshape(total_tokens, -1)
-
-        k, _ = self.k_proj(hidden_states)   # (total, proj_kv_heads * head_dim)
-        v, _ = self.v_proj(hidden_states)
 
         # q_norm on local Q heads
         q = self.q_norm.forward_cuda(
             q.view(total_tokens, self.local_num_heads, self.head_dim)
             .contiguous()).view(total_tokens, -1)
 
-        # GQA-aware TP: select rank-local KV head BEFORE k_norm and rope so
-        # that ixformer kernels always see num_kv_heads=1 (same as 27B path).
-        # Doing k_norm/rope on 2 KV heads (proj_kv_heads=2) triggers ixformer
-        # paths that can produce NaN; restricting to 1 head avoids the issue.
-        if self.q_per_kv_global is not None:
-            tp_rank = get_tensor_model_parallel_rank()
-            kv_idx = (tp_rank * self.local_num_heads) // self.q_per_kv_global
-            k = (k.view(total_tokens, self.proj_kv_heads, self.head_dim)
-                  [:, kv_idx, :].contiguous())   # (T, head_dim) — 1 head
-            v = (v.view(total_tokens, self.proj_kv_heads, self.head_dim)
-                  [:, kv_idx, :].contiguous())   # (T, head_dim) — 1 head
-
-        # k_norm on the (now always 1) rank-local KV head
+        # QKVParallelLinear already selects the rank-local KV head.
         k = self.k_norm.forward_cuda(
             k.view(total_tokens, self.local_num_kv_heads, self.head_dim)
             .contiguous()).view(total_tokens, -1)
@@ -1920,6 +1907,10 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
                     params_dict, name, loaded_weight, self.text_cfg):
                 continue
 
+            if _load_attention_qgkv_weight(
+                    params_dict, name, loaded_weight):
+                continue
+
             # Remap conv1d.weight → conv1d_weight
             # The conv has depth (1) dim in the checkpoint that we handle separately
             if ".linear_attn.conv1d.weight" in name:
@@ -2038,6 +2029,10 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLM):
 
             if _load_gdn_projection_weight(
                     params_dict, name, loaded_weight, self.text_cfg):
+                continue
+
+            if _load_attention_qgkv_weight(
+                    params_dict, name, loaded_weight):
                 continue
 
             if ".linear_attn.conv1d.weight" in name:

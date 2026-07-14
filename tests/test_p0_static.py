@@ -232,6 +232,16 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("self.in_proj_b = ColumnParallelLinear", src)
         self.assertNotIn("self.in_proj_a = ColumnParallelLinear", src)
 
+    def test_attention_qgkv_uses_one_parallel_projection(self):
+        src = read("qwen3_6_scripts/qwen3_5.py")
+        self.assertIn("def _load_attention_qgkv_weight", src)
+        self.assertIn("self.qkv_proj = QKVParallelLinear", src)
+        self.assertIn("total_num_heads=self.num_heads * 2", src)
+        self.assertIn("projected, _ = self.qkv_proj(hidden_states)", src)
+        self.assertNotIn("self.q_proj = ColumnParallelLinear", src)
+        self.assertNotIn("self.k_proj = ReplicatedLinear", src)
+        self.assertNotIn("self.v_proj = ReplicatedLinear", src)
+
     def test_moe_prefill_groups_routes_once(self):
         src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("torch.argsort(flat_eids, stable=True)", src)
