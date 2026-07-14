@@ -415,9 +415,11 @@ def _qwen36_pixel_limits(image_processor) -> Tuple[int, int]:
 
 
 def _qwen36_image_token_count(image, image_processor) -> int:
+    if isinstance(image, Image.Image):
+        image = image.convert("RGB")
     image_array = to_numpy_array(image)
-    channel_dim = infer_channel_dimension_format(image_array)
-    height, width = get_image_size(image_array, channel_dim=channel_dim)
+    height, width = get_image_size(
+        image_array, channel_dim=ChannelDimension.LAST)
     min_pixels, max_pixels = _qwen36_pixel_limits(image_processor)
     if getattr(image_processor, "do_resize", True):
         height, width = smart_resize(

@@ -232,6 +232,7 @@ class P0StaticCoverageTest(unittest.TestCase):
     def test_qwen36_image_mapper_pins_rgb_channels_last(self):
         src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("ChannelDimension", src)
+        self.assertIn('image.convert("RGB")', src)
         self.assertIn("do_convert_rgb=True", src)
         self.assertIn("input_data_format=ChannelDimension.LAST", src)
 
