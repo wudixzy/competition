@@ -38,15 +38,18 @@ expert target. No model patch or service A/B was attempted.
 ## GPU0 incident
 
 GPU0 stalled during framework initialization before writing a result. A
-20-second one-tensor Torch preflight also timed out. `ixsmi` reported GPU0 at
-18,164 MiB and 100% utilization with host PIDs `15445` and `7093`; neither PID
-exists in the container namespace. GPU1-3 were idle and healthy.
+20-second one-tensor Torch preflight also timed out. `ixsmi` initially reported
+GPU0 at 18,164 MiB and 100% utilization with host PIDs `15445` and `7093`.
+The still-visible container service PGID `42435` was then force-cleaned; GPU0
+memory fell to 257 MiB, proving that one of the host PIDs mapped to that service.
 
-An `ixsmi -i 0 --gpu-reset` attempt was refused because the stale host
-processes still own the device. This requires an instance-level restart or a
-host-side reset; further container-level retries are not useful. The three
-completed devices already establish that the candidate misses the performance
-gate, so GPU0 was not retried.
+GPU0 nevertheless remained at 100% utilization and the Torch preflight still
+timed out. A second `ixsmi -i 0 --gpu-reset` was refused because host PID `7093`
+still owns the device while no corresponding process is visible in the
+container. This remaining state requires an instance-level restart or a
+host-side reset; further container-level retries are not useful. GPU1-3 were
+idle and healthy, and their completed results already establish that the
+candidate misses the performance gate.
 
 Artifacts remain untracked on the remote instance:
 

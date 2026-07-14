@@ -718,8 +718,9 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   激活。GPU1-3 激活结果和完整 routed output 均 bit-exact，max abs 为 0。
 - 融合激活单项提升 `1.64x-1.69x`，但完整 routed path 仅提升
   `1.030x-1.032x`，低于 5% 集成门槛，因此不修改模型、不做服务 A/B。
-- GPU0 在测试初始化时留下宿主机幽灵 context：`ixsmi` 显示 18,164 MiB、
-  100% util、宿主 PID `15445/7093`，容器内无对应进程；最小 Torch preflight
-  超时，设备 reset 也因宿主 PID 占用被拒绝。继续四卡测试前需要重启实例。
+- GPU0 在测试初始化时卡住。清理仍可见的服务 PGID `42435` 后，显存从
+  18,164 MiB 降至 257 MiB，但 GPU0 仍为 100% util，最小 Torch preflight
+  继续超时。设备 reset 被剩余宿主 PID `7093` 拒绝，而容器内无对应进程；
+  继续四卡测试前需要平台实例级重启或宿主侧 reset。
 - 证据见 `docs/experiments/E_MOE_05_FUSED_ACTIVATION_20260715.md`；E-MOE-03
   仍是当前 qualified model winner。
