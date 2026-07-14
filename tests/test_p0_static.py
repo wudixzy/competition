@@ -232,6 +232,11 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("self.in_proj_b = ColumnParallelLinear", src)
         self.assertNotIn("self.in_proj_a = ColumnParallelLinear", src)
 
+    def test_gdn_recurrence_does_not_clone_read_only_submatrix(self):
+        src = read("qwen3_6_scripts/qwen3_5.py")
+        self.assertIn("sub = attn[..., :i, :i]", src)
+        self.assertNotIn("sub = attn[..., :i, :i].clone()", src)
+
     def test_moe_prefill_groups_routes_once(self):
         src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("torch.argsort(flat_eids, stable=True)", src)

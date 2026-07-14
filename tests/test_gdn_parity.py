@@ -148,6 +148,8 @@ class GatedDeltaNetParityTest(unittest.TestCase):
             initial_state=initial_state, output_final_state=True,
             use_qk_l2norm_in_kernel=True)
 
+        self.assertTrue(torch.equal(actual, expected))
+        self.assertTrue(torch.equal(actual_state, expected_state))
         self.assertLess(torch.max(torch.abs(actual - expected)).item(), 1e-3)
         self.assertLess(
             torch.max(torch.abs(actual_state - expected_state)).item(), 1e-3)

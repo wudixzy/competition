@@ -641,7 +641,7 @@ def _torch_chunk_gated_delta_rule(
     attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask).masked_fill(mask_upper, 0)
     for i in range(1, chunk_size):
         row = attn[..., i, :i].clone()
-        sub = attn[..., :i, :i].clone()
+        sub = attn[..., :i, :i]
         attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
     attn = attn + torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
     value = attn @ v_beta
