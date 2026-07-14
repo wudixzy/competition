@@ -94,8 +94,10 @@ def main() -> int:
                   current_raw_k: torch.Tensor, current_value: torch.Tensor,
                   current_decay: torch.Tensor,
                   current_beta: torch.Tensor) -> torch.Tensor:
-        extension.prep_recurrent_update_out(
-            state, current_raw_q, current_raw_k, current_value,
+        normalized_q = l2norm(current_raw_q)
+        normalized_k = l2norm(current_raw_k)
+        extension.mapped_recurrent_update_out(
+            state, normalized_q, normalized_k, current_value,
             current_decay, current_beta, candidate_output_workspace)
         return candidate_output_workspace
 
