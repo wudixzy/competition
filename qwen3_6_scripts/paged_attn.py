@@ -21,6 +21,53 @@ _PYTORCH_DECODE_THRESHOLD = env_int(
 _PREFIX_BLOCKS_PER_TILE = env_int(
     "BI100_PREFIX_BLOCKS_PER_TILE", 32, 1, 1024)
 _FORCE_PAGED_ATTN_V2 = env_bool("BI100_FORCE_PAGED_ATTN_V2", False)
+_PAGED_ATTN_DIAGNOSTICS = env_bool(
+    "BI100_PAGED_ATTN_DIAGNOSTICS", False)
+_DECODE_LOG_INTERVAL = 8192 if _PAGED_ATTN_DIAGNOSTICS else 0
+_DECODE_DISPATCH_LOGGED = set()
+_CACHE_WRITE_LOGGED = False
+
+
+def _validate_decode_layout(
+    num_seqs: int,
+    seq_lens_count: int,
+    block_table_rows: int,
+    block_table_width: int,
+    actual_max: int,
+    block_size: int,
+    physical_key_blocks: int,
+    physical_value_blocks: int,
+    num_heads: int,
+    num_kv_heads: int,
+) -> int:
+    """Validate host-visible decode metadata before a native kernel launch."""
+    if num_seqs <= 0:
+        raise RuntimeError(f"decode requires num_seqs > 0, got {num_seqs}")
+    if seq_lens_count != num_seqs:
+        raise RuntimeError(
+            f"seq_lens has {seq_lens_count} entries for {num_seqs} sequences")
+    if block_table_rows < num_seqs:
+        raise RuntimeError(
+            f"block table has {block_table_rows} rows for {num_seqs} sequences")
+    if actual_max <= 0:
+        raise RuntimeError(f"decode sequence length must be > 0, got {actual_max}")
+    if block_size <= 0:
+        raise RuntimeError(f"KV block_size must be > 0, got {block_size}")
+    if physical_key_blocks != physical_value_blocks:
+        raise RuntimeError(
+            "key/value cache block counts differ: "
+            f"{physical_key_blocks} != {physical_value_blocks}")
+    if num_kv_heads <= 0 or num_heads % num_kv_heads != 0:
+        raise RuntimeError(
+            f"invalid GQA layout: num_heads={num_heads}, "
+            f"num_kv_heads={num_kv_heads}")
+
+    required_blocks = (actual_max + block_size - 1) // block_size
+    if required_blocks > block_table_width:
+        raise RuntimeError(
+            f"decode needs {required_blocks} blocks for seq_len={actual_max}, "
+            f"but block table width is {block_table_width}")
+    return required_blocks
 
 
 def _strict_prefix_query_segments(
@@ -125,16 +172,65 @@ class PagedAttention:
         k_scale: float,
         v_scale: float,
     ) -> None:
+        global _CACHE_WRITE_LOGGED
+        flat_slots = slot_mapping.flatten()
+        if key.shape[0] != value.shape[0]:
+            raise RuntimeError(
+                f"key/value token counts differ: {key.shape[0]} != "
+                f"{value.shape[0]}")
+        if flat_slots.numel() != key.shape[0]:
+            raise RuntimeError(
+                f"slot_mapping has {flat_slots.numel()} entries for "
+                f"{key.shape[0]} KV tokens")
+        if key_cache.shape[0] != value_cache.shape[0]:
+            raise RuntimeError(
+                "key/value cache block counts differ before cache write: "
+                f"{key_cache.shape[0]} != {value_cache.shape[0]}")
+
+        if _PAGED_ATTN_DIAGNOSTICS and flat_slots.numel() > 0:
+            min_slot = int(flat_slots.min().item())
+            max_slot = int(flat_slots.max().item())
+            max_valid_slot = key_cache.shape[0] * value_cache.shape[3] - 1
+            if min_slot < -1 or max_slot > max_valid_slot:
+                raise RuntimeError(
+                    f"slot_mapping range [{min_slot}, {max_slot}] outside "
+                    f"[-1, {max_valid_slot}]")
+
+        if _PAGED_ATTN_DIAGNOSTICS and not _CACHE_WRITE_LOGGED:
+            print(
+                "[BI100 PAGED_ATTN] cache_write "
+                f"pid={os.getpid()} rank={os.environ.get('RANK', '?')} "
+                f"local_rank={os.environ.get('LOCAL_RANK', '?')} "
+                f"key={tuple(key.shape)} value={tuple(value.shape)} "
+                f"slots={tuple(flat_slots.shape)} "
+                f"key_cache={tuple(key_cache.shape)} "
+                f"value_cache={tuple(value_cache.shape)}",
+                file=sys.stderr,
+                flush=True,
+            )
+            _CACHE_WRITE_LOGGED = True
+
         ops.reshape_and_cache(
             key,
             value,
             key_cache,
             value_cache,
-            slot_mapping.flatten(),
+            flat_slots,
             kv_cache_dtype,
             k_scale,
             v_scale,
         )
+        if _PAGED_ATTN_DIAGNOSTICS:
+            try:
+                torch.cuda.synchronize()
+            except Exception as exc:
+                print(
+                    "[BI100 PAGED_ATTN] cache_write_sync_failed "
+                    f"pid={os.getpid()} error={type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                raise
 
     @staticmethod
     def _forward_decode_pytorch(
@@ -263,7 +359,7 @@ class PagedAttention:
         seq_lens: torch.Tensor,
         max_seq_len: int,
         kv_cache_dtype: str,
-        num_kv_heads: int,
+        head_mapping: torch.Tensor,
         scale: float,
         alibi_slopes: Optional[torch.Tensor],
         k_scale: float,
@@ -275,6 +371,73 @@ class PagedAttention:
         blocksparse_head_sliding_step: int = 0,
     ) -> torch.Tensor:
         actual_max = int(seq_lens.max().item()) if seq_lens.numel() > 0 else max_seq_len
+        block_size = value_cache.shape[3]
+        num_seqs, num_heads, head_size = query.shape
+        if key_cache.shape[1] != value_cache.shape[1]:
+            raise RuntimeError(
+                "key/value cache KV-head counts differ: "
+                f"{key_cache.shape[1]} != {value_cache.shape[1]}")
+        if head_mapping.numel() != num_heads:
+            raise RuntimeError(
+                f"head_mapping has {head_mapping.numel()} entries for "
+                f"{num_heads} query heads")
+        required_blocks = _validate_decode_layout(
+            num_seqs=num_seqs,
+            seq_lens_count=seq_lens.numel(),
+            block_table_rows=block_tables.shape[0],
+            block_table_width=block_tables.shape[1],
+            actual_max=actual_max,
+            block_size=block_size,
+            physical_key_blocks=key_cache.shape[0],
+            physical_value_blocks=value_cache.shape[0],
+            num_heads=num_heads,
+            num_kv_heads=key_cache.shape[1],
+        )
+        if actual_max > max_seq_len:
+            raise RuntimeError(
+                f"actual decode length {actual_max} exceeds max_seq_len "
+                f"{max_seq_len}")
+
+        path = ("pytorch" if
+                actual_max > PagedAttention._PYTORCH_DECODE_THRESHOLD
+                else "native_v1")
+        log_key = (path, None)
+        if (_DECODE_LOG_INTERVAL > 0 and
+                actual_max % _DECODE_LOG_INTERVAL == 0):
+            log_key = (path, actual_max)
+        if log_key not in _DECODE_DISPATCH_LOGGED:
+            print(
+                "[BI100 PAGED_ATTN] decode_dispatch "
+                f"pid={os.getpid()} rank={os.environ.get('RANK', '?')} "
+                f"local_rank={os.environ.get('LOCAL_RANK', '?')} "
+                f"path={path} actual_max={actual_max} "
+                f"max_seq_len={max_seq_len} query={tuple(query.shape)} "
+                f"key_cache={tuple(key_cache.shape)} "
+                f"value_cache={tuple(value_cache.shape)} "
+                f"block_tables={tuple(block_tables.shape)} "
+                f"required_blocks={required_blocks} "
+                f"threshold={PagedAttention._PYTORCH_DECODE_THRESHOLD}",
+                file=sys.stderr,
+                flush=True,
+            )
+            _DECODE_DISPATCH_LOGGED.add(log_key)
+
+        if _PAGED_ATTN_DIAGNOSTICS:
+            for seq_index in range(num_seqs):
+                seq_len = int(seq_lens[seq_index].item())
+                if seq_len <= 0:
+                    raise RuntimeError(
+                        f"seq {seq_index}: decode length must be > 0, got {seq_len}")
+                seq_blocks = (seq_len + block_size - 1) // block_size
+                block_ids = block_tables[seq_index, :seq_blocks]
+                min_block = int(block_ids.min().item())
+                max_block = int(block_ids.max().item())
+                if min_block < 0 or max_block >= key_cache.shape[0]:
+                    raise RuntimeError(
+                        f"seq {seq_index}: physical block range "
+                        f"[{min_block}, {max_block}] outside "
+                        f"[0, {key_cache.shape[0] - 1}]")
+
         if actual_max > PagedAttention._PYTORCH_DECODE_THRESHOLD:
             with bi100_timer("paged_attn.decode_pytorch"):
                 return PagedAttention._forward_decode_pytorch(
@@ -290,8 +453,6 @@ class PagedAttention:
                  f"{block_size=} used in block_tables.")
 
         output = torch.empty_like(query)
-        block_size = value_cache.shape[3]
-        num_seqs, num_heads, head_size = query.shape
         max_num_partitions = ((max_seq_len + _PARTITION_SIZE - 1) //
                               _PARTITION_SIZE)
         # NOTE(woosuk): We use a simple heuristic to decide whether to use
@@ -310,7 +471,7 @@ class PagedAttention:
                 query,
                 key_cache,
                 value_cache,
-                num_kv_heads,
+                head_mapping,
                 scale,
                 block_tables,
                 seq_lens,
@@ -340,7 +501,7 @@ class PagedAttention:
                 query,
                 key_cache,
                 value_cache,
-                num_kv_heads,
+                head_mapping,
                 scale,
                 block_tables,
                 seq_lens,

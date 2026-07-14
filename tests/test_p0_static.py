@@ -298,6 +298,7 @@ class P0StaticCoverageTest(unittest.TestCase):
                 "BI100_PREFIX_BLOCKS_PER_TILE",
                 "BI100_FORCE_PAGED_ATTN_V2",
                 "BI100_ALLOW_PREFIX_GUARD_CAP",
+                "BI100_PAGED_ATTN_DIAGNOSTICS",
                 "BI100_GDN_ALLOW_NAN_ZERO",
                 "BI100_GDN_FINITE_CHECK",
                 "BI100_DNN_CHUNK",
@@ -433,7 +434,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         expected = {
             "DEFAULT_MODEL_PATH": "/model",
             "DEFAULT_SERVED_MODEL_NAME": "llm",
-            "DEFAULT_MAX_MODEL_LEN": "100000",
+            "DEFAULT_MAX_MODEL_LEN": "262144",
             "DEFAULT_TENSOR_PARALLEL_SIZE": "4",
             "DEFAULT_GPU_MEMORY_UTILIZATION": "0.9",
             "DEFAULT_MAX_NUM_SEQS": "1",
@@ -482,7 +483,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         yaml = read("computility-run.yaml")
         expected_fragments = [
             "concurrency: 1",
-            "    - '100000'",
+            "    - '262144'",
             "    - '0.9'",
             "    - -tp",
             "    - '4'",

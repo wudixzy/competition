@@ -1,5 +1,6 @@
 import importlib
 import importlib.util
+import inspect
 import os
 import pathlib
 import sys
@@ -95,6 +96,7 @@ def _load_paged_attn(**env):
             BI100_PYTORCH_DECODE_THRESHOLD=env.get("threshold"),
             BI100_PREFIX_BLOCKS_PER_TILE=env.get("tile"),
             BI100_FORCE_PAGED_ATTN_V2=env.get("force_v2"),
+            BI100_PAGED_ATTN_DIAGNOSTICS=env.get("diagnostics"),
     ):
         old_modules = {
             name: sys.modules.get(name)
@@ -118,6 +120,17 @@ def _load_paged_attn(**env):
 
 
 class PagedAttentionUnitTest(unittest.TestCase):
+
+    def test_legacy_decode_interface_uses_head_mapping_tensor(self):
+        module = _load_paged_attn()
+        self.assertEqual(
+            module.PagedAttention.get_kv_cache_shape(10, 16, 2, 256),
+            (2, 10, 8192),
+        )
+        parameters = inspect.signature(
+            module.PagedAttention.forward_decode).parameters
+        self.assertIn("head_mapping", parameters)
+        self.assertNotIn("num_kv_heads", parameters)
 
     def test_strict_prefix_segments_match_cache_boundaries(self):
         module = _load_paged_attn()
@@ -166,6 +179,8 @@ class PagedAttentionUnitTest(unittest.TestCase):
         self.assertEqual(module.PagedAttention._PYTORCH_DECODE_THRESHOLD, 32768)
         self.assertEqual(module._PREFIX_BLOCKS_PER_TILE, 32)
         self.assertFalse(module.PagedAttention._FORCE_PAGED_ATTN_V2)
+        self.assertFalse(module._PAGED_ATTN_DIAGNOSTICS)
+        self.assertEqual(module._DECODE_LOG_INTERVAL, 0)
         self.assertTrue(module.PagedAttention._should_use_paged_attention_v1(
             max_seq_len=100000,
             max_num_partitions=196,
@@ -174,10 +189,17 @@ class PagedAttentionUnitTest(unittest.TestCase):
         ))
 
     def test_attention_env_overrides_are_loaded_at_import(self):
-        module = _load_paged_attn(threshold="4096", tile="64", force_v2="1")
+        module = _load_paged_attn(
+            threshold="4096",
+            tile="64",
+            force_v2="1",
+            diagnostics="1",
+        )
         self.assertEqual(module.PagedAttention._PYTORCH_DECODE_THRESHOLD, 4096)
         self.assertEqual(module._PREFIX_BLOCKS_PER_TILE, 64)
         self.assertTrue(module.PagedAttention._FORCE_PAGED_ATTN_V2)
+        self.assertTrue(module._PAGED_ATTN_DIAGNOSTICS)
+        self.assertEqual(module._DECODE_LOG_INTERVAL, 8192)
         self.assertFalse(module.PagedAttention._should_use_paged_attention_v1(
             max_seq_len=100000,
             max_num_partitions=196,
@@ -188,6 +210,82 @@ class PagedAttentionUnitTest(unittest.TestCase):
     def test_attention_env_rejects_invalid_values(self):
         with self.assertRaises(RuntimeError):
             _load_paged_attn(threshold="0")
+
+    def test_decode_layout_accepts_exact_block_table_boundary(self):
+        module = _load_paged_attn()
+        required = module._validate_decode_layout(
+            num_seqs=1,
+            seq_lens_count=1,
+            block_table_rows=1,
+            block_table_width=2048,
+            actual_max=32768,
+            block_size=16,
+            physical_key_blocks=16871,
+            physical_value_blocks=16871,
+            num_heads=4,
+            num_kv_heads=1,
+        )
+        self.assertEqual(required, 2048)
+
+    def test_decode_layout_accepts_256k_capacity_boundaries(self):
+        module = _load_paged_attn()
+        common = dict(
+            num_seqs=1,
+            seq_lens_count=1,
+            block_table_rows=1,
+            physical_key_blocks=16871,
+            physical_value_blocks=16871,
+            num_heads=4,
+            num_kv_heads=1,
+            block_size=16,
+        )
+        self.assertEqual(module._validate_decode_layout(
+            block_table_width=16000,
+            actual_max=256000,
+            **common,
+        ), 16000)
+        self.assertEqual(module._validate_decode_layout(
+            block_table_width=16384,
+            actual_max=262144,
+            **common,
+        ), 16384)
+
+    def test_decode_layout_rejects_undersized_block_table(self):
+        module = _load_paged_attn()
+        with self.assertRaisesRegex(RuntimeError, "needs 2049 blocks"):
+            module._validate_decode_layout(
+                num_seqs=1,
+                seq_lens_count=1,
+                block_table_rows=1,
+                block_table_width=2048,
+                actual_max=32769,
+                block_size=16,
+                physical_key_blocks=16871,
+                physical_value_blocks=16871,
+                num_heads=4,
+                num_kv_heads=1,
+            )
+
+    def test_decode_layout_rejects_inconsistent_cache_and_gqa(self):
+        module = _load_paged_attn()
+        kwargs = dict(
+            num_seqs=1,
+            seq_lens_count=1,
+            block_table_rows=1,
+            block_table_width=2,
+            actual_max=17,
+            block_size=16,
+            physical_key_blocks=10,
+            physical_value_blocks=9,
+            num_heads=4,
+            num_kv_heads=1,
+        )
+        with self.assertRaisesRegex(RuntimeError, "cache block counts differ"):
+            module._validate_decode_layout(**kwargs)
+        kwargs["physical_value_blocks"] = 10
+        kwargs["num_kv_heads"] = 3
+        with self.assertRaisesRegex(RuntimeError, "invalid GQA layout"):
+            module._validate_decode_layout(**kwargs)
 
     def test_prefix_block_table_guard_raises_by_default(self):
         module = _load_paged_attn()
