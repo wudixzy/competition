@@ -229,6 +229,12 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("torch.bincount(", src)
         self.assertNotIn("mask = (topk_ids == eid)", src)
 
+    def test_qwen36_image_mapper_pins_rgb_channels_last(self):
+        src = read("qwen3_6_scripts/qwen3_5.py")
+        self.assertIn("ChannelDimension", src)
+        self.assertIn("do_convert_rgb=True", src)
+        self.assertIn("input_data_format=ChannelDimension.LAST", src)
+
     def test_scheduler_gates_kv_hits_on_exact_gdn_state(self):
         scheduler_src = read("qwen3_6_scripts/scheduler.py")
         model_src = read("qwen3_6_scripts/qwen3_5.py")

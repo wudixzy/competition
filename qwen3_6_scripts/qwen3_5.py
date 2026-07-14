@@ -25,7 +25,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from PIL import Image
-from transformers.image_utils import (get_image_size,
+from transformers.image_utils import (ChannelDimension, get_image_size,
                                       infer_channel_dimension_format,
                                       to_numpy_array)
 from transformers.models.qwen2_vl import (
@@ -448,6 +448,8 @@ def qwen36_image_input_mapper(
         images=data,
         return_tensors="pt",
         size={"shortest_edge": min_pixels, "longest_edge": max_pixels},
+        do_convert_rgb=True,
+        input_data_format=ChannelDimension.LAST,
     ).data
     return MultiModalInputs(batch_data)
 
