@@ -83,9 +83,9 @@ fallback, whose full-context K/V gathering must be tested on hardware.
 
 ## Status
 
-Diagnostic hardware qualification passed on the four-card BI100 instance
-`ssh-a2d0a302` on 2026-07-15. Default-mode API and performance qualification
-remain pending; do not merge until those gates complete.
+All diagnostic and default-mode qualification gates passed on the four-card
+BI100 instance `ssh-a2d0a302` on 2026-07-15. The candidate is eligible to merge
+into the integration branch.
 
 ## Diagnostic results
 
@@ -136,3 +136,22 @@ a3dc73d02269b1b3682ed84197c3d2d0ddc39dfdb544f73fb3ea832f1fb30b4d
 The diagnostic logs contained both native V1 and PyTorch decode dispatches.
 They contained no guard failure, cache-write synchronization failure,
 SIGSEGV, fatal Python error, OOM, or worker loss. Final `/health` returned 200.
+
+## Default-mode qualification
+
+The service was restarted without `BI100_PAGED_ATTN_DIAGNOSTICS`. It retained
+16,871 GPU blocks, 6,553 CPU blocks, and `max_seq_len=262144`.
+
+- Full API smoke: 15 passed, 0 failed, 0 skipped.
+- Fixed-seed performance requests: 8/8 successful.
+- Output TPS P10: 13.119379, 1.04% above the 12.9838 winner reference.
+- TTFT P90: 0.802620 seconds.
+- Input TPS: 320.768545.
+- Cache TPS: 319.883911.
+- Cache hit rate: 99.7242%.
+- Local weighted score: 1297.319241.
+
+The local weighted score covers only the fixed short benchmark and must not be
+reported as the official dataset score. The default-mode log contained no
+traceback, SIGSEGV, fatal Python error, OOM, or worker loss. Final `/health`
+returned 200.
