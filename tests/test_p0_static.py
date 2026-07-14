@@ -232,6 +232,16 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("self.in_proj_b = ColumnParallelLinear", src)
         self.assertNotIn("self.in_proj_a = ColumnParallelLinear", src)
 
+    def test_gdn_prefill_uses_refined_ixformer_triangular_solve(self):
+        src = read("qwen3_6_scripts/qwen3_5.py")
+        self.assertIn("from ixformer import functions as ixformer_functions", src)
+        self.assertIn("def _solve_gdn_lower_triangular", src)
+        self.assertIn("solution = ixformer_functions.solve(system, identity)", src)
+        self.assertIn("residual = (identity - system @ solution).contiguous()", src)
+        self.assertIn("correction = ixformer_functions.solve(system, residual)", src)
+        self.assertIn("attn = _solve_gdn_lower_triangular(attn)", src)
+        self.assertNotIn("for i in range(1, chunk_size):", src)
+
     def test_moe_prefill_groups_routes_once(self):
         src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("torch.argsort(flat_eids, stable=True)", src)

@@ -24,6 +24,7 @@ _bi100_model_trace("qwen3_5 stdlib imports complete; importing torch and vLLM")
 import torch
 import torch.nn.functional as F
 from torch import nn
+from ixformer import functions as ixformer_functions
 from PIL import Image
 from transformers.image_utils import (ChannelDimension, get_image_size,
                                       infer_channel_dimension_format,
@@ -540,6 +541,30 @@ def _l2norm(x: torch.Tensor, dim: int = -1, eps: float = 1e-6) -> torch.Tensor:
     return x * torch.rsqrt((x * x).sum(dim=dim, keepdim=True) + eps)
 
 
+@lru_cache(maxsize=8)
+def _gdn_solve_identity(matrix_batch: int, chunk_size: int,
+                        device: torch.device) -> torch.Tensor:
+    identity = torch.eye(
+        chunk_size, dtype=torch.float32, device=device)
+    return identity.expand(matrix_batch, -1, -1).contiguous()
+
+
+def _solve_gdn_lower_triangular(attn: torch.Tensor) -> torch.Tensor:
+    if attn.ndim < 2 or attn.shape[-2] != attn.shape[-1]:
+        raise ValueError(
+            f"GDN solve expects square matrices, got {tuple(attn.shape)}")
+    chunk_size = attn.shape[-1]
+    attn_shape = attn.shape
+    flat_attn = attn.reshape(-1, chunk_size, chunk_size)
+    identity = _gdn_solve_identity(
+        flat_attn.shape[0], chunk_size, attn.device)
+    system = identity - flat_attn
+    solution = ixformer_functions.solve(system, identity)
+    residual = (identity - system @ solution).contiguous()
+    correction = ixformer_functions.solve(system, residual)
+    return (solution + correction).reshape(attn_shape)
+
+
 def _check_gdn_finite(tensor: torch.Tensor, *, layer_idx: int,
                       stage: str) -> torch.Tensor:
     if not _GDN_FINITE_CHECK:
@@ -639,11 +664,7 @@ def _torch_chunk_gated_delta_rule(
     g = g.cumsum(dim=-1)
     decay_mask = ((g.unsqueeze(-1) - g.unsqueeze(-2)).tril().exp().float()).tril()
     attn = -((k_beta @ key.transpose(-1, -2)) * decay_mask).masked_fill(mask_upper, 0)
-    for i in range(1, chunk_size):
-        row = attn[..., i, :i].clone()
-        sub = attn[..., :i, :i].clone()
-        attn[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
-    attn = attn + torch.eye(chunk_size, dtype=attn.dtype, device=attn.device)
+    attn = _solve_gdn_lower_triangular(attn)
     value = attn @ v_beta
     k_cumdecay = attn @ (k_beta * g.exp().unsqueeze(-1))
 

@@ -1,7 +1,9 @@
 import ast
 import pathlib
+import types
 import typing
 import unittest
+from functools import lru_cache
 
 try:
     import torch
@@ -111,7 +113,11 @@ def _load_production_chunk_rule():
     wanted = []
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name in (
-            "_l2norm", "_torch_chunk_gated_delta_rule"):
+            "_l2norm",
+            "_gdn_solve_identity",
+            "_solve_gdn_lower_triangular",
+            "_torch_chunk_gated_delta_rule",
+        ):
             wanted.append(node)
     module = ast.Module(body=wanted, type_ignores=[])
     ast.fix_missing_locations(module)
@@ -120,6 +126,8 @@ def _load_production_chunk_rule():
         "F": F,
         "Optional": typing.Optional,
         "Tuple": typing.Tuple,
+        "lru_cache": lru_cache,
+        "ixformer_functions": types.SimpleNamespace(solve=torch.linalg.solve),
     }
     exec(compile(module, str(QWEN35), "exec"), namespace)
     return namespace["_torch_chunk_gated_delta_rule"]
