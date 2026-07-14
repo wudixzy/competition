@@ -58,6 +58,14 @@ not introduced by the later throughput optimizations.
    only uncached visual embeddings are merged; a fully cached image skips the
    visual tower.
 
+8. Explicit RGB conversion and channels-last input metadata for both visual
+   placeholder sizing and Qwen2VL preprocessing. Keeping those two stages on
+   the same normalized image avoids ambiguous channel inference and token versus
+   embedding count mismatches for tiny images, while accepting grayscale/RGBA
+   PNGs. In vLLM 0.6.3, an exception at the late mapper/model stage terminates
+   the async engine, so this normalization protects the request-success metric
+   as well as individual image compatibility.
+
 `chat_utils.py` maps Qwen3.5/Qwen3.6 images to the native token sequence:
 
 ```text
@@ -98,7 +106,9 @@ Completion request conversions use the same mapping.
 - GPU KV blocks: 16884, versus 17943 for the qualified text-only IPC build
   (-1059, -5.90%).
 - Maximum reported concurrency at 100000 tokens: 2.70x.
-- Final schema-JSON service startup time: approximately 6 minutes 23 seconds.
+- Qualified native-vision service startup time: approximately 6 minutes 23
+  seconds to 7 minutes 34 seconds; most of this is the fixed 8192-token,
+  max-image `determine_num_available_blocks` profile.
 - A 256x256 PNG becomes 256 raw patches and 64 merged LLM visual tokens.
 - Pixel semantic check with identical prompts:
   - red image -> `红色`
@@ -111,6 +121,11 @@ Completion request conversions use the same mapping.
   failed and the engine remained healthy.
 - The original `Unknown model type`, unawaited coroutine, and HTTP 400 errors
   no longer occur on the native image path.
+- The image-channel edge qualification on 2026-07-14 returned HTTP 200 for a
+  32x32 RGB PNG (26.71 seconds) and a 1x1 grayscale PNG (8.97 seconds). A final
+  health request also returned HTTP 200, PID 10600 remained alive, and the
+  service log contained no new errors. The pre-fix grayscale request produced
+  70 placeholders for 64 visual embeddings and terminated the async engine.
 
 ## Qualification
 
