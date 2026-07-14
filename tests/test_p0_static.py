@@ -238,6 +238,17 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("torch.bincount(", src)
         self.assertNotIn("mask = (topk_ids == eid)", src)
 
+    def test_moe_router_and_shared_gate_use_one_replicated_linear(self):
+        src = read("qwen3_6_scripts/qwen3_5.py")
+        self.assertIn("def _load_moe_router_shared_gate_weight", src)
+        self.assertIn("self.gate_and_shared_gate = ReplicatedLinear", src)
+        self.assertIn("gate_outputs, _ = self.gate_and_shared_gate", src)
+        self.assertIn("[self.num_experts, 1]", src)
+        self.assertEqual(
+            src.count("if _load_moe_router_shared_gate_weight("), 1)
+        self.assertNotIn("self.shared_expert_gate = ReplicatedLinear", src)
+        self.assertNotIn("router_logits, _ = self.gate(hidden_states)", src)
+
     def test_qwen36_image_mapper_pins_rgb_channels_last(self):
         src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("ChannelDimension", src)

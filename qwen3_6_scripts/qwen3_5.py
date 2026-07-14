@@ -785,6 +785,40 @@ def _load_gdn_projection_weight(params_dict, name: str,
     return True
 
 
+def _load_moe_router_shared_gate_weight(
+    params_dict,
+    name: str,
+    loaded_weight: torch.Tensor,
+    num_experts: int,
+) -> bool:
+    sources = {
+        ".mlp.gate.weight": (0, num_experts),
+        ".mlp.shared_expert_gate.weight": (num_experts, 1),
+    }
+    source = next((suffix for suffix in sources if name.endswith(suffix)), None)
+    if source is None:
+        return False
+
+    offset, expected_rows = sources[source]
+    if loaded_weight.ndim != 2 or loaded_weight.shape[0] != expected_rows:
+        raise ValueError(
+            f"unexpected MoE gate weight shape for {name}: "
+            f"{tuple(loaded_weight.shape)}")
+    target_name = name[:-len(source)] + \
+        ".mlp.gate_and_shared_gate.weight"
+    if target_name not in params_dict:
+        raise ValueError(f"missing fused MoE gate parameter: {target_name}")
+
+    param = params_dict[target_name]
+    if (param.ndim != 2
+            or param.shape[0] != num_experts + 1
+            or param.shape[1] != loaded_weight.shape[1]):
+        raise ValueError(
+            f"unexpected fused MoE gate parameter shape: {tuple(param.shape)}")
+    param.data[offset:offset + expected_rows].copy_(loaded_weight)
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Gated DeltaNet  (linear_attention layers)
 # ---------------------------------------------------------------------------
@@ -1289,9 +1323,12 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         self.num_experts = text_cfg.num_experts
         self.top_k = text_cfg.num_experts_per_tok
 
-        # Router: replicated (small: num_experts outputs)
-        self.gate = ReplicatedLinear(hidden_size, text_cfg.num_experts,
-                                     bias=False, quant_config=quant_config)
+        # Router and scalar shared-expert gate read the same hidden state.
+        # Keep them replicated and execute one GEMM with output order
+        # [router logits, shared gate score].
+        self.gate_and_shared_gate = ReplicatedLinear(
+            hidden_size, text_cfg.num_experts + 1,
+            bias=False, quant_config=quant_config)
 
         # FusedMoE: only used for weight storage + weight_loader.
         # Forward is bypassed — see _pure_pytorch_experts().
@@ -1314,11 +1351,6 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             shared_size, hidden_size, bias=False, reduce_results=False,
             quant_config=quant_config)
         self.act_fn = SiluAndMul()
-        # Scalar sigmoid gate on shared expert output (same as Qwen2-MoE / Qwen3.5-MoE):
-        #   shared_out *= sigmoid(shared_expert_gate(hidden_states))
-        # Without this, shared expert is always fully active → wrong logits.
-        self.shared_expert_gate = ReplicatedLinear(
-            hidden_size, 1, bias=False, quant_config=quant_config)
 
     def _pure_pytorch_experts(
         self,
@@ -1401,7 +1433,9 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         return out  # partial, all-reduce done in forward()
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        router_logits, _ = self.gate(hidden_states)
+        gate_outputs, _ = self.gate_and_shared_gate(hidden_states)
+        router_logits, gate_score = torch.split(
+            gate_outputs, [self.num_experts, 1], dim=-1)
         with bi100_timer("moe.routed"):
             routed_out = self._pure_pytorch_experts(hidden_states, router_logits)
 
@@ -1409,7 +1443,6 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         shared_out = self.act_fn(gate_up)
         shared_out, _ = self.shared_expert_down(shared_out)
         # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style)
-        gate_score, _ = self.shared_expert_gate(hidden_states)  # (T, 1)
         shared_out = shared_out * torch.sigmoid(gate_score)
 
         out = routed_out + shared_out
@@ -2038,6 +2071,11 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLM):
 
             if _load_gdn_projection_weight(
                     params_dict, name, loaded_weight, self.text_cfg):
+                continue
+
+            if _load_moe_router_shared_gate_weight(
+                    params_dict, name, loaded_weight,
+                    self.text_cfg.num_experts):
                 continue
 
             if ".linear_attn.conv1d.weight" in name:
