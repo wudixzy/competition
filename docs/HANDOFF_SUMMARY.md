@@ -737,3 +737,24 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   分别慢 13.1% 和 8.0%。因此跳过 TP collective 和完整服务，patch 不合入
   integration/qualified runtime。
 - 详细流程见 `docs/experiments/E_GRAPH_01_CUDAGRAPH_PROBE_20260715.md`。
+
+## 2026-07-15 后续微基准与 CoreX 扩展结论
+
+- E-MOE-06 routed/shared 双流重叠保持 bit-exact，但完整 MoE block 只有
+  `0.711x-0.721x`，因 stream 同步和资源争用淘汰。
+- E-GDN-02 将 q/k normalization 前移到 3 倍 head 展开之前，output/state
+  bit-exact，但完整 recurrent step 仅 `1.0235x`，低于 5% 集成门槛。
+- E-CAP-02 重新确认 vendor FusedMoE 三个 ixformer 符号和 `_moe_C` op 均缺失；
+  `/usr/local/corex/bin/nvcc` 只是版本占位脚本。CoreX Clang 16 的 `bi/ivcore10`
+  后端可以编译、加载并执行 ABI-0 Torch CUDA extension，standalone 和 Python
+  extension smoke 均通过。这一能力结论保留在 integration。
+- E-GDN-07 自定义 recurrent kernel 的单步、固定 1,000 步和随机 1,000 步
+  数值门槛通过，candidate 绝对延迟稳定约 `0.049-0.052 ms`；但独立串行复测
+  仅 `1.280x/1.314x`，低于计划要求的 `1.5x`，生产接入提交不合入。
+- E-GDN-06+07 进一步融合 q/k normalization、head expansion 和 recurrent。
+  FP32/half normalization 版本达到 `2.179x/2.318x`，但随机序列 state/output
+  close 失败；保留完整 PyTorch FP16 normalization 的版本数值通过但为
+  `0.992x`。不得放宽容差或重复尝试这些归约路径。
+- 当前 `integration/perf-winners` 只包含 benchmark、能力证据和拒绝 decision；
+  模型实现仍为 qualified E-MOE-03/E-GDN-01。新实例 GPU0 仍无可见进程却
+  100% util，GPU1-3 可做单卡实验；恢复 TP4 前仍需平台侧处理 GPU0。
