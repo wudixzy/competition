@@ -1390,7 +1390,10 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             # bmm: (K,H,I) @ (K,I,1) → (K,H,1) → (K,H)
             expert_out = torch.bmm(w2_sel, act.unsqueeze(-1)).squeeze(-1)  # (K, H)
 
-            out = (expert_out * ws.unsqueeze(-1)).sum(0, keepdim=True).to(
+            # GEMV folds the routed-weight multiply and K reduction into one
+            # dispatch. The previous elementwise multiply plus sum launched
+            # two kernels for only K=8 rows.
+            out = torch.matmul(ws.unsqueeze(0), expert_out).to(
                 hidden_states.dtype)                           # (1, H)
         else:
             # General path (prefill / multi-seq): group assignments once. The
