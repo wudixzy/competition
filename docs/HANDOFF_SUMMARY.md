@@ -711,3 +711,15 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   token 分叉。因此按正确性门禁拒绝，不运行性能 A/B 或长上下文门禁。
 - 远端运行时已恢复 E-MOE-03 `2103876`；`integration/perf-winners` 不变。
 - 证据见 `docs/experiments/E_MOE_04_WEIGHTED_REDUCE_20260715.md`。
+
+## 2026-07-15 E-MOE-05 结论
+
+- 复用 shared expert 已使用的 CoreX/vLLM `SiluAndMul` 测试 routed expert
+  激活。GPU1-3 激活结果和完整 routed output 均 bit-exact，max abs 为 0。
+- 融合激活单项提升 `1.64x-1.69x`，但完整 routed path 仅提升
+  `1.030x-1.032x`，低于 5% 集成门槛，因此不修改模型、不做服务 A/B。
+- GPU0 在测试初始化时留下宿主机幽灵 context：`ixsmi` 显示 18,164 MiB、
+  100% util、宿主 PID `15445/7093`，容器内无对应进程；最小 Torch preflight
+  超时，设备 reset 也因宿主 PID 占用被拒绝。继续四卡测试前需要重启实例。
+- 证据见 `docs/experiments/E_MOE_05_FUSED_ACTIVATION_20260715.md`；E-MOE-03
+  仍是当前 qualified model winner。
