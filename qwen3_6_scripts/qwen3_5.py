@@ -1289,9 +1289,14 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         self.num_experts = text_cfg.num_experts
         self.top_k = text_cfg.num_experts_per_tok
 
-        # Router: replicated (small: num_experts outputs)
-        self.gate = ReplicatedLinear(hidden_size, text_cfg.num_experts,
-                                     bias=False, quant_config=quant_config)
+        # Router and scalar shared-expert gate read the same hidden state. Keep
+        # their checkpoint shards in one replicated weight so forward needs a
+        # single GEMM for 256 + 1 outputs.
+        self.router_shared_gate = ReplicatedLinear(
+            hidden_size, text_cfg.num_experts + 1,
+            bias=False, quant_config=quant_config)
+        self.router_shared_gate.weight.weight_loader = \
+            self._router_shared_gate_weight_loader
 
         # FusedMoE: only used for weight storage + weight_loader.
         # Forward is bypassed — see _pure_pytorch_experts().
@@ -1314,11 +1319,28 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             shared_size, hidden_size, bias=False, reduce_results=False,
             quant_config=quant_config)
         self.act_fn = SiluAndMul()
-        # Scalar sigmoid gate on shared expert output (same as Qwen2-MoE / Qwen3.5-MoE):
-        #   shared_out *= sigmoid(shared_expert_gate(hidden_states))
-        # Without this, shared expert is always fully active → wrong logits.
-        self.shared_expert_gate = ReplicatedLinear(
-            hidden_size, 1, bias=False, quant_config=quant_config)
+
+    def _router_shared_gate_weight_loader(
+        self,
+        param: torch.Tensor,
+        loaded_weight: torch.Tensor,
+        shard_id: int,
+    ) -> None:
+        if shard_id == 0:
+            offset = 0
+            rows = self.num_experts
+        elif shard_id == 1:
+            offset = self.num_experts
+            rows = 1
+        else:
+            raise ValueError(f"unexpected router/shared gate shard: {shard_id}")
+
+        expected = (rows, param.shape[1])
+        if tuple(loaded_weight.shape) != expected:
+            raise ValueError(
+                "unexpected router/shared gate weight shape: "
+                f"expected {expected}, got {tuple(loaded_weight.shape)}")
+        param.data.narrow(0, offset, rows).copy_(loaded_weight)
 
     def _pure_pytorch_experts(
         self,
@@ -1402,15 +1424,16 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         return out  # partial, all-reduce done in forward()
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        router_logits, _ = self.gate(hidden_states)
+        router_and_shared_gate, _ = self.router_shared_gate(hidden_states)
+        router_logits = router_and_shared_gate[..., :self.num_experts]
+        gate_score = router_and_shared_gate[..., self.num_experts:]
         with bi100_timer("moe.routed"):
             routed_out = self._pure_pytorch_experts(hidden_states, router_logits)
 
         gate_up, _ = self.shared_expert_gate_up(hidden_states)
         shared_out = self.act_fn(gate_up)
         shared_out, _ = self.shared_expert_down(shared_out)
-        # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style)
-        gate_score, _ = self.shared_expert_gate(hidden_states)  # (T, 1)
+        # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style).
         shared_out = shared_out * torch.sigmoid(gate_score)
 
         out = routed_out + shared_out
@@ -1975,11 +1998,13 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLM):
         #   mlp.experts.gate_up_proj  shape (num_experts, 2*intermediate, hidden)
         #   mlp.experts.down_proj     shape (num_experts, hidden, intermediate)
         #   mlp.gate.weight           shape (num_experts, hidden)   [router]
+        #   mlp.shared_expert_gate.weight shape (1, hidden)
         #   mlp.shared_expert.{gate,up,down}_proj.weight            [shared MLP]
         # Our FusedMoE stores:
         #   mlp.experts.w13_weight    shape (num_experts, 2*intermediate//tp, hidden)
         #   mlp.experts.w2_weight     shape (num_experts, hidden, intermediate//tp)
-        # Our shared expert stores:
+        # Our router/shared gate stores both tensors in one (num_experts+1, H)
+        # replicated weight. Our shared expert stores:
         #   mlp.shared_expert_gate_up.weight  (merged gate+up)
         #   mlp.shared_expert_down.weight
 
@@ -2040,6 +2065,26 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLM):
 
             if _load_gdn_projection_weight(
                     params_dict, name, loaded_weight, self.text_cfg):
+                continue
+
+            if name.endswith(".mlp.gate.weight"):
+                fused_name = name[:-len("gate.weight")] \
+                    + "router_shared_gate.weight"
+                if fused_name not in params_dict:
+                    raise ValueError(
+                        f"missing fused router/shared gate: {fused_name}")
+                params_dict[fused_name].weight_loader(
+                    params_dict[fused_name], loaded_weight, 0)
+                continue
+
+            if name.endswith(".mlp.shared_expert_gate.weight"):
+                fused_name = name[:-len("shared_expert_gate.weight")] \
+                    + "router_shared_gate.weight"
+                if fused_name not in params_dict:
+                    raise ValueError(
+                        f"missing fused router/shared gate: {fused_name}")
+                params_dict[fused_name].weight_loader(
+                    params_dict[fused_name], loaded_weight, 1)
                 continue
 
             if ".linear_attn.conv1d.weight" in name:
