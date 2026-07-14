@@ -134,6 +134,21 @@ a3dc73d02269b1b3682ed84197c3d2d0ddc39dfdb544f73fb3ea832f1fb30b4d
 
 Final health returned HTTP 200, with no fatal error, OOM, or worker loss.
 
+## Sustained decode gate
+
+A non-streaming request set both `min_tokens` and `max_tokens` to 1,000 so EOS
+could not end the request early. It returned HTTP 200 in 77.831 seconds with
+exactly 1,000 completion tokens and `finish_reason=length`. The complete
+message SHA256 was:
+
+```text
+1766c3c44bfb672e32b2e35419c5e06490e539e54250ab2fc1012c539e68835f
+```
+
+The service returned HTTP 200 afterward, and its log contained no fatal error,
+OOM, or worker loss. The artifact is
+`bench_runs/20260715_E_MOE_02/decode-1000-forced.json`.
+
 ## Decision
 
 `KEEP AS PERFORMANCE WINNER`. E-MOE-02 is bit-exact on all four devices,

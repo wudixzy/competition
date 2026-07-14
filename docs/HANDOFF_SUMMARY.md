@@ -675,6 +675,8 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   P90 中位下降 `4.99%`，固定短测加权值中位提升 `5.00%`。
 - full smoke 为 `15/15`。235K 冷/热请求耗时 `519.855s/48.385s`，热命中
   `234,544` tokens，输出 SHA256 与既有 256K 资格化结果一致。
+- `min_tokens=max_tokens=1000` 的持续解码门槛耗时 `77.831s`，返回 1,000
+  completion tokens、`finish_reason=length`，完成后服务 health 仍为 200。
 - GitHub 分支 `exp/E-MOE-02-decode-primitives` 已推送。ModelHub token 仍被
   Gitea 拒绝，在认证恢复前不要反复猜用户名或覆盖官方远端。
 - 完整证据见 `docs/experiments/E_MOE_02_DECODE_ROUTING_20260715.md`。当前
