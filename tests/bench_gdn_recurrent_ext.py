@@ -81,6 +81,16 @@ def main() -> int:
     beta = torch.full((batch, heads), 0.5, device=device)
     initial_state = torch.randn(
         (batch, heads, dim, dim), device=device, generator=generator) * 0.01
+    candidate_output_workspace = torch.empty_like(value)
+
+    def candidate(state: torch.Tensor, current_query: torch.Tensor,
+                  current_key: torch.Tensor, current_value: torch.Tensor,
+                  current_decay: torch.Tensor,
+                  current_beta: torch.Tensor) -> torch.Tensor:
+        extension.recurrent_update_out(
+            state, current_query, current_key, current_value,
+            current_decay, current_beta, candidate_output_workspace)
+        return candidate_output_workspace
 
     def reference(state: torch.Tensor) -> torch.Tensor:
         state.mul_(decay[:, :, None, None])
@@ -96,7 +106,7 @@ def main() -> int:
     reference_state = initial_state.clone()
     reference_output = reference(reference_state)
     candidate_state = initial_state.clone()
-    candidate_output = extension.recurrent_update(
+    candidate_output = candidate(
         candidate_state, query, key, value, decay, beta)
     torch.cuda.synchronize()
 
@@ -114,7 +124,7 @@ def main() -> int:
     sustained_candidate_state = initial_state.clone()
     for _ in range(args.sustained_steps):
         sustained_reference_output = reference(sustained_reference_state)
-        sustained_candidate_output = extension.recurrent_update(
+        sustained_candidate_output = candidate(
             sustained_candidate_state, query, key, value, decay, beta)
     torch.cuda.synchronize()
     sustained = {
@@ -162,7 +172,7 @@ def main() -> int:
         sequence_reference_output = torch.bmm(
             step_query.view(bh, 1, dim), flat).view(batch, heads, dim)
 
-        sequence_candidate_output = extension.recurrent_update(
+        sequence_candidate_output = candidate(
             sequence_candidate_state, step_query, step_key, step_value,
             step_decay, step_beta)
     torch.cuda.synchronize()
@@ -193,7 +203,7 @@ def main() -> int:
         return reference(reference_timing_state)
 
     def candidate_case() -> torch.Tensor:
-        return extension.recurrent_update(
+        return candidate(
             candidate_timing_state, query, key, value, decay, beta)
 
     results = {}

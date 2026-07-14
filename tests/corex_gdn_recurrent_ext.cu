@@ -90,7 +90,25 @@ torch::Tensor gdn_recurrent_update(torch::Tensor state,
   return output;
 }
 
+void gdn_recurrent_update_out(torch::Tensor state,
+                              const torch::Tensor& query,
+                              const torch::Tensor& key,
+                              const torch::Tensor& value,
+                              const torch::Tensor& decay,
+                              const torch::Tensor& beta,
+                              torch::Tensor output) {
+  const int blocks = static_cast<int>(state.size(0) * state.size(1));
+  gdn_recurrent_kernel<<<blocks, kHeadDim, 0,
+                         at::cuda::getCurrentCUDAStream()>>>(
+      state.data_ptr<float>(), query.data_ptr<float>(), key.data_ptr<float>(),
+      value.data_ptr<float>(), decay.data_ptr<float>(), beta.data_ptr<float>(),
+      output.data_ptr<float>(), static_cast<int>(state.size(1)));
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def("recurrent_update", &gdn_recurrent_update,
              "Fused CoreX Gated DeltaNet recurrent update");
+  module.def("recurrent_update_out", &gdn_recurrent_update_out,
+             "Unchecked fused recurrent update with preallocated output");
 }
