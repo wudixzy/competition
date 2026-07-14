@@ -79,9 +79,38 @@ If startup succeeds, the candidate still requires:
 - 235K cold/warm output equality and prefix-cache reuse;
 - zero fatal/OOM/non-finite/worker-loss/segfault entries.
 
-## Current status
+## Single-card runtime evidence
 
-`PENDING RUNTIME PROBE`. GPU0 on the current instance remains unusable after a
-stale host PID `7093` prevented `ixsmi --gpu-reset`. Do not run this candidate
-until the platform instance has been restarted and all four basic preflights
-pass.
+GPU1 passed a basic Torch allocation/synchronize preflight. The first graph run
+used unrealistically large random expert weights, produced non-finite MoE
+values, and is excluded. Commit `cca70a7` changed the probe to model-scale
+weight initialization and made finite values an explicit requirement.
+
+The corrected run was finite and bit-exact for routed MoE output, mutating GDN
+output, and GDN state. Performance was negative:
+
+| Probe | Eager | Graph | Speedup |
+| --- | ---: | ---: | ---: |
+| one routed-MoE subgraph | 0.4872 ms | 0.5609 ms | 0.8686x |
+| 40 repeated routed-MoE subgraphs | 19.3877 ms | 21.0799 ms | 0.9197x |
+
+The 40-layer probe amortizes graph replay overhead across a model-scale number
+of launches and still regresses by 8.0%. All max-abs differences were 0.0.
+Artifacts are the sibling regular files:
+
+```text
+bench_runs/20260715_E_GRAPH_01/gpu1-r2.json
+bench_runs/20260715_E_GRAPH_01/gpu1-r3.json
+```
+
+## Decision
+
+`REJECT AS PERFORMANCE WINNER`. CUDA Graph replay is numerically compatible
+with the tested BI100 MoE and stateful GDN paths, but it is slower both for a
+small graph and after 40-layer amortization. Skip the TP collective capture and
+full-service graph experiment. Do not merge `patch_cuda_graph.py` or its
+`patch_ops.sh` call into `integration/perf-winners`.
+
+GPU0 on the current instance separately remains unusable after stale host PID
+`7093` prevented `ixsmi --gpu-reset`; an instance restart is still required
+before later TP=4 experiments.
