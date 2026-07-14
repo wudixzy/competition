@@ -698,3 +698,16 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 - 完整证据见 `docs/experiments/E_MOE_03_ROUTER_SHARED_GATE_20260715.md`。
   当前 Output TPS 约 `13.26-13.54`，仍需继续优化 routed expert 和 TP
   collective 才能接近竞赛门槛 20。
+
+## 2026-07-15 E-MOE-04 结论
+
+- 尝试将 T=1 routed expert 的逐元素权重乘法和 top-k sum 合并为一次
+  `torch.matmul`。四卡真实 shape 微基准中，归约本身提升 `2.85x-3.24x`，完整
+  routed path 提升 `1.053x-1.087x`。
+- 该实现不是 bit-exact，最大绝对差 `6.1035e-5`。CoreX 单测/静态测试通过，
+  256K 服务正常启动，full smoke `15/15`，日志无 fatal/OOM/non-finite/worker loss。
+- 强制 1,000-token 请求耗时 `76.693s`，但输出哈希从 E-MOE-03 的
+  `1766c3...` 变为 `be4ee3...`；请求 token 数和 reasoning 全部一致，正文发生
+  token 分叉。因此按正确性门禁拒绝，不运行性能 A/B 或长上下文门禁。
+- 远端运行时已恢复 E-MOE-03 `2103876`；`integration/perf-winners` 不变。
+- 证据见 `docs/experiments/E_MOE_04_WEIGHTED_REDUCE_20260715.md`。

@@ -47,6 +47,12 @@ improves Output TPS P10 by a median 5.78% over E-MOE-02 across three matched
 pairs. See `docs/experiments/E_MOE_03_ROUTER_SHARED_GATE_20260715.md` and the
 preceding E-MOE-02 record for evidence.
 
+E-MOE-04 (`exp/E-MOE-04-weighted-reduce`) is rejected. A GEMV weighted
+reduction improved the complete routed-expert microbenchmark by 5.3% or more
+on all four cards, but changed the forced 1,000-token output hash. See
+`docs/experiments/E_MOE_04_WEIGHTED_REDUCE_20260715.md`. E-MOE-03 remains the
+qualified winner.
+
 The immutable `t9-qualified-20260712` tag remains the archival rollback point;
 this section records the newer GPU-qualified development chain rather than
 retagging that archive.
