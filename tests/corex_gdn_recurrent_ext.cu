@@ -148,6 +148,51 @@ __global__ void gdn_mapped_recurrent_kernel(
   output[vector_offset + column] = result;
 }
 
+__global__ void gdn_inverse_recurrent_kernel(
+    float* state, const half* raw_query, const half* raw_key,
+    const half* query_inverse, const half* key_inverse, const float* value,
+    const float* decay, const float* beta, float* output, int value_heads,
+    int key_heads, int expand_ratio) {
+  const int bh = blockIdx.x;
+  const int column = threadIdx.x;
+  const int batch = bh / value_heads;
+  const int value_head = bh % value_heads;
+  const int key_head = value_head / expand_ratio;
+  const int key_offset = (batch * key_heads + key_head) * kHeadDim;
+  const int inverse_offset = batch * key_heads + key_head;
+  const int vector_offset = bh * kHeadDim;
+  const int state_offset = bh * kHeadDim * kHeadDim;
+  const half q_inverse = query_inverse[inverse_offset];
+  const half k_inverse = key_inverse[inverse_offset];
+  const float head_decay = decay[bh];
+  float memory = 0.0f;
+
+#pragma unroll
+  for (int row = 0; row < kHeadDim; ++row) {
+    const int index = state_offset + row * kHeadDim + column;
+    const float decayed = state[index] * head_decay;
+    state[index] = decayed;
+    const float key_value = __half2float(
+        __hmul(raw_key[key_offset + row], k_inverse));
+    memory += key_value * decayed;
+  }
+  const float delta =
+      (value[vector_offset + column] - memory) * beta[bh];
+  float result = 0.0f;
+#pragma unroll
+  for (int row = 0; row < kHeadDim; ++row) {
+    const int index = state_offset + row * kHeadDim + column;
+    const float key_value = __half2float(
+        __hmul(raw_key[key_offset + row], k_inverse));
+    const float updated = state[index] + key_value * delta;
+    state[index] = updated;
+    const float query_value = __half2float(
+        __hmul(raw_query[key_offset + row], q_inverse)) * 0.0883883476483f;
+    result += query_value * updated;
+  }
+  output[vector_offset + column] = result;
+}
+
 void check_tensor(const torch::Tensor& tensor, const char* name) {
   TORCH_CHECK(tensor.is_cuda(), name, " must be a CUDA tensor");
   TORCH_CHECK(tensor.scalar_type() == torch::kFloat32,
@@ -249,6 +294,28 @@ void gdn_mapped_recurrent_update_out(
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
+void gdn_inverse_recurrent_update_out(
+    torch::Tensor state, const torch::Tensor& raw_query,
+    const torch::Tensor& raw_key, const torch::Tensor& query_inverse,
+    const torch::Tensor& key_inverse, const torch::Tensor& value,
+    const torch::Tensor& decay, const torch::Tensor& beta,
+    torch::Tensor output) {
+  const int value_heads = static_cast<int>(state.size(1));
+  const int key_heads = static_cast<int>(raw_query.size(1));
+  const int blocks = static_cast<int>(state.size(0) * state.size(1));
+  gdn_inverse_recurrent_kernel<<<blocks, kHeadDim, 0,
+                                 at::cuda::getCurrentCUDAStream()>>>(
+      state.data_ptr<float>(),
+      reinterpret_cast<const half*>(raw_query.data_ptr<at::Half>()),
+      reinterpret_cast<const half*>(raw_key.data_ptr<at::Half>()),
+      reinterpret_cast<const half*>(query_inverse.data_ptr<at::Half>()),
+      reinterpret_cast<const half*>(key_inverse.data_ptr<at::Half>()),
+      value.data_ptr<float>(), decay.data_ptr<float>(), beta.data_ptr<float>(),
+      output.data_ptr<float>(), value_heads, key_heads,
+      value_heads / key_heads);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def("recurrent_update", &gdn_recurrent_update,
              "Fused CoreX Gated DeltaNet recurrent update");
@@ -258,4 +325,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
              "Fused q/k prep and recurrent update with preallocated output");
   module.def("mapped_recurrent_update_out", &gdn_mapped_recurrent_update_out,
              "Mapped normalized q/k recurrent update");
+  module.def("inverse_recurrent_update_out", &gdn_inverse_recurrent_update_out,
+             "PyTorch inverse-norm plus mapped recurrent update");
 }

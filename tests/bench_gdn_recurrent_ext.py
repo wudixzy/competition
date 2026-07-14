@@ -94,8 +94,13 @@ def main() -> int:
                   current_raw_k: torch.Tensor, current_value: torch.Tensor,
                   current_decay: torch.Tensor,
                   current_beta: torch.Tensor) -> torch.Tensor:
-        extension.prep_recurrent_update_out(
-            state, current_raw_q, current_raw_k, current_value,
+        query_inverse = torch.rsqrt(
+            (current_raw_q * current_raw_q).sum(-1, keepdim=True) + 1e-6)
+        key_inverse = torch.rsqrt(
+            (current_raw_k * current_raw_k).sum(-1, keepdim=True) + 1e-6)
+        extension.inverse_recurrent_update_out(
+            state, current_raw_q, current_raw_k, query_inverse, key_inverse,
+            current_value,
             current_decay, current_beta, candidate_output_workspace)
         return candidate_output_workspace
 
