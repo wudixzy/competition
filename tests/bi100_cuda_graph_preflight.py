@@ -56,10 +56,10 @@ def main() -> int:
         (1, 2048), device=device, dtype=dtype, generator=generator)
     router_logits = torch.randn(
         (1, 256), device=device, dtype=dtype, generator=generator)
-    w13 = torch.randn(
-        (256, 256, 2048), device=device, dtype=dtype, generator=generator)
-    w2 = torch.randn(
-        (256, 2048, 128), device=device, dtype=dtype, generator=generator)
+    w13 = torch.empty((256, 256, 2048), device=device, dtype=dtype)
+    w2 = torch.empty((256, 2048, 128), device=device, dtype=dtype)
+    w13.normal_(mean=0.0, std=0.02, generator=generator)
+    w2.normal_(mean=0.0, std=0.02, generator=generator)
     activation = SiluAndMul()
 
     def moe_step() -> torch.Tensor:
@@ -77,6 +77,8 @@ def main() -> int:
     moe_graph, graph_moe = capture(moe_step)
     moe_graph.replay()
     torch.cuda.synchronize()
+    moe_finite = bool(
+        torch.isfinite(eager_moe).all() and torch.isfinite(graph_moe).all())
     moe_difference = (eager_moe.float() - graph_moe.float()).abs()
     eager_moe_ms = elapsed_ms(lambda: moe_step(), args.iterations)
     graph_moe_ms = elapsed_ms(moe_graph.replay, args.iterations)
@@ -114,22 +116,31 @@ def main() -> int:
     static_state.copy_(initial_state)
     gdn_graph.replay()
     torch.cuda.synchronize()
+    gdn_finite = bool(
+        torch.isfinite(eager_gdn).all()
+        and torch.isfinite(graph_gdn).all()
+        and torch.isfinite(eager_state).all()
+        and torch.isfinite(static_state).all())
     gdn_difference = (eager_gdn - graph_gdn).abs()
     state_difference = (eager_state - static_state).abs()
 
     report = {
         "device": torch.cuda.get_device_name(device),
         "moe": {
-            "exact": bool(torch.equal(eager_moe, graph_moe)),
+            "finite": moe_finite,
+            "exact": bool(moe_finite and torch.equal(eager_moe, graph_moe)),
             "max_abs": float(moe_difference.max()),
             "eager_ms": eager_moe_ms,
             "graph_ms": graph_moe_ms,
             "speedup": eager_moe_ms / graph_moe_ms,
         },
         "gdn_stateful": {
-            "output_exact": bool(torch.equal(eager_gdn, graph_gdn)),
+            "finite": gdn_finite,
+            "output_exact": bool(
+                gdn_finite and torch.equal(eager_gdn, graph_gdn)),
             "output_max_abs": float(gdn_difference.max()),
-            "state_exact": bool(torch.equal(eager_state, static_state)),
+            "state_exact": bool(
+                gdn_finite and torch.equal(eager_state, static_state)),
             "state_max_abs": float(state_difference.max()),
         },
     }
