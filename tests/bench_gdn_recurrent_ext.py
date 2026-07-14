@@ -127,6 +127,65 @@ def main() -> int:
                        and torch.isfinite(sustained_candidate_state).all()),
     }
 
+    sequence_q = l2norm(torch.randn(
+        (args.sustained_steps, batch, heads, dim), device=device,
+        generator=generator, dtype=torch.float16)).float() * (dim ** -0.5)
+    sequence_k = l2norm(torch.randn(
+        (args.sustained_steps, batch, heads, dim), device=device,
+        generator=generator, dtype=torch.float16)).float()
+    sequence_v = torch.randn(
+        (args.sustained_steps, batch, heads, dim), device=device,
+        generator=generator, dtype=torch.float16).float()
+    sequence_decay = 0.95 + 0.049 * torch.rand(
+        (args.sustained_steps, batch, heads), device=device,
+        generator=generator)
+    sequence_beta = torch.sigmoid(torch.randn(
+        (args.sustained_steps, batch, heads), device=device,
+        generator=generator))
+    sequence_reference_state = initial_state.clone()
+    sequence_candidate_state = initial_state.clone()
+    for step in range(args.sustained_steps):
+        step_query = sequence_q[step]
+        step_key = sequence_k[step]
+        step_value = sequence_v[step]
+        step_decay = sequence_decay[step]
+        step_beta = sequence_beta[step]
+
+        sequence_reference_state.mul_(step_decay[:, :, None, None])
+        flat = sequence_reference_state.view(-1, dim, dim)
+        bh = flat.shape[0]
+        memory = torch.bmm(step_key.view(bh, 1, dim), flat).view(
+            batch, heads, dim)
+        delta = (step_value - memory) * step_beta[:, :, None]
+        flat.baddbmm_(
+            step_key.view(bh, dim, 1), delta.view(bh, 1, dim))
+        sequence_reference_output = torch.bmm(
+            step_query.view(bh, 1, dim), flat).view(batch, heads, dim)
+
+        sequence_candidate_output = extension.recurrent_update(
+            sequence_candidate_state, step_query, step_key, step_value,
+            step_decay, step_beta)
+    torch.cuda.synchronize()
+    sequence_output_diff = (
+        sequence_candidate_output - sequence_reference_output).abs()
+    sequence_state_diff = (
+        sequence_candidate_state - sequence_reference_state).abs()
+    random_sequence = {
+        "steps": args.sustained_steps,
+        "output_max_abs": float(sequence_output_diff.max()),
+        "output_mean_abs": float(sequence_output_diff.mean()),
+        "state_max_abs": float(sequence_state_diff.max()),
+        "state_mean_abs": float(sequence_state_diff.mean()),
+        "output_close": bool(torch.allclose(
+            sequence_candidate_output, sequence_reference_output,
+            rtol=1e-4, atol=1e-5)),
+        "state_close": bool(torch.allclose(
+            sequence_candidate_state, sequence_reference_state,
+            rtol=1e-4, atol=1e-5)),
+        "finite": bool(torch.isfinite(sequence_candidate_output).all()
+                       and torch.isfinite(sequence_candidate_state).all()),
+    }
+
     reference_timing_state = initial_state.clone()
     candidate_timing_state = initial_state.clone()
 
@@ -158,9 +217,14 @@ def main() -> int:
             "extension": str(args.extension), "out": str(args.out)},
         "one_step": one_step,
         "sustained": sustained,
+        "random_sequence": random_sequence,
         "results": results,
     }
-    report["ok"] = bool(one_step["finite"] and sustained["finite"])
+    report["ok"] = bool(
+        one_step["finite"] and sustained["finite"]
+        and random_sequence["finite"]
+        and random_sequence["output_close"]
+        and random_sequence["state_close"])
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
