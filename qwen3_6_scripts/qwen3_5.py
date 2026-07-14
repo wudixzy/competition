@@ -1020,9 +1020,6 @@ class GatedDeltaNet(nn.Module):
                  * F.softplus(a_all.float() + self.dt_bias)
                  ).unsqueeze(1)  # (num_seqs, 1, local_num_v)
 
-            q = q.repeat_interleave(self.head_expand_ratio, dim=2)
-            k = k.repeat_interleave(self.head_expand_ratio, dim=2)
-
             # Inlined decode recurrent step (seq_len=1).
             # Replaces _torch_recurrent_gated_delta_rule to avoid 5 transpose+
             # contiguous+float32 copies, core_out allocation, and Python loop.
@@ -1031,8 +1028,13 @@ class GatedDeltaNet(nn.Module):
             orig_dtype = q.dtype
             _scale = self.head_k_dim ** -0.5
 
-            q_t = _l2norm(q.squeeze(1)).float() * _scale   # (B, H_v, k_dim)
-            k_t = _l2norm(k.squeeze(1)).float()             # (B, H_v, k_dim)
+            # Q/K values are identical across each value-head group. Normalize
+            # the key heads once, then expand, instead of repeating reductions.
+            q_t = (_l2norm(q.squeeze(1)).float()
+                   .repeat_interleave(self.head_expand_ratio, dim=1)
+                   * _scale)                               # (B, H_v, k_dim)
+            k_t = (_l2norm(k.squeeze(1)).float()
+                   .repeat_interleave(self.head_expand_ratio, dim=1))
             v_t = v.squeeze(1).float()                      # (B, H_v, v_dim)
             g_t = g.squeeze(1).float().exp_()               # (B, H_v)
             bt  = beta.squeeze(1).float()                   # (B, H_v)

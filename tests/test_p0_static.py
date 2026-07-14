@@ -232,6 +232,19 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("self.in_proj_b = ColumnParallelLinear", src)
         self.assertNotIn("self.in_proj_a = ColumnParallelLinear", src)
 
+    def test_gdn_decode_normalizes_before_expanding_qk_heads(self):
+        src = read("qwen3_6_scripts/qwen3_5.py")
+        decode = src.split("# Decode: one token per sequence", 1)[1]
+        decode = decode.split("# Full Attention", 1)[0]
+        self.assertNotIn(
+            "q = q.repeat_interleave(self.head_expand_ratio, dim=2)", decode)
+        self.assertNotIn(
+            "k = k.repeat_interleave(self.head_expand_ratio, dim=2)", decode)
+        self.assertIn("_l2norm(q.squeeze(1)).float()", decode)
+        self.assertIn("_l2norm(k.squeeze(1)).float()", decode)
+        self.assertGreaterEqual(
+            decode.count(".repeat_interleave(self.head_expand_ratio, dim=1)"), 2)
+
     def test_moe_prefill_groups_routes_once(self):
         src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("torch.argsort(flat_eids, stable=True)", src)
