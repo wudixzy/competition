@@ -724,3 +724,15 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   继续四卡测试前需要平台实例级重启或宿主侧 reset。
 - 证据见 `docs/experiments/E_MOE_05_FUSED_ACTIVATION_20260715.md`；E-MOE-03
   仍是当前 qualified model winner。
+
+## 2026-07-15 E-GRAPH-01 准备
+
+- vendor `vllm/engine/arg_utils.py` 将 `enforce_eager=True` 硬编码，导致固定
+  命令的 `--max-seq-len-to-capture 32768` 实际无效，同时关闭 async output。
+- 实验分支 `exp/E-GRAPH-01-cudagraph-probe`、提交 `97440b0` 已加入 fail-closed
+  幂等 patch，以及单卡 MoE/GDN state graph 和 TP=4 IPC collective graph 门禁。
+- 本地 patch 单测 `2/2`、Python/shell/diff 检查通过；尚未修改 integration 或
+  qualified runtime。
+- 实例级重启后必须先跑四卡基础 preflight，再按 primitive graph、collective
+  graph、完整服务顺序推进；任一 timeout/mismatch/GPU unhealthy 立即拒绝。
+- 详细流程见 `docs/experiments/E_GRAPH_01_CUDAGRAPH_PROBE_20260715.md`。
