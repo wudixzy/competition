@@ -755,6 +755,12 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   FP32/half normalization 版本达到 `2.179x/2.318x`，但随机序列 state/output
   close 失败；保留完整 PyTorch FP16 normalization 的版本数值通过但为
   `0.992x`。不得放宽容差或重复尝试这些归约路径。
+- E-MOE-07 将 T=1 路径分解为 route `0.057 ms`、selected-weight gather
+  `0.181 ms`、预取权重后的专家计算 `0.241 ms`，完整路径为 `0.507 ms`；
+  gather 单项占 35.75%，因此进入无拷贝门禁。CoreX 扩展直接对原始专家权重
+  执行 cuBLAS pointer-batched GEMV，FP32 累加保持 bit-exact，但完整路径为
+  `0.718 ms`、仅 `0.704x`；half 累加为 `0.628x` 且不精确。该方向淘汰，
+  不得用 cuBLAS 小批量 GEMV 替换当前 flattened W13 + gathered W2 路径。
 - 当前 `integration/perf-winners` 只包含 benchmark、能力证据和拒绝 decision；
   模型实现仍为 qualified E-MOE-03/E-GDN-01。新实例 GPU0 仍无可见进程却
   100% util，GPU1-3 可做单卡实验；恢复 TP4 前仍需平台侧处理 GPU0。
