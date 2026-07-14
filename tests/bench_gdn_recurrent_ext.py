@@ -67,14 +67,12 @@ def main() -> int:
     torch.cuda.set_device(device)
     extension = load_extension(args.extension)
     generator = torch.Generator(device=device).manual_seed(args.seed)
-    batch, heads, dim = 1, 12, 128
+    batch, key_heads, heads, dim = 1, 4, 12, 128
 
-    raw_q = torch.randn((batch, heads, dim), device=device,
+    raw_q = torch.randn((batch, key_heads, dim), device=device,
                         generator=generator, dtype=torch.float16)
-    raw_k = torch.randn((batch, heads, dim), device=device,
+    raw_k = torch.randn((batch, key_heads, dim), device=device,
                         generator=generator, dtype=torch.float16)
-    query = l2norm(raw_q).float() * (dim ** -0.5)
-    key = l2norm(raw_k).float()
     value = torch.randn((batch, heads, dim), device=device,
                         generator=generator, dtype=torch.float16).float()
     decay = torch.full((batch, heads), 0.98, device=device)
@@ -83,31 +81,46 @@ def main() -> int:
         (batch, heads, dim, dim), device=device, generator=generator) * 0.01
     candidate_output_workspace = torch.empty_like(value)
 
-    def candidate(state: torch.Tensor, current_query: torch.Tensor,
-                  current_key: torch.Tensor, current_value: torch.Tensor,
+    def prepare(current_raw_q: torch.Tensor,
+                current_raw_k: torch.Tensor) -> tuple[torch.Tensor,
+                                                       torch.Tensor]:
+        ratio = heads // key_heads
+        current_query = current_raw_q.repeat_interleave(ratio, dim=1)
+        current_key = current_raw_k.repeat_interleave(ratio, dim=1)
+        return (l2norm(current_query).float() * (dim ** -0.5),
+                l2norm(current_key).float())
+
+    def candidate(state: torch.Tensor, current_raw_q: torch.Tensor,
+                  current_raw_k: torch.Tensor, current_value: torch.Tensor,
                   current_decay: torch.Tensor,
                   current_beta: torch.Tensor) -> torch.Tensor:
-        extension.recurrent_update_out(
-            state, current_query, current_key, current_value,
+        extension.prep_recurrent_update_out(
+            state, current_raw_q, current_raw_k, current_value,
             current_decay, current_beta, candidate_output_workspace)
         return candidate_output_workspace
 
-    def reference(state: torch.Tensor) -> torch.Tensor:
-        state.mul_(decay[:, :, None, None])
+    def reference(state: torch.Tensor, current_raw_q: torch.Tensor,
+                  current_raw_k: torch.Tensor, current_value: torch.Tensor,
+                  current_decay: torch.Tensor,
+                  current_beta: torch.Tensor) -> torch.Tensor:
+        current_query, current_key = prepare(current_raw_q, current_raw_k)
+        state.mul_(current_decay[:, :, None, None])
         flat = state.view(-1, dim, dim)
         bh = flat.shape[0]
-        memory = torch.bmm(key.view(bh, 1, dim), flat).view(
+        memory = torch.bmm(current_key.view(bh, 1, dim), flat).view(
             batch, heads, dim)
-        delta = (value - memory) * beta[:, :, None]
-        flat.baddbmm_(key.view(bh, dim, 1), delta.view(bh, 1, dim))
-        return torch.bmm(query.view(bh, 1, dim), flat).view(
+        delta = (current_value - memory) * current_beta[:, :, None]
+        flat.baddbmm_(
+            current_key.view(bh, dim, 1), delta.view(bh, 1, dim))
+        return torch.bmm(current_query.view(bh, 1, dim), flat).view(
             batch, heads, dim)
 
     reference_state = initial_state.clone()
-    reference_output = reference(reference_state)
+    reference_output = reference(
+        reference_state, raw_q, raw_k, value, decay, beta)
     candidate_state = initial_state.clone()
     candidate_output = candidate(
-        candidate_state, query, key, value, decay, beta)
+        candidate_state, raw_q, raw_k, value, decay, beta)
     torch.cuda.synchronize()
 
     one_step = {
@@ -123,9 +136,10 @@ def main() -> int:
     sustained_reference_state = initial_state.clone()
     sustained_candidate_state = initial_state.clone()
     for _ in range(args.sustained_steps):
-        sustained_reference_output = reference(sustained_reference_state)
+        sustained_reference_output = reference(
+            sustained_reference_state, raw_q, raw_k, value, decay, beta)
         sustained_candidate_output = candidate(
-            sustained_candidate_state, query, key, value, decay, beta)
+            sustained_candidate_state, raw_q, raw_k, value, decay, beta)
     torch.cuda.synchronize()
     sustained = {
         "steps": args.sustained_steps,
@@ -137,12 +151,12 @@ def main() -> int:
                        and torch.isfinite(sustained_candidate_state).all()),
     }
 
-    sequence_q = l2norm(torch.randn(
-        (args.sustained_steps, batch, heads, dim), device=device,
-        generator=generator, dtype=torch.float16)).float() * (dim ** -0.5)
-    sequence_k = l2norm(torch.randn(
-        (args.sustained_steps, batch, heads, dim), device=device,
-        generator=generator, dtype=torch.float16)).float()
+    sequence_q = torch.randn(
+        (args.sustained_steps, batch, key_heads, dim), device=device,
+        generator=generator, dtype=torch.float16)
+    sequence_k = torch.randn(
+        (args.sustained_steps, batch, key_heads, dim), device=device,
+        generator=generator, dtype=torch.float16)
     sequence_v = torch.randn(
         (args.sustained_steps, batch, heads, dim), device=device,
         generator=generator, dtype=torch.float16).float()
@@ -161,16 +175,9 @@ def main() -> int:
         step_decay = sequence_decay[step]
         step_beta = sequence_beta[step]
 
-        sequence_reference_state.mul_(step_decay[:, :, None, None])
-        flat = sequence_reference_state.view(-1, dim, dim)
-        bh = flat.shape[0]
-        memory = torch.bmm(step_key.view(bh, 1, dim), flat).view(
-            batch, heads, dim)
-        delta = (step_value - memory) * step_beta[:, :, None]
-        flat.baddbmm_(
-            step_key.view(bh, dim, 1), delta.view(bh, 1, dim))
-        sequence_reference_output = torch.bmm(
-            step_query.view(bh, 1, dim), flat).view(batch, heads, dim)
+        sequence_reference_output = reference(
+            sequence_reference_state, step_query, step_key, step_value,
+            step_decay, step_beta)
 
         sequence_candidate_output = candidate(
             sequence_candidate_state, step_query, step_key, step_value,
@@ -200,11 +207,12 @@ def main() -> int:
     candidate_timing_state = initial_state.clone()
 
     def reference_case() -> torch.Tensor:
-        return reference(reference_timing_state)
+        return reference(
+            reference_timing_state, raw_q, raw_k, value, decay, beta)
 
     def candidate_case() -> torch.Tensor:
         return candidate(
-            candidate_timing_state, query, key, value, decay, beta)
+            candidate_timing_state, raw_q, raw_k, value, decay, beta)
 
     results = {}
     for name, case in {
