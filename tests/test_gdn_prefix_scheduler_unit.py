@@ -6,6 +6,26 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCHEDULER = ROOT / "qwen3_6_scripts" / "scheduler.py"
+MODEL = ROOT / "qwen3_6_scripts" / "qwen3_5.py"
+
+
+def _assigned_attribute_int(path, attribute):
+    tree = ast.parse(path.read_text(), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+            value = node.value
+        else:
+            continue
+        if not isinstance(value, ast.Constant) or not isinstance(value.value, int):
+            continue
+        if any(isinstance(target, ast.Attribute)
+               and target.attr == attribute for target in targets):
+            return value.value
+    raise AssertionError(f"missing integer assignment for {attribute} in {path}")
 
 
 def _load_helpers():
@@ -33,6 +53,15 @@ def _load_helpers():
 
 
 class GdnPrefixSchedulerTest(unittest.TestCase):
+
+    def test_checkpoint_capacity_covers_native_context(self):
+        scheduler_capacity = _assigned_attribute_int(
+            SCHEDULER, "_gdn_prefix_checkpoint_max")
+        worker_capacity = _assigned_attribute_int(
+            MODEL, "_gdn_prefix_cache_max")
+        required_capacity = (262144 + 8192 - 1) // 8192
+        self.assertEqual(scheduler_capacity, worker_capacity)
+        self.assertGreaterEqual(scheduler_capacity, required_capacity)
 
     def test_selects_longest_available_prefix(self):
         helpers = _load_helpers()

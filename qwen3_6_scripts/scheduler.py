@@ -401,7 +401,9 @@ class Scheduler:
         # are safe to skip because they have an exact recurrent-state snapshot.
         self._gdn_prefix_checkpoints: OrderedDict[
             Tuple[int, ...], None] = OrderedDict()
-        self._gdn_prefix_checkpoint_max = 16
+        # Keep every staged checkpoint for one model-native 256K prompt.
+        # With the fixed 8K chunk size this requires 262144 / 8192 entries.
+        self._gdn_prefix_checkpoint_max = 32
         # Time at previous scheduling step
         self.prev_time = 0.0
         # Did we schedule a prompt at previous step?

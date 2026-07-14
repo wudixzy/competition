@@ -1667,7 +1667,8 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
         # Key: tuple of physical block IDs covering the cached prefix
         # Value: (conv_states_cpu, temporal_states_cpu) each of shape (num_gdn_layers, ...)
         self._gdn_prefix_cache: OrderedDict = OrderedDict()
-        self._gdn_prefix_cache_max: int = 16   # ~16 × 16 MB ≈ 256 MB CPU RAM
+        # Cover all 32 staged 8K chunks in the model-native 256K window.
+        self._gdn_prefix_cache_max: int = 32   # ~32 × 16 MB ≈ 512 MB CPU RAM
         self._block_size: int = (cache_config.block_size
                                   if cache_config is not None else 16)
         self._startup_forward_traced = False
