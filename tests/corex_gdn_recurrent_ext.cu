@@ -57,22 +57,27 @@ __global__ void gdn_prep_recurrent_kernel(
   const int vector_offset = bh * kHeadDim;
   const int state_offset = bh * kHeadDim * kHeadDim;
 
-  __shared__ float norm_squares[kHeadDim * 2];
-  const float raw_q = __half2float(raw_query[raw_offset + column]);
-  const float raw_k = __half2float(raw_key[raw_offset + column]);
-  norm_squares[column] = raw_q * raw_q;
-  norm_squares[kHeadDim + column] = raw_k * raw_k;
+  __shared__ half norm_squares[kHeadDim * 2];
+  const half raw_q = raw_query[raw_offset + column];
+  const half raw_k = raw_key[raw_offset + column];
+  norm_squares[column] = __hmul(raw_q, raw_q);
+  norm_squares[kHeadDim + column] = __hmul(raw_k, raw_k);
   __syncthreads();
   for (int stride = kHeadDim / 2; stride > 0; stride >>= 1) {
     if (column < stride) {
-      norm_squares[column] += norm_squares[column + stride];
-      norm_squares[kHeadDim + column] +=
-          norm_squares[kHeadDim + column + stride];
+      norm_squares[column] = __hadd(
+          norm_squares[column], norm_squares[column + stride]);
+      norm_squares[kHeadDim + column] = __hadd(
+          norm_squares[kHeadDim + column],
+          norm_squares[kHeadDim + column + stride]);
     }
     __syncthreads();
   }
-  const float q_scale = rsqrtf(norm_squares[0] + 1e-6f) * 0.0883883476483f;
-  const float k_scale = rsqrtf(norm_squares[kHeadDim] + 1e-6f);
+  const half epsilon = __float2half(1e-6f);
+  const half q_inverse = __float2half(rsqrtf(__half2float(
+      __hadd(norm_squares[0], epsilon))));
+  const half k_inverse = __float2half(rsqrtf(__half2float(
+      __hadd(norm_squares[kHeadDim], epsilon))));
   const float head_decay = decay[bh];
   float memory = 0.0f;
 
@@ -81,8 +86,8 @@ __global__ void gdn_prep_recurrent_kernel(
     const int index = state_offset + row * kHeadDim + column;
     const float decayed = state[index] * head_decay;
     state[index] = decayed;
-    const float normalized_key =
-        __half2float(raw_key[raw_offset + row]) * k_scale;
+    const float normalized_key = __half2float(
+        __hmul(raw_key[raw_offset + row], k_inverse));
     memory += normalized_key * decayed;
   }
 
@@ -92,12 +97,12 @@ __global__ void gdn_prep_recurrent_kernel(
 #pragma unroll
   for (int row = 0; row < kHeadDim; ++row) {
     const int index = state_offset + row * kHeadDim + column;
-    const float normalized_key =
-        __half2float(raw_key[raw_offset + row]) * k_scale;
+    const float normalized_key = __half2float(
+        __hmul(raw_key[raw_offset + row], k_inverse));
     const float updated = state[index] + normalized_key * delta;
     state[index] = updated;
-    const float normalized_query =
-        __half2float(raw_query[raw_offset + row]) * q_scale;
+    const float normalized_query = __half2float(
+        __hmul(raw_query[raw_offset + row], q_inverse)) * 0.0883883476483f;
     result += normalized_query * updated;
   }
   output[vector_offset + column] = result;
