@@ -42,6 +42,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--iterations", type=int, default=500)
+    parser.add_argument("--stack-layers", type=int, default=40)
+    parser.add_argument("--stack-iterations", type=int, default=50)
     parser.add_argument("--seed", type=int, default=20260715)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
@@ -82,6 +84,24 @@ def main() -> int:
     moe_difference = (eager_moe.float() - graph_moe.float()).abs()
     eager_moe_ms = elapsed_ms(lambda: moe_step(), args.iterations)
     graph_moe_ms = elapsed_ms(moe_graph.replay, args.iterations)
+
+    def moe_stack() -> torch.Tensor:
+        output = None
+        for _ in range(args.stack_layers):
+            output = moe_step()
+        assert output is not None
+        return output
+
+    eager_stack = moe_stack()
+    stack_graph, graph_stack = capture(moe_stack)
+    stack_graph.replay()
+    torch.cuda.synchronize()
+    stack_finite = bool(
+        torch.isfinite(eager_stack).all()
+        and torch.isfinite(graph_stack).all())
+    stack_difference = (eager_stack.float() - graph_stack.float()).abs()
+    eager_stack_ms = elapsed_ms(moe_stack, args.stack_iterations)
+    graph_stack_ms = elapsed_ms(stack_graph.replay, args.stack_iterations)
 
     initial_state = torch.randn(
         (1, 12, 128, 128), device=device, dtype=torch.float32,
@@ -134,6 +154,16 @@ def main() -> int:
             "graph_ms": graph_moe_ms,
             "speedup": eager_moe_ms / graph_moe_ms,
         },
+        "moe_stack": {
+            "layers": args.stack_layers,
+            "finite": stack_finite,
+            "exact": bool(
+                stack_finite and torch.equal(eager_stack, graph_stack)),
+            "max_abs": float(stack_difference.max()),
+            "eager_ms": eager_stack_ms,
+            "graph_ms": graph_stack_ms,
+            "speedup": eager_stack_ms / graph_stack_ms,
+        },
         "gdn_stateful": {
             "finite": gdn_finite,
             "output_exact": bool(
@@ -146,6 +176,7 @@ def main() -> int:
     }
     report["ok"] = bool(
         report["moe"]["exact"]
+        and report["moe_stack"]["exact"]
         and report["gdn_stateful"]["output_exact"]
         and report["gdn_stateful"]["state_exact"]
     )
