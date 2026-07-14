@@ -86,6 +86,9 @@ build_stage "installing BI100 runtime modules"
 cp ./bi100_env.py "${VLLM_ROOT}/bi100_env.py"
 cp ./bi100_profile.py "${VLLM_ROOT}/bi100_profile.py"
 
+build_stage "restoring CLI-controlled CUDA Graph selection"
+python3 ./patch_cuda_graph.py
+
 # --- paged_attn.py: replace forward_prefix with pure-PyTorch fallback -------
 # The Triton context_attention_fwd kernel hangs BI-V100 GPUs permanently
 # (standard Triton 2.3.1 PTX is not supported by the corex runtime either).
