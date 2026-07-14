@@ -664,3 +664,19 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 ```
 
 最终 Docker build 不应出现未解释的 `anchor not found`。
+
+## 2026-07-15 E-MOE-02 进展
+
+- 新 4 卡实例 `ssh-a2d0a302.default.gpu.phanthy.com` 已通过 Torch、TP4 与
+  262,144-token 服务启动，最终候选 PID/PGID 为 `18909/18909`。
+- `f11c6f9` 将 MoE 路由从 256 路完整 softmax 后取 top-8，改为先取
+  top-8 logits 再仅对 8 路 softmax；四卡真实形状微基准均 bit-exact。
+- 三组交错固定请求配对的 Output TPS P10 均提升，中位提升 `4.33%`；ITL
+  P90 中位下降 `4.99%`，固定短测加权值中位提升 `5.00%`。
+- full smoke 为 `15/15`。235K 冷/热请求耗时 `519.855s/48.385s`，热命中
+  `234,544` tokens，输出 SHA256 与既有 256K 资格化结果一致。
+- GitHub 分支 `exp/E-MOE-02-decode-primitives` 已推送。ModelHub token 仍被
+  Gitea 拒绝，在认证恢复前不要反复猜用户名或覆盖官方远端。
+- 完整证据见 `docs/experiments/E_MOE_02_DECODE_ROUTING_20260715.md`。当前
+  Output TPS 约 `13.45-13.73`，仍低于竞赛目标 20，下一步继续优化 MoE
+  专家计算或 TP collective，不改固定 evaluator 参数。

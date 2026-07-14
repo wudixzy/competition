@@ -36,3 +36,16 @@ and latency `19.6888s/6.6605s`.
 Use the tag for rollback and A/B baselines. Use `main` for ongoing development.
 Every performance candidate must name this commit or a later fully qualified
 winner as `baseline_commit` in its manifest.
+
+## Current qualified development winner
+
+As of 2026-07-15, the 256K development baseline is `3453dc2` and the latest
+qualified performance winner is E-MOE-02 commit `f11c6f9` on branch
+`exp/E-MOE-02-decode-primitives`. It keeps the fixed 262,144-token contract,
+passes full smoke and a 235K cold/warm cache gate, and improves Output TPS P10
+by a median 4.33% across three matched pairs. See
+`docs/experiments/E_MOE_02_DECODE_ROUTING_20260715.md` for evidence.
+
+The immutable `t9-qualified-20260712` tag remains the archival rollback point;
+this section records the newer GPU-qualified development chain rather than
+retagging that archive.
