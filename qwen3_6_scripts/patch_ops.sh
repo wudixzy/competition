@@ -70,6 +70,18 @@ if installed != required:
 print(f"[ok] transformers {installed}")
 PY
 
+build_stage "building BI100 GDN recurrent extension"
+python3 -m pip install --no-index --no-deps --no-build-isolation \
+  --force-reinstall ./bi100_ext
+python3 - <<'PY'
+import torch
+import bi100_gdn_recurrent
+
+if not hasattr(bi100_gdn_recurrent, "recurrent_update"):
+    raise SystemExit("BI100 GDN extension is missing recurrent_update")
+print("[ok] BI100 GDN recurrent extension")
+PY
+
 build_stage "discovering Python package roots"
 python3 - <<'PY' > /tmp/qwen36_patch_paths.env
 from patch_utils import package_root, shell_env_line

@@ -97,12 +97,23 @@ from vllm.model_executor.models.interfaces import (HasInnerState, SupportsLoRA,
 
 logger = init_logger(__name__)
 
+try:
+    import bi100_gdn_recurrent as _bi100_gdn_recurrent
+except ImportError:
+    try:
+        from bi100_ext import bi100_gdn_recurrent as _bi100_gdn_recurrent
+    except ImportError:
+        _bi100_gdn_recurrent = None
+
 _bi100_model_trace("qwen3_5 runtime imports complete")
 
 _ALLOW_GDN_NAN_ZERO = env_bool("BI100_GDN_ALLOW_NAN_ZERO", False)
 _GDN_FINITE_CHECK = (env_bool("BI100_GDN_FINITE_CHECK", False)
                      or _ALLOW_GDN_NAN_ZERO)
 _DNN_CHUNK_SIZE = env_int("BI100_DNN_CHUNK", 4096, 64, 65536)
+_GDN_RECURRENT_EXT_ENABLED = env_bool("BI100_GDN_RECURRENT_EXT", True)
+if _GDN_RECURRENT_EXT_ENABLED and _bi100_gdn_recurrent is None:
+    logger.warning("BI100 GDN recurrent extension unavailable; using Torch path")
 
 
 # ---------------------------------------------------------------------------
@@ -1038,30 +1049,36 @@ class GatedDeltaNet(nn.Module):
             bt  = beta.squeeze(1).float()                   # (B, H_v)
 
             with bi100_timer(f"L{self.layer_idx}.gdn.decode"):
-                # Decay state in-place: (B, H_v, k_dim, v_dim) *= scalar per head
-                temporal_state.mul_(g_t[:, :, None, None])
+                if (_GDN_RECURRENT_EXT_ENABLED
+                        and _bi100_gdn_recurrent is not None):
+                    core_out = _bi100_gdn_recurrent.recurrent_update(
+                        q_t, k_t, v_t, bt, g_t, temporal_state)
+                else:
+                    # Decay state in-place: (B, H_v, k_dim, v_dim) *= scalar per head
+                    temporal_state.mul_(g_t[:, :, None, None])
 
-                # Reshape to batched-matmul layout: (B*H_v, k_dim, v_dim)
-                ts_flat = temporal_state.view(-1, self.head_k_dim, self.head_v_dim)
-                BH = ts_flat.shape[0]
+                    # Reshape to batched-matmul layout: (B*H_v, k_dim, v_dim)
+                    ts_flat = temporal_state.view(
+                        -1, self.head_k_dim, self.head_v_dim)
+                    BH = ts_flat.shape[0]
 
-                # kv_mem = k_t @ temporal_state  shape: (B*H_v, 1, k_dim) @ (B*H_v, k_dim, v_dim)
-                kv_mem = torch.bmm(
-                    k_t.view(BH, 1, self.head_k_dim), ts_flat
-                ).view(num_seqs, local_num_v, self.head_v_dim)  # (B, H_v, v_dim)
+                    # kv_mem = k_t @ temporal_state
+                    kv_mem = torch.bmm(
+                        k_t.view(BH, 1, self.head_k_dim), ts_flat
+                    ).view(num_seqs, local_num_v, self.head_v_dim)
 
-                delta = (v_t - kv_mem) * bt[:, :, None]         # (B, H_v, v_dim)
+                    delta = (v_t - kv_mem) * bt[:, :, None]
 
-                # State update: temporal_state += outer(k_t, delta)  fused, no intermediate
-                ts_flat.baddbmm_(
-                    k_t.view(BH, self.head_k_dim, 1),
-                    delta.view(BH, 1, self.head_v_dim),
-                )
+                    # State update: temporal_state += outer(k_t, delta)
+                    ts_flat.baddbmm_(
+                        k_t.view(BH, self.head_k_dim, 1),
+                        delta.view(BH, 1, self.head_v_dim),
+                    )
 
-                # Output: core_out = q_t @ updated temporal_state
-                core_out = torch.bmm(
-                    q_t.view(BH, 1, self.head_k_dim), ts_flat
-                ).view(num_seqs, local_num_v, self.head_v_dim)
+                    # Output: core_out = q_t @ updated temporal_state
+                    core_out = torch.bmm(
+                        q_t.view(BH, 1, self.head_k_dim), ts_flat
+                    ).view(num_seqs, local_num_v, self.head_v_dim)
             # core_out: (B, H_v, v_dim) = (num_seqs, local_num_v, head_v_dim) already
 
             z = z_all.reshape(num_seqs, local_num_v, self.head_v_dim)
