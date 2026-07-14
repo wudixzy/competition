@@ -83,5 +83,56 @@ fallback, whose full-context K/V gathering must be tested on hardware.
 
 ## Status
 
-In progress. Do not merge until hardware gates and default-mode performance
-qualification complete.
+Diagnostic hardware qualification passed on the four-card BI100 instance
+`ssh-a2d0a302` on 2026-07-15. Default-mode API and performance qualification
+remain pending; do not merge until those gates complete.
+
+## Diagnostic results
+
+The TP=4 service started with `max_seq_len=262144`, 16,871 GPU blocks, and
+6,553 CPU blocks. The 16-token block size provides 269,936 physical KV tokens.
+
+| Prompt | Cold | Warm | Warm cached | Output hash |
+| ---: | ---: | ---: | ---: | --- |
+| 32,767 | 35.948 s | 3.647 s | 32,704 | `b6bf19869821ca353e02f53fce527a1210473f92a45b1228546602fce465de48` |
+| 32,768 | 35.942 s | 4.132 s | 32,704 | same |
+| 32,769 | 36.665 s | 4.813 s | 32,704 | same |
+
+The 32,767 case exercised native V1 at an actual decode length of 32,768.
+The 32,768 and 32,769 cases exercised the pure-PyTorch path above that
+boundary. All cold/warm responses were equivalent.
+
+The prefix-boundary test reported 8,176 cached tokens on the partial hit and
+11,600 on the full warm hit. Their output hash was identical. A forced
+1,000-token decode completed in 82.188 seconds with HTTP 200 and
+`finish_reason=length`.
+
+### Long-prompt checkpoint retention
+
+The first 235,000-token cold/warm run was stable but exposed a separate cache
+retention defect:
+
+| Revision | Cold | Warm | Warm cached |
+| --- | ---: | ---: | ---: |
+| 16 GDN checkpoints | 520.589 s | 510.317 s | 0 |
+| 32 GDN checkpoints (`e1ba860`) | 499.359 s | 41.090 s | 234,544 |
+
+With `max_num_batched_tokens=8192`, a model-native 262,144-token prompt spans
+32 staged chunks. Keeping only 16 recurrent-state checkpoints caused the
+allocator to find matching KV blocks while the scheduler could not select an
+exact GDN state for the first warm chunk. The worker therefore recomputed the
+whole prompt.
+
+The scheduler and each TP worker now retain 32 checkpoints. Each checkpoint is
+about 16 MB of CPU memory, so the four-rank node uses about 1 GB more host RAM.
+The test node had more than 350 GiB available. The fixed warm run was about
+12.4 times faster and saved 469.227 seconds. Both runs generated eight tokens,
+stopped normally, and returned the same hash:
+
+```text
+a3dc73d02269b1b3682ed84197c3d2d0ddc39dfdb544f73fb3ea832f1fb30b4d
+```
+
+The diagnostic logs contained both native V1 and PyTorch decode dispatches.
+They contained no guard failure, cache-write synchronization failure,
+SIGSEGV, fatal Python error, OOM, or worker loss. Final `/health` returned 200.

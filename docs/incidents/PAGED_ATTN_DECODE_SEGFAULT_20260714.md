@@ -395,3 +395,25 @@ plus a 16K-token completion, but only leaves about 8K tokens beyond a full
 The 256K test must also qualify the long-context PyTorch decode fallback for
 peak HBM, output parity, and latency. Nominal KV capacity alone is not evidence
 that the 256K service path satisfies the throughput target.
+
+## 2026-07-15 diagnostic qualification
+
+The guarded TP=4 runtime completed the 32,768/32,769 dispatch boundary, partial
+and warm prefix-cache reuse, a 235,000-token cold/warm request, and 1,000 forced
+decode tokens. The log contained both native V1 and pure-PyTorch decode paths
+and no guard failure, synchronization failure, SIGSEGV, fatal Python error,
+OOM, or worker loss. The service remained healthy.
+
+This run did not reproduce the original native crash and therefore does not
+establish its root cause. The host-visible guards and long-context fallback
+remain defensive containment.
+
+The qualification did identify an independent long-prompt cache issue. The
+GDN recurrent-state cache retained only 16 staged checkpoints, while the
+262,144-token window with 8,192-token chunks needs 32. A 235,000-token warm
+request consequently reported zero cached tokens and took 510.317 seconds.
+Commit `e1ba860` raises both scheduler and worker retention to 32. The repeated
+hardware test reported 234,544 cached tokens and completed the warm request in
+41.090 seconds with the same output hash as cold. This fix improves prefix
+reuse; it is not evidence that GDN checkpoint eviction caused the reported
+SIGSEGV.
