@@ -40,11 +40,12 @@ winner as `baseline_commit` in its manifest.
 ## Current qualified development winner
 
 As of 2026-07-15, the 256K development baseline is `3453dc2` and the latest
-qualified performance winner is E-MOE-02 commit `f11c6f9` on branch
-`exp/E-MOE-02-decode-primitives`. It keeps the fixed 262,144-token contract,
-passes full smoke and a 235K cold/warm cache gate, and improves Output TPS P10
-by a median 4.33% across three matched pairs. See
-`docs/experiments/E_MOE_02_DECODE_ROUTING_20260715.md` for evidence.
+qualified performance winner is E-MOE-03 commit `7a68a94` on branch
+`exp/E-MOE-03-router-shared-gate`. It includes E-MOE-02, keeps the fixed
+262,144-token contract, passes full smoke and a 235K cold/warm cache gate, and
+improves Output TPS P10 by a median 5.78% over E-MOE-02 across three matched
+pairs. See `docs/experiments/E_MOE_03_ROUTER_SHARED_GATE_20260715.md` and the
+preceding E-MOE-02 record for evidence.
 
 The immutable `t9-qualified-20260712` tag remains the archival rollback point;
 this section records the newer GPU-qualified development chain rather than

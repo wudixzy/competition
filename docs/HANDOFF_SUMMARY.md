@@ -682,3 +682,19 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 - 完整证据见 `docs/experiments/E_MOE_02_DECODE_ROUTING_20260715.md`。当前
   Output TPS 约 `13.45-13.73`，仍低于竞赛目标 20，下一步继续优化 MoE
   专家计算或 TP collective，不改固定 evaluator 参数。
+
+## 2026-07-15 E-MOE-03 进展
+
+- `7a68a94` 将 256-output router 和 1-output shared-expert gate 合并为
+  257-row replicated linear，并用显式分片 loader 保持 checkpoint 兼容。
+- 四卡 T=1 微基准 bit-exact，融合速度为 `1.744x-1.812x`；T=64 为
+  `1.829x-1.837x`。
+- 三组交错固定请求配对的 Output TPS P10 均提升，中位 `+5.78%`；固定短测
+  加权值中位 `+3.17%`。full smoke 为 `15/15`。
+- 235K 冷/热耗时 `503.270s/43.172s`，热命中 `234,544` tokens，输出哈希
+  保持不变。强制 1,000-token 解码耗时 `76.278s`，哈希也与 E-MOE-02 一致。
+- 最终候选服务 PID/PGID `35306/35306`，262,144 context，GPU/CPU blocks
+  `16878/6553`，health 200，无 loader、fatal、OOM 或 worker loss。
+- 完整证据见 `docs/experiments/E_MOE_03_ROUTER_SHARED_GATE_20260715.md`。
+  当前 Output TPS 约 `13.26-13.54`，仍需继续优化 routed expert 和 TP
+  collective 才能接近竞赛门槛 20。
