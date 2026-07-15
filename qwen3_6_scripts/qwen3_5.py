@@ -92,6 +92,11 @@ from vllm.logger import init_logger
 from vllm.bi100_env import env_bool, env_int
 from vllm.bi100_profile import bi100_timer
 
+try:
+    from vllm import corex_gdn_gated_norm as _corex_gdn_gated_norm
+except ImportError:
+    _corex_gdn_gated_norm = None
+
 from vllm.model_executor.models.interfaces import (HasInnerState, SupportsLoRA,
                                                    SupportsMultiModal)
 
@@ -103,6 +108,9 @@ _ALLOW_GDN_NAN_ZERO = env_bool("BI100_GDN_ALLOW_NAN_ZERO", False)
 _GDN_FINITE_CHECK = (env_bool("BI100_GDN_FINITE_CHECK", False)
                      or _ALLOW_GDN_NAN_ZERO)
 _DNN_CHUNK_SIZE = env_int("BI100_DNN_CHUNK", 4096, 64, 65536)
+_USE_COREX_GDN_GATED_NORM = (
+    _corex_gdn_gated_norm is not None
+    and env_bool("BI100_GDN_COREX_GATED_NORM", True))
 
 
 # ---------------------------------------------------------------------------
@@ -743,6 +751,20 @@ class Qwen3_5RMSNormGated(nn.Module):
         hs = self.weight * hs.to(input_dtype)
         return (hs * F.silu(gate.to(torch.float32))).to(input_dtype)
 
+    def forward_decode(self, hidden_states: torch.Tensor,
+                       gate: torch.Tensor) -> torch.Tensor:
+        if (_USE_COREX_GDN_GATED_NORM
+                and hidden_states.dtype == torch.float32
+                and gate.dtype == torch.float16
+                and self.weight.dtype == torch.float16
+                and hidden_states.shape[-1] == 128):
+            hs = hidden_states.float()
+            inverse = torch.rsqrt(
+                hs.pow(2).mean(-1, keepdim=True) + self.variance_epsilon)
+            return _corex_gdn_gated_norm.apply_inverse(
+                hs, gate, self.weight, inverse)
+        return self.forward(hidden_states, gate).to(gate.dtype)
+
 
 def _load_gdn_projection_weight(params_dict, name: str,
                                 loaded_weight: torch.Tensor,
@@ -1065,13 +1087,12 @@ class GatedDeltaNet(nn.Module):
             # core_out: (B, H_v, v_dim) = (num_seqs, local_num_v, head_v_dim) already
 
             z = z_all.reshape(num_seqs, local_num_v, self.head_v_dim)
-            normed = self.norm(
+            normed = self.norm.forward_decode(
                 core_out.reshape(-1, self.head_v_dim),
                 z.reshape(-1, self.head_v_dim))
             normed = _check_gdn_finite(
                 normed, layer_idx=self.layer_idx,
                 stage="decode-norm").reshape(num_seqs, -1)
-            normed = normed.to(orig_dtype)
             out, _ = self.out_proj(normed)
             return _check_gdn_finite(
                 out, layer_idx=self.layer_idx, stage="decode-output")

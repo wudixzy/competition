@@ -325,6 +325,16 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("bi100_timer", qwen_src)
         self.assertIn("bi100_timer", paged_src)
 
+    def test_corex_gdn_gated_norm_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_gdn_gated_norm.sh")
+        self.assertIn("build_corex_gdn_gated_norm.sh", patch_ops)
+        self.assertIn("corex_gdn_gated_norm.so", build_src)
+        self.assertIn("BI100_GDN_COREX_GATED_NORM", qwen_src)
+        self.assertIn("forward_decode", qwen_src)
+        self.assertIn("return self.forward(hidden_states, gate)", qwen_src)
+
     def test_docker_sets_corex_environment_and_invokes_explicit_bash(self):
         dockerfile = read("Dockerfile")
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
