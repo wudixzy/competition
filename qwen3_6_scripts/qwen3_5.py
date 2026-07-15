@@ -785,6 +785,23 @@ def _load_gdn_projection_weight(params_dict, name: str,
     return True
 
 
+def _load_full_attention_projection_weight(params_dict, name: str,
+                                           loaded_weight: torch.Tensor) -> bool:
+    projections = {"q_proj": 0, "k_proj": 1, "v_proj": 2}
+    source = next((projection for projection in projections
+                   if f".self_attn.{projection}." in name), None)
+    if source is None:
+        return False
+    target_name = name.replace(
+        f".self_attn.{source}.", ".self_attn.qgkv_proj.")
+    if target_name not in params_dict:
+        return False
+    param = params_dict[target_name]
+    weight_loader = getattr(param, "weight_loader", default_weight_loader)
+    weight_loader(param, loaded_weight, projections[source])
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Gated DeltaNet  (linear_attention layers)
 # ---------------------------------------------------------------------------
@@ -1101,6 +1118,7 @@ class Qwen3_5FullAttention(nn.Module):
         tp_size = get_tensor_model_parallel_world_size()
         self.local_num_heads = self.num_heads // tp_size
         self.scaling = self.head_dim ** -0.5
+        self.use_merged_qgkv = tp_size <= self.num_kv_heads
 
         # When num_kv_heads < tp_size we cannot shard KV further (would give
         # fractional heads per rank).  Use ReplicatedLinear so every rank holds
@@ -1129,23 +1147,23 @@ class Qwen3_5FullAttention(nn.Module):
             self.local_num_kv_heads = self.num_kv_heads // tp_size
             self.proj_kv_heads = self.local_num_kv_heads  # already sharded
             self.q_per_kv_global = None
-            self.k_proj = ColumnParallelLinear(
-                self.hidden_size, self.num_kv_heads * self.head_dim,
+            self.qgkv_proj = MergedColumnParallelLinear(
+                self.hidden_size,
+                [self.num_heads * self.head_dim * 2,
+                 self.num_kv_heads * self.head_dim,
+                 self.num_kv_heads * self.head_dim],
                 bias=False, quant_config=quant_config,
-                prefix=f"{prefix}.k_proj")
-            self.v_proj = ColumnParallelLinear(
-                self.hidden_size, self.num_kv_heads * self.head_dim,
-                bias=False, quant_config=quant_config,
-                prefix=f"{prefix}.v_proj")
+                prefix=f"{prefix}.qgkv_proj")
 
         self.local_q_dim = self.local_num_heads * self.head_dim
         self.local_kv_dim = self.local_num_kv_heads * self.head_dim
 
-        # q_proj includes gate: output = num_heads * head_dim * 2
-        self.q_proj = ColumnParallelLinear(
-            self.hidden_size, self.num_heads * self.head_dim * 2,
-            bias=False, quant_config=quant_config,
-            prefix=f"{prefix}.q_proj")
+        if not self.use_merged_qgkv:
+            # q_proj includes gate: output = num_heads * head_dim * 2
+            self.q_proj = ColumnParallelLinear(
+                self.hidden_size, self.num_heads * self.head_dim * 2,
+                bias=False, quant_config=quant_config,
+                prefix=f"{prefix}.q_proj")
         self.o_proj = RowParallelLinear(
             self.num_heads * self.head_dim, self.hidden_size,
             bias=False, quant_config=quant_config,
@@ -1189,14 +1207,23 @@ class Qwen3_5FullAttention(nn.Module):
     ) -> torch.Tensor:
         total_tokens = hidden_states.shape[0]
 
-        # q_proj output includes gate (dim doubled)
-        qg, _ = self.q_proj(hidden_states)  # (total, local_num_heads * head_dim * 2)
+        if self.use_merged_qgkv:
+            projected, _ = self.qgkv_proj(hidden_states)
+            qg, k, v = torch.split(
+                projected,
+                [self.local_num_heads * self.head_dim * 2,
+                 self.proj_kv_heads * self.head_dim,
+                 self.proj_kv_heads * self.head_dim],
+                dim=-1)
+        else:
+            qg, _ = self.q_proj(hidden_states)
+            k, _ = self.k_proj(hidden_states)
+            v, _ = self.v_proj(hidden_states)
+
+        # q projection output includes gate (dim doubled)
         qg = qg.view(total_tokens, self.local_num_heads, self.head_dim * 2)
         q = qg[:, :, :self.head_dim].reshape(total_tokens, -1)
         gate = qg[:, :, self.head_dim:].reshape(total_tokens, -1)
-
-        k, _ = self.k_proj(hidden_states)   # (total, proj_kv_heads * head_dim)
-        v, _ = self.v_proj(hidden_states)
 
         # q_norm on local Q heads
         q = self.q_norm.forward_cuda(
@@ -1939,6 +1966,10 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
 
             # Skip positional embedding caches
             if "rotary_emb.inv_freq" in name:
+                continue
+
+            if _load_full_attention_projection_weight(
+                    params_dict, name, loaded_weight):
                 continue
 
             if _load_gdn_projection_weight(
