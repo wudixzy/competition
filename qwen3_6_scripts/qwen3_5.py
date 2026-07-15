@@ -92,6 +92,11 @@ from vllm.logger import init_logger
 from vllm.bi100_env import env_bool, env_int
 from vllm.bi100_profile import bi100_timer
 
+try:
+    from vllm import corex_moe_exact_reduce as _corex_moe_exact_reduce
+except ImportError:
+    _corex_moe_exact_reduce = None
+
 from vllm.model_executor.models.interfaces import (HasInnerState, SupportsLoRA,
                                                    SupportsMultiModal)
 
@@ -103,6 +108,9 @@ _ALLOW_GDN_NAN_ZERO = env_bool("BI100_GDN_ALLOW_NAN_ZERO", False)
 _GDN_FINITE_CHECK = (env_bool("BI100_GDN_FINITE_CHECK", False)
                      or _ALLOW_GDN_NAN_ZERO)
 _DNN_CHUNK_SIZE = env_int("BI100_DNN_CHUNK", 4096, 64, 65536)
+_USE_COREX_MOE_EXACT_REDUCE = (
+    _corex_moe_exact_reduce is not None
+    and env_bool("BI100_MOE_COREX_EXACT_REDUCE", True))
 
 
 # ---------------------------------------------------------------------------
@@ -1390,8 +1398,14 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             # bmm: (K,H,I) @ (K,I,1) → (K,H,1) → (K,H)
             expert_out = torch.bmm(w2_sel, act.unsqueeze(-1)).squeeze(-1)  # (K, H)
 
-            out = (expert_out * ws.unsqueeze(-1)).sum(0, keepdim=True).to(
-                hidden_states.dtype)                           # (1, H)
+            if (_USE_COREX_MOE_EXACT_REDUCE
+                    and expert_out.dtype == torch.float16
+                    and ws.dtype == torch.float16
+                    and expert_out.shape[0] == 8):
+                out = _corex_moe_exact_reduce.exact_reduce(expert_out, ws)
+            else:
+                out = (expert_out * ws.unsqueeze(-1)).sum(
+                    0, keepdim=True).to(hidden_states.dtype)   # (1, H)
         else:
             # General path (prefill / multi-seq): group assignments once. The
             # previous implementation scanned the full (T, top_k) routing
