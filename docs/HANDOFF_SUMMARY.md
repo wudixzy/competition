@@ -1,5 +1,34 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-16 当前主线与下一步
+
+ModelHub 私有仓库的生产主线现为 `main@2d3a0e5`，已合入 E-MOE-20 direct
+routed-expert kernel、Agent 请求兼容修复和资格文档。评测配置只在精确
+`T=1/FP16/top_k=8/E=256/H=2048/I=128` 条件下启用
+`BI100_MOE_COREX_DIRECT_ROUTED=1`，其他形状完整回退；GitHub 仍可匿名读取，
+在仓库所有者手动改为 private 前禁止推送 GitHub。
+
+E-MOE-20 的三组同 binary、同请求、仅切换开关的严格 TP4 配对结果如下：基线
+Output TPS P10 为 `15.1293/15.0863/15.1491`，候选为
+`20.0563/19.0185/20.0312`，相对提升 `32.57%/26.07%/32.23%`。候选 TTFT P90
+为 `2.1337/2.2143/2.1733s`，请求成功率均为 100%，缓存命中均为 86.87% 左右。
+这证明算法有显著端到端收益，但只有 2/3 次达到 20，暂时只能称为接近硬门槛，
+不能称为稳定达标。
+
+质量门禁已通过：full smoke `15/15`，Agent workload matrix `9/9`，持续 1,000
+token 全部 finite 且输出 hash 与资格基线一致。99.5K cold/warm 为
+`157.252/16.583s`、命中 `99,296` tokens；235K 为 `562.368/55.489s`、命中
+`234,544` tokens，两组 cold/warm 输出完全一致。API 层同时修复 assistant
+`tool_calls` 搭配 `content:null`，以及多条文本 system message 的顺序合并问题。
+
+下一算法主线是 E-GDN-14 packed decode，不再继续扫描 YAML 或 kernel launch
+参数。三张健康物理卡上的 primitive 候选为 `0.1084-0.1104 ms`，对纯 PyTorch
+参考提升 `2.71x-2.88x`；1,000/1,000 步全部 finite，output max abs
+`6.48e-5`，state max abs `4.41e-4`。由于当前已资格生产边界实测约
+`0.1652 ms/layer`，保守投影只约节省 `1.68 ms/token`，该结果仅允许进入
+shape-guarded 生产接入和服务质量/A-B 门禁，尚未合入 `main`。实验分支为
+`exp/E-GDN-14-packed-decode@207105e`。
+
 ## 2026-07-15 TP4 候选栈更新
 
 E-ATTN-04 以单个 CoreX kernel 将 paged FP16 K/V 精确 gather 到现有 FP32
