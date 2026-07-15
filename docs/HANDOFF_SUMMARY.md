@@ -21,6 +21,10 @@ E-ATTN-06 direct split-K 原型比 E-ATTN-05 在 64K/100K 分别再快
 代码或 TP4 候选栈。证据见
 `docs/experiments/E_ATTN_06_DIRECT_PAGED_DECODE_20260715.md`。
 
+E-ATTN-07 将广播 `matmul` 改写为 stride-zero GQA `bmm`，64K/100K 各 100
+组输出均逐位一致，但完整路径仅提升 `0.25%/0.00%`，低于 5% 门槛；物理 repeat
+版本更慢。因此拒绝，E-ATTN-05 保持不变。
+
 E-MOE-11 将逐位一致的 routed `SiluAndMul` 与 E-MOE-10 CoreX 精确归约组合。
 GPU1-3 真实 TP4 rank-local shape 的完整 routed decode 路径分别提升
 `1.0993x/1.0993x/1.0998x`，每卡 1,000 组随机输入均逐位一致。组合预计每 token
