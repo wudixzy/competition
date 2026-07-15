@@ -299,6 +299,7 @@ class P0StaticCoverageTest(unittest.TestCase):
                 "BI100_FORCE_PAGED_ATTN_V2",
                 "BI100_ALLOW_PREFIX_GUARD_CAP",
                 "BI100_PAGED_ATTN_DIAGNOSTICS",
+                "BI100_ATTN_COREX_PAGED_GATHER",
                 "BI100_GDN_ALLOW_NAN_ZERO",
                 "BI100_GDN_FINITE_CHECK",
                 "BI100_DNN_CHUNK",
@@ -356,6 +357,16 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("expert_out * ws.unsqueeze", qwen_src)
         self.assertIn("BI100_MOE_FUSED_ACTIVATION", qwen_src)
         self.assertIn("act = self.act_fn(gate_up)", qwen_src)
+
+    def test_corex_paged_kv_gather_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        paged_src = read("qwen3_6_scripts/paged_attn.py")
+        build_src = read("qwen3_6_scripts/build_corex_paged_kv_gather.sh")
+        self.assertIn("build_corex_paged_kv_gather.sh", patch_ops)
+        self.assertIn("corex_paged_kv_gather.so", build_src)
+        self.assertIn("BI100_ATTN_COREX_PAGED_GATHER", paged_src)
+        self.assertIn("_corex_paged_kv_gather.gather", paged_src)
+        self.assertIn("key_cache[blk_ids]", paged_src)
 
     def test_docker_sets_corex_environment_and_invokes_explicit_bash(self):
         dockerfile = read("Dockerfile")

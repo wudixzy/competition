@@ -8,6 +8,11 @@ from vllm import _custom_ops as ops
 from vllm.bi100_env import env_bool, env_int
 from vllm.bi100_profile import bi100_timer
 
+try:
+    from vllm import corex_paged_kv_gather as _corex_paged_kv_gather
+except ImportError:
+    _corex_paged_kv_gather = None
+
 # from vllm.attention.ops.prefix_prefill import context_attention_fwd
 # NOTE: context_attention_fwd (Triton kernel from prefix_prefill.py) is NOT
 # imported here.  On Iluvatar BI-V100 that kernel hangs the GPU card
@@ -23,6 +28,9 @@ _PREFIX_BLOCKS_PER_TILE = env_int(
 _FORCE_PAGED_ATTN_V2 = env_bool("BI100_FORCE_PAGED_ATTN_V2", False)
 _PAGED_ATTN_DIAGNOSTICS = env_bool(
     "BI100_PAGED_ATTN_DIAGNOSTICS", False)
+_USE_COREX_PAGED_KV_GATHER = (
+    _corex_paged_kv_gather is not None
+    and env_bool("BI100_ATTN_COREX_PAGED_GATHER", True))
 _DECODE_LOG_INTERVAL = 8192 if _PAGED_ATTN_DIAGNOSTICS else 0
 _DECODE_DISPATCH_LOGGED = set()
 _CACHE_WRITE_LOGGED = False
@@ -270,20 +278,32 @@ class PagedAttention:
                 num_blocks = (seq_len + block_size - 1) // block_size
                 blk_ids = block_tables[i, :num_blocks]
 
-                # Gather K: [kv_h, head_dim, seq_len] fp32 — no GQA expansion.
-                # With kv_h=1 and seq_len=100K this is 98 MB vs 586 MB if expanded.
-                k_t = (key_cache[blk_ids]
-                       .permute(0, 3, 1, 2, 4)
-                       .contiguous()
-                       .view(-1, num_kv_heads, head_dim))[:seq_len] \
-                      .permute(1, 2, 0).contiguous().float()  # [kv_h, d, seq_len]
-
-                # Gather V: [kv_h, seq_len, head_dim] fp32
-                v_t = (value_cache[blk_ids]
-                       .permute(0, 3, 1, 2)
-                       .contiguous()
-                       .view(-1, num_kv_heads, head_dim))[:seq_len] \
-                      .permute(1, 0, 2).contiguous().float()  # [kv_h, seq_len, d]
+                use_corex_gather = (
+                    _USE_COREX_PAGED_KV_GATHER
+                    and query.dtype == torch.float16
+                    and key_cache.dtype == torch.float16
+                    and value_cache.dtype == torch.float16
+                    and block_tables.dtype == torch.int32
+                    and key_cache.is_contiguous()
+                    and value_cache.is_contiguous()
+                    and blk_ids.is_contiguous())
+                if use_corex_gather:
+                    k_t, v_t = _corex_paged_kv_gather.gather(
+                        key_cache, value_cache, blk_ids, seq_len)
+                else:
+                    # Gather K: [kv_h, head_dim, seq_len] fp32 without GQA
+                    # expansion. The CoreX path above fuses these layout copies
+                    # and FP16-to-FP32 conversions into one kernel.
+                    k_t = (key_cache[blk_ids]
+                           .permute(0, 3, 1, 2, 4)
+                           .contiguous()
+                           .view(-1, num_kv_heads, head_dim))[:seq_len] \
+                          .permute(1, 2, 0).contiguous().float()
+                    v_t = (value_cache[blk_ids]
+                           .permute(0, 3, 1, 2)
+                           .contiguous()
+                           .view(-1, num_kv_heads, head_dim))[:seq_len] \
+                          .permute(1, 0, 2).contiguous().float()
 
                 # Reshape Q for lazy GQA: [kv_h, gqa_ratio, 1, d]
                 q_grouped = (query[i].float()
@@ -398,9 +418,11 @@ class PagedAttention:
                 f"actual decode length {actual_max} exceeds max_seq_len "
                 f"{max_seq_len}")
 
-        path = ("pytorch" if
-                actual_max > PagedAttention._PYTORCH_DECODE_THRESHOLD
-                else "native_v1")
+        if actual_max > PagedAttention._PYTORCH_DECODE_THRESHOLD:
+            path = ("pytorch_corex_gather" if _USE_COREX_PAGED_KV_GATHER
+                    else "pytorch")
+        else:
+            path = "native_v1"
         log_key = (path, None)
         if (_DECODE_LOG_INTERVAL > 0 and
                 actual_max % _DECODE_LOG_INTERVAL == 0):
