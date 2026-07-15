@@ -11,6 +11,7 @@
 | `BI100_GDN_FINITE_CHECK` | `0` | boolean | Enables synchronous per-layer GDN non-finite checks for qualification/debug runs. `BI100_GDN_ALLOW_NAN_ZERO=1` also forces this check on. | E-SYNC-01 |
 | `BI100_GDN_COREX_GATED_NORM` | `1` | boolean | Enables the CoreX decode gated-norm output kernel while retaining the PyTorch FP32 inverse reduction; set to `0` for the reference path. | E-GDN-05 |
 | `BI100_GDN_COREX_BETA_DECAY` | `1` | boolean | Enables the exact fused CoreX decode beta-sigmoid and recurrent decay-factor kernel for contiguous FP16 rank-local inputs; set to `0` for the PyTorch reference path. | E-GDN-10 |
+| `BI100_GDN_COREX_QK_MAP` | `1` | boolean | Normalizes four FP16 q/k heads before expansion, then fuses exact 4-to-8 head mapping, FP32 conversion, and query scaling; set to `0` for the PyTorch reference path. | E-GDN-12 |
 | `BI100_MOE_COREX_EXACT_REDUCE` | `1` | boolean | Enables the exact CoreX T=1 MoE weighted reduction for FP16 top-8 outputs; set to `0` for the PyTorch reference path. | E-MOE-10 |
 | `BI100_MOE_COREX_WEIGHT_GATHER` | `1` | boolean | Enables the exact 128-bit segmented CoreX gather of selected FP16 top-8 routed-expert weights in the T=1 decode path; set to `0` for native advanced indexing. | E-MOE-12/13 |
 | `BI100_MOE_FUSED_ACTIVATION` | `1` | boolean | Reuses vLLM's bit-exact `SiluAndMul` for the T=1 routed-expert activation; set to `0` for the native `F.silu(gate) * up` path. | E-MOE-11 |
