@@ -8,7 +8,7 @@ head before E-ATTN-04: 8e721cf
 base: integration/perf-winners@adab4bc
 ```
 
-This branch combines production code for five independently qualified
+This branch combines production code for six independently qualified
 single-card candidates without changing `computility-run.yaml`:
 
 | Candidate | Branch source | Measured primitive/full-boundary saving |
@@ -18,10 +18,11 @@ single-card candidates without changing `computility-run.yaml`:
 | E-GDN-03 fused causal conv | `3a1a458`, `6d7edff` | ~1.35 ms/token projected |
 | E-GDN-05 gated norm output | `d823dbd` | ~1.63 ms/token projected |
 | E-MOE-11 combined exact MoE tail | `d6ac803` + E-MOE-11 | ~1.83 ms/token projected |
+| E-MOE-12 selected-weight gather | E-MOE-12 | ~3.76 ms/token projected beyond E-MOE-11 |
 
-The unqualified additive projection is approximately `5.1 ms/token`, or
-roughly 7% against the current 13.3-13.5 Output TPS range. This would imply
-about 14.3-14.5 TPS, still below the 20 TPS competition target. E-ATTN-05 is
+The unqualified additive projection is approximately `8.9 ms/token`. Against
+the current 13.3-13.5 Output TPS range, this would imply about 15.1-15.3 TPS,
+still below the 20 TPS competition target. E-ATTN-05 is
 not included in that generic projection because it activates only above 32K;
 its context-dependent saving is listed separately in the table. Treat all
 projections only as prioritization; shared launch and memory effects require
@@ -36,13 +37,14 @@ E-ATTN-07 retained exact arithmetic with stride-zero GQA BMM, but changed the
 
 ## Build and static gates
 
-`patch_ops.sh` builds all four CoreX extensions into the discovered vLLM
+`patch_ops.sh` builds all five CoreX extensions into the discovered vLLM
 package before installing the model file:
 
 ```text
 corex_gdn_causal_conv.so
 corex_gdn_gated_norm.so
 corex_moe_exact_reduce.so
+corex_moe_weight_gather.so
 corex_paged_kv_gather.so
 ```
 
@@ -70,13 +72,15 @@ Do not benchmark all candidates first. On a healthy four-card host:
 6. Enable E-MOE-11 in two stages: first compare
    `BI100_MOE_COREX_EXACT_REDUCE=1/0`, then compare
    `BI100_MOE_FUSED_ACTIVATION=1/0`.
-7. Run the all-enabled stack only after every individual 1,000-token hash is
+7. Enable E-MOE-12 and compare `BI100_MOE_COREX_WEIGHT_GATHER=1/0` after the
+   E-MOE-11 checks; require the same 1,000-token hash.
+8. Run the all-enabled stack only after every individual 1,000-token hash is
    identical. Repeat three interleaved service A/B pairs.
-8. Finish with full smoke, 99.5K and 235K/256K cold-warm equality, cache-hit
+9. Finish with full smoke, 99.5K and 235K/256K cold-warm equality, cache-hit
    accounting, and log scans for non-finite/OOM/worker loss/native crashes.
 
 E-ATTN-03 has no environment fallback because it changes parameter layout;
-use the qualified integration model file for its baseline. The four CoreX
+use the qualified integration model file for its baseline. The five CoreX
 extensions and the MoE activation fusion are independently switchable. CoreX
 extensions fail closed on unsupported dtypes or shapes.
 

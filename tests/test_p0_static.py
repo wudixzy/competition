@@ -358,6 +358,19 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("BI100_MOE_FUSED_ACTIVATION", qwen_src)
         self.assertIn("act = self.act_fn(gate_up)", qwen_src)
 
+    def test_corex_moe_weight_gather_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_moe_weight_gather.sh")
+        kernel_src = read("qwen3_6_scripts/corex_moe_weight_gather.cu")
+        self.assertIn("build_corex_moe_weight_gather.sh", patch_ops)
+        self.assertIn("corex_moe_weight_gather.so", build_src)
+        self.assertIn("BI100_MOE_COREX_WEIGHT_GATHER", qwen_src)
+        self.assertIn("_corex_moe_weight_gather.gather", qwen_src)
+        self.assertIn("w13_sel = w13[eids]", qwen_src)
+        self.assertIn("constexpr int kGridCap = 1024", kernel_src)
+        self.assertIn("__half2", kernel_src)
+
     def test_corex_paged_kv_gather_is_built_with_explicit_fallback(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         paged_src = read("qwen3_6_scripts/paged_attn.py")

@@ -31,6 +31,13 @@ GPU1-3 真实 TP4 rank-local shape 的完整 routed decode 路径分别提升
 节省约 1.83 ms，使当前 TP4 候选栈的未资格化投影从约 4.4 ms/token 增至约
 5.1 ms/token，对应 13.3-13.5 TPS 基线约 14.3-14.5 TPS。服务 A/B 尚未完成。
 
+E-MOE-12 将 T=1 top-8 的 W13/W2 两次高级索引替换为一个 `__half2` CoreX
+gather。GPU1-3 完整路由链路稳定提升 `1.2606x-1.2615x`，固定路由全路径约
+`1.329x`，每卡 1,000 组随机路由均逐位一致；生产模型方法探针为
+`0.4570 -> 0.3619 ms`（`1.2630x`）。按 40 个 MoE 层新增约 3.76 ms/token，
+使短上下文候选栈未资格化投影增至约 8.9 ms/token，即约 15.1-15.3 TPS。
+证据见 `docs/experiments/E_MOE_12_FUSED_WEIGHT_GATHER_20260715.md`。
+
 新实例 `ssh-a2d0a302.default.gpu.phanthy.com` 的 GPU0 仍为 257 MiB、100% 利用率且
 无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
 四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。

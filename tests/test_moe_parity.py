@@ -47,7 +47,13 @@ def _load_production_experts():
         if isinstance(node, ast.FunctionDef) and node.name == "_pure_pytorch_experts")
     module = ast.Module(body=[method], type_ignores=[])
     ast.fix_missing_locations(module)
-    namespace = {"torch": torch, "F": F}
+    namespace = {
+        "torch": torch,
+        "F": F,
+        "_USE_COREX_MOE_WEIGHT_GATHER": False,
+        "_USE_FUSED_MOE_ACTIVATION": False,
+        "_USE_COREX_MOE_EXACT_REDUCE": False,
+    }
     exec(compile(module, str(QWEN35), "exec"), namespace)
     return namespace["_pure_pytorch_experts"]
 

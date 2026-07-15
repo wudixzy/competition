@@ -107,6 +107,11 @@ try:
 except ImportError:
     _corex_moe_exact_reduce = None
 
+try:
+    from vllm import corex_moe_weight_gather as _corex_moe_weight_gather
+except ImportError:
+    _corex_moe_weight_gather = None
+
 from vllm.model_executor.models.interfaces import (HasInnerState, SupportsLoRA,
                                                    SupportsMultiModal)
 
@@ -127,6 +132,9 @@ _USE_COREX_GDN_GATED_NORM = (
 _USE_COREX_MOE_EXACT_REDUCE = (
     _corex_moe_exact_reduce is not None
     and env_bool("BI100_MOE_COREX_EXACT_REDUCE", True))
+_USE_COREX_MOE_WEIGHT_GATHER = (
+    _corex_moe_weight_gather is not None
+    and env_bool("BI100_MOE_COREX_WEIGHT_GATHER", True))
 _USE_FUSED_MOE_ACTIVATION = env_bool("BI100_MOE_FUSED_ACTIVATION", True)
 
 
@@ -1467,8 +1475,27 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             # Total: 3 kernel launches vs previous 16 (top_k*2).
             eids    = topk_ids[0]                              # (K,)
             ws      = topk_weights[0].to(hidden_states.dtype)  # (K,)
-            w13_sel = w13[eids]                                # (K, 2*I, H)
-            w2_sel  = w2[eids]                                 # (K, H, I)
+            use_corex_gather = (
+                _USE_COREX_MOE_WEIGHT_GATHER
+                and hidden_states.dtype == torch.float16
+                and w13.dtype == torch.float16
+                and w2.dtype == torch.float16
+                and w13.is_cuda and w2.is_cuda and eids.is_cuda
+                and w13.is_contiguous() and w2.is_contiguous()
+                and eids.is_contiguous()
+                and w13.dim() == 3 and w2.dim() == 3
+                and eids.dim() == 1 and eids.numel() == 8
+                and w13.shape[0] == w2.shape[0]
+                and w13.shape[2] == w2.shape[1]
+                and w13.shape[1] == 2 * w2.shape[2]
+                and w13.shape[2] % 2 == 0
+                and w2.shape[2] % 2 == 0)
+            if use_corex_gather:
+                w13_sel, w2_sel = _corex_moe_weight_gather.gather(
+                    w13, w2, eids)
+            else:
+                w13_sel = w13[eids]                            # (K, 2*I, H)
+                w2_sel = w2[eids]                              # (K, H, I)
 
             H = hidden_states.shape[-1]
 
