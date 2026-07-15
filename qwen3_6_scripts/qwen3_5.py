@@ -799,15 +799,15 @@ class GatedDeltaNet(nn.Module):
         super().__init__()
         self.layer_idx = layer_idx
         self.hidden_size = text_cfg.hidden_size
-        self.num_v_heads = text_cfg.linear_num_value_heads   # 48
-        self.num_k_heads = text_cfg.linear_num_key_heads     # 16
+        self.num_v_heads = text_cfg.linear_num_value_heads   # checkpoint: 32
+        self.num_k_heads = text_cfg.linear_num_key_heads     # checkpoint: 16
         self.head_k_dim = text_cfg.linear_key_head_dim       # 128
         self.head_v_dim = text_cfg.linear_value_head_dim     # 128
         self.key_dim = self.num_k_heads * self.head_k_dim    # 2048
-        self.value_dim = self.num_v_heads * self.head_v_dim  # 6144
-        self.conv_dim = self.key_dim * 2 + self.value_dim    # 10240
+        self.value_dim = self.num_v_heads * self.head_v_dim  # checkpoint: 4096
+        self.conv_dim = self.key_dim * 2 + self.value_dim    # checkpoint: 8192
         self.conv_kernel_size = text_cfg.linear_conv_kernel_dim  # 4
-        self.head_expand_ratio = self.num_v_heads // self.num_k_heads  # 3
+        self.head_expand_ratio = self.num_v_heads // self.num_k_heads  # checkpoint: 2
 
         tp_size = get_tensor_model_parallel_world_size()
 
@@ -844,14 +844,14 @@ class GatedDeltaNet(nn.Module):
 
     def _conv1d_weight_loader(self, param: torch.Tensor,
                               loaded_weight: torch.Tensor) -> None:
-        # loaded_weight: (conv_dim=10240, 1, kernel) ordered as [q, k, v] channels
+        # loaded_weight is ordered as [q, k, v] along its channel dimension.
         # Must gather channels in the same non-contiguous pattern that
         # MergedColumnParallelLinear uses for in_proj_qkv, so that each rank's
         # conv1d_weight[i] applies to the correct in_proj_qkv output channel.
         tp_rank = get_tensor_model_parallel_rank()
         tp_size = get_tensor_model_parallel_world_size()
         key_local = self.key_dim // tp_size    # 512 with TP=4
-        val_local = self.value_dim // tp_size  # 1536 with TP=4
+        val_local = self.value_dim // tp_size  # 1024 with TP=4
         q_s = loaded_weight[tp_rank * key_local : (tp_rank + 1) * key_local]
         k_s = loaded_weight[self.key_dim + tp_rank * key_local :
                             self.key_dim + (tp_rank + 1) * key_local]
