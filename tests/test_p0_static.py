@@ -223,6 +223,15 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("NaN in prefill GatedDeltaNet", src)
         self.assertNotIn("NaN in decode GatedDeltaNet", src)
 
+    def test_gdn_input_projections_are_single_merged_gemm(self):
+        src = read("qwen3_6_scripts/qwen3_5.py")
+        self.assertIn("def _load_gdn_projection_weight", src)
+        self.assertIn("self.in_proj_qkvzba = MergedColumnParallelLinear", src)
+        self.assertIn("projected, _ = self.in_proj_qkvzba(hidden_states)", src)
+        self.assertNotIn("self.in_proj_z = ColumnParallelLinear", src)
+        self.assertNotIn("self.in_proj_b = ColumnParallelLinear", src)
+        self.assertNotIn("self.in_proj_a = ColumnParallelLinear", src)
+
     def test_moe_prefill_groups_routes_once(self):
         src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("torch.argsort(flat_eids, stable=True)", src)
@@ -289,8 +298,12 @@ class P0StaticCoverageTest(unittest.TestCase):
                 "BI100_PREFIX_BLOCKS_PER_TILE",
                 "BI100_FORCE_PAGED_ATTN_V2",
                 "BI100_ALLOW_PREFIX_GUARD_CAP",
+                "BI100_PAGED_ATTN_DIAGNOSTICS",
+                "BI100_ATTN_COREX_PAGED_GATHER",
                 "BI100_GDN_ALLOW_NAN_ZERO",
                 "BI100_GDN_FINITE_CHECK",
+                "BI100_GDN_COREX_BETA_DECAY",
+                "BI100_GDN_COREX_QK_MAP",
                 "BI100_DNN_CHUNK",
                 "BI100_PROFILE",
                 "BI100_PROFILE_INCLUDE_STARTUP",
@@ -314,6 +327,89 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("[BI100_PROFILE]", profile_src)
         self.assertIn("bi100_timer", qwen_src)
         self.assertIn("bi100_timer", paged_src)
+
+    def test_corex_gdn_causal_conv_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_gdn_causal_conv.sh")
+        self.assertIn("build_corex_gdn_causal_conv.sh", patch_ops)
+        self.assertIn("corex_gdn_causal_conv.so", build_src)
+        self.assertIn("_USE_COREX_GDN_CAUSAL_CONV", qwen_src)
+        self.assertIn("BI100_GDN_COREX_CAUSAL_CONV", qwen_src)
+        self.assertIn("_torch_causal_conv1d_update", qwen_src)
+
+    def test_corex_gdn_gated_norm_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_gdn_gated_norm.sh")
+        self.assertIn("build_corex_gdn_gated_norm.sh", patch_ops)
+        self.assertIn("corex_gdn_gated_norm.so", build_src)
+        self.assertIn("BI100_GDN_COREX_GATED_NORM", qwen_src)
+        self.assertIn("forward_decode", qwen_src)
+        self.assertIn("return self.forward(hidden_states, gate)", qwen_src)
+
+    def test_corex_gdn_beta_decay_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_gdn_beta_decay.sh")
+        kernel_src = read("qwen3_6_scripts/corex_gdn_beta_decay.cu")
+        self.assertIn("build_corex_gdn_beta_decay.sh", patch_ops)
+        self.assertIn("corex_gdn_beta_decay.so", build_src)
+        self.assertIn("BI100_GDN_COREX_BETA_DECAY", qwen_src)
+        self.assertIn("_corex_gdn_beta_decay.beta_decay", qwen_src)
+        self.assertIn("b_all.sigmoid()", qwen_src)
+        self.assertIn("F.softplus(a_all.float() + self.dt_bias)", qwen_src)
+        self.assertIn("__float2half(beta_fp32)", kernel_src)
+
+    def test_corex_gdn_qk_map_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_gdn_qk_map.sh")
+        kernel_src = read("qwen3_6_scripts/corex_gdn_qk_map.cu")
+        self.assertIn("build_corex_gdn_qk_map.sh", patch_ops)
+        self.assertIn("corex_gdn_qk_map.so", build_src)
+        self.assertIn("BI100_GDN_COREX_QK_MAP", qwen_src)
+        self.assertIn("_corex_gdn_qk_map.qk_map", qwen_src)
+        self.assertIn("q_raw.repeat_interleave", qwen_src)
+        self.assertIn("kQueryScale", kernel_src)
+
+    def test_corex_moe_exact_reduce_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_moe_exact_reduce.sh")
+        self.assertIn("build_corex_moe_exact_reduce.sh", patch_ops)
+        self.assertIn("corex_moe_exact_reduce.so", build_src)
+        self.assertIn("BI100_MOE_COREX_EXACT_REDUCE", qwen_src)
+        self.assertIn("_corex_moe_exact_reduce.serial_float", qwen_src)
+        self.assertIn("expert_out * ws.unsqueeze", qwen_src)
+        self.assertIn("BI100_MOE_FUSED_ACTIVATION", qwen_src)
+        self.assertIn("act = self.act_fn(gate_up)", qwen_src)
+
+    def test_corex_moe_weight_gather_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_moe_weight_gather.sh")
+        kernel_src = read("qwen3_6_scripts/corex_moe_weight_gather.cu")
+        self.assertIn("build_corex_moe_weight_gather.sh", patch_ops)
+        self.assertIn("corex_moe_weight_gather.so", build_src)
+        self.assertIn("BI100_MOE_COREX_WEIGHT_GATHER", qwen_src)
+        self.assertIn("_corex_moe_weight_gather.gather", qwen_src)
+        self.assertIn("w13_sel = w13[eids]", qwen_src)
+        self.assertIn("constexpr int kGridX = 8", kernel_src)
+        self.assertIn("uint4", kernel_src)
+
+    def test_corex_paged_kv_gather_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        paged_src = read("qwen3_6_scripts/paged_attn.py")
+        build_src = read("qwen3_6_scripts/build_corex_paged_kv_gather.sh")
+        self.assertIn("build_corex_paged_kv_gather.sh", patch_ops)
+        self.assertIn("corex_paged_kv_gather.so", build_src)
+        self.assertIn("BI100_ATTN_COREX_PAGED_GATHER", paged_src)
+        self.assertIn("_corex_paged_kv_gather.gather", paged_src)
+        self.assertIn("key_cache[blk_ids]", paged_src)
+        kernel_src = read("qwen3_6_scripts/corex_paged_kv_gather.cu")
+        self.assertIn("kSmallGridMaxSeqLen = 96 * 1024", kernel_src)
+        self.assertIn("kSmallGridBlocks = 256", kernel_src)
 
     def test_docker_sets_corex_environment_and_invokes_explicit_bash(self):
         dockerfile = read("Dockerfile")
@@ -424,7 +520,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         expected = {
             "DEFAULT_MODEL_PATH": "/model",
             "DEFAULT_SERVED_MODEL_NAME": "llm",
-            "DEFAULT_MAX_MODEL_LEN": "100000",
+            "DEFAULT_MAX_MODEL_LEN": "262144",
             "DEFAULT_TENSOR_PARALLEL_SIZE": "4",
             "DEFAULT_GPU_MEMORY_UTILIZATION": "0.9",
             "DEFAULT_MAX_NUM_SEQS": "1",
@@ -473,7 +569,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         yaml = read("computility-run.yaml")
         expected_fragments = [
             "concurrency: 1",
-            "    - '100000'",
+            "    - '262144'",
             "    - '0.9'",
             "    - -tp",
             "    - '4'",

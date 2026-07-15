@@ -47,7 +47,13 @@ def _load_production_experts():
         if isinstance(node, ast.FunctionDef) and node.name == "_pure_pytorch_experts")
     module = ast.Module(body=[method], type_ignores=[])
     ast.fix_missing_locations(module)
-    namespace = {"torch": torch, "F": F}
+    namespace = {
+        "torch": torch,
+        "F": F,
+        "_USE_COREX_MOE_WEIGHT_GATHER": False,
+        "_USE_FUSED_MOE_ACTIVATION": False,
+        "_USE_COREX_MOE_EXACT_REDUCE": False,
+    }
     exec(compile(module, str(QWEN35), "exec"), namespace)
     return namespace["_pure_pytorch_experts"]
 
@@ -56,10 +62,10 @@ def _load_production_experts():
 class MoEParityTest(unittest.TestCase):
 
     def _assert_shape_matches_reference(self, tokens, hidden, experts, inter,
-                                        top_k, seed):
+                                        top_k, seed, router_scale=1.0):
         torch.manual_seed(seed)
         hidden_states = torch.randn(tokens, hidden)
-        router_logits = torch.randn(tokens, experts)
+        router_logits = torch.randn(tokens, experts) * router_scale
         w13 = torch.randn(experts, 2 * inter, hidden)
         w2 = torch.randn(experts, hidden, inter)
         fake_self = types.SimpleNamespace(
@@ -82,6 +88,10 @@ class MoEParityTest(unittest.TestCase):
 
     def test_sparse_expert_population_matches_reference(self):
         self._assert_shape_matches_reference(17, 16, 31, 8, 2, 3456)
+
+    def test_large_router_logits_match_full_softmax_reference(self):
+        self._assert_shape_matches_reference(
+            3, 16, 256, 8, 8, 7890, router_scale=80.0)
 
 
 if __name__ == "__main__":

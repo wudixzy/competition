@@ -36,3 +36,23 @@ and latency `19.6888s/6.6605s`.
 Use the tag for rollback and A/B baselines. Use `main` for ongoing development.
 Every performance candidate must name this commit or a later fully qualified
 winner as `baseline_commit` in its manifest.
+
+## Current qualified development winner
+
+As of 2026-07-15, the 256K development baseline is `3453dc2` and the latest
+qualified performance winner is E-MOE-03 commit `7a68a94` on branch
+`exp/E-MOE-03-router-shared-gate`. It includes E-MOE-02, keeps the fixed
+262,144-token contract, passes full smoke and a 235K cold/warm cache gate, and
+improves Output TPS P10 by a median 5.78% over E-MOE-02 across three matched
+pairs. See `docs/experiments/E_MOE_03_ROUTER_SHARED_GATE_20260715.md` and the
+preceding E-MOE-02 record for evidence.
+
+E-MOE-04 (`exp/E-MOE-04-weighted-reduce`) is rejected. A GEMV weighted
+reduction improved the complete routed-expert microbenchmark by 5.3% or more
+on all four cards, but changed the forced 1,000-token output hash. See
+`docs/experiments/E_MOE_04_WEIGHTED_REDUCE_20260715.md`. E-MOE-03 remains the
+qualified winner.
+
+The immutable `t9-qualified-20260712` tag remains the archival rollback point;
+this section records the newer GPU-qualified development chain rather than
+retagging that archive.

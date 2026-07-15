@@ -92,6 +92,36 @@ from vllm.logger import init_logger
 from vllm.bi100_env import env_bool, env_int
 from vllm.bi100_profile import bi100_timer
 
+try:
+    from vllm import corex_gdn_causal_conv as _corex_gdn_causal_conv
+except ImportError:
+    _corex_gdn_causal_conv = None
+
+try:
+    from vllm import corex_gdn_gated_norm as _corex_gdn_gated_norm
+except ImportError:
+    _corex_gdn_gated_norm = None
+
+try:
+    from vllm import corex_gdn_beta_decay as _corex_gdn_beta_decay
+except ImportError:
+    _corex_gdn_beta_decay = None
+
+try:
+    from vllm import corex_gdn_qk_map as _corex_gdn_qk_map
+except ImportError:
+    _corex_gdn_qk_map = None
+
+try:
+    from vllm import corex_moe_exact_reduce as _corex_moe_exact_reduce
+except ImportError:
+    _corex_moe_exact_reduce = None
+
+try:
+    from vllm import corex_moe_weight_gather as _corex_moe_weight_gather
+except ImportError:
+    _corex_moe_weight_gather = None
+
 from vllm.model_executor.models.interfaces import (HasInnerState, SupportsLoRA,
                                                    SupportsMultiModal)
 
@@ -103,6 +133,25 @@ _ALLOW_GDN_NAN_ZERO = env_bool("BI100_GDN_ALLOW_NAN_ZERO", False)
 _GDN_FINITE_CHECK = (env_bool("BI100_GDN_FINITE_CHECK", False)
                      or _ALLOW_GDN_NAN_ZERO)
 _DNN_CHUNK_SIZE = env_int("BI100_DNN_CHUNK", 4096, 64, 65536)
+_USE_COREX_GDN_CAUSAL_CONV = (
+    _corex_gdn_causal_conv is not None
+    and env_bool("BI100_GDN_COREX_CAUSAL_CONV", True))
+_USE_COREX_GDN_GATED_NORM = (
+    _corex_gdn_gated_norm is not None
+    and env_bool("BI100_GDN_COREX_GATED_NORM", True))
+_USE_COREX_GDN_BETA_DECAY = (
+    _corex_gdn_beta_decay is not None
+    and env_bool("BI100_GDN_COREX_BETA_DECAY", True))
+_USE_COREX_GDN_QK_MAP = (
+    _corex_gdn_qk_map is not None
+    and env_bool("BI100_GDN_COREX_QK_MAP", True))
+_USE_COREX_MOE_EXACT_REDUCE = (
+    _corex_moe_exact_reduce is not None
+    and env_bool("BI100_MOE_COREX_EXACT_REDUCE", True))
+_USE_COREX_MOE_WEIGHT_GATHER = (
+    _corex_moe_weight_gather is not None
+    and env_bool("BI100_MOE_COREX_WEIGHT_GATHER", True))
+_USE_FUSED_MOE_ACTIVATION = env_bool("BI100_MOE_FUSED_ACTIVATION", True)
 
 
 # ---------------------------------------------------------------------------
@@ -743,6 +792,101 @@ class Qwen3_5RMSNormGated(nn.Module):
         hs = self.weight * hs.to(input_dtype)
         return (hs * F.silu(gate.to(torch.float32))).to(input_dtype)
 
+    def forward_decode(self, hidden_states: torch.Tensor,
+                       gate: torch.Tensor) -> torch.Tensor:
+        if (_USE_COREX_GDN_GATED_NORM
+                and hidden_states.dtype == torch.float32
+                and gate.dtype == torch.float16
+                and self.weight.dtype == torch.float16
+                and hidden_states.shape[-1] == 128):
+            hs = hidden_states.float()
+            inverse = torch.rsqrt(
+                hs.pow(2).mean(-1, keepdim=True) + self.variance_epsilon)
+            return _corex_gdn_gated_norm.apply_inverse(
+                hs, gate, self.weight, inverse)
+        return self.forward(hidden_states, gate).to(gate.dtype)
+
+
+def _load_gdn_projection_weight(params_dict, name: str,
+                                loaded_weight: torch.Tensor,
+                                text_cfg) -> bool:
+    projections = {
+        "in_proj_qkv": None,
+        "in_proj_z": 3,
+        "in_proj_b": 4,
+        "in_proj_a": 5,
+    }
+    source = next((projection for projection in projections
+                   if f".linear_attn.{projection}." in name), None)
+    if source is None:
+        return False
+
+    target_name = name.replace(
+        f".linear_attn.{source}.",
+        ".linear_attn.in_proj_qkvzba.",
+    )
+    if target_name not in params_dict:
+        raise ValueError(f"missing fused GDN projection parameter: {target_name}")
+    param = params_dict[target_name]
+    weight_loader = getattr(param, "weight_loader", default_weight_loader)
+
+    if source == "in_proj_qkv":
+        key_dim = (text_cfg.linear_num_key_heads
+                   * text_cfg.linear_key_head_dim)
+        value_dim = (text_cfg.linear_num_value_heads
+                     * text_cfg.linear_value_head_dim)
+        shard_sizes = (key_dim, key_dim, value_dim)
+        if loaded_weight.shape[0] != sum(shard_sizes):
+            raise ValueError(
+                "unexpected fused QKV output size: "
+                f"{loaded_weight.shape[0]} != {sum(shard_sizes)}")
+        for shard_id, shard in enumerate(
+                torch.split(loaded_weight, shard_sizes, dim=0)):
+            weight_loader(param, shard, shard_id)
+    else:
+        weight_loader(param, loaded_weight, projections[source])
+    return True
+
+
+def _load_full_attention_qgkv_weight(params_dict, name: str,
+                                     loaded_weight: torch.Tensor,
+                                     text_cfg) -> bool:
+    projections = {"q_proj": 0, "k_proj": 1, "v_proj": 2}
+    source = next((projection for projection in projections
+                   if f".self_attn.{projection}." in name), None)
+    if source is None:
+        return False
+    target_name = name.replace(
+        f".self_attn.{source}.", ".self_attn.qgkv_proj.")
+    if target_name not in params_dict:
+        return False
+
+    tp_size = get_tensor_model_parallel_world_size()
+    tp_rank = get_tensor_model_parallel_rank()
+    qg_dim = text_cfg.num_attention_heads * text_cfg.head_dim * 2
+    if qg_dim % tp_size != 0:
+        raise ValueError(f"QG output size {qg_dim} is not divisible by TP {tp_size}")
+    local_qg_dim = qg_dim // tp_size
+    kv_dim = text_cfg.num_key_value_heads * text_cfg.head_dim
+    expected_rows = qg_dim if source == "q_proj" else kv_dim
+    if loaded_weight.shape[0] != expected_rows:
+        raise ValueError(
+            f"unexpected full-attention {source} output size: "
+            f"{loaded_weight.shape[0]} != {expected_rows}")
+
+    if source == "q_proj":
+        loaded_weight = loaded_weight.narrow(
+            0, tp_rank * local_qg_dim, local_qg_dim)
+        offset = 0
+    elif source == "k_proj":
+        offset = local_qg_dim
+    else:
+        offset = local_qg_dim + kv_dim
+    param = params_dict[target_name]
+    default_weight_loader(
+        param[offset:offset + loaded_weight.shape[0]], loaded_weight)
+    return True
+
 
 # ---------------------------------------------------------------------------
 # Gated DeltaNet  (linear_attention layers)
@@ -758,33 +902,24 @@ class GatedDeltaNet(nn.Module):
         super().__init__()
         self.layer_idx = layer_idx
         self.hidden_size = text_cfg.hidden_size
-        self.num_v_heads = text_cfg.linear_num_value_heads   # 48
-        self.num_k_heads = text_cfg.linear_num_key_heads     # 16
+        self.num_v_heads = text_cfg.linear_num_value_heads   # checkpoint: 32
+        self.num_k_heads = text_cfg.linear_num_key_heads     # checkpoint: 16
         self.head_k_dim = text_cfg.linear_key_head_dim       # 128
         self.head_v_dim = text_cfg.linear_value_head_dim     # 128
         self.key_dim = self.num_k_heads * self.head_k_dim    # 2048
-        self.value_dim = self.num_v_heads * self.head_v_dim  # 6144
-        self.conv_dim = self.key_dim * 2 + self.value_dim    # 10240
+        self.value_dim = self.num_v_heads * self.head_v_dim  # checkpoint: 4096
+        self.conv_dim = self.key_dim * 2 + self.value_dim    # checkpoint: 8192
         self.conv_kernel_size = text_cfg.linear_conv_kernel_dim  # 4
-        self.head_expand_ratio = self.num_v_heads // self.num_k_heads  # 3
+        self.head_expand_ratio = self.num_v_heads // self.num_k_heads  # checkpoint: 2
 
         tp_size = get_tensor_model_parallel_world_size()
 
-        # Sharded projections — MergedColumnParallelLinear shards each of q/k/v
-        # independently so each TP rank gets [q_shard, k_shard, v_shard].
-        # Plain ColumnParallelLinear would shard contiguously, giving rank 0
-        # [q_all, k_partial] — completely wrong Q/K/V after the split below.
-        self.in_proj_qkv = MergedColumnParallelLinear(
-            self.hidden_size, [self.key_dim, self.key_dim, self.value_dim],
-            bias=False, quant_config=quant_config)
-        self.in_proj_z = ColumnParallelLinear(
-            self.hidden_size, self.value_dim,
-            bias=False, quant_config=quant_config)
-        self.in_proj_b = ColumnParallelLinear(
-            self.hidden_size, self.num_v_heads,
-            bias=False, quant_config=quant_config)
-        self.in_proj_a = ColumnParallelLinear(
-            self.hidden_size, self.num_v_heads,
+        # Keep each logical projection independently TP-sharded while executing
+        # one GEMM. Per-rank output order is [q, k, v, z, beta, decay].
+        self.in_proj_qkvzba = MergedColumnParallelLinear(
+            self.hidden_size,
+            [self.key_dim, self.key_dim, self.value_dim, self.value_dim,
+             self.num_v_heads, self.num_v_heads],
             bias=False, quant_config=quant_config)
         self.out_proj = RowParallelLinear(
             self.value_dim, self.hidden_size,
@@ -812,14 +947,14 @@ class GatedDeltaNet(nn.Module):
 
     def _conv1d_weight_loader(self, param: torch.Tensor,
                               loaded_weight: torch.Tensor) -> None:
-        # loaded_weight: (conv_dim=10240, 1, kernel) ordered as [q, k, v] channels
+        # loaded_weight is ordered as [q, k, v] along its channel dimension.
         # Must gather channels in the same non-contiguous pattern that
         # MergedColumnParallelLinear uses for in_proj_qkv, so that each rank's
         # conv1d_weight[i] applies to the correct in_proj_qkv output channel.
         tp_rank = get_tensor_model_parallel_rank()
         tp_size = get_tensor_model_parallel_world_size()
         key_local = self.key_dim // tp_size    # 512 with TP=4
-        val_local = self.value_dim // tp_size  # 1536 with TP=4
+        val_local = self.value_dim // tp_size  # 1024 with TP=4
         q_s = loaded_weight[tp_rank * key_local : (tp_rank + 1) * key_local]
         k_s = loaded_weight[self.key_dim + tp_rank * key_local :
                             self.key_dim + (tp_rank + 1) * key_local]
@@ -846,11 +981,12 @@ class GatedDeltaNet(nn.Module):
 
         is_prefill = attn_metadata.num_prefill_tokens > 0
 
-        # Compute all projections for every token at once (batched, efficient)
-        mixed_qkv_all, _ = self.in_proj_qkv(hidden_states)  # (total, local_conv_dim)
-        z_all, _ = self.in_proj_z(hidden_states)             # (total, local_val_dim)
-        b_all, _ = self.in_proj_b(hidden_states)             # (total, local_num_v)
-        a_all, _ = self.in_proj_a(hidden_states)             # (total, local_num_v)
+        projected, _ = self.in_proj_qkvzba(hidden_states)
+        mixed_qkv_all, z_all, b_all, a_all = torch.split(
+            projected,
+            [local_conv_dim, local_val_dim, local_num_v, local_num_v],
+            dim=-1,
+        )
 
         if is_prefill:
             seq_starts = attn_metadata.query_start_loc.tolist()
@@ -969,9 +1105,13 @@ class GatedDeltaNet(nn.Module):
                          .to(weight_2d.dtype)
                          .unsqueeze(-1))
 
-            mixed_qkv_conv = _torch_causal_conv1d_update(
-                mixed_qkv, conv_state, weight_2d,
-                bias=None, activation='silu')
+            if _USE_COREX_GDN_CAUSAL_CONV:
+                mixed_qkv_conv = _corex_gdn_causal_conv.causal_conv_update(
+                    conv_state, mixed_qkv, weight_2d)
+            else:
+                mixed_qkv_conv = _torch_causal_conv1d_update(
+                    mixed_qkv, conv_state, weight_2d,
+                    bias=None, activation='silu')
             # (num_seqs, local_conv_dim, 1) → (num_seqs, 1, local_conv_dim)
             mixed_qkv_conv = mixed_qkv_conv.squeeze(-1).unsqueeze(1)
 
@@ -982,27 +1122,55 @@ class GatedDeltaNet(nn.Module):
             k = k.reshape(num_seqs, 1, local_num_k, self.head_k_dim)
             v = v.reshape(num_seqs, 1, local_num_v, self.head_v_dim)
 
-            beta = b_all.sigmoid().unsqueeze(1)  # (num_seqs, 1, local_num_v)
-            g = (-self.A_log.float().exp()
-                 * F.softplus(a_all.float() + self.dt_bias)
-                 ).unsqueeze(1)  # (num_seqs, 1, local_num_v)
-
-            q = q.repeat_interleave(self.head_expand_ratio, dim=2)
-            k = k.repeat_interleave(self.head_expand_ratio, dim=2)
+            use_corex_beta_decay = (
+                _USE_COREX_GDN_BETA_DECAY
+                and b_all.dtype == torch.float16
+                and a_all.dtype == torch.float16
+                and self.A_log.dtype == torch.float16
+                and self.dt_bias.dtype == torch.float16
+                and b_all.is_contiguous()
+                and a_all.is_contiguous())
+            if use_corex_beta_decay:
+                beta_decay = _corex_gdn_beta_decay.beta_decay(
+                    b_all, a_all, self.A_log, self.dt_bias)
+                bt = beta_decay[0]
+                g_t = beta_decay[1]
+            else:
+                beta = b_all.sigmoid()
+                g = (-self.A_log.float().exp()
+                     * F.softplus(a_all.float() + self.dt_bias))
+                bt = beta.float()
+                g_t = g.float().exp_()
 
             # Inlined decode recurrent step (seq_len=1).
             # Replaces _torch_recurrent_gated_delta_rule to avoid 5 transpose+
             # contiguous+float32 copies, core_out allocation, and Python loop.
             # Uses bmm/baddbmm_ to eliminate 3 large (B,H,k,v) intermediate tensors.
             # temporal_state: (B, H_v, k_dim, v_dim) float32 — updated in-place.
-            orig_dtype = q.dtype
             _scale = self.head_k_dim ** -0.5
-
-            q_t = _l2norm(q.squeeze(1)).float() * _scale   # (B, H_v, k_dim)
-            k_t = _l2norm(k.squeeze(1)).float()             # (B, H_v, k_dim)
+            q_raw = q.squeeze(1)
+            k_raw = k.squeeze(1)
+            use_corex_qk_map = (
+                _USE_COREX_GDN_QK_MAP
+                and q_raw.dtype == torch.float16
+                and k_raw.dtype == torch.float16
+                and self.head_k_dim == 128
+                and q_raw.is_contiguous()
+                and k_raw.is_contiguous())
+            if use_corex_qk_map:
+                qk_mapped = _corex_gdn_qk_map.qk_map(
+                    _l2norm(q_raw), _l2norm(k_raw), local_num_v)
+                q_t = qk_mapped[0]
+                k_t = qk_mapped[1]
+            else:
+                q_expanded = q_raw.repeat_interleave(
+                    self.head_expand_ratio, dim=1)
+                k_expanded = k_raw.repeat_interleave(
+                    self.head_expand_ratio, dim=1)
+                q_t = _l2norm(q_expanded).float() * _scale
+                k_t = _l2norm(k_expanded).float()
             v_t = v.squeeze(1).float()                      # (B, H_v, v_dim)
-            g_t = g.squeeze(1).float().exp_()               # (B, H_v)
-            bt  = beta.squeeze(1).float()                   # (B, H_v)
+            # g_t/bt are already FP32 (B, H_v), from either path above.
 
             with bi100_timer(f"L{self.layer_idx}.gdn.decode"):
                 # Decay state in-place: (B, H_v, k_dim, v_dim) *= scalar per head
@@ -1032,13 +1200,12 @@ class GatedDeltaNet(nn.Module):
             # core_out: (B, H_v, v_dim) = (num_seqs, local_num_v, head_v_dim) already
 
             z = z_all.reshape(num_seqs, local_num_v, self.head_v_dim)
-            normed = self.norm(
+            normed = self.norm.forward_decode(
                 core_out.reshape(-1, self.head_v_dim),
                 z.reshape(-1, self.head_v_dim))
             normed = _check_gdn_finite(
                 normed, layer_idx=self.layer_idx,
                 stage="decode-norm").reshape(num_seqs, -1)
-            normed = normed.to(orig_dtype)
             out, _ = self.out_proj(normed)
             return _check_gdn_finite(
                 out, layer_idx=self.layer_idx, stage="decode-output")
@@ -1068,6 +1235,7 @@ class Qwen3_5FullAttention(nn.Module):
         tp_size = get_tensor_model_parallel_world_size()
         self.local_num_heads = self.num_heads // tp_size
         self.scaling = self.head_dim ** -0.5
+        self.use_packed_local_qgkv = tp_size > self.num_kv_heads
 
         # When num_kv_heads < tp_size we cannot shard KV further (would give
         # fractional heads per rank).  Use ReplicatedLinear so every rank holds
@@ -1085,12 +1253,12 @@ class Qwen3_5FullAttention(nn.Module):
             self.proj_kv_heads = self.num_kv_heads  # heads available from projection
             self.local_num_kv_heads = 1             # heads after rank-local selection
             self.q_per_kv_global = self.num_heads // self.num_kv_heads
-            self.k_proj = ReplicatedLinear(
-                self.hidden_size, self.num_kv_heads * self.head_dim,
-                bias=False, quant_config=quant_config)
-            self.v_proj = ReplicatedLinear(
-                self.hidden_size, self.num_kv_heads * self.head_dim,
-                bias=False, quant_config=quant_config)
+            local_qg_dim = self.local_num_heads * self.head_dim * 2
+            replicated_kv_dim = self.num_kv_heads * self.head_dim
+            self.qgkv_proj = ReplicatedLinear(
+                self.hidden_size, local_qg_dim + 2 * replicated_kv_dim,
+                bias=False, quant_config=quant_config,
+                prefix=f"{prefix}.qgkv_proj")
         else:
             # Standard sharding: each rank gets num_kv_heads // tp_size heads.
             self.local_num_kv_heads = self.num_kv_heads // tp_size
@@ -1108,11 +1276,12 @@ class Qwen3_5FullAttention(nn.Module):
         self.local_q_dim = self.local_num_heads * self.head_dim
         self.local_kv_dim = self.local_num_kv_heads * self.head_dim
 
-        # q_proj includes gate: output = num_heads * head_dim * 2
-        self.q_proj = ColumnParallelLinear(
-            self.hidden_size, self.num_heads * self.head_dim * 2,
-            bias=False, quant_config=quant_config,
-            prefix=f"{prefix}.q_proj")
+        if not self.use_packed_local_qgkv:
+            # q_proj includes gate: output = num_heads * head_dim * 2
+            self.q_proj = ColumnParallelLinear(
+                self.hidden_size, self.num_heads * self.head_dim * 2,
+                bias=False, quant_config=quant_config,
+                prefix=f"{prefix}.q_proj")
         self.o_proj = RowParallelLinear(
             self.num_heads * self.head_dim, self.hidden_size,
             bias=False, quant_config=quant_config,
@@ -1156,14 +1325,23 @@ class Qwen3_5FullAttention(nn.Module):
     ) -> torch.Tensor:
         total_tokens = hidden_states.shape[0]
 
-        # q_proj output includes gate (dim doubled)
-        qg, _ = self.q_proj(hidden_states)  # (total, local_num_heads * head_dim * 2)
+        if self.use_packed_local_qgkv:
+            projected, _ = self.qgkv_proj(hidden_states)
+            qg, k, v = torch.split(
+                projected,
+                [self.local_num_heads * self.head_dim * 2,
+                 self.proj_kv_heads * self.head_dim,
+                 self.proj_kv_heads * self.head_dim],
+                dim=-1)
+        else:
+            qg, _ = self.q_proj(hidden_states)
+            k, _ = self.k_proj(hidden_states)
+            v, _ = self.v_proj(hidden_states)
+
+        # q projection output includes gate (dim doubled)
         qg = qg.view(total_tokens, self.local_num_heads, self.head_dim * 2)
         q = qg[:, :, :self.head_dim].reshape(total_tokens, -1)
         gate = qg[:, :, self.head_dim:].reshape(total_tokens, -1)
-
-        k, _ = self.k_proj(hidden_states)   # (total, proj_kv_heads * head_dim)
-        v, _ = self.v_proj(hidden_states)
 
         # q_norm on local Q heads
         q = self.q_norm.forward_cuda(
@@ -1256,9 +1434,14 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         self.num_experts = text_cfg.num_experts
         self.top_k = text_cfg.num_experts_per_tok
 
-        # Router: replicated (small: num_experts outputs)
-        self.gate = ReplicatedLinear(hidden_size, text_cfg.num_experts,
-                                     bias=False, quant_config=quant_config)
+        # Router and scalar shared-expert gate read the same hidden state. Keep
+        # their checkpoint shards in one replicated weight so forward needs a
+        # single GEMM for 256 + 1 outputs.
+        self.router_shared_gate = ReplicatedLinear(
+            hidden_size, text_cfg.num_experts + 1,
+            bias=False, quant_config=quant_config)
+        self.router_shared_gate.weight.weight_loader = \
+            self._router_shared_gate_weight_loader
 
         # FusedMoE: only used for weight storage + weight_loader.
         # Forward is bypassed — see _pure_pytorch_experts().
@@ -1281,11 +1464,28 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             shared_size, hidden_size, bias=False, reduce_results=False,
             quant_config=quant_config)
         self.act_fn = SiluAndMul()
-        # Scalar sigmoid gate on shared expert output (same as Qwen2-MoE / Qwen3.5-MoE):
-        #   shared_out *= sigmoid(shared_expert_gate(hidden_states))
-        # Without this, shared expert is always fully active → wrong logits.
-        self.shared_expert_gate = ReplicatedLinear(
-            hidden_size, 1, bias=False, quant_config=quant_config)
+
+    def _router_shared_gate_weight_loader(
+        self,
+        param: torch.Tensor,
+        loaded_weight: torch.Tensor,
+        shard_id: int,
+    ) -> None:
+        if shard_id == 0:
+            offset = 0
+            rows = self.num_experts
+        elif shard_id == 1:
+            offset = self.num_experts
+            rows = 1
+        else:
+            raise ValueError(f"unexpected router/shared gate shard: {shard_id}")
+
+        expected = (rows, param.shape[1])
+        if tuple(loaded_weight.shape) != expected:
+            raise ValueError(
+                "unexpected router/shared gate weight shape: "
+                f"expected {expected}, got {tuple(loaded_weight.shape)}")
+        param.data.narrow(0, offset, rows).copy_(loaded_weight)
 
     def _pure_pytorch_experts(
         self,
@@ -1299,11 +1499,12 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         Output is partial (pre-all-reduce), same contract as FusedMoE
         with reduce_results=False.
         """
-        # Routing: softmax → topk → renormalise
-        routing_weights = torch.softmax(router_logits.float(), dim=-1)
-        topk_weights, topk_ids = torch.topk(
-            routing_weights, self.top_k, dim=-1)           # (T, top_k)
-        topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
+        # Softmax is monotonic, so selecting logits first is equivalent to
+        # full-expert softmax -> top-k -> renormalise while normalising only K
+        # values. This saves one 256-wide softmax in the decode hot path.
+        topk_logits, topk_ids = torch.topk(
+            router_logits.float(), self.top_k, dim=-1)     # (T, top_k)
+        topk_weights = torch.softmax(topk_logits, dim=-1)
         topk_weights = topk_weights.to(hidden_states.dtype)
 
         w13 = self.experts.w13_weight  # (E, 2*I, H)
@@ -1318,8 +1519,27 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             # Total: 3 kernel launches vs previous 16 (top_k*2).
             eids    = topk_ids[0]                              # (K,)
             ws      = topk_weights[0].to(hidden_states.dtype)  # (K,)
-            w13_sel = w13[eids]                                # (K, 2*I, H)
-            w2_sel  = w2[eids]                                 # (K, H, I)
+            use_corex_gather = (
+                _USE_COREX_MOE_WEIGHT_GATHER
+                and hidden_states.dtype == torch.float16
+                and w13.dtype == torch.float16
+                and w2.dtype == torch.float16
+                and w13.is_cuda and w2.is_cuda and eids.is_cuda
+                and w13.is_contiguous() and w2.is_contiguous()
+                and eids.is_contiguous()
+                and w13.dim() == 3 and w2.dim() == 3
+                and eids.dim() == 1 and eids.numel() == 8
+                and w13.shape[0] == w2.shape[0]
+                and w13.shape[2] == w2.shape[1]
+                and w13.shape[1] == 2 * w2.shape[2]
+                and w13.shape[1] * w13.shape[2] % 8 == 0
+                and w2.shape[1] * w2.shape[2] % 8 == 0)
+            if use_corex_gather:
+                w13_sel, w2_sel = _corex_moe_weight_gather.gather(
+                    w13, w2, eids)
+            else:
+                w13_sel = w13[eids]                            # (K, 2*I, H)
+                w2_sel = w2[eids]                              # (K, H, I)
 
             H = hidden_states.shape[-1]
 
@@ -1328,14 +1548,23 @@ class Qwen3_5MoeSparseBlock(nn.Module):
                 w13_sel.reshape(-1, H),                        # (K*2*I, H) — contiguous after indexing
             )                                                  # (1, K*2*I)
             gate_up = gate_up.view(self.top_k, -1)             # (K, 2*I)
-            gate, up = gate_up.chunk(2, dim=-1)                # (K, I) each
-            act = F.silu(gate) * up                            # (K, I)
+            if _USE_FUSED_MOE_ACTIVATION:
+                act = self.act_fn(gate_up)                      # (K, I)
+            else:
+                gate, up = gate_up.chunk(2, dim=-1)
+                act = F.silu(gate) * up
 
             # bmm: (K,H,I) @ (K,I,1) → (K,H,1) → (K,H)
             expert_out = torch.bmm(w2_sel, act.unsqueeze(-1)).squeeze(-1)  # (K, H)
 
-            out = (expert_out * ws.unsqueeze(-1)).sum(0, keepdim=True).to(
-                hidden_states.dtype)                           # (1, H)
+            if (_USE_COREX_MOE_EXACT_REDUCE
+                    and expert_out.dtype == torch.float16
+                    and ws.dtype == torch.float16
+                    and expert_out.shape[0] == 8):
+                out = _corex_moe_exact_reduce.serial_float(expert_out, ws)
+            else:
+                out = (expert_out * ws.unsqueeze(-1)).sum(
+                    0, keepdim=True).to(hidden_states.dtype)   # (1, H)
         else:
             # General path (prefill / multi-seq): group assignments once. The
             # previous implementation scanned the full (T, top_k) routing
@@ -1368,15 +1597,16 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         return out  # partial, all-reduce done in forward()
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        router_logits, _ = self.gate(hidden_states)
+        router_and_shared_gate, _ = self.router_shared_gate(hidden_states)
+        router_logits = router_and_shared_gate[..., :self.num_experts]
+        gate_score = router_and_shared_gate[..., self.num_experts:]
         with bi100_timer("moe.routed"):
             routed_out = self._pure_pytorch_experts(hidden_states, router_logits)
 
         gate_up, _ = self.shared_expert_gate_up(hidden_states)
         shared_out = self.act_fn(gate_up)
         shared_out, _ = self.shared_expert_down(shared_out)
-        # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style)
-        gate_score, _ = self.shared_expert_gate(hidden_states)  # (T, 1)
+        # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style).
         shared_out = shared_out * torch.sigmoid(gate_score)
 
         out = routed_out + shared_out
@@ -1634,7 +1864,8 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
         # Key: tuple of physical block IDs covering the cached prefix
         # Value: (conv_states_cpu, temporal_states_cpu) each of shape (num_gdn_layers, ...)
         self._gdn_prefix_cache: OrderedDict = OrderedDict()
-        self._gdn_prefix_cache_max: int = 16   # ~16 × 16 MB ≈ 256 MB CPU RAM
+        # Cover all 32 staged 8K chunks in the model-native 256K window.
+        self._gdn_prefix_cache_max: int = 32   # ~32 × 16 MB ≈ 512 MB CPU RAM
         self._block_size: int = (cache_config.block_size
                                   if cache_config is not None else 16)
         self._startup_forward_traced = False
@@ -1883,6 +2114,14 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
             if "rotary_emb.inv_freq" in name:
                 continue
 
+            if _load_full_attention_qgkv_weight(
+                    params_dict, name, loaded_weight, self.text_cfg):
+                continue
+
+            if _load_gdn_projection_weight(
+                    params_dict, name, loaded_weight, self.text_cfg):
+                continue
+
             # Remap conv1d.weight → conv1d_weight
             # The conv has depth (1) dim in the checkpoint that we handle separately
             if ".linear_attn.conv1d.weight" in name:
@@ -1936,11 +2175,13 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLM):
         #   mlp.experts.gate_up_proj  shape (num_experts, 2*intermediate, hidden)
         #   mlp.experts.down_proj     shape (num_experts, hidden, intermediate)
         #   mlp.gate.weight           shape (num_experts, hidden)   [router]
+        #   mlp.shared_expert_gate.weight shape (1, hidden)
         #   mlp.shared_expert.{gate,up,down}_proj.weight            [shared MLP]
         # Our FusedMoE stores:
         #   mlp.experts.w13_weight    shape (num_experts, 2*intermediate//tp, hidden)
         #   mlp.experts.w2_weight     shape (num_experts, hidden, intermediate//tp)
-        # Our shared expert stores:
+        # Our router/shared gate stores both tensors in one (num_experts+1, H)
+        # replicated weight. Our shared expert stores:
         #   mlp.shared_expert_gate_up.weight  (merged gate+up)
         #   mlp.shared_expert_down.weight
 
@@ -1997,6 +2238,34 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLM):
                 name = "model." + name[len("model.language_model."):]
 
             if "rotary_emb.inv_freq" in name:
+                continue
+
+            if _load_full_attention_qgkv_weight(
+                    params_dict, name, loaded_weight, self.text_cfg):
+                continue
+
+            if _load_gdn_projection_weight(
+                    params_dict, name, loaded_weight, self.text_cfg):
+                continue
+
+            if name.endswith(".mlp.gate.weight"):
+                fused_name = name[:-len("gate.weight")] \
+                    + "router_shared_gate.weight"
+                if fused_name not in params_dict:
+                    raise ValueError(
+                        f"missing fused router/shared gate: {fused_name}")
+                params_dict[fused_name].weight_loader(
+                    params_dict[fused_name], loaded_weight, 0)
+                continue
+
+            if name.endswith(".mlp.shared_expert_gate.weight"):
+                fused_name = name[:-len("shared_expert_gate.weight")] \
+                    + "router_shared_gate.weight"
+                if fused_name not in params_dict:
+                    raise ValueError(
+                        f"missing fused router/shared gate: {fused_name}")
+                params_dict[fused_name].weight_loader(
+                    params_dict[fused_name], loaded_weight, 1)
                 continue
 
             if ".linear_attn.conv1d.weight" in name:

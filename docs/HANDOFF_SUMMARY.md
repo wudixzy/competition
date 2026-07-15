@@ -1,5 +1,109 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-15 TP4 候选栈更新
+
+E-ATTN-04 以单个 CoreX kernel 将 paged FP16 K/V 精确 gather 到现有 FP32
+attention 布局，后续 matmul/softmax 不变。GPU1-3 的 64K 完整 attention 提升
+`1.365x-1.370x`，100K 提升 `2.018x-2.024x`，K/V/输出均逐位一致。按十个
+full-attention 层投影，64K/100K 每 token 分别约节省 28.9/93.8 ms；该收益仅在
+32K 以上长上下文 fallback 生效，尚未完成 TP4 服务 A/B。证据见
+`docs/experiments/E_ATTN_04_COREX_PAGED_KV_GATHER_20260715.md`。
+
+E-ATTN-05 进一步按上下文长度调整同一内核的 grid：96K 及以下使用 256 blocks，
+99.5K/100K 保留原大 grid。三卡交叉验证对 64K/90K/96K 再降低约 5%-8%，生产
+分派探针达到 64K `1.503x`、96K `2.021x`、100K `2.016x`，全程逐位一致。
+E-ATTN-05 已取代 E-ATTN-04 成为长上下文候选，证据见
+`docs/experiments/E_ATTN_05_PAGED_GATHER_GRID_20260715.md`。
+
+E-ATTN-06 direct split-K 原型比 E-ATTN-05 在 64K/100K 分别再快
+`1.635x/1.362x`，但改变了归约顺序。100K 的 100 组压力测试只有 83 组通过
+`1e-3` 容差，最差绝对误差 0.05937，因此按 exact-contract 拒绝，未进入生产
+代码或 TP4 候选栈。证据见
+`docs/experiments/E_ATTN_06_DIRECT_PAGED_DECODE_20260715.md`。
+
+E-ATTN-07 将广播 `matmul` 改写为 stride-zero GQA `bmm`，64K/100K 各 100
+组输出均逐位一致，但完整路径仅提升 `0.25%/0.00%`，低于 5% 门槛；物理 repeat
+版本更慢。因此拒绝，E-ATTN-05 保持不变。
+
+E-MOE-11 将逐位一致的 routed `SiluAndMul` 与 E-MOE-10 CoreX 精确归约组合。
+GPU1-3 真实 TP4 rank-local shape 的完整 routed decode 路径分别提升
+`1.0993x/1.0993x/1.0998x`，每卡 1,000 组随机输入均逐位一致。组合预计每 token
+节省约 1.83 ms，使当前 TP4 候选栈的未资格化投影从约 4.4 ms/token 增至约
+5.1 ms/token，对应 13.3-13.5 TPS 基线约 14.3-14.5 TPS。服务 A/B 尚未完成。
+
+E-MOE-12 将 T=1 top-8 的 W13/W2 两次高级索引替换为一个 `__half2` CoreX
+gather。GPU1-3 完整路由链路稳定提升 `1.2606x-1.2615x`，固定路由全路径约
+`1.329x`，每卡 1,000 组随机路由均逐位一致；生产模型方法探针为
+`0.4570 -> 0.3619 ms`（`1.2630x`）。按 40 个 MoE 层新增约 3.76 ms/token，
+使短上下文候选栈未资格化投影增至约 8.9 ms/token，即约 15.1-15.3 TPS。
+证据见 `docs/experiments/E_MOE_12_FUSED_WEIGHT_GATHER_20260715.md`。
+
+E-MOE-13 进一步把 E-MOE-12 的 half2 一维 copy 改为按 16 个专家权重段调度的
+128-bit 二维 copy，消除了内层逐元素整数除法。相对 E-MOE-12，GPU1-3 完整路由
+链路再提升 `1.090x/1.094x/1.095x`，每卡 1,000 组仍逐位一致；生产方法相对
+原生索引达到 `1.396x`。该增量约 1.25 ms/token，短上下文候选栈保守投影更新为
+约 10.1 ms/token，即约 15.4-15.6 TPS。E-MOE-13 取代 E-MOE-12 的 copy kernel，
+但沿用同一环境开关和回退。证据见
+`docs/experiments/E_MOE_13_VECTOR_WEIGHT_GATHER_20260715.md`。
+
+E-MOE-14 尝试先以 FP16 top-k、再只转换选中的 8 个 logits。3,003 组随机和
+并列边界用例的专家索引、权重、输出均逐位一致，但完整 E-MOE-13 路径仅提升
+`1.0104x`（约 0.14 ms/token），低于 5% 门槛，因此拒绝且未改生产代码。
+
+E-MOE-15 测试 W13/W2 单次 packed 分配和 1/2/4/8-way copy 展开。所有结果仍
+逐位一致，但最佳完整路由结果仅为 E-MOE-13 的 `0.9998x`，因此拒绝且未改
+生产代码。
+
+E-MOE-16 重新分解 E-MOE-13 后的 `0.3304 ms/layer`：route 17.3%、gather
+19.2%、W13 linear 39.4%、W2 bmm 16.3%，activation/reduce 合计仅 5.4%。
+组合调度开销只有约 0.0075 ms，因此后续必须直接优化 W13 或同时覆盖两次
+expert GEMM，不能继续包装现有算子。
+
+E-MOE-17 扫描连续 `2048x2048` W13 的 CoreX cuBLAS `GemmEx` 算法。裸 W13
+最好 `1.044x`，但完整路由只有 `1.0011x`；`Hgemm` 更慢且不精确。该方向
+拒绝，后续 W13 必须是实际融合或 shape-specific kernel，不能继续包装 cuBLAS。
+
+E-MOE-18 的 shape-specific W13 matvec 裸算子达到 `5.84x`、完整固定路径
+`1.746x`，但所有 FP32/Kahan 归约都产生至少 `3.05e-5` 的最终输出差异；CoreX
+FP64 版本结果无效。该误差与已导致 1,000-token hash 分叉的 E-MOE-04 同量级，
+因此按正确性门槛拒绝，不能放宽容差。
+
+E-GDN-08 按 checkpoint 真实 TP4 八 value-head 形状测得完整 rank-local decode
+为 `0.5646 ms/layer`；q/k prep 和输入投影各占约 27%/26%。该画像同时发现旧
+E-GDN-02/06/07 沿用了 12 local heads 的过期注释。E-GDN-09 在真实八头下重审
+后，normalize-before-expand 与 exact recurrent 分别只有 `0.9850x/0.9855x`，
+仍为负收益并保持拒绝。
+
+E-GDN-10 将 decode beta sigmoid 和最终 recurrent decay factor 合为一个 CoreX
+kernel。按 checkpoint 的 BF16 权重经运行时下采样为 FP16 的真实 dtype 重跑后，
+生产 merged-view 在 1,000 组随机输入上 beta/decay 均逐位一致，
+`0.06270 -> 0.00712 ms`（`8.80x`），约投影节省 `1.67 ms/token`。短上下文候选栈累计投影更新为约
+`11.8 ms/token`，即约 `15.8-16.1 TPS`；仍需 TP4 服务 A/B。
+
+E-GDN-11 扫描两个真实 rank-local GDN 投影的全部可用 cuBLAS 模式。最佳 exact
+输入/输出模式仅 `1.0034x/1.0085x`，唯一不精确 Hgemm 还明显更慢，因此按 5%
+门槛拒绝，生产代码和候选栈不变。
+
+E-GDN-12 保留 PyTorch FP16 q/k L2 归约，只融合归一化后 4→8 head 映射、
+FP32 转换和 query scale。真实 convolution split-view 下 q/k 都连续，1,000 步
+q/k、输出和 recurrent state 全部逐位一致；完整 prep+recurrent 为
+`0.19362 -> 0.16757 ms`（`1.155x`），约投影节省 `0.78 ms/token`。短上下文
+候选栈累计投影更新为约 `12.6 ms/token`，即约 `16.0-16.3 TPS`。
+
+E-GDN-13 将 E-GDN-10/12 放回同一个完整 rank-local 层复测，E-GDN-03/05-only
+参考为 `0.54915 ms`，当前 E-GDN-03/05/10/12 为 `0.44950 ms`（`1.222x`），
+输出、conv state 和 temporal state 均逐位一致。组合净省约 `2.99 ms/token`，
+因此短上下文候选栈统一改用约 `13.1 ms/token`、`16.1-16.4 TPS` 的未资格化投影。
+
+新实例 `ssh-a2d0a302.default.gpu.phanthy.com` 的 GPU0 仍为 257 MiB、100% 利用率且
+无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
+四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。
+
+13:55 再次执行独立四卡 preflight（每卡 12 秒硬超时、256 方阵乘）：GPU0 返回
+`124 timeout`，没有完成设备/显存读取；GPU1-3 均通过，free/total 各为
+`34057748480/34057748480` bytes，matmul checksum 均为 `16777216.0`。最新远端
+证据为 `/root/competition/preflight_a2_20260715.json`，TP4 阻塞未解除。
+
 更新时间：2026-07-12
 
 ## 2026-07-12 固定评测契约更正
@@ -664,3 +768,143 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 ```
 
 最终 Docker build 不应出现未解释的 `anchor not found`。
+
+## 2026-07-15 E-MOE-02 进展
+
+- 新 4 卡实例 `ssh-a2d0a302.default.gpu.phanthy.com` 已通过 Torch、TP4 与
+  262,144-token 服务启动，最终候选 PID/PGID 为 `18909/18909`。
+- `f11c6f9` 将 MoE 路由从 256 路完整 softmax 后取 top-8，改为先取
+  top-8 logits 再仅对 8 路 softmax；四卡真实形状微基准均 bit-exact。
+- 三组交错固定请求配对的 Output TPS P10 均提升，中位提升 `4.33%`；ITL
+  P90 中位下降 `4.99%`，固定短测加权值中位提升 `5.00%`。
+- full smoke 为 `15/15`。235K 冷/热请求耗时 `519.855s/48.385s`，热命中
+  `234,544` tokens，输出 SHA256 与既有 256K 资格化结果一致。
+- `min_tokens=max_tokens=1000` 的持续解码门槛耗时 `77.831s`，返回 1,000
+  completion tokens、`finish_reason=length`，完成后服务 health 仍为 200。
+- GitHub 分支 `exp/E-MOE-02-decode-primitives` 已推送。ModelHub token 仍被
+  Gitea 拒绝，在认证恢复前不要反复猜用户名或覆盖官方远端。
+- 完整证据见 `docs/experiments/E_MOE_02_DECODE_ROUTING_20260715.md`。当前
+  Output TPS 约 `13.45-13.73`，仍低于竞赛目标 20，下一步继续优化 MoE
+  专家计算或 TP collective，不改固定 evaluator 参数。
+
+## 2026-07-15 E-MOE-03 进展
+
+- `7a68a94` 将 256-output router 和 1-output shared-expert gate 合并为
+  257-row replicated linear，并用显式分片 loader 保持 checkpoint 兼容。
+- 四卡 T=1 微基准 bit-exact，融合速度为 `1.744x-1.812x`；T=64 为
+  `1.829x-1.837x`。
+- 三组交错固定请求配对的 Output TPS P10 均提升，中位 `+5.78%`；固定短测
+  加权值中位 `+3.17%`。full smoke 为 `15/15`。
+- 235K 冷/热耗时 `503.270s/43.172s`，热命中 `234,544` tokens，输出哈希
+  保持不变。强制 1,000-token 解码耗时 `76.278s`，哈希也与 E-MOE-02 一致。
+- 最终候选服务 PID/PGID `35306/35306`，262,144 context，GPU/CPU blocks
+  `16878/6553`，health 200，无 loader、fatal、OOM 或 worker loss。
+- 完整证据见 `docs/experiments/E_MOE_03_ROUTER_SHARED_GATE_20260715.md`。
+  当前 Output TPS 约 `13.26-13.54`，仍需继续优化 routed expert 和 TP
+  collective 才能接近竞赛门槛 20。
+
+## 2026-07-15 E-MOE-04 结论
+
+- 尝试将 T=1 routed expert 的逐元素权重乘法和 top-k sum 合并为一次
+  `torch.matmul`。四卡真实 shape 微基准中，归约本身提升 `2.85x-3.24x`，完整
+  routed path 提升 `1.053x-1.087x`。
+- 该实现不是 bit-exact，最大绝对差 `6.1035e-5`。CoreX 单测/静态测试通过，
+  256K 服务正常启动，full smoke `15/15`，日志无 fatal/OOM/non-finite/worker loss。
+- 强制 1,000-token 请求耗时 `76.693s`，但输出哈希从 E-MOE-03 的
+  `1766c3...` 变为 `be4ee3...`；请求 token 数和 reasoning 全部一致，正文发生
+  token 分叉。因此按正确性门禁拒绝，不运行性能 A/B 或长上下文门禁。
+- 远端运行时已恢复 E-MOE-03 `2103876`；`integration/perf-winners` 不变。
+- 证据见 `docs/experiments/E_MOE_04_WEIGHTED_REDUCE_20260715.md`。
+
+## 2026-07-15 E-MOE-05 结论
+
+- 复用 shared expert 已使用的 CoreX/vLLM `SiluAndMul` 测试 routed expert
+  激活。GPU1-3 激活结果和完整 routed output 均 bit-exact，max abs 为 0。
+- 融合激活单项提升 `1.64x-1.69x`，但完整 routed path 仅提升
+  `1.030x-1.032x`，低于 5% 集成门槛，因此不修改模型、不做服务 A/B。
+- GPU0 在测试初始化时卡住。清理仍可见的服务 PGID `42435` 后，显存从
+  18,164 MiB 降至 257 MiB，但 GPU0 仍为 100% util，最小 Torch preflight
+  继续超时。设备 reset 被剩余宿主 PID `7093` 拒绝，而容器内无对应进程；
+  继续四卡测试前需要平台实例级重启或宿主侧 reset。
+- 证据见 `docs/experiments/E_MOE_05_FUSED_ACTIVATION_20260715.md`；E-MOE-03
+  仍是当前 qualified model winner。
+
+## 2026-07-15 E-GRAPH-01 结论
+
+- vendor `vllm/engine/arg_utils.py` 将 `enforce_eager=True` 硬编码，导致固定
+  命令的 `--max-seq-len-to-capture 32768` 实际无效，同时关闭 async output。
+- 实验分支 `exp/E-GRAPH-01-cudagraph-probe`、提交 `97440b0` 已加入 fail-closed
+  幂等 patch，以及单卡 MoE/GDN state graph 和 TP=4 IPC collective graph 门禁。
+- 本地 patch 单测 `2/2`、Python/shell/diff 检查通过；GPU1 上 MoE、GDN output
+  和 mutating state 的 graph replay 均 finite、bit-exact、max abs 0。
+- 性能门禁失败：单个 MoE 子图 `0.8686x`，40 层重复子图 `0.9197x`，graph
+  分别慢 13.1% 和 8.0%。因此跳过 TP collective 和完整服务，patch 不合入
+  integration/qualified runtime。
+- 详细流程见 `docs/experiments/E_GRAPH_01_CUDAGRAPH_PROBE_20260715.md`。
+
+## 2026-07-15 后续微基准与 CoreX 扩展结论
+
+- E-MOE-06 routed/shared 双流重叠保持 bit-exact，但完整 MoE block 只有
+  `0.711x-0.721x`，因 stream 同步和资源争用淘汰。
+- E-GDN-02 将 q/k normalization 前移到 3 倍 head 展开之前，output/state
+  bit-exact，但完整 recurrent step 仅 `1.0235x`，低于 5% 集成门槛。
+- E-CAP-02 重新确认 vendor FusedMoE 三个 ixformer 符号和 `_moe_C` op 均缺失；
+  `/usr/local/corex/bin/nvcc` 只是版本占位脚本。CoreX Clang 16 的 `bi/ivcore10`
+  后端可以编译、加载并执行 ABI-0 Torch CUDA extension，standalone 和 Python
+  extension smoke 均通过。这一能力结论保留在 integration。
+- E-GDN-07 自定义 recurrent kernel 的单步、固定 1,000 步和随机 1,000 步
+  数值门槛通过，candidate 绝对延迟稳定约 `0.049-0.052 ms`；但独立串行复测
+  仅 `1.280x/1.314x`，低于计划要求的 `1.5x`，生产接入提交不合入。
+- E-GDN-06+07 进一步融合 q/k normalization、head expansion 和 recurrent。
+  FP32/half normalization 版本达到 `2.179x/2.318x`，但随机序列 state/output
+  close 失败；保留完整 PyTorch FP16 normalization 的版本数值通过但为
+  `0.992x`。不得放宽容差或重复尝试这些归约路径。
+- E-MOE-07 将 T=1 路径分解为 route `0.057 ms`、selected-weight gather
+  `0.181 ms`、预取权重后的专家计算 `0.241 ms`，完整路径为 `0.507 ms`；
+  gather 单项占 35.75%，因此进入无拷贝门禁。CoreX 扩展直接对原始专家权重
+  执行 cuBLAS pointer-batched GEMV，FP32 累加保持 bit-exact，但完整路径为
+  `0.718 ms`、仅 `0.704x`；half 累加为 `0.628x` 且不精确。该方向淘汰，
+  不得用 cuBLAS 小批量 GEMV 替换当前 flattened W13 + gathered W2 路径。
+- E-ATTN-01 因沿用源码陈旧注释中的 `5120/24/4` 形状而撤回；真实 checkpoint
+  是 hidden `2048`、Q heads `16`、KV heads `2`，固定 TP4 使用 sharded QG 和
+  replicated K/V。纠正提交 `d0dded9` 明确禁止合入旧候选。
+- E-ATTN-02 在真实 TP4 shape 下合并 replicated K/V，实际 vLLM layer 输出
+  bit-exact；E-ATTN-03 进一步把本 rank QG 分片与全量 K/V 打包，T=1/T=64
+  实际层速度为 `1.905x/1.423x`，rank=2 checkpoint 切片和三段输出均 exact。
+  候选在 `exp/E-ATTN-03-packed-qgkv` 的 `5bebe8c`，预计全模型仅节省约
+  `0.24 ms/token`，TP4 服务收益待 GPU0 恢复后验证，未合入 integration。
+- E-MOE-08/09 分别把 shared gate/up 和 shared down 当作第 257 个 expert。
+  裸 W13 probe 曾显示 `1.186x` 假收益，但实际 vLLM layer oracle 为 `0.994x`；
+  W2 完整尾部为 `0.903x` 且 shared intermediate 非 exact。两条路径均淘汰，
+  后续 shared fusion 必须直接使用实际模型层作为基线。
+- 当前 `integration/perf-winners` 只包含 benchmark、能力证据和拒绝 decision；
+  模型实现仍为 qualified E-MOE-03/E-GDN-01。新实例 GPU0 仍无可见进程却
+  100% util，GPU1-3 可做单卡实验；恢复 TP4 前仍需平台侧处理 GPU0。
+- E-GDN-03 将 decode 的 state 拼接/回写、4-tap depthwise conv 和 SiLU
+  融为一个 CoreX kernel。纠正 checkpoint 真实 TP4 rank shape 为
+  `B=1,C=2048,K=4` 后，GPU1-3 均保持 output/state bit-exact，完整边界
+  提升 `7.30x-7.39x`，预计 30 个 GDN 层合计节省约 `1.35 ms/token`。
+  TP2 原参数和 `cpu_offload_gb=8` 均在权重加载时 OOM，故该候选保留在
+  `exp/E-GDN-03-fused-causal-conv`，等待健康 TP4 的服务哈希与性能门禁，
+  暂不合入 integration。
+- E-GDN-04 复用 ixformer RMSNorm 的探针中，FP32 state 被 operator 明确拒绝；
+  预先降为 FP16 可让完整 `norm+gate+out_proj` 提升 `1.785x`，但 tail
+  `max_abs=9.77e-4` 且不满足 close，因此按正确性门禁淘汰。不得通过降低
+  GDN state dtype 接入该 operator。
+- E-GDN-05 保留原 PyTorch FP32 inverse reduction，仅融合后续 scale、weight、
+  SiLU gate、乘法与 FP16 输出。GPU1-3 的 1,000 组随机 norm/实际 linear tail
+  均 bit-exact，完整 tail 提升 `1.979x-2.024x`，预计 30 层节省约
+  `1.63 ms/token`。生产扩展已独立编译和调用通过，但与 E-GDN-03 一样等待
+  健康 TP4 服务门禁，暂不合入 integration。
+- E-MOE-10 显式复现 FP16 product 舍入后 FP32 累加，修复 E-MOE-04 GEMV
+  的输出漂移。GPU1-3 均通过 1,000/1,000 随机 exact，完整 routed path
+  稳定提升约 `1.059x-1.064x`，预计 40 层节省约 `1.17 ms/token`。生产编译
+  门禁还发现精简 kernel 会被编译器重排而变成 0/1,000 exact；最终保留
+  runtime Mode dispatch 后恢复 1,000/1,000。候选等待 TP4，不合入 integration。
+- E-MOE-19 将 shared-expert sigmoid gate、FP16 乘法和 routed add 融为一个
+  CoreX kernel。以 `volatile half` 强制保留 PyTorch 的中间 FP16 舍入后，
+  1,000/1,000 随机、全部 63,488 个有限 FP16 gate 位型及 100/100 完整 MoE
+  边界均逐位一致。裸尾部为 `2.502x`，但真实 TP4 rank-local 完整 MoE 仅
+  `1.0164x`，40 层预计只省 `0.394 ms/token`，低于 5% 集成门槛，因此拒绝，
+  不修改当前候选运行时。证据见
+  `docs/experiments/E_MOE_19_SHARED_COMBINE_20260715.md`。
