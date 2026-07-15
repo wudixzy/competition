@@ -1,17 +1,16 @@
-# E-ATTN-01: Merge full-attention QGKV projections
+# E-ATTN-01: Retracted full-attention QGKV projection probe
 
 ## Scope
 
-Each full-attention layer executes separate q/g, key, and value projections.
-Under the fixed TP=4 configuration, their local output sizes are 3072, 256,
-and 256 for a 5120-wide input. This experiment tests one
-`MergedColumnParallelLinear` with three independently sharded checkpoint
-segments.
+This probe was initially built from stale source comments rather than the
+authoritative checkpoint config. It used hidden size 5120, 24 query heads, and
+four KV heads. The real Qwen3.6-35B-A3B config is hidden size 2048, 16 query
+heads, and two KV heads.
 
 ## Primitive gate
 
-The real-shape probe ran on physical GPU1. All q/g, key, and value output
-segments were bit-exact with the three-linear reference.
+The following numbers are retained only to make the invalid experiment
+reproducible. They do not represent the competition model or fixed TP4 path.
 
 | Tokens | Separate median | Merged median | Speedup | Exact |
 | ---: | ---: | ---: | ---: | --- |
@@ -27,21 +26,19 @@ Artifact:
 /root/competition/bench_runs/20260715_E_ATTN_01/result.json
 ```
 
-## Integration candidate
+## Retraction
 
-The experiment branch introduces `qgkv_proj` when `tp_size <= num_kv_heads`.
-The existing replicated K/V path remains the fallback when KV heads cannot be
-sharded. The checkpoint loader maps q/g, key, and value tensors to shards 0,
-1, and 2 without modifying checkpoint files.
-
-Local Python compilation and the P0 static suite pass. The CoreX loader unit
-test was staged but not executed in this turn because SCP failed and the
-verified chunk uploader was disconnected five times at offset zero.
+At fixed TP4, `tp_size=4 > num_kv_heads=2`. The candidate therefore selected
+the existing replicated-K/V fallback and did not use its merged QGKV layer at
+all. Its loader hook was also inserted only into the base model loader, while
+the competition MoE class uses an override. The TP2 diagnostic launch was
+stopped before model loading completed once these issues were identified.
 
 ## Status
 
-`INTEGRATION CANDIDATE, NOT QUALIFIED`. Do not merge into
-`integration/perf-winners` until remote loader tests, model import, TP4 load,
-full smoke, deterministic token checks, sustained decode, and paired service
-performance all pass. Resume from the experiment branch after SSH transfer is
-stable.
+`INVALID AND RETRACTED`. The corrective commit restores the production model
+source. Do not merge commit `752677e` and do not cite its speedup. The valid
+successor must benchmark the actual TP4 shapes: q/g output 2048 and replicated
+K/V outputs 512 each for a 2048-wide input. Because Q/G is sharded while K/V
+is replicated, the next candidate may merge only K and V unless it implements
+a custom mixed-sharding linear.
