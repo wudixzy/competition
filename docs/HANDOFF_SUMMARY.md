@@ -80,6 +80,10 @@ kernel。按 checkpoint 的 BF16 权重经运行时下采样为 FP16 的真实 d
 `0.06270 -> 0.00712 ms`（`8.80x`），约投影节省 `1.67 ms/token`。短上下文候选栈累计投影更新为约
 `11.8 ms/token`，即约 `15.8-16.1 TPS`；仍需 TP4 服务 A/B。
 
+E-GDN-11 扫描两个真实 rank-local GDN 投影的全部可用 cuBLAS 模式。最佳 exact
+输入/输出模式仅 `1.0034x/1.0085x`，唯一不精确 Hgemm 还明显更慢，因此按 5%
+门槛拒绝，生产代码和候选栈不变。
+
 新实例 `ssh-a2d0a302.default.gpu.phanthy.com` 的 GPU0 仍为 257 MiB、100% 利用率且
 无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
 四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。
