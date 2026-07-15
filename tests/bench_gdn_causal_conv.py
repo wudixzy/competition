@@ -86,7 +86,8 @@ def main() -> int:
     torch.cuda.set_device(device)
     extension = load_extension(args.extension)
     generator = torch.Generator(device=device).manual_seed(args.seed)
-    batch, channels, state_len = 1, 2560, 3
+    # Checkpoint TP4 rank shape: (2048 q + 2048 k + 4096 v) / 4.
+    batch, channels, state_len = 1, 2048, 3
 
     hidden = torch.randn(
         (batch, channels, 1), device=device, generator=generator,
