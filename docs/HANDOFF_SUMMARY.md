@@ -761,6 +761,18 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   执行 cuBLAS pointer-batched GEMV，FP32 累加保持 bit-exact，但完整路径为
   `0.718 ms`、仅 `0.704x`；half 累加为 `0.628x` 且不精确。该方向淘汰，
   不得用 cuBLAS 小批量 GEMV 替换当前 flattened W13 + gathered W2 路径。
+- E-ATTN-01 因沿用源码陈旧注释中的 `5120/24/4` 形状而撤回；真实 checkpoint
+  是 hidden `2048`、Q heads `16`、KV heads `2`，固定 TP4 使用 sharded QG 和
+  replicated K/V。纠正提交 `d0dded9` 明确禁止合入旧候选。
+- E-ATTN-02 在真实 TP4 shape 下合并 replicated K/V，实际 vLLM layer 输出
+  bit-exact；E-ATTN-03 进一步把本 rank QG 分片与全量 K/V 打包，T=1/T=64
+  实际层速度为 `1.905x/1.423x`，rank=2 checkpoint 切片和三段输出均 exact。
+  候选在 `exp/E-ATTN-03-packed-qgkv` 的 `5bebe8c`，预计全模型仅节省约
+  `0.24 ms/token`，TP4 服务收益待 GPU0 恢复后验证，未合入 integration。
+- E-MOE-08/09 分别把 shared gate/up 和 shared down 当作第 257 个 expert。
+  裸 W13 probe 曾显示 `1.186x` 假收益，但实际 vLLM layer oracle 为 `0.994x`；
+  W2 完整尾部为 `0.903x` 且 shared intermediate 非 exact。两条路径均淘汰，
+  后续 shared fusion 必须直接使用实际模型层作为基线。
 - 当前 `integration/perf-winners` 只包含 benchmark、能力证据和拒绝 decision；
   模型实现仍为 qualified E-MOE-03/E-GDN-01。新实例 GPU0 仍无可见进程却
   100% util，GPU1-3 可做单卡实验；恢复 TP4 前仍需平台侧处理 GPU0。
