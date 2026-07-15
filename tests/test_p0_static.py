@@ -367,6 +367,9 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("BI100_ATTN_COREX_PAGED_GATHER", paged_src)
         self.assertIn("_corex_paged_kv_gather.gather", paged_src)
         self.assertIn("key_cache[blk_ids]", paged_src)
+        kernel_src = read("qwen3_6_scripts/corex_paged_kv_gather.cu")
+        self.assertIn("kSmallGridMaxSeqLen = 96 * 1024", kernel_src)
+        self.assertIn("kSmallGridBlocks = 256", kernel_src)
 
     def test_docker_sets_corex_environment_and_invokes_explicit_bash(self):
         dockerfile = read("Dockerfile")

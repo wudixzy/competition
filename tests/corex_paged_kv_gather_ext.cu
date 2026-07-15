@@ -10,6 +10,8 @@
 namespace {
 
 constexpr int kThreads = 256;
+constexpr int kSmallGridBlocks = 256;
+constexpr int kSmallGridMaxSeqLen = 96 * 1024;
 
 __global__ void paged_kv_gather_kernel(
     const __half* key_cache, const __half* value_cache,
@@ -113,8 +115,10 @@ std::vector<torch::Tensor> gather_paged_kv(
 std::vector<torch::Tensor> gather_default(
     const torch::Tensor& key_cache, const torch::Tensor& value_cache,
     const torch::Tensor& block_table, int64_t seq_len) {
+  const int grid_cap =
+      seq_len <= kSmallGridMaxSeqLen ? kSmallGridBlocks : 65535;
   return gather_paged_kv(
-      key_cache, value_cache, block_table, seq_len, 65535);
+      key_cache, value_cache, block_table, seq_len, grid_cap);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
