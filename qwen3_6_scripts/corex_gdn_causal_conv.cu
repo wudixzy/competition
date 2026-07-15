@@ -34,7 +34,10 @@ __global__ void causal_conv_update_kernel(
   state[state_offset] = __half2float(state1);
   state[state_offset + 1] = __half2float(state2);
   state[state_offset + 2] = __half2float(current);
-  output[vector_offset] = __float2half_rn(value / (1.0f + expf(-value)));
+  const __half convolved = __float2half_rn(value);
+  const float activation_input = __half2float(convolved);
+  output[vector_offset] = __float2half_rn(
+      activation_input / (1.0f + expf(-activation_input)));
 }
 
 void check_half_cuda_contiguous(const torch::Tensor& tensor,
