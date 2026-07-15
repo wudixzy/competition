@@ -88,6 +88,8 @@ build_stage "building fused CoreX GDN gated norm extension"
 bash ./build_corex_gdn_gated_norm.sh "${VLLM_ROOT}"
 build_stage "building exact CoreX MoE reduction extension"
 bash ./build_corex_moe_exact_reduce.sh "${VLLM_ROOT}"
+build_stage "building CoreX MoE selected-weight gather extension"
+bash ./build_corex_moe_weight_gather.sh "${VLLM_ROOT}"
 build_stage "building exact CoreX paged K/V gather extension"
 bash ./build_corex_paged_kv_gather.sh "${VLLM_ROOT}"
 
