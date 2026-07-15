@@ -113,6 +113,11 @@ except ImportError:
     _corex_gdn_qk_map = None
 
 try:
+    from vllm import corex_attn_head_rms_norm as _corex_attn_head_rms_norm
+except ImportError:
+    _corex_attn_head_rms_norm = None
+
+try:
     from vllm import corex_moe_exact_reduce as _corex_moe_exact_reduce
 except ImportError:
     _corex_moe_exact_reduce = None
@@ -145,6 +150,9 @@ _USE_COREX_GDN_BETA_DECAY = (
 _USE_COREX_GDN_QK_MAP = (
     _corex_gdn_qk_map is not None
     and env_bool("BI100_GDN_COREX_QK_MAP", True))
+_USE_COREX_ATTN_HEAD_RMS_NORM = (
+    _corex_attn_head_rms_norm is not None
+    and env_bool("BI100_ATTN_COREX_HEAD_RMS_NORM", True))
 _USE_COREX_MOE_EXACT_REDUCE = (
     _corex_moe_exact_reduce is not None
     and env_bool("BI100_MOE_COREX_EXACT_REDUCE", True))
@@ -1215,6 +1223,32 @@ class GatedDeltaNet(nn.Module):
 # Full Attention  (with gated q — unique to Qwen3.5)
 # ---------------------------------------------------------------------------
 
+class Qwen3_5AttentionHeadRMSNorm(GemmaRMSNorm):
+    def forward_cuda(
+        self,
+        x: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ):
+        if (_USE_COREX_ATTN_HEAD_RMS_NORM
+                and residual is None
+                and x.dtype == torch.float16
+                and self.weight.dtype == torch.float16
+                and x.dim() == 3
+                and x.shape[0] == 1
+                and x.shape[-1] == 256
+                and x.is_contiguous()
+                and self.weight.is_contiguous()):
+            original_shape = x.shape
+            converted, squares = _corex_attn_head_rms_norm.prepare(
+                x.view(-1, 256))
+            inverse = torch.rsqrt(
+                squares.mean(dim=-1, keepdim=True)
+                + self.variance_epsilon)
+            return _corex_attn_head_rms_norm.apply_inverse(
+                converted, self.weight, inverse).view(original_shape)
+        return super().forward_cuda(x, residual)
+
+
 class Qwen3_5FullAttention(nn.Module):
     def __init__(
         self,
@@ -1287,8 +1321,10 @@ class Qwen3_5FullAttention(nn.Module):
             bias=False, quant_config=quant_config,
             prefix=f"{prefix}.o_proj")
 
-        self.q_norm = GemmaRMSNorm(self.head_dim, eps=self.rms_norm_eps)
-        self.k_norm = GemmaRMSNorm(self.head_dim, eps=self.rms_norm_eps)
+        self.q_norm = Qwen3_5AttentionHeadRMSNorm(
+            self.head_dim, eps=self.rms_norm_eps)
+        self.k_norm = Qwen3_5AttentionHeadRMSNorm(
+            self.head_dim, eps=self.rms_norm_eps)
 
         # Partial RoPE: rotary_dim = head_dim * partial_rotary_factor = 256 * 0.25 = 64
         rope_params = getattr(text_cfg, "rope_parameters", {}) or {}
