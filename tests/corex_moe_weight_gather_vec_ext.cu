@@ -10,7 +10,6 @@ namespace {
 
 constexpr int kTopK = 8;
 constexpr int kThreads = 256;
-constexpr int kGridX = 8;
 
 __global__ void selected_weight_gather_vec16_kernel(
     const uint4* w13, const uint4* w2, const int64_t* expert_ids,
@@ -45,9 +44,9 @@ void check_weight(const torch::Tensor& tensor, const char* name) {
 
 }  // namespace
 
-std::vector<torch::Tensor> gather_selected_weights(
+std::vector<torch::Tensor> gather_selected_weights_vec16(
     const torch::Tensor& w13, const torch::Tensor& w2,
-    const torch::Tensor& expert_ids) {
+    const torch::Tensor& expert_ids, int64_t grid_x) {
   check_weight(w13, "w13");
   check_weight(w2, "w2");
   TORCH_CHECK(w13.device() == w2.device(),
@@ -66,6 +65,8 @@ std::vector<torch::Tensor> gather_selected_weights(
               "expert_ids must have dtype int64");
   TORCH_CHECK(expert_ids.dim() == 1 && expert_ids.numel() == kTopK,
               "expert_ids must have shape (8,)");
+  TORCH_CHECK(grid_x > 0 && grid_x <= 4096,
+              "grid_x must be in [1, 4096]");
 
   auto selected_w13 = torch::empty(
       {kTopK, w13.size(1), w13.size(2)}, w13.options());
@@ -73,7 +74,7 @@ std::vector<torch::Tensor> gather_selected_weights(
       {kTopK, w2.size(1), w2.size(2)}, w2.options());
   const int64_t w13_vecs_per_expert = w13.size(1) * w13.size(2) / 8;
   const int64_t w2_vecs_per_expert = w2.size(1) * w2.size(2) / 8;
-  const dim3 grid(kGridX, 2 * kTopK);
+  const dim3 grid(static_cast<unsigned>(grid_x), 2 * kTopK);
   selected_weight_gather_vec16_kernel<<<
       grid, kThreads, 0, at::cuda::getCurrentCUDAStream()>>>(
       reinterpret_cast<const uint4*>(w13.data_ptr<at::Half>()),
@@ -87,6 +88,6 @@ std::vector<torch::Tensor> gather_selected_weights(
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
-  module.def("gather", &gather_selected_weights,
+  module.def("gather", &gather_selected_weights_vec16,
              "Gather selected FP16 top-8 MoE weights with 16-byte loads");
 }

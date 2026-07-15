@@ -74,6 +74,10 @@ Raw artifacts are intentionally not committed:
 well above the 5% full-boundary gate, and satisfies the bit-exact output
 contract. E-MOE-12 builds on E-MOE-11 and is independently switchable.
 
+E-MOE-13 subsequently supersedes only this experiment's half2 copy schedule
+with a faster 128-bit segmented kernel. The runtime API, feature switch, and
+fallback introduced here remain unchanged.
+
 Physical GPU0 on `ssh-a2d0a302.default.gpu.phanthy.com` still times out on a
 single small CUDA tensor operation while GPU1-3 pass. A healthy four-card host
 or host-side reset is still required for TP4 service qualification.

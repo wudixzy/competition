@@ -18,10 +18,10 @@ single-card candidates without changing `computility-run.yaml`:
 | E-GDN-03 fused causal conv | `3a1a458`, `6d7edff` | ~1.35 ms/token projected |
 | E-GDN-05 gated norm output | `d823dbd` | ~1.63 ms/token projected |
 | E-MOE-11 combined exact MoE tail | `d6ac803` + E-MOE-11 | ~1.83 ms/token projected |
-| E-MOE-12 selected-weight gather | E-MOE-12 | ~3.76 ms/token projected beyond E-MOE-11 |
+| E-MOE-13 selected-weight gather | E-MOE-12 + E-MOE-13 | ~5.01 ms/token projected beyond E-MOE-11 |
 
-The unqualified additive projection is approximately `8.9 ms/token`. Against
-the current 13.3-13.5 Output TPS range, this would imply about 15.1-15.3 TPS,
+The unqualified additive projection is approximately `10.1 ms/token`. Against
+the current 13.3-13.5 Output TPS range, this would imply about 15.4-15.6 TPS,
 still below the 20 TPS competition target. E-ATTN-05 is
 not included in that generic projection because it activates only above 32K;
 its context-dependent saving is listed separately in the table. Treat all
@@ -72,8 +72,8 @@ Do not benchmark all candidates first. On a healthy four-card host:
 6. Enable E-MOE-11 in two stages: first compare
    `BI100_MOE_COREX_EXACT_REDUCE=1/0`, then compare
    `BI100_MOE_FUSED_ACTIVATION=1/0`.
-7. Enable E-MOE-12 and compare `BI100_MOE_COREX_WEIGHT_GATHER=1/0` after the
-   E-MOE-11 checks; require the same 1,000-token hash.
+7. Enable the E-MOE-13 version of `BI100_MOE_COREX_WEIGHT_GATHER=1/0` after
+   the E-MOE-11 checks; require the same 1,000-token hash.
 8. Run the all-enabled stack only after every individual 1,000-token hash is
    identical. Repeat three interleaved service A/B pairs.
 9. Finish with full smoke, 99.5K and 235K/256K cold-warm equality, cache-hit
