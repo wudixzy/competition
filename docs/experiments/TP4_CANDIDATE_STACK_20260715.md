@@ -27,6 +27,10 @@ its context-dependent saving is listed separately in the table. Treat all
 projections only as prioritization; shared launch and memory effects require
 service A/B.
 
+E-ATTN-06 tested a direct split-K paged decode and was faster than E-ATTN-05,
+but failed the numerical gate at 100K (17/100 requests exceeded `1e-3`, worst
+absolute error 0.05937). It is not part of this stack.
+
 ## Build and static gates
 
 `patch_ops.sh` builds all four CoreX extensions into the discovered vLLM
