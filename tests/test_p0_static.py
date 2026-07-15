@@ -354,6 +354,8 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("BI100_MOE_COREX_EXACT_REDUCE", qwen_src)
         self.assertIn("_corex_moe_exact_reduce.serial_float", qwen_src)
         self.assertIn("expert_out * ws.unsqueeze", qwen_src)
+        self.assertIn("BI100_MOE_FUSED_ACTIVATION", qwen_src)
+        self.assertIn("act = self.act_fn(gate_up)", qwen_src)
 
     def test_docker_sets_corex_environment_and_invokes_explicit_bash(self):
         dockerfile = read("Dockerfile")

@@ -127,6 +127,7 @@ _USE_COREX_GDN_GATED_NORM = (
 _USE_COREX_MOE_EXACT_REDUCE = (
     _corex_moe_exact_reduce is not None
     and env_bool("BI100_MOE_COREX_EXACT_REDUCE", True))
+_USE_FUSED_MOE_ACTIVATION = env_bool("BI100_MOE_FUSED_ACTIVATION", True)
 
 
 # ---------------------------------------------------------------------------
@@ -1476,8 +1477,11 @@ class Qwen3_5MoeSparseBlock(nn.Module):
                 w13_sel.reshape(-1, H),                        # (K*2*I, H) — contiguous after indexing
             )                                                  # (1, K*2*I)
             gate_up = gate_up.view(self.top_k, -1)             # (K, 2*I)
-            gate, up = gate_up.chunk(2, dim=-1)                # (K, I) each
-            act = F.silu(gate) * up                            # (K, I)
+            if _USE_FUSED_MOE_ACTIVATION:
+                act = self.act_fn(gate_up)                      # (K, I)
+            else:
+                gate, up = gate_up.chunk(2, dim=-1)
+                act = F.silu(gate) * up
 
             # bmm: (K,H,I) @ (K,I,1) → (K,H,1) → (K,H)
             expert_out = torch.bmm(w2_sel, act.unsqueeze(-1)).squeeze(-1)  # (K, H)
