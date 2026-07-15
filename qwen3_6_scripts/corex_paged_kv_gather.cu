@@ -10,6 +10,8 @@
 namespace {
 
 constexpr int kThreads = 256;
+constexpr int kSmallGridBlocks = 256;
+constexpr int kSmallGridMaxSeqLen = 96 * 1024;
 
 __global__ void paged_kv_gather_kernel(
     const __half* key_cache, const __half* value_cache,
@@ -95,8 +97,10 @@ std::vector<torch::Tensor> gather_paged_kv(
   auto value_output = torch::empty(
       {num_kv_heads, seq_len, head_size}, output_options);
   const int64_t total = seq_len * num_kv_heads * head_size;
+  const int grid_cap =
+      seq_len <= kSmallGridMaxSeqLen ? kSmallGridBlocks : 65535;
   const int blocks = static_cast<int>(std::min<int64_t>(
-      (total + kThreads - 1) / kThreads, 65535));
+      (total + kThreads - 1) / kThreads, grid_cap));
   paged_kv_gather_kernel<<<blocks, kThreads, 0,
                            at::cuda::getCurrentCUDAStream()>>>(
       reinterpret_cast<const __half*>(key_cache.data_ptr<at::Half>()),
