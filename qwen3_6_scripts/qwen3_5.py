@@ -127,6 +127,11 @@ try:
 except ImportError:
     _corex_moe_weight_gather = None
 
+try:
+    from vllm import corex_moe_direct_routed as _corex_moe_direct_routed
+except ImportError:
+    _corex_moe_direct_routed = None
+
 from vllm.model_executor.models.interfaces import (HasInnerState, SupportsLoRA,
                                                    SupportsMultiModal)
 
@@ -159,6 +164,9 @@ _USE_COREX_MOE_EXACT_REDUCE = (
 _USE_COREX_MOE_WEIGHT_GATHER = (
     _corex_moe_weight_gather is not None
     and env_bool("BI100_MOE_COREX_WEIGHT_GATHER", True))
+_USE_COREX_MOE_DIRECT_ROUTED = (
+    _corex_moe_direct_routed is not None
+    and env_bool("BI100_MOE_COREX_DIRECT_ROUTED", False))
 _USE_FUSED_MOE_ACTIVATION = env_bool("BI100_MOE_FUSED_ACTIVATION", True)
 
 
@@ -1555,6 +1563,28 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             # Total: 3 kernel launches vs previous 16 (top_k*2).
             eids    = topk_ids[0]                              # (K,)
             ws      = topk_weights[0].to(hidden_states.dtype)  # (K,)
+            use_corex_direct = (
+                _USE_COREX_MOE_DIRECT_ROUTED
+                and hidden_states.dtype == torch.float16
+                and w13.dtype == torch.float16
+                and w2.dtype == torch.float16
+                and ws.dtype == torch.float16
+                and hidden_states.is_cuda and w13.is_cuda and w2.is_cuda
+                and eids.is_cuda and ws.is_cuda
+                and hidden_states.is_contiguous()
+                and w13.is_contiguous() and w2.is_contiguous()
+                and eids.is_contiguous() and ws.is_contiguous()
+                and hidden_states.shape == (1, 2048)
+                and w13.shape == (256, 256, 2048)
+                and w2.shape == (256, 2048, 128)
+                and eids.shape == (8,) and ws.shape == (8,))
+            if use_corex_direct:
+                gate_up = _corex_moe_direct_routed.w13(
+                    hidden_states, w13, eids)
+                act = self.act_fn(gate_up)
+                return _corex_moe_direct_routed.w2_reduce(
+                    act, w2, eids, ws)
+
             use_corex_gather = (
                 _USE_COREX_MOE_WEIGHT_GATHER
                 and hidden_states.dtype == torch.float16

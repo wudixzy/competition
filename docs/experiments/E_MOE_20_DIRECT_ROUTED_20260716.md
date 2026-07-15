@@ -75,6 +75,22 @@ service result, and it still falls short of 20 TPS by about 9%.
 
 Do not integrate the activation-fused variant and do not tune launch geometry.
 
+## Cross-device reproduction
+
+Physical GPUs 2 and 3 reproduced the result with the same 500-step numerical
+statistics as GPU1:
+
+| GPU | Staged fixed | Staged routed | Fused fixed | Fused routed |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 6.005x | 2.945x | 7.040x | 3.236x |
+| 2 | 5.928x | 2.924x | 6.987x | 3.198x |
+| 3 | 5.623x | 2.892x | 6.543x | 3.181x |
+
+All three staged runs reported 500/500 finite steps, `0.00012207` sequence
+max absolute error, and `6.7841e-06` mean absolute error. This satisfies the
+cross-device gate and authorizes a default-off production dispatch on the
+experiment branch.
+
 Remote artifacts:
 
 ```text
@@ -83,4 +99,8 @@ Remote artifacts:
 /root/E_MOE_20/smoke.json
 /root/E_MOE_20/smoke.log
 /root/E_MOE_20/logs/build_*.log
+/root/E_MOE_20/result_gpu2.json
+/root/E_MOE_20/result_gpu3.json
+/root/E_MOE_20/bench_gpu2.log
+/root/E_MOE_20/bench_gpu3.log
 ```

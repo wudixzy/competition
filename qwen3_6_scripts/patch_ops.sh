@@ -96,6 +96,8 @@ build_stage "building exact CoreX MoE reduction extension"
 bash ./build_corex_moe_exact_reduce.sh "${VLLM_ROOT}"
 build_stage "building CoreX MoE selected-weight gather extension"
 bash ./build_corex_moe_weight_gather.sh "${VLLM_ROOT}"
+build_stage "building CoreX direct routed-expert extension"
+bash ./build_corex_moe_direct_routed.sh "${VLLM_ROOT}"
 build_stage "building exact CoreX paged K/V gather extension"
 bash ./build_corex_paged_kv_gather.sh "${VLLM_ROOT}"
 

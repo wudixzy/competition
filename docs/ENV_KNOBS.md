@@ -15,6 +15,7 @@
 | `BI100_GDN_COREX_QK_MAP` | `1` | boolean | Normalizes four FP16 q/k heads before expansion, then fuses exact 4-to-8 head mapping, FP32 conversion, and query scaling; set to `0` for the PyTorch reference path. | E-GDN-12 |
 | `BI100_MOE_COREX_EXACT_REDUCE` | `1` | boolean | Enables the exact CoreX T=1 MoE weighted reduction for FP16 top-8 outputs; set to `0` for the PyTorch reference path. | E-MOE-10 |
 | `BI100_MOE_COREX_WEIGHT_GATHER` | `1` | boolean | Enables the exact 128-bit segmented CoreX gather of selected FP16 top-8 routed-expert weights in the T=1 decode path; set to `0` for native advanced indexing. | E-MOE-12/13 |
+| `BI100_MOE_COREX_DIRECT_ROUTED` | `0` | boolean | Enables the staged direct-addressing W13 and fused W2/routed-reduction path only for the exact FP16 `(M=1,E=256,K=8,H=2048,I=128)` decode shape. Experimental until TP4 endpoint qualification. | E-MOE-20 |
 | `BI100_MOE_FUSED_ACTIVATION` | `1` | boolean | Reuses vLLM's bit-exact `SiluAndMul` for the T=1 routed-expert activation; set to `0` for the native `F.silu(gate) * up` path. | E-MOE-11 |
 | `BI100_PAGED_ATTN_DIAGNOSTICS` | `0` | boolean | Enables physical slot/block-ID checks, device synchronization after `reshape_and_cache`, and sparse 8,192-token decode snapshots. Diagnostic only; invalid for performance runs. | E-CTX-01 |
 | `BI100_PREFIX_BLOCKS_PER_TILE` | `32` | `1..1024` | Prefix attention K/V block tile count for the PyTorch online-softmax fallback. | T3 |

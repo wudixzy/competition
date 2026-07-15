@@ -51,6 +51,8 @@ def _load_production_experts():
         "torch": torch,
         "F": F,
         "_USE_COREX_MOE_WEIGHT_GATHER": False,
+        "_USE_COREX_MOE_DIRECT_ROUTED": False,
+        "_corex_moe_direct_routed": None,
         "_USE_FUSED_MOE_ACTIVATION": False,
         "_USE_COREX_MOE_EXACT_REDUCE": False,
     }

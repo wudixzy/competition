@@ -64,3 +64,6 @@ the fixed boundary and `2.945x` including routing, with 500/500 finite random
 steps and `0.00012207` maximum endpoint error. The activation-fused path was
 faster but had over twice the sequence mean error and twice the sequence max
 error. Only staged advances to cross-device and production-dispatch work.
+Physical GPUs 2 and 3 reproduced staged routed speedups of `2.924x` and
+`2.892x`; both matched GPU1's 500-step error bounds exactly. The cross-device
+gate is complete.
