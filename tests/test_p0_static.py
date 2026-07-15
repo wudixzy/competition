@@ -412,12 +412,13 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("constexpr int kGridX = 8", kernel_src)
         self.assertIn("uint4", kernel_src)
 
-    def test_corex_moe_direct_routed_is_default_off_and_shape_guarded(self):
+    def test_corex_moe_direct_routed_is_guarded_and_submission_enabled(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
         build_src = read("qwen3_6_scripts/build_corex_moe_direct_routed.sh")
         kernel_src = read("qwen3_6_scripts/corex_moe_direct_routed.cu")
         knobs = read("docs/ENV_KNOBS.md")
+        submission = read("computility-run.yaml")
         self.assertIn("build_corex_moe_direct_routed.sh", patch_ops)
         self.assertIn("corex_moe_direct_routed.so", build_src)
         self.assertIn(
@@ -430,6 +431,11 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("constexpr int kExperts = 256", kernel_src)
         self.assertNotIn("w13_silu", kernel_src)
         self.assertIn("BI100_MOE_COREX_DIRECT_ROUTED", knobs)
+        self.assertIn("name: BI100_MOE_COREX_DIRECT_ROUTED", submission)
+        self.assertRegex(
+            submission,
+            r"name: BI100_MOE_COREX_DIRECT_ROUTED\s+value: 1",
+        )
 
     def test_corex_paged_kv_gather_is_built_with_explicit_fallback(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")

@@ -131,3 +131,57 @@ Remote artifacts:
 /root/competition-candidate/production/smoke_gpu1.json
 /root/competition-candidate/production/smoke_gpu1.log
 ```
+
+## TP4 endpoint qualification
+
+The old healthy four-card host ran a strict same-source A/B. Both services
+used the same model source, protocol fixes, extension binary, evaluator
+command, and cache settings. The only service change was:
+
+```text
+BI100_MOE_COREX_DIRECT_ROUTED=0 -> 1
+```
+
+Three paired fixed workloads produced:
+
+| Pair | flag=0 Output TPS P10 | flag=1 Output TPS P10 | Relative gain |
+| ---: | ---: | ---: | ---: |
+| 1 | 15.1293 | 20.0563 | +32.57% |
+| 2 | 15.0863 | 19.0185 | +26.07% |
+| 3 | 15.1491 | 20.0312 | +32.23% |
+
+All six runs completed 8/8 requests. Candidate TTFT P90 was
+`2.134/2.214/2.173 s`, cache hit rate was `86.87%`, and the candidate service
+log added no traceback, segmentation fault, OOM, or fatal event. A later N=2
+diagnostic reached `19.9119 TPS`, but had a 99.28% cache hit rate and is not
+part of the strict paired result.
+
+The candidate also passed:
+
+| Gate | Result |
+| --- | --- |
+| Full API and multimodal smoke | 15/15 |
+| Dataset-shaped Agent matrix | 9/9 |
+| Sustained greedy decode | 1,000 tokens, 51.930 s, finite |
+| Sustained output hash | `1766c3c44bfb672e32b2e35419c5e06490e539e54250ab2fc1012c539e68835f` |
+| 99.5K cold/warm | 157.252/16.583 s, 99,296 cached, exact output |
+| 235K cold/warm | 562.368/55.489 s, 234,544 cached, exact output |
+| Long-context output hash | `a3dc73d02269b1b3682ed84197c3d2d0ddc39dfdb544f73fb3ea832f1fb30b4d` |
+
+The sustained hash is identical to flag=0 and the previously qualified
+baseline. The long-context hashes are identical between cold and warm runs.
+
+## Final decision
+
+`ACCEPT AS TP4 PERFORMANCE WINNER`.
+
+The service gain is positive and above 25% in all three strict pairs, while
+functional, multimodal, Agent, sustained-decode, and 235K gates pass. Enable
+the knob in `computility-run.yaml`, retain the code-level default-off fallback,
+and merge the qualified implementation to `main`.
+
+This does not prove the official Output TPS P10 target is stable: two local
+pairs are just above 20 and one is 19.02. The next optimization must improve
+the remaining margin rather than tune evaluator parameters. E-GDN-14 packed
+decode is the next algorithmic candidate because it covers a measured
+`0.165 ms/layer` boundary and has an independent stop rule.
