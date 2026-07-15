@@ -31,6 +31,9 @@ E-ATTN-06 tested a direct split-K paged decode and was faster than E-ATTN-05,
 but failed the numerical gate at 100K (17/100 requests exceeded `1e-3`, worst
 absolute error 0.05937). It is not part of this stack.
 
+E-ATTN-07 retained exact arithmetic with stride-zero GQA BMM, but changed the
+64K/100K complete path by only +0.25%/0.00%. It is also not part of the stack.
+
 ## Build and static gates
 
 `patch_ops.sh` builds all four CoreX extensions into the discovered vLLM
