@@ -63,6 +63,11 @@ E-MOE-17 扫描连续 `2048x2048` W13 的 CoreX cuBLAS `GemmEx` 算法。裸 W13
 最好 `1.044x`，但完整路由只有 `1.0011x`；`Hgemm` 更慢且不精确。该方向
 拒绝，后续 W13 必须是实际融合或 shape-specific kernel，不能继续包装 cuBLAS。
 
+E-MOE-18 的 shape-specific W13 matvec 裸算子达到 `5.84x`、完整固定路径
+`1.746x`，但所有 FP32/Kahan 归约都产生至少 `3.05e-5` 的最终输出差异；CoreX
+FP64 版本结果无效。该误差与已导致 1,000-token hash 分叉的 E-MOE-04 同量级，
+因此按正确性门槛拒绝，不能放宽容差。
+
 新实例 `ssh-a2d0a302.default.gpu.phanthy.com` 的 GPU0 仍为 257 MiB、100% 利用率且
 无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
 四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。

@@ -48,6 +48,11 @@ matrix. `GemmEx` outputs were exact and the naked operator reached `1.044x`,
 but complete routed speedup was only `1.0011x`; `Hgemm` was slower and
 non-exact. It is rejected and not in the stack.
 
+E-MOE-18 implemented shape-specific W13 matvec kernels. The fastest complete
+fixed path reached `1.746x`, but all FP32/Kahan reductions changed final
+outputs by at least `3.05e-5`; FP64 variants were invalid on CoreX. It is
+rejected on correctness and not in the stack.
+
 ## Build and static gates
 
 `patch_ops.sh` builds all five CoreX extensions into the discovered vLLM
