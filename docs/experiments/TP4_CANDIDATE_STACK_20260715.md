@@ -39,6 +39,10 @@ E-MOE-14 moved the FP32 router-logit cast after top-k. IDs, weights, and final
 outputs were exact across 3,003 random and tie-heavy cases, but the complete
 E-MOE-13 boundary improved by only 1.04%. It is rejected and not in the stack.
 
+E-MOE-15 tested one packed W13/W2 output allocation and 1/2/4/8-way copy-loop
+unrolling. All outputs were exact, but the best complete routed result was
+`0.9998x` E-MOE-13. It is rejected and not in the stack.
+
 ## Build and static gates
 
 `patch_ops.sh` builds all five CoreX extensions into the discovered vLLM
