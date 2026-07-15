@@ -373,6 +373,20 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("q_raw.repeat_interleave", qwen_src)
         self.assertIn("kQueryScale", kernel_src)
 
+    def test_corex_attention_head_rms_norm_is_decode_only_and_fallback_safe(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_attn_head_rms_norm.sh")
+        kernel_src = read("qwen3_6_scripts/corex_attn_head_rms_norm.cu")
+        self.assertIn("build_corex_attn_head_rms_norm.sh", patch_ops)
+        self.assertIn("corex_attn_head_rms_norm.so", build_src)
+        self.assertIn("BI100_ATTN_COREX_HEAD_RMS_NORM", qwen_src)
+        self.assertIn("class Qwen3_5AttentionHeadRMSNorm", qwen_src)
+        self.assertIn("x.shape[0] == 1", qwen_src)
+        self.assertIn("return super().forward_cuda(x, residual)", qwen_src)
+        self.assertIn("squares.mean(dim=-1, keepdim=True)", qwen_src)
+        self.assertIn("__float2half_rn", kernel_src)
+
     def test_corex_moe_exact_reduce_is_built_with_explicit_fallback(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
