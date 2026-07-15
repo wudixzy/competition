@@ -59,6 +59,10 @@ E-MOE-16 重新分解 E-MOE-13 后的 `0.3304 ms/layer`：route 17.3%、gather
 组合调度开销只有约 0.0075 ms，因此后续必须直接优化 W13 或同时覆盖两次
 expert GEMM，不能继续包装现有算子。
 
+E-MOE-17 扫描连续 `2048x2048` W13 的 CoreX cuBLAS `GemmEx` 算法。裸 W13
+最好 `1.044x`，但完整路由只有 `1.0011x`；`Hgemm` 更慢且不精确。该方向
+拒绝，后续 W13 必须是实际融合或 shape-specific kernel，不能继续包装 cuBLAS。
+
 新实例 `ssh-a2d0a302.default.gpu.phanthy.com` 的 GPU0 仍为 257 MiB、100% 利用率且
 无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
 四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。
