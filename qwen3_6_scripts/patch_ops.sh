@@ -88,6 +88,8 @@ build_stage "building fused CoreX GDN gated norm extension"
 bash ./build_corex_gdn_gated_norm.sh "${VLLM_ROOT}"
 build_stage "building exact CoreX MoE reduction extension"
 bash ./build_corex_moe_exact_reduce.sh "${VLLM_ROOT}"
+build_stage "building exact CoreX paged K/V gather extension"
+bash ./build_corex_paged_kv_gather.sh "${VLLM_ROOT}"
 
 build_stage "installing BI100 runtime modules"
 cp ./bi100_env.py "${VLLM_ROOT}/bi100_env.py"
