@@ -328,6 +328,17 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("bi100_timer", qwen_src)
         self.assertIn("bi100_timer", paged_src)
 
+    def test_greedy_sampler_patch_is_installed_with_reference_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        patch_src = read("qwen3_6_scripts/patch_sampler_greedy_fastpath.py")
+        self.assertIn("patch_sampler_greedy_fastpath.py", patch_ops)
+        self.assertIn("BI100_SAMPLER_GREEDY_FASTPATH", patch_src)
+        self.assertIn("SamplingType.GREEDY", patch_src)
+        self.assertIn("sampling_params.logprobs is None", patch_src)
+        self.assertIn("sampling_params.prompt_logprobs is None", patch_src)
+        self.assertIn("probs = torch.softmax", patch_src)
+        self.assertIn("logprobs = torch.log_softmax", patch_src)
+
     def test_corex_gdn_causal_conv_is_built_with_explicit_fallback(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
