@@ -82,6 +82,9 @@ source /tmp/qwen36_patch_paths.env
 echo "VLLM_ROOT=${VLLM_ROOT}"
 echo "TRANSFORMERS_ROOT=${TRANSFORMERS_ROOT}"
 
+build_stage "building fused CoreX GDN causal convolution extension"
+bash ./build_corex_gdn_causal_conv.sh "${VLLM_ROOT}"
+
 build_stage "installing BI100 runtime modules"
 cp ./bi100_env.py "${VLLM_ROOT}/bi100_env.py"
 cp ./bi100_profile.py "${VLLM_ROOT}/bi100_profile.py"

@@ -11,6 +11,7 @@
 | `BI100_PAGED_ATTN_DIAGNOSTICS` | `0` | boolean | Enables physical slot/block-ID checks, device synchronization after `reshape_and_cache`, and sparse 8,192-token decode snapshots. Diagnostic only; invalid for performance runs. | E-CTX-01 |
 | `BI100_PREFIX_BLOCKS_PER_TILE` | `32` | `1..1024` | Prefix attention K/V block tile count for the PyTorch online-softmax fallback. | T3 |
 | `BI100_PROFILE` | `0` | boolean | Enables lightweight CUDA-synchronized timers for BI100 hotspot profiling. | T4 |
+| `BI100_GDN_COREX_CAUSAL_CONV` | `1` | boolean | Enables the fused CoreX decode causal-convolution/state-update kernel when the extension is installed; set to `0` for the PyTorch reference path. | E-GDN-03 |
 | `BI100_PROFILE_INCLUDE_STARTUP` | `0` | boolean | Includes vLLM synthetic startup `profile_run()` in BI100 timers; default skips it so profiling focuses on real requests and avoids perturbing startup dummy runs. | T5 |
 | `BI100_PYTORCH_DECODE_THRESHOLD` | `32768` | `1..262144` | Routes long-context decode to the pure PyTorch paged attention fallback. | T3 |
 | `BI100_UNSET_CUDA_VISIBLE_DEVICES` | `1` | boolean shell flag | Lets the contest container expose all four GPUs by default while allowing debug runs to preserve a caller-specified visibility mask. | T1 |

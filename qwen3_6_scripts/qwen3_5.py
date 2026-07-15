@@ -92,6 +92,11 @@ from vllm.logger import init_logger
 from vllm.bi100_env import env_bool, env_int
 from vllm.bi100_profile import bi100_timer
 
+try:
+    from vllm import corex_gdn_causal_conv as _corex_gdn_causal_conv
+except ImportError:
+    _corex_gdn_causal_conv = None
+
 from vllm.model_executor.models.interfaces import (HasInnerState, SupportsLoRA,
                                                    SupportsMultiModal)
 
@@ -103,6 +108,9 @@ _ALLOW_GDN_NAN_ZERO = env_bool("BI100_GDN_ALLOW_NAN_ZERO", False)
 _GDN_FINITE_CHECK = (env_bool("BI100_GDN_FINITE_CHECK", False)
                      or _ALLOW_GDN_NAN_ZERO)
 _DNN_CHUNK_SIZE = env_int("BI100_DNN_CHUNK", 4096, 64, 65536)
+_USE_COREX_GDN_CAUSAL_CONV = (
+    _corex_gdn_causal_conv is not None
+    and env_bool("BI100_GDN_COREX_CAUSAL_CONV", True))
 
 
 # ---------------------------------------------------------------------------
@@ -1042,9 +1050,13 @@ class GatedDeltaNet(nn.Module):
                          .to(weight_2d.dtype)
                          .unsqueeze(-1))
 
-            mixed_qkv_conv = _torch_causal_conv1d_update(
-                mixed_qkv, conv_state, weight_2d,
-                bias=None, activation='silu')
+            if _USE_COREX_GDN_CAUSAL_CONV:
+                mixed_qkv_conv = _corex_gdn_causal_conv.causal_conv_update(
+                    conv_state, mixed_qkv, weight_2d)
+            else:
+                mixed_qkv_conv = _torch_causal_conv1d_update(
+                    mixed_qkv, conv_state, weight_2d,
+                    bias=None, activation='silu')
             # (num_seqs, local_conv_dim, 1) → (num_seqs, 1, local_conv_dim)
             mixed_qkv_conv = mixed_qkv_conv.squeeze(-1).unsqueeze(1)
 
