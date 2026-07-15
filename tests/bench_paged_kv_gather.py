@@ -59,6 +59,7 @@ def main() -> int:
     parser.add_argument("--extension", type=Path, required=True)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--lengths", default="32768,65536,100000")
+    parser.add_argument("--grid-caps", default="")
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iterations", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=7)
@@ -72,6 +73,8 @@ def main() -> int:
     extension = load_extension(args.extension)
     generator = torch.Generator(device=device).manual_seed(args.seed)
     lengths = [int(value) for value in args.lengths.split(",")]
+    grid_caps = ([int(value) for value in args.grid_caps.split(",")]
+                 if args.grid_caps else [])
     num_heads, num_kv_heads, head_size, block_size = 6, 1, 256, 16
     key_pack = 16 // torch.empty((), dtype=torch.float16).element_size()
     max_blocks = (max(lengths) + block_size - 1) // block_size
@@ -144,7 +147,38 @@ def main() -> int:
         timings["custom_full"]["speedup_vs_native"] = (
             timings["native_full"]["median_ms"] /
             timings["custom_full"]["median_ms"])
-        results[str(seq_len)] = {"checks": checks, "timings": timings}
+        grid_scan = {}
+        for grid_cap in grid_caps:
+            grid_key, grid_value = extension.gather_grid(
+                key_cache, value_cache, block_table, seq_len, grid_cap)
+            grid_output = attention(grid_key, grid_value)
+            gather_case = lambda cap=grid_cap, n=seq_len: \
+                extension.gather_grid(
+                    key_cache, value_cache, block_table, n, cap)
+            full_case = lambda cap=grid_cap, n=seq_len: attention(
+                *extension.gather_grid(
+                    key_cache, value_cache, block_table, n, cap))
+            gather_timing = measure(
+                gather_case, args.warmup, args.iterations, args.repeats)
+            full_timing = measure(
+                full_case, args.warmup, args.iterations, args.repeats)
+            gather_timing["speedup_vs_native"] = (
+                timings["native_gather"]["median_ms"] /
+                gather_timing["median_ms"])
+            full_timing["speedup_vs_native"] = (
+                timings["native_full"]["median_ms"] /
+                full_timing["median_ms"])
+            grid_scan[str(grid_cap)] = {
+                "key_exact": bool(torch.equal(grid_key, native_key)),
+                "value_exact": bool(torch.equal(grid_value, native_value)),
+                "output_exact": bool(torch.equal(grid_output, native_output)),
+                "output_max_abs": float((
+                    grid_output.float() - native_output.float()).abs().max()),
+                "gather": gather_timing,
+                "full": full_timing,
+            }
+        results[str(seq_len)] = {
+            "checks": checks, "timings": timings, "grid_scan": grid_scan}
 
     report = {
         "device": torch.cuda.get_device_name(device),
