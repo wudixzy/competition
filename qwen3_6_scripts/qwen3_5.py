@@ -113,6 +113,11 @@ except ImportError:
     _corex_gdn_qk_map = None
 
 try:
+    from vllm import corex_gdn_packed_decode as _corex_gdn_packed_decode
+except ImportError:
+    _corex_gdn_packed_decode = None
+
+try:
     from vllm import corex_attn_head_rms_norm as _corex_attn_head_rms_norm
 except ImportError:
     _corex_attn_head_rms_norm = None
@@ -155,6 +160,9 @@ _USE_COREX_GDN_BETA_DECAY = (
 _USE_COREX_GDN_QK_MAP = (
     _corex_gdn_qk_map is not None
     and env_bool("BI100_GDN_COREX_QK_MAP", True))
+_USE_COREX_GDN_PACKED_DECODE = (
+    _corex_gdn_packed_decode is not None
+    and env_bool("BI100_GDN_COREX_PACKED_DECODE", False))
 _USE_COREX_ATTN_HEAD_RMS_NORM = (
     _corex_attn_head_rms_norm is not None
     and env_bool("BI100_ATTN_COREX_HEAD_RMS_NORM", True))
@@ -1131,88 +1139,108 @@ class GatedDeltaNet(nn.Module):
             # (num_seqs, local_conv_dim, 1) → (num_seqs, 1, local_conv_dim)
             mixed_qkv_conv = mixed_qkv_conv.squeeze(-1).unsqueeze(1)
 
-            q, k, v = torch.split(
-                mixed_qkv_conv,
-                [local_key_dim, local_key_dim, local_val_dim], dim=-1)
-            q = q.reshape(num_seqs, 1, local_num_k, self.head_k_dim)
-            k = k.reshape(num_seqs, 1, local_num_k, self.head_k_dim)
-            v = v.reshape(num_seqs, 1, local_num_v, self.head_v_dim)
-
-            use_corex_beta_decay = (
-                _USE_COREX_GDN_BETA_DECAY
-                and b_all.dtype == torch.float16
-                and a_all.dtype == torch.float16
-                and self.A_log.dtype == torch.float16
-                and self.dt_bias.dtype == torch.float16
-                and b_all.is_contiguous()
-                and a_all.is_contiguous())
-            if use_corex_beta_decay:
-                beta_decay = _corex_gdn_beta_decay.beta_decay(
-                    b_all, a_all, self.A_log, self.dt_bias)
-                bt = beta_decay[0]
-                g_t = beta_decay[1]
-            else:
-                beta = b_all.sigmoid()
-                g = (-self.A_log.float().exp()
-                     * F.softplus(a_all.float() + self.dt_bias))
-                bt = beta.float()
-                g_t = g.float().exp_()
-
-            # Inlined decode recurrent step (seq_len=1).
-            # Replaces _torch_recurrent_gated_delta_rule to avoid 5 transpose+
-            # contiguous+float32 copies, core_out allocation, and Python loop.
-            # Uses bmm/baddbmm_ to eliminate 3 large (B,H,k,v) intermediate tensors.
-            # temporal_state: (B, H_v, k_dim, v_dim) float32 — updated in-place.
-            _scale = self.head_k_dim ** -0.5
-            q_raw = q.squeeze(1)
-            k_raw = k.squeeze(1)
-            use_corex_qk_map = (
-                _USE_COREX_GDN_QK_MAP
-                and q_raw.dtype == torch.float16
-                and k_raw.dtype == torch.float16
+            packed_mixed_qkv = mixed_qkv_conv.squeeze(1)
+            use_corex_packed_decode = (
+                _USE_COREX_GDN_PACKED_DECODE
+                and num_seqs == 1
+                and local_num_k == 4
+                and local_num_v == 8
                 and self.head_k_dim == 128
-                and q_raw.is_contiguous()
-                and k_raw.is_contiguous())
-            if use_corex_qk_map:
-                qk_mapped = _corex_gdn_qk_map.qk_map(
-                    _l2norm(q_raw), _l2norm(k_raw), local_num_v)
-                q_t = qk_mapped[0]
-                k_t = qk_mapped[1]
+                and self.head_v_dim == 128
+                and packed_mixed_qkv.dtype == torch.float16
+                and packed_mixed_qkv.shape == (1, 2048)
+                and packed_mixed_qkv.is_contiguous()
+                and b_all.dtype == torch.float16
+                and b_all.shape == (1, 8)
+                and b_all.is_contiguous()
+                and a_all.dtype == torch.float16
+                and a_all.shape == (1, 8)
+                and a_all.is_contiguous()
+                and self.A_log.dtype == torch.float16
+                and self.A_log.shape == (8,)
+                and self.A_log.is_contiguous()
+                and self.dt_bias.dtype == torch.float16
+                and self.dt_bias.shape == (8,)
+                and self.dt_bias.is_contiguous()
+                and temporal_state.dtype == torch.float32
+                and temporal_state.shape == (1, 8, 128, 128)
+                and temporal_state.is_contiguous())
+            if use_corex_packed_decode:
+                with bi100_timer(f"L{self.layer_idx}.gdn.decode"):
+                    core_out = _corex_gdn_packed_decode.packed_decode(
+                        temporal_state, packed_mixed_qkv, b_all, a_all,
+                        self.A_log, self.dt_bias)
             else:
-                q_expanded = q_raw.repeat_interleave(
-                    self.head_expand_ratio, dim=1)
-                k_expanded = k_raw.repeat_interleave(
-                    self.head_expand_ratio, dim=1)
-                q_t = _l2norm(q_expanded).float() * _scale
-                k_t = _l2norm(k_expanded).float()
-            v_t = v.squeeze(1).float()                      # (B, H_v, v_dim)
-            # g_t/bt are already FP32 (B, H_v), from either path above.
+                q, k, v = torch.split(
+                    mixed_qkv_conv,
+                    [local_key_dim, local_key_dim, local_val_dim], dim=-1)
+                q = q.reshape(num_seqs, 1, local_num_k, self.head_k_dim)
+                k = k.reshape(num_seqs, 1, local_num_k, self.head_k_dim)
+                v = v.reshape(num_seqs, 1, local_num_v, self.head_v_dim)
 
-            with bi100_timer(f"L{self.layer_idx}.gdn.decode"):
-                # Decay state in-place: (B, H_v, k_dim, v_dim) *= scalar per head
-                temporal_state.mul_(g_t[:, :, None, None])
+                use_corex_beta_decay = (
+                    _USE_COREX_GDN_BETA_DECAY
+                    and b_all.dtype == torch.float16
+                    and a_all.dtype == torch.float16
+                    and self.A_log.dtype == torch.float16
+                    and self.dt_bias.dtype == torch.float16
+                    and b_all.is_contiguous()
+                    and a_all.is_contiguous())
+                if use_corex_beta_decay:
+                    beta_decay = _corex_gdn_beta_decay.beta_decay(
+                        b_all, a_all, self.A_log, self.dt_bias)
+                    bt = beta_decay[0]
+                    g_t = beta_decay[1]
+                else:
+                    beta = b_all.sigmoid()
+                    g = (-self.A_log.float().exp()
+                         * F.softplus(a_all.float() + self.dt_bias))
+                    bt = beta.float()
+                    g_t = g.float().exp_()
 
-                # Reshape to batched-matmul layout: (B*H_v, k_dim, v_dim)
-                ts_flat = temporal_state.view(-1, self.head_k_dim, self.head_v_dim)
-                BH = ts_flat.shape[0]
+                # Inlined decode recurrent step (seq_len=1).
+                # Uses bmm/baddbmm_ to avoid large intermediate tensors.
+                _scale = self.head_k_dim ** -0.5
+                q_raw = q.squeeze(1)
+                k_raw = k.squeeze(1)
+                use_corex_qk_map = (
+                    _USE_COREX_GDN_QK_MAP
+                    and q_raw.dtype == torch.float16
+                    and k_raw.dtype == torch.float16
+                    and self.head_k_dim == 128
+                    and q_raw.is_contiguous()
+                    and k_raw.is_contiguous())
+                if use_corex_qk_map:
+                    qk_mapped = _corex_gdn_qk_map.qk_map(
+                        _l2norm(q_raw), _l2norm(k_raw), local_num_v)
+                    q_t = qk_mapped[0]
+                    k_t = qk_mapped[1]
+                else:
+                    q_expanded = q_raw.repeat_interleave(
+                        self.head_expand_ratio, dim=1)
+                    k_expanded = k_raw.repeat_interleave(
+                        self.head_expand_ratio, dim=1)
+                    q_t = _l2norm(q_expanded).float() * _scale
+                    k_t = _l2norm(k_expanded).float()
+                v_t = v.squeeze(1).float()
 
-                # kv_mem = k_t @ temporal_state  shape: (B*H_v, 1, k_dim) @ (B*H_v, k_dim, v_dim)
-                kv_mem = torch.bmm(
-                    k_t.view(BH, 1, self.head_k_dim), ts_flat
-                ).view(num_seqs, local_num_v, self.head_v_dim)  # (B, H_v, v_dim)
-
-                delta = (v_t - kv_mem) * bt[:, :, None]         # (B, H_v, v_dim)
-
-                # State update: temporal_state += outer(k_t, delta)  fused, no intermediate
-                ts_flat.baddbmm_(
-                    k_t.view(BH, self.head_k_dim, 1),
-                    delta.view(BH, 1, self.head_v_dim),
-                )
-
-                # Output: core_out = q_t @ updated temporal_state
-                core_out = torch.bmm(
-                    q_t.view(BH, 1, self.head_k_dim), ts_flat
-                ).view(num_seqs, local_num_v, self.head_v_dim)
+                with bi100_timer(f"L{self.layer_idx}.gdn.decode"):
+                    # State shape is (B, H_v, k_dim, v_dim).
+                    temporal_state.mul_(g_t[:, :, None, None])
+                    ts_flat = temporal_state.view(
+                        -1, self.head_k_dim, self.head_v_dim)
+                    BH = ts_flat.shape[0]
+                    kv_mem = torch.bmm(
+                        k_t.view(BH, 1, self.head_k_dim), ts_flat
+                    ).view(num_seqs, local_num_v, self.head_v_dim)
+                    delta = (v_t - kv_mem) * bt[:, :, None]
+                    ts_flat.baddbmm_(
+                        k_t.view(BH, self.head_k_dim, 1),
+                        delta.view(BH, 1, self.head_v_dim),
+                    )
+                    core_out = torch.bmm(
+                        q_t.view(BH, 1, self.head_k_dim), ts_flat
+                    ).view(num_seqs, local_num_v, self.head_v_dim)
             # core_out: (B, H_v, v_dim) = (num_seqs, local_num_v, head_v_dim) already
 
             z = z_all.reshape(num_seqs, local_num_v, self.head_v_dim)
