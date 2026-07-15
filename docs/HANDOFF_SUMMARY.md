@@ -9,6 +9,12 @@ full-attention 层投影，64K/100K 每 token 分别约节省 28.9/93.8 ms；该
 32K 以上长上下文 fallback 生效，尚未完成 TP4 服务 A/B。证据见
 `docs/experiments/E_ATTN_04_COREX_PAGED_KV_GATHER_20260715.md`。
 
+E-ATTN-05 进一步按上下文长度调整同一内核的 grid：96K 及以下使用 256 blocks，
+99.5K/100K 保留原大 grid。三卡交叉验证对 64K/90K/96K 再降低约 5%-8%，生产
+分派探针达到 64K `1.503x`、96K `2.021x`、100K `2.016x`，全程逐位一致。
+E-ATTN-05 已取代 E-ATTN-04 成为长上下文候选，证据见
+`docs/experiments/E_ATTN_05_PAGED_GATHER_GRID_20260715.md`。
+
 E-MOE-11 将逐位一致的 routed `SiluAndMul` 与 E-MOE-10 CoreX 精确归约组合。
 GPU1-3 真实 TP4 rank-local shape 的完整 routed decode 路径分别提升
 `1.0993x/1.0993x/1.0998x`，每卡 1,000 组随机输入均逐位一致。组合预计每 token

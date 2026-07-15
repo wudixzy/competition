@@ -14,14 +14,14 @@ single-card candidates without changing `computility-run.yaml`:
 | Candidate | Branch source | Measured primitive/full-boundary saving |
 | --- | --- | ---: |
 | E-ATTN-03 packed local QGKV | `5bebe8c` | ~0.24 ms/token projected |
-| E-ATTN-04 exact paged K/V gather | E-ATTN-04 | ~28.9 ms/token at 64K; ~93.8 ms/token at 100K |
+| E-ATTN-05 exact paged K/V gather | E-ATTN-04 + E-ATTN-05 | ~35.9 ms/token at 64K; ~94.0 ms/token at 100K |
 | E-GDN-03 fused causal conv | `3a1a458`, `6d7edff` | ~1.35 ms/token projected |
 | E-GDN-05 gated norm output | `d823dbd` | ~1.63 ms/token projected |
 | E-MOE-11 combined exact MoE tail | `d6ac803` + E-MOE-11 | ~1.83 ms/token projected |
 
 The unqualified additive projection is approximately `5.1 ms/token`, or
 roughly 7% against the current 13.3-13.5 Output TPS range. This would imply
-about 14.3-14.5 TPS, still below the 20 TPS competition target. E-ATTN-04 is
+about 14.3-14.5 TPS, still below the 20 TPS competition target. E-ATTN-05 is
 not included in that generic projection because it activates only above 32K;
 its context-dependent saving is listed separately in the table. Treat all
 projections only as prioritization; shared launch and memory effects require
@@ -55,7 +55,7 @@ Do not benchmark all candidates first. On a healthy four-card host:
 1. Start the qualified E-MOE-03/E-GDN-01 baseline and capture full smoke,
    fixed benchmark, 1,000-token hash, and cold/warm long-context output.
 2. Qualify E-ATTN-03 alone.
-3. Qualify E-ATTN-04 at 32K-1/32K/32K+1, 64K, and 100K with
+3. Qualify E-ATTN-05 at 32K-1/32K/32K+1, 64K, 96K, and 100K with
    `BI100_ATTN_COREX_PAGED_GATHER=1/0`, including cold/warm requests.
 4. Enable E-GDN-03 with `BI100_GDN_COREX_CAUSAL_CONV=1`; compare against its
    explicit `0` fallback.

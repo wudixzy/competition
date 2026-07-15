@@ -86,3 +86,6 @@ by itself close the prior decode SIGSEGV incident: that crash did not identify
 the exact request length or prove the K/V gather was the corrupting operation.
 The incident reproduction matrix and long-running TP4 safety gates still
 apply. GPU0 remains unavailable, so no four-card service run has been made.
+
+E-ATTN-05 subsequently tuned only the launch grid and supersedes this candidate
+for integration. E-ATTN-04 remains the arithmetic and fallback baseline.

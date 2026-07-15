@@ -4,7 +4,7 @@ Date: 2026-07-14
 
 ## Summary
 
-Update 2026-07-15: E-ATTN-04 replaces the long-context PyTorch fallback's
+Update 2026-07-15: E-ATTN-04/E-ATTN-05 replace the long-context PyTorch fallback's
 multi-step K/V gather with a bit-exact CoreX gather and halves the 100K
 full-attention boundary time. It does not close this incident because the
 original fault did not identify its request length or first corrupting kernel.
