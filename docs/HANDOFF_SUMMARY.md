@@ -792,3 +792,8 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   均 bit-exact，完整 tail 提升 `1.979x-2.024x`，预计 30 层节省约
   `1.63 ms/token`。生产扩展已独立编译和调用通过，但与 E-GDN-03 一样等待
   健康 TP4 服务门禁，暂不合入 integration。
+- E-MOE-10 显式复现 FP16 product 舍入后 FP32 累加，修复 E-MOE-04 GEMV
+  的输出漂移。GPU1-3 均通过 1,000/1,000 随机 exact，完整 routed path
+  稳定提升约 `1.059x-1.064x`，预计 40 层节省约 `1.17 ms/token`。生产编译
+  门禁还发现精简 kernel 会被编译器重排而变成 0/1,000 exact；最终保留
+  runtime Mode dispatch 后恢复 1,000/1,000。候选等待 TP4，不合入 integration。
