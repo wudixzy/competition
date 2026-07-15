@@ -35,6 +35,10 @@ absolute error 0.05937). It is not part of this stack.
 E-ATTN-07 retained exact arithmetic with stride-zero GQA BMM, but changed the
 64K/100K complete path by only +0.25%/0.00%. It is also not part of the stack.
 
+E-MOE-14 moved the FP32 router-logit cast after top-k. IDs, weights, and final
+outputs were exact across 3,003 random and tie-heavy cases, but the complete
+E-MOE-13 boundary improved by only 1.04%. It is rejected and not in the stack.
+
 ## Build and static gates
 
 `patch_ops.sh` builds all five CoreX extensions into the discovered vLLM
