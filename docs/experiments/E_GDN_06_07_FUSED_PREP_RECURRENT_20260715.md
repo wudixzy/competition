@@ -1,5 +1,10 @@
 # E-GDN-06+07: Fused decode preparation and recurrent update
 
+> Superseded shape note: these probes followed stale 48-value-head source
+> comments and used 12 local heads. E-GDN-09 audited the exact recurrent
+> candidate at the checkpoint's real eight local heads and still found a
+> regression. The nonexact fused-prep variants remain rejected.
+
 ## Scope
 
 E-GDN-07 v1 showed that a fused recurrent kernel is numerically stable but
