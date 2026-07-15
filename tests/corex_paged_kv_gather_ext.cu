@@ -58,7 +58,7 @@ void check_half_cuda_contiguous(const torch::Tensor& tensor,
 
 std::vector<torch::Tensor> gather_paged_kv(
     const torch::Tensor& key_cache, const torch::Tensor& value_cache,
-    const torch::Tensor& block_table, int64_t seq_len) {
+    const torch::Tensor& block_table, int64_t seq_len, int64_t grid_cap) {
   check_half_cuda_contiguous(key_cache, "key_cache");
   check_half_cuda_contiguous(value_cache, "value_cache");
   TORCH_CHECK(block_table.is_cuda(), "block_table must be a CUDA tensor");
@@ -80,6 +80,8 @@ std::vector<torch::Tensor> gather_paged_kv(
   TORCH_CHECK(key_cache.size(2) * key_cache.size(4) == value_cache.size(2),
               "key/value head sizes differ");
   TORCH_CHECK(seq_len > 0, "seq_len must be positive");
+  TORCH_CHECK(grid_cap > 0 && grid_cap <= 65535,
+              "grid_cap must be in [1, 65535]");
 
   const int block_size = static_cast<int>(value_cache.size(3));
   const int64_t required_blocks = (seq_len + block_size - 1) / block_size;
@@ -96,7 +98,7 @@ std::vector<torch::Tensor> gather_paged_kv(
       {num_kv_heads, seq_len, head_size}, output_options);
   const int64_t total = seq_len * num_kv_heads * head_size;
   const int blocks = static_cast<int>(std::min<int64_t>(
-      (total + kThreads - 1) / kThreads, 65535));
+      (total + kThreads - 1) / kThreads, grid_cap));
   paged_kv_gather_kernel<<<blocks, kThreads, 0,
                            at::cuda::getCurrentCUDAStream()>>>(
       reinterpret_cast<const __half*>(key_cache.data_ptr<at::Half>()),
@@ -108,7 +110,16 @@ std::vector<torch::Tensor> gather_paged_kv(
   return {key_output, value_output};
 }
 
+std::vector<torch::Tensor> gather_default(
+    const torch::Tensor& key_cache, const torch::Tensor& value_cache,
+    const torch::Tensor& block_table, int64_t seq_len) {
+  return gather_paged_kv(
+      key_cache, value_cache, block_table, seq_len, 65535);
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
-  module.def("gather", &gather_paged_kv,
+  module.def("gather", &gather_default,
              "Gather paged FP16 K/V directly into FP32 attention layouts");
+  module.def("gather_grid", &gather_paged_kv,
+             "Gather paged K/V with an explicit grid block cap");
 }
