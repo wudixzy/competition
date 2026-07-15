@@ -59,10 +59,26 @@ Remote CoreX gates:
 
 ```text
 KV loader unit tests             4/4 pass
+vLLM ReplicatedLinear runtime    weights/output bit-exact, max abs 0
 P0 static suite                  40/40 pass
 Python compile                   pass
 patch_ops registry verification  Qwen3_5ForCausalLM and MoE class found
 GPU1/GPU2 NCCL diagnostic        pass (expected sum 3.0)
+```
+
+The runtime gate instantiates the installed vLLM `ReplicatedLinear` classes,
+loads the same K/V tensors into two separate baseline layers and the merged
+candidate, and executes them on physical GPU1. Both candidate segments exactly
+match the corresponding baseline layer. A useful diagnostic is that the
+separate K layer did not exactly match a bare `F.linear` call for the same
+tensor (`4.8828125e-4` max abs), while separate-vs-merged remained exact. This
+confirms that model-layer parity, not a bare PyTorch call, is the authoritative
+correctness oracle on CoreX.
+
+Artifact:
+
+```text
+/root/competition/bench_runs/20260715_E_ATTN_02/runtime.json
 ```
 
 ## Hardware limitation and status
