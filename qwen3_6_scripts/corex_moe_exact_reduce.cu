@@ -8,19 +8,45 @@ namespace {
 constexpr int kTopK = 8;
 constexpr int kThreads = 256;
 
+enum class Mode { kSerialFloat, kTreeFloat, kSerialHalf };
+
 __global__ void exact_reduce_kernel(const __half* expert_output,
                                     const __half* weights,
-                                    __half* output, int hidden) {
+                                    __half* output, int hidden,
+                                    Mode mode) {
   const int column = blockIdx.x * blockDim.x + threadIdx.x;
   if (column >= hidden) {
     return;
   }
-  float sum = 0.0f;
+  __half products[kTopK];
 #pragma unroll
   for (int expert = 0; expert < kTopK; ++expert) {
-    const __half product = __hmul(
+    products[expert] = __hmul(
         expert_output[expert * hidden + column], weights[expert]);
-    sum += __half2float(product);
+  }
+  if (mode == Mode::kSerialHalf) {
+    __half sum = products[0];
+#pragma unroll
+    for (int expert = 1; expert < kTopK; ++expert) {
+      sum = __hadd(sum, products[expert]);
+    }
+    output[column] = sum;
+    return;
+  }
+
+  float sum;
+  if (mode == Mode::kSerialFloat) {
+    sum = __half2float(products[0]);
+#pragma unroll
+    for (int expert = 1; expert < kTopK; ++expert) {
+      sum += __half2float(products[expert]);
+    }
+  } else {
+    const float sum01 = __half2float(products[0]) + __half2float(products[1]);
+    const float sum23 = __half2float(products[2]) + __half2float(products[3]);
+    const float sum45 = __half2float(products[4]) + __half2float(products[5]);
+    const float sum67 = __half2float(products[6]) + __half2float(products[7]);
+    sum = (sum01 + sum23) + (sum45 + sum67);
   }
   output[column] = __float2half_rn(sum);
 }
@@ -41,10 +67,8 @@ void check_input(const torch::Tensor& expert_output,
               "weights must have shape (8,)");
 }
 
-}  // namespace
-
-torch::Tensor exact_reduce(const torch::Tensor& expert_output,
-                           const torch::Tensor& weights) {
+torch::Tensor launch(const torch::Tensor& expert_output,
+                     const torch::Tensor& weights, Mode mode) {
   check_input(expert_output, weights);
   auto output = torch::empty(
       {1, expert_output.size(1)}, expert_output.options());
@@ -54,12 +78,30 @@ torch::Tensor exact_reduce(const torch::Tensor& expert_output,
                         at::cuda::getCurrentCUDAStream()>>>(
       reinterpret_cast<const __half*>(expert_output.data_ptr<at::Half>()),
       reinterpret_cast<const __half*>(weights.data_ptr<at::Half>()),
-      reinterpret_cast<__half*>(output.data_ptr<at::Half>()), hidden);
+      reinterpret_cast<__half*>(output.data_ptr<at::Half>()), hidden, mode);
   C10_CUDA_KERNEL_LAUNCH_CHECK();
   return output;
 }
 
+}  // namespace
+
+torch::Tensor serial_float(const torch::Tensor& expert_output,
+                           const torch::Tensor& weights) {
+  return launch(expert_output, weights, Mode::kSerialFloat);
+}
+
+torch::Tensor tree_float(const torch::Tensor& expert_output,
+                         const torch::Tensor& weights) {
+  return launch(expert_output, weights, Mode::kTreeFloat);
+}
+
+torch::Tensor serial_half(const torch::Tensor& expert_output,
+                          const torch::Tensor& weights) {
+  return launch(expert_output, weights, Mode::kSerialHalf);
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
-  module.def("exact_reduce", &exact_reduce,
-             "Exact CoreX MoE weighted reduction");
+  module.def("serial_float", &serial_float);
+  module.def("tree_float", &tree_float);
+  module.def("serial_half", &serial_half);
 }
