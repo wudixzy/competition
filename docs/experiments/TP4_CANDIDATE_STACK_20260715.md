@@ -8,7 +8,7 @@ head before E-ATTN-04: 8e721cf
 base: integration/perf-winners@adab4bc
 ```
 
-This branch combines production code for seven independently qualified
+This branch combines production code for eight independently qualified
 single-card candidates without changing `computility-run.yaml`:
 
 | Candidate | Branch source | Measured primitive/full-boundary saving |
@@ -18,11 +18,12 @@ single-card candidates without changing `computility-run.yaml`:
 | E-GDN-03 fused causal conv | `3a1a458`, `6d7edff` | ~1.35 ms/token projected |
 | E-GDN-05 gated norm output | `d823dbd` | ~1.63 ms/token projected |
 | E-GDN-10 exact beta/decay prep | E-GDN-10 | ~1.67 ms/token projected |
+| E-GDN-12 exact q/k head mapping | E-GDN-12 | ~0.78 ms/token projected |
 | E-MOE-11 combined exact MoE tail | `d6ac803` + E-MOE-11 | ~1.83 ms/token projected |
 | E-MOE-13 selected-weight gather | E-MOE-12 + E-MOE-13 | ~5.01 ms/token projected beyond E-MOE-11 |
 
-The unqualified additive projection is approximately `11.8 ms/token`. Against
-the current 13.3-13.5 Output TPS range, this would imply about 15.8-16.1 TPS,
+The unqualified additive projection is approximately `12.6 ms/token`. Against
+the current 13.3-13.5 Output TPS range, this would imply about 16.0-16.3 TPS,
 still below the 20 TPS competition target. E-ATTN-05 is
 not included in that generic projection because it activates only above 32K;
 its context-dependent saving is listed separately in the table. Treat all
@@ -60,13 +61,14 @@ nonexact and much slower. It is rejected and does not change the stack.
 
 ## Build and static gates
 
-`patch_ops.sh` builds all six CoreX extensions into the discovered vLLM
+`patch_ops.sh` builds all seven CoreX extensions into the discovered vLLM
 package before installing the model file:
 
 ```text
 corex_gdn_causal_conv.so
 corex_gdn_gated_norm.so
 corex_gdn_beta_decay.so
+corex_gdn_qk_map.so
 corex_moe_exact_reduce.so
 corex_moe_weight_gather.so
 corex_paged_kv_gather.so
@@ -94,18 +96,19 @@ Do not benchmark all candidates first. On a healthy four-card host:
    explicit `0` fallback.
 5. Enable E-GDN-05 with `BI100_GDN_COREX_GATED_NORM=1`; compare against `0`.
 6. Enable E-GDN-10 with `BI100_GDN_COREX_BETA_DECAY=1`; compare against `0`.
-7. Enable E-MOE-11 in two stages: first compare
+7. Enable E-GDN-12 with `BI100_GDN_COREX_QK_MAP=1`; compare against `0`.
+8. Enable E-MOE-11 in two stages: first compare
    `BI100_MOE_COREX_EXACT_REDUCE=1/0`, then compare
    `BI100_MOE_FUSED_ACTIVATION=1/0`.
-8. Enable the E-MOE-13 version of `BI100_MOE_COREX_WEIGHT_GATHER=1/0` after
+9. Enable the E-MOE-13 version of `BI100_MOE_COREX_WEIGHT_GATHER=1/0` after
    the E-MOE-11 checks; require the same 1,000-token hash.
-9. Run the all-enabled stack only after every individual 1,000-token hash is
+10. Run the all-enabled stack only after every individual 1,000-token hash is
    identical. Repeat three interleaved service A/B pairs.
-10. Finish with full smoke, 99.5K and 235K/256K cold-warm equality, cache-hit
+11. Finish with full smoke, 99.5K and 235K/256K cold-warm equality, cache-hit
    accounting, and log scans for non-finite/OOM/worker loss/native crashes.
 
 E-ATTN-03 has no environment fallback because it changes parameter layout;
-use the qualified integration model file for its baseline. The six CoreX
+use the qualified integration model file for its baseline. The seven CoreX
 extensions and the MoE activation fusion are independently switchable. CoreX
 extensions fail closed on unsupported dtypes or shapes.
 

@@ -108,6 +108,11 @@ except ImportError:
     _corex_gdn_beta_decay = None
 
 try:
+    from vllm import corex_gdn_qk_map as _corex_gdn_qk_map
+except ImportError:
+    _corex_gdn_qk_map = None
+
+try:
     from vllm import corex_moe_exact_reduce as _corex_moe_exact_reduce
 except ImportError:
     _corex_moe_exact_reduce = None
@@ -137,6 +142,9 @@ _USE_COREX_GDN_GATED_NORM = (
 _USE_COREX_GDN_BETA_DECAY = (
     _corex_gdn_beta_decay is not None
     and env_bool("BI100_GDN_COREX_BETA_DECAY", True))
+_USE_COREX_GDN_QK_MAP = (
+    _corex_gdn_qk_map is not None
+    and env_bool("BI100_GDN_COREX_QK_MAP", True))
 _USE_COREX_MOE_EXACT_REDUCE = (
     _corex_moe_exact_reduce is not None
     and env_bool("BI100_MOE_COREX_EXACT_REDUCE", True))
@@ -1134,19 +1142,33 @@ class GatedDeltaNet(nn.Module):
                 bt = beta.float()
                 g_t = g.float().exp_()
 
-            q = q.repeat_interleave(self.head_expand_ratio, dim=2)
-            k = k.repeat_interleave(self.head_expand_ratio, dim=2)
-
             # Inlined decode recurrent step (seq_len=1).
             # Replaces _torch_recurrent_gated_delta_rule to avoid 5 transpose+
             # contiguous+float32 copies, core_out allocation, and Python loop.
             # Uses bmm/baddbmm_ to eliminate 3 large (B,H,k,v) intermediate tensors.
             # temporal_state: (B, H_v, k_dim, v_dim) float32 — updated in-place.
-            orig_dtype = q.dtype
             _scale = self.head_k_dim ** -0.5
-
-            q_t = _l2norm(q.squeeze(1)).float() * _scale   # (B, H_v, k_dim)
-            k_t = _l2norm(k.squeeze(1)).float()             # (B, H_v, k_dim)
+            q_raw = q.squeeze(1)
+            k_raw = k.squeeze(1)
+            use_corex_qk_map = (
+                _USE_COREX_GDN_QK_MAP
+                and q_raw.dtype == torch.float16
+                and k_raw.dtype == torch.float16
+                and self.head_k_dim == 128
+                and q_raw.is_contiguous()
+                and k_raw.is_contiguous())
+            if use_corex_qk_map:
+                qk_mapped = _corex_gdn_qk_map.qk_map(
+                    _l2norm(q_raw), _l2norm(k_raw), local_num_v)
+                q_t = qk_mapped[0]
+                k_t = qk_mapped[1]
+            else:
+                q_expanded = q_raw.repeat_interleave(
+                    self.head_expand_ratio, dim=1)
+                k_expanded = k_raw.repeat_interleave(
+                    self.head_expand_ratio, dim=1)
+                q_t = _l2norm(q_expanded).float() * _scale
+                k_t = _l2norm(k_expanded).float()
             v_t = v.squeeze(1).float()                      # (B, H_v, v_dim)
             # g_t/bt are already FP32 (B, H_v), from either path above.
 
