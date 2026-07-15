@@ -4,6 +4,12 @@ Date: 2026-07-14
 
 ## Summary
 
+Update 2026-07-15: E-ATTN-04 replaces the long-context PyTorch fallback's
+multi-step K/V gather with a bit-exact CoreX gather and halves the 100K
+full-attention boundary time. It does not close this incident because the
+original fault did not identify its request length or first corrupting kernel.
+Retain the reproduction matrix below during TP4 qualification.
+
 An evaluation process terminated with `Fatal Python error: Segmentation fault`
 while executing model decode on BI100/CoreX. This is a native-process memory
 fault, not a recoverable Python exception. In TP=4 mode, one worker fault is
