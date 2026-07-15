@@ -1402,7 +1402,7 @@ class Qwen3_5MoeSparseBlock(nn.Module):
                     and expert_out.dtype == torch.float16
                     and ws.dtype == torch.float16
                     and expert_out.shape[0] == 8):
-                out = _corex_moe_exact_reduce.exact_reduce(expert_out, ws)
+                out = _corex_moe_exact_reduce.serial_float(expert_out, ws)
             else:
                 out = (expert_out * ws.unsqueeze(-1)).sum(
                     0, keepdim=True).to(hidden_states.dtype)   # (1, H)
