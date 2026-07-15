@@ -787,3 +787,8 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   预先降为 FP16 可让完整 `norm+gate+out_proj` 提升 `1.785x`，但 tail
   `max_abs=9.77e-4` 且不满足 close，因此按正确性门禁淘汰。不得通过降低
   GDN state dtype 接入该 operator。
+- E-GDN-05 保留原 PyTorch FP32 inverse reduction，仅融合后续 scale、weight、
+  SiLU gate、乘法与 FP16 输出。GPU1-3 的 1,000 组随机 norm/实际 linear tail
+  均 bit-exact，完整 tail 提升 `1.979x-2.024x`，预计 30 层节省约
+  `1.63 ms/token`。生产扩展已独立编译和调用通过，但与 E-GDN-03 一样等待
+  健康 TP4 服务门禁，暂不合入 integration。
