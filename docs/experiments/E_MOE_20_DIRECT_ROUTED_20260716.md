@@ -91,6 +91,29 @@ max absolute error, and `6.7841e-06` mean absolute error. This satisfies the
 cross-device gate and authorizes a default-off production dispatch on the
 experiment branch.
 
+## Production dispatch probe
+
+Commit `c228378` adds a fixed-shape production extension and a default-off
+`BI100_MOE_COREX_DIRECT_ROUTED` dispatch. The probe extracts the real
+`_pure_pytorch_experts` method, uses the current E-MOE-13 plus exact-reduce
+path as baseline, and changes only that global dispatch flag.
+
+Physical GPU1 result:
+
+```text
+baseline median  0.325494 ms
+direct median    0.106735 ms
+speedup          3.0495x
+fixed max abs    0.00006104
+sequence finite  500/500
+sequence max abs 0.00012207
+sequence mean    0.0000067844
+```
+
+Static tests passed and all three production extensions compiled. This closes
+the single-GPU production-dispatch gate. The feature remains default-off and
+must not enter `main` before TP4 endpoint qualification.
+
 Remote artifacts:
 
 ```text
@@ -103,4 +126,8 @@ Remote artifacts:
 /root/E_MOE_20/result_gpu3.json
 /root/E_MOE_20/bench_gpu2.log
 /root/E_MOE_20/bench_gpu3.log
+/root/competition-candidate/production/result_gpu1.json
+/root/competition-candidate/production/bench_gpu1.log
+/root/competition-candidate/production/smoke_gpu1.json
+/root/competition-candidate/production/smoke_gpu1.log
 ```

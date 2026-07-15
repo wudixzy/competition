@@ -67,3 +67,8 @@ error. Only staged advances to cross-device and production-dispatch work.
 Physical GPUs 2 and 3 reproduced staged routed speedups of `2.924x` and
 `2.892x`; both matched GPU1's 500-step error bounds exactly. The cross-device
 gate is complete.
+
+The default-off production dispatch subsequently measured `3.0495x` against
+the current production method on GPU1. Its 500-step finite and error results
+matched the prototype. No additional kernel tuning is authorized; the next
+work is TP4 endpoint qualification on a four-GPU-qualified host.
