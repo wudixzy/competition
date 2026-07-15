@@ -410,10 +410,11 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 normalized.append(msg)
                 continue
             if msg.get("content") is None:
-                if msg.get("reasoning_content") is None:
+                if (msg.get("reasoning_content") is None
+                        and not msg.get("tool_calls")):
                     raise ValueError(
                         "Each message must have at least one of 'content' or "
-                        "'reasoning_content'.")
+                        "'reasoning_content', or contain 'tool_calls'.")
                 msg = {**msg, "content": ""}
             normalized.append(msg)
         data = {**data, "messages": normalized}
