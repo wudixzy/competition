@@ -783,3 +783,7 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   TP2 原参数和 `cpu_offload_gb=8` 均在权重加载时 OOM，故该候选保留在
   `exp/E-GDN-03-fused-causal-conv`，等待健康 TP4 的服务哈希与性能门禁，
   暂不合入 integration。
+- E-GDN-04 复用 ixformer RMSNorm 的探针中，FP32 state 被 operator 明确拒绝；
+  预先降为 FP16 可让完整 `norm+gate+out_proj` 提升 `1.785x`，但 tail
+  `max_abs=9.77e-4` 且不满足 close，因此按正确性门禁淘汰。不得通过降低
+  GDN state dtype 接入该 operator。
