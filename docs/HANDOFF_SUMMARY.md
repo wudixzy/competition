@@ -901,3 +901,10 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   稳定提升约 `1.059x-1.064x`，预计 40 层节省约 `1.17 ms/token`。生产编译
   门禁还发现精简 kernel 会被编译器重排而变成 0/1,000 exact；最终保留
   runtime Mode dispatch 后恢复 1,000/1,000。候选等待 TP4，不合入 integration。
+- E-MOE-19 将 shared-expert sigmoid gate、FP16 乘法和 routed add 融为一个
+  CoreX kernel。以 `volatile half` 强制保留 PyTorch 的中间 FP16 舍入后，
+  1,000/1,000 随机、全部 63,488 个有限 FP16 gate 位型及 100/100 完整 MoE
+  边界均逐位一致。裸尾部为 `2.502x`，但真实 TP4 rank-local 完整 MoE 仅
+  `1.0164x`，40 层预计只省 `0.394 ms/token`，低于 5% 集成门槛，因此拒绝，
+  不修改当前候选运行时。证据见
+  `docs/experiments/E_MOE_19_SHARED_COMBINE_20260715.md`。

@@ -58,6 +58,12 @@ fixed path reached `1.746x`, but all FP32/Kahan reductions changed final
 outputs by at least `3.05e-5`; FP64 variants were invalid on CoreX. It is
 rejected on correctness and not in the stack.
 
+E-MOE-19 fused the shared-expert sigmoid gate, FP16 multiply, and routed add.
+The final `volatile half` implementation was exact for all 63,488 finite FP16
+gate patterns and 100 random full-MoE cases, but the complete TP4 rank-local
+boundary improved only `1.0164x` (`0.394 ms/token` projected over 40 layers).
+It is rejected below the 5% integration gate and is not in the stack.
+
 E-GDN-11 scanned CoreX cuBLAS modes for both rank-local GDN projections. The
 best exact input/output modes reached only `1.0034x/1.0085x`, while Hgemm was
 nonexact and much slower. It is rejected and does not change the stack.
