@@ -776,3 +776,10 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 - 当前 `integration/perf-winners` 只包含 benchmark、能力证据和拒绝 decision；
   模型实现仍为 qualified E-MOE-03/E-GDN-01。新实例 GPU0 仍无可见进程却
   100% util，GPU1-3 可做单卡实验；恢复 TP4 前仍需平台侧处理 GPU0。
+- E-GDN-03 将 decode 的 state 拼接/回写、4-tap depthwise conv 和 SiLU
+  融为一个 CoreX kernel。纠正 checkpoint 真实 TP4 rank shape 为
+  `B=1,C=2048,K=4` 后，GPU1-3 均保持 output/state bit-exact，完整边界
+  提升 `7.30x-7.39x`，预计 30 个 GDN 层合计节省约 `1.35 ms/token`。
+  TP2 原参数和 `cpu_offload_gb=8` 均在权重加载时 OOM，故该候选保留在
+  `exp/E-GDN-03-fused-causal-conv`，等待健康 TP4 的服务哈希与性能门禁，
+  暂不合入 integration。
