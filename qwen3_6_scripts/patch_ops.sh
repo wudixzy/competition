@@ -84,6 +84,8 @@ echo "TRANSFORMERS_ROOT=${TRANSFORMERS_ROOT}"
 
 build_stage "building fused CoreX GDN causal convolution extension"
 bash ./build_corex_gdn_causal_conv.sh "${VLLM_ROOT}"
+build_stage "building fused CoreX GDN gated norm extension"
+bash ./build_corex_gdn_gated_norm.sh "${VLLM_ROOT}"
 
 build_stage "installing BI100 runtime modules"
 cp ./bi100_env.py "${VLLM_ROOT}/bi100_env.py"
