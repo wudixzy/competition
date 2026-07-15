@@ -268,6 +268,22 @@ class ProtocolUnitTest(unittest.TestCase):
             "content": None,
         }])
 
+    def test_multiple_system_messages_merge_at_beginning(self):
+        request = self.request(messages=[
+            {"role": "user", "content": "question"},
+            {"role": "system", "content": "SYSTEM_A"},
+            {"role": "assistant", "content": "history"},
+            {"role": "system", "content": "SYSTEM_B"},
+        ])
+        self.assertEqual(request.messages[0], {
+            "role": "system",
+            "content": "SYSTEM_A\n\nSYSTEM_B",
+        })
+        self.assertEqual(
+            [message["role"] for message in request.messages],
+            ["system", "user", "assistant"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
