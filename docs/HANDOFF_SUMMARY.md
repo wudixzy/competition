@@ -103,6 +103,14 @@ NCCL+Gloo 建组、TP4/262144 服务启动、full smoke 15/15 和 1,000-token ha
 下一提交镜像启用 `BI100_EXECUTOR_STARTUP_DEBUG=1` 记录逐 rank 启动阶段。详见
 `docs/incidents/MODELHUB_GLOO_RESET_20260715.md`。
 
+健康实例进一步完成完整候选资格：99.5K cold/warm 为 `154.536/18.247s`、命中
+`99,296` tokens；235K 为 `554.632/56.838s`、命中 `234,544` tokens，两组
+cold/warm hash 均与历史资格值完全一致。8 请求固定单并发样本为 Output TPS P10
+`15.5445`、TTFT P90 `1.795s`、成功率 100%、缓存命中 87.45%。因此正确性、
+长上下文、TTFT、成功率和缓存门槛已通过，但到 20 TPS 仍需约 28.7% 相对提升。
+短 prompt 本地 weighted `1417.9` 不可与官方长输入加权 8000 直接比较。完整证据见
+`docs/experiments/TP4_CANDIDATE_24C75C7_QUALIFICATION_20260715.md`。
+
 新实例 `ssh-a2d0a302.default.gpu.phanthy.com` 的 GPU0 仍为 257 MiB、100% 利用率且
 无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
 四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。
