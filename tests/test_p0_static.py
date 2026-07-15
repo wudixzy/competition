@@ -302,6 +302,7 @@ class P0StaticCoverageTest(unittest.TestCase):
                 "BI100_ATTN_COREX_PAGED_GATHER",
                 "BI100_GDN_ALLOW_NAN_ZERO",
                 "BI100_GDN_FINITE_CHECK",
+                "BI100_GDN_COREX_BETA_DECAY",
                 "BI100_DNN_CHUNK",
                 "BI100_PROFILE",
                 "BI100_PROFILE_INCLUDE_STARTUP",
@@ -345,6 +346,19 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("BI100_GDN_COREX_GATED_NORM", qwen_src)
         self.assertIn("forward_decode", qwen_src)
         self.assertIn("return self.forward(hidden_states, gate)", qwen_src)
+
+    def test_corex_gdn_beta_decay_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_gdn_beta_decay.sh")
+        kernel_src = read("qwen3_6_scripts/corex_gdn_beta_decay.cu")
+        self.assertIn("build_corex_gdn_beta_decay.sh", patch_ops)
+        self.assertIn("corex_gdn_beta_decay.so", build_src)
+        self.assertIn("BI100_GDN_COREX_BETA_DECAY", qwen_src)
+        self.assertIn("_corex_gdn_beta_decay.beta_decay", qwen_src)
+        self.assertIn("b_all.sigmoid()", qwen_src)
+        self.assertIn("F.softplus(a_all.float() + self.dt_bias)", qwen_src)
+        self.assertIn("__float2half(beta_fp32)", kernel_src)
 
     def test_corex_moe_exact_reduce_is_built_with_explicit_fallback(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")

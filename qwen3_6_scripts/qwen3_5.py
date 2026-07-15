@@ -103,6 +103,11 @@ except ImportError:
     _corex_gdn_gated_norm = None
 
 try:
+    from vllm import corex_gdn_beta_decay as _corex_gdn_beta_decay
+except ImportError:
+    _corex_gdn_beta_decay = None
+
+try:
     from vllm import corex_moe_exact_reduce as _corex_moe_exact_reduce
 except ImportError:
     _corex_moe_exact_reduce = None
@@ -129,6 +134,9 @@ _USE_COREX_GDN_CAUSAL_CONV = (
 _USE_COREX_GDN_GATED_NORM = (
     _corex_gdn_gated_norm is not None
     and env_bool("BI100_GDN_COREX_GATED_NORM", True))
+_USE_COREX_GDN_BETA_DECAY = (
+    _corex_gdn_beta_decay is not None
+    and env_bool("BI100_GDN_COREX_BETA_DECAY", True))
 _USE_COREX_MOE_EXACT_REDUCE = (
     _corex_moe_exact_reduce is not None
     and env_bool("BI100_MOE_COREX_EXACT_REDUCE", True))
@@ -1106,10 +1114,25 @@ class GatedDeltaNet(nn.Module):
             k = k.reshape(num_seqs, 1, local_num_k, self.head_k_dim)
             v = v.reshape(num_seqs, 1, local_num_v, self.head_v_dim)
 
-            beta = b_all.sigmoid().unsqueeze(1)  # (num_seqs, 1, local_num_v)
-            g = (-self.A_log.float().exp()
-                 * F.softplus(a_all.float() + self.dt_bias)
-                 ).unsqueeze(1)  # (num_seqs, 1, local_num_v)
+            use_corex_beta_decay = (
+                _USE_COREX_GDN_BETA_DECAY
+                and b_all.dtype == torch.float16
+                and a_all.dtype == torch.float16
+                and self.A_log.dtype == torch.float16
+                and self.dt_bias.dtype == torch.float16
+                and b_all.is_contiguous()
+                and a_all.is_contiguous())
+            if use_corex_beta_decay:
+                beta_decay = _corex_gdn_beta_decay.beta_decay(
+                    b_all, a_all, self.A_log, self.dt_bias)
+                bt = beta_decay[0]
+                g_t = beta_decay[1]
+            else:
+                beta = b_all.sigmoid()
+                g = (-self.A_log.float().exp()
+                     * F.softplus(a_all.float() + self.dt_bias))
+                bt = beta.float()
+                g_t = g.float().exp_()
 
             q = q.repeat_interleave(self.head_expand_ratio, dim=2)
             k = k.repeat_interleave(self.head_expand_ratio, dim=2)
@@ -1125,8 +1148,7 @@ class GatedDeltaNet(nn.Module):
             q_t = _l2norm(q.squeeze(1)).float() * _scale   # (B, H_v, k_dim)
             k_t = _l2norm(k.squeeze(1)).float()             # (B, H_v, k_dim)
             v_t = v.squeeze(1).float()                      # (B, H_v, v_dim)
-            g_t = g.squeeze(1).float().exp_()               # (B, H_v)
-            bt  = beta.squeeze(1).float()                   # (B, H_v)
+            # g_t/bt are already FP32 (B, H_v), from either path above.
 
             with bi100_timer(f"L{self.layer_idx}.gdn.decode"):
                 # Decay state in-place: (B, H_v, k_dim, v_dim) *= scalar per head

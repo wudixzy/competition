@@ -68,6 +68,18 @@ E-MOE-18 的 shape-specific W13 matvec 裸算子达到 `5.84x`、完整固定路
 FP64 版本结果无效。该误差与已导致 1,000-token hash 分叉的 E-MOE-04 同量级，
 因此按正确性门槛拒绝，不能放宽容差。
 
+E-GDN-08 按 checkpoint 真实 TP4 八 value-head 形状测得完整 rank-local decode
+为 `0.5646 ms/layer`；q/k prep 和输入投影各占约 27%/26%。该画像同时发现旧
+E-GDN-02/06/07 沿用了 12 local heads 的过期注释。E-GDN-09 在真实八头下重审
+后，normalize-before-expand 与 exact recurrent 分别只有 `0.9850x/0.9855x`，
+仍为负收益并保持拒绝。
+
+E-GDN-10 将 decode beta sigmoid 和最终 recurrent decay factor 合为一个 CoreX
+kernel。按 checkpoint 的 BF16 权重经运行时下采样为 FP16 的真实 dtype 重跑后，
+生产 merged-view 在 1,000 组随机输入上 beta/decay 均逐位一致，
+`0.06270 -> 0.00712 ms`（`8.80x`），约投影节省 `1.67 ms/token`。短上下文候选栈累计投影更新为约
+`11.8 ms/token`，即约 `15.8-16.1 TPS`；仍需 TP4 服务 A/B。
+
 新实例 `ssh-a2d0a302.default.gpu.phanthy.com` 的 GPU0 仍为 257 MiB、100% 利用率且
 无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
 四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。
