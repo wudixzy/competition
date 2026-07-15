@@ -1,5 +1,17 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-15 TP4 候选栈更新
+
+E-MOE-11 将逐位一致的 routed `SiluAndMul` 与 E-MOE-10 CoreX 精确归约组合。
+GPU1-3 真实 TP4 rank-local shape 的完整 routed decode 路径分别提升
+`1.0993x/1.0993x/1.0998x`，每卡 1,000 组随机输入均逐位一致。组合预计每 token
+节省约 1.83 ms，使当前 TP4 候选栈的未资格化投影从约 4.4 ms/token 增至约
+5.1 ms/token，对应 13.3-13.5 TPS 基线约 14.3-14.5 TPS。服务 A/B 尚未完成。
+
+新实例 `ssh-a2d0a302.default.gpu.phanthy.com` 的 GPU0 仍为 257 MiB、100% 利用率且
+无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
+四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。
+
 更新时间：2026-07-12
 
 ## 2026-07-12 固定评测契约更正

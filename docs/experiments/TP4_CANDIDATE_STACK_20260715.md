@@ -16,11 +16,11 @@ single-card candidates without changing `computility-run.yaml`:
 | E-ATTN-03 packed local QGKV | `5bebe8c` | ~0.24 ms/token projected |
 | E-GDN-03 fused causal conv | `3a1a458`, `6d7edff` | ~1.35 ms/token projected |
 | E-GDN-05 gated norm output | `d823dbd` | ~1.63 ms/token projected |
-| E-MOE-10 exact weighted reduce | `d6ac803` | ~1.17 ms/token projected |
+| E-MOE-11 combined exact MoE tail | `d6ac803` + E-MOE-11 | ~1.83 ms/token projected |
 
-The unqualified additive projection is approximately `4.4 ms/token`, or
-roughly 6% against the current 13.3-13.5 Output TPS range. This would imply
-about 14.1-14.4 TPS, still below the 20 TPS competition target. Treat this only
+The unqualified additive projection is approximately `5.1 ms/token`, or
+roughly 7% against the current 13.3-13.5 Output TPS range. This would imply
+about 14.3-14.5 TPS, still below the 20 TPS competition target. Treat this only
 as prioritization; shared launch and memory effects require service A/B.
 
 ## Build and static gates
@@ -53,7 +53,9 @@ Do not benchmark all candidates first. On a healthy four-card host:
 3. Enable E-GDN-03 with `BI100_GDN_COREX_CAUSAL_CONV=1`; compare against its
    explicit `0` fallback.
 4. Enable E-GDN-05 with `BI100_GDN_COREX_GATED_NORM=1`; compare against `0`.
-5. Enable E-MOE-10 with `BI100_MOE_COREX_EXACT_REDUCE=1`; compare against `0`.
+5. Enable E-MOE-11 in two stages: first compare
+   `BI100_MOE_COREX_EXACT_REDUCE=1/0`, then compare
+   `BI100_MOE_FUSED_ACTIVATION=1/0`.
 6. Run the all-enabled stack only after every individual 1,000-token hash is
    identical. Repeat three interleaved service A/B pairs.
 7. Finish with full smoke, 99.5K and 235K/256K cold-warm equality, cache-hit
@@ -61,8 +63,8 @@ Do not benchmark all candidates first. On a healthy four-card host:
 
 E-ATTN-03 has no environment fallback because it changes parameter layout;
 use the qualified integration model file for its baseline. The three CoreX
-extensions are independently switchable and fail closed on unsupported dtypes
-or shapes.
+extensions and the MoE activation fusion are independently switchable. CoreX
+extensions fail closed on unsupported dtypes or shapes.
 
 ## Current blocker
 
