@@ -5,7 +5,7 @@
 | `BI100_ALLOW_PREFIX_GUARD_CAP` | `0` | boolean | Debug-only cap for undersized prefix block tables; default raises because truncation corrupts attention. | T3 |
 | `BI100_ATTN_COREX_PAGED_GATHER` | `1` | boolean | Enables the exact fused CoreX K/V gather in the long-context PyTorch decode fallback; set to `0` for native tensor indexing and layout copies. | E-ATTN-04 |
 | `BI100_DNN_CHUNK` | `4096` | `64..65536` | Caps GatedDeltaNet prefill sub-sequence chunk size to balance memory and launch overhead. | T3 |
-| `BI100_EXECUTOR_STARTUP_DEBUG` | `0` | boolean | Adds executor startup logs for TP=4 init/load stalls. | T1 |
+| `BI100_EXECUTOR_STARTUP_DEBUG` | `1` | boolean | Adds executor startup logs for TP=4 init/load stalls; enabled in the submission image after the 2026-07-15 evaluator Gloo reset. | T1 |
 | `BI100_FORCE_PAGED_ATTN_V2` | `0` | boolean | Explicit opt-in to route paged attention to V2 instead of the stable BI100 V1 default. | T3 |
 | `BI100_GDN_ALLOW_NAN_ZERO` | `0` | boolean | Diagnostic-only replacement of non-finite GDN values with zero; invalid for final scoring. | T3 |
 | `BI100_GDN_FINITE_CHECK` | `0` | boolean | Enables synchronous per-layer GDN non-finite checks for qualification/debug runs. `BI100_GDN_ALLOW_NAN_ZERO=1` also forces this check on. | E-SYNC-01 |

@@ -95,6 +95,14 @@ E-GDN-13 将 E-GDN-10/12 放回同一个完整 rank-local 层复测，E-GDN-03/0
 输出、conv state 和 temporal state 均逐位一致。组合净省约 `2.99 ms/token`，
 因此短上下文候选栈统一改用约 `13.1 ms/token`、`16.1-16.4 TPS` 的未资格化投影。
 
+ModelHub 的 `6e0e66c` 提交曾在 `init_device` 静默约 30 分钟后报告 Gloo peer
+reset。相同 commit 已在四卡全绿的 `a163074c` 完成 Docker 等价构建、vLLM 等价
+NCCL+Gloo 建组、TP4/262144 服务启动、full smoke 15/15 和 1,000-token hash
+门禁；hash 与资格基线完全一致，日志无 Gloo/OOM/worker loss。该评测错误应视为
+某个 evaluator rank/GPU 卡住并被平台清理后的次生错误，不回退模型代码或 256K。
+下一提交镜像启用 `BI100_EXECUTOR_STARTUP_DEBUG=1` 记录逐 rank 启动阶段。详见
+`docs/incidents/MODELHUB_GLOO_RESET_20260715.md`。
+
 新实例 `ssh-a2d0a302.default.gpu.phanthy.com` 的 GPU0 仍为 257 MiB、100% 利用率且
 无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
 四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。
