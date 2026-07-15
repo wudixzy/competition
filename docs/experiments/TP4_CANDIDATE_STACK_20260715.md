@@ -43,6 +43,11 @@ E-MOE-15 tested one packed W13/W2 output allocation and 1/2/4/8-way copy-loop
 unrolling. All outputs were exact, but the best complete routed result was
 `0.9998x` E-MOE-13. It is rejected and not in the stack.
 
+E-MOE-17 scanned CoreX cuBLAS algorithms for the contiguous E-MOE-13 W13
+matrix. `GemmEx` outputs were exact and the naked operator reached `1.044x`,
+but complete routed speedup was only `1.0011x`; `Hgemm` was slower and
+non-exact. It is rejected and not in the stack.
+
 ## Build and static gates
 
 `patch_ops.sh` builds all five CoreX extensions into the discovered vLLM
