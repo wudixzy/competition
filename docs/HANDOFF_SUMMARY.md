@@ -2,6 +2,13 @@
 
 ## 2026-07-15 TP4 候选栈更新
 
+E-ATTN-04 以单个 CoreX kernel 将 paged FP16 K/V 精确 gather 到现有 FP32
+attention 布局，后续 matmul/softmax 不变。GPU1-3 的 64K 完整 attention 提升
+`1.365x-1.370x`，100K 提升 `2.018x-2.024x`，K/V/输出均逐位一致。按十个
+full-attention 层投影，64K/100K 每 token 分别约节省 28.9/93.8 ms；该收益仅在
+32K 以上长上下文 fallback 生效，尚未完成 TP4 服务 A/B。证据见
+`docs/experiments/E_ATTN_04_COREX_PAGED_KV_GATHER_20260715.md`。
+
 E-MOE-11 将逐位一致的 routed `SiluAndMul` 与 E-MOE-10 CoreX 精确归约组合。
 GPU1-3 真实 TP4 rank-local shape 的完整 routed decode 路径分别提升
 `1.0993x/1.0993x/1.0998x`，每卡 1,000 组随机输入均逐位一致。组合预计每 token
