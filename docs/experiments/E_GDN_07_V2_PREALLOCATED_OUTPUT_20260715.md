@@ -1,5 +1,9 @@
 # E-GDN-07 v2: Preallocated recurrent output
 
+> Superseded shape note: this probe followed stale 48-value-head source
+> comments and used 12 local heads. E-GDN-09 reran the exact candidate at the
+> checkpoint's real eight local heads and confirmed the rejection.
+
 ## Hypothesis
 
 E-GDN-07 v1 returned `torch::empty_like(value)` and validated six tensor

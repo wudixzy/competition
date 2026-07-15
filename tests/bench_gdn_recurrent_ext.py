@@ -58,6 +58,10 @@ def main() -> int:
     parser.add_argument("--iterations", type=int, default=1000)
     parser.add_argument("--repeats", type=int, default=9)
     parser.add_argument("--sustained-steps", type=int, default=1000)
+    parser.add_argument("--value-heads", type=int, default=8)
+    parser.add_argument(
+        "--candidate-mode", choices=("recurrent", "inverse"),
+        default="recurrent")
     parser.add_argument("--seed", type=int, default=20260715)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
@@ -67,7 +71,9 @@ def main() -> int:
     torch.cuda.set_device(device)
     extension = load_extension(args.extension)
     generator = torch.Generator(device=device).manual_seed(args.seed)
-    batch, key_heads, heads, dim = 1, 4, 12, 128
+    batch, key_heads, heads, dim = 1, 4, args.value_heads, 128
+    if heads % key_heads:
+        parser.error("--value-heads must be divisible by four key heads")
 
     raw_q = torch.randn((batch, key_heads, dim), device=device,
                         generator=generator, dtype=torch.float16)
@@ -94,14 +100,21 @@ def main() -> int:
                   current_raw_k: torch.Tensor, current_value: torch.Tensor,
                   current_decay: torch.Tensor,
                   current_beta: torch.Tensor) -> torch.Tensor:
-        query_inverse = torch.rsqrt(
-            (current_raw_q * current_raw_q).sum(-1, keepdim=True) + 1e-6)
-        key_inverse = torch.rsqrt(
-            (current_raw_k * current_raw_k).sum(-1, keepdim=True) + 1e-6)
-        extension.inverse_recurrent_update_out(
-            state, current_raw_q, current_raw_k, query_inverse, key_inverse,
-            current_value,
-            current_decay, current_beta, candidate_output_workspace)
+        if args.candidate_mode == "recurrent":
+            current_query, current_key = prepare(
+                current_raw_q, current_raw_k)
+            extension.recurrent_update_out(
+                state, current_query, current_key, current_value,
+                current_decay, current_beta, candidate_output_workspace)
+        else:
+            query_inverse = torch.rsqrt(
+                (current_raw_q * current_raw_q).sum(-1, keepdim=True) + 1e-6)
+            key_inverse = torch.rsqrt(
+                (current_raw_k * current_raw_k).sum(-1, keepdim=True) + 1e-6)
+            extension.inverse_recurrent_update_out(
+                state, current_raw_q, current_raw_k,
+                query_inverse, key_inverse, current_value,
+                current_decay, current_beta, candidate_output_workspace)
         return candidate_output_workspace
 
     def reference(state: torch.Tensor, current_raw_q: torch.Tensor,

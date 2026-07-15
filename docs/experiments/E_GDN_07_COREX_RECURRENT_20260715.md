@@ -1,5 +1,10 @@
 # E-GDN-07: Fused CoreX recurrent update
 
+> Superseded shape note: this probe followed stale 48-value-head source
+> comments and used 12 local heads. E-GDN-09 reran the full prep plus exact
+> recurrent boundary at the checkpoint's real eight local heads and confirmed
+> the rejection.
+
 ## Scope
 
 E-CAP-02 proved that the image's CoreX Clang can build Torch CUDA extensions.
