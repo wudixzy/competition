@@ -22,8 +22,11 @@ single-card candidates without changing `computility-run.yaml`:
 | E-MOE-11 combined exact MoE tail | `d6ac803` + E-MOE-11 | ~1.83 ms/token projected |
 | E-MOE-13 selected-weight gather | E-MOE-12 + E-MOE-13 | ~5.01 ms/token projected beyond E-MOE-11 |
 
-The unqualified additive projection is approximately `12.6 ms/token`. Against
-the current 13.3-13.5 Output TPS range, this would imply about 16.0-16.3 TPS,
+E-GDN-13 measured E-GDN-10/12 together inside the complete local layer at
+`0.549146 -> 0.449503 ms`, or about `2.99 ms/token` across 30 layers. Using
+this combined number instead of summing their isolated projections, the
+unqualified short-context stack is approximately `13.1 ms/token`. Against
+the current 13.3-13.5 Output TPS range, this would imply about 16.1-16.4 TPS,
 still below the 20 TPS competition target. E-ATTN-05 is
 not included in that generic projection because it activates only above 32K;
 its context-dependent saving is listed separately in the table. Treat all
