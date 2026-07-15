@@ -94,6 +94,11 @@ q/k、输出和 recurrent state 全部逐位一致；完整 prep+recurrent 为
 无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
 四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。
 
+13:55 再次执行独立四卡 preflight（每卡 12 秒硬超时、256 方阵乘）：GPU0 返回
+`124 timeout`，没有完成设备/显存读取；GPU1-3 均通过，free/total 各为
+`34057748480/34057748480` bytes，matmul checksum 均为 `16777216.0`。最新远端
+证据为 `/root/competition/preflight_a2_20260715.json`，TP4 阻塞未解除。
+
 更新时间：2026-07-12
 
 ## 2026-07-12 固定评测契约更正

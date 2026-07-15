@@ -119,3 +119,8 @@ GPU1-3 pass single-card tests. TP2 model loading fails while allocating routed
 MoE `w13_weight`, with only 14 MiB free; `cpu_offload_gb=8` does not alter that
 initialization peak. A healthy TP4 host or platform reset is required for the
 service gates above.
+
+The latest four-card preflight repeated this result with a 12-second per-card
+timeout: GPU0 returned 124 before device/memory reporting; GPU1-3 each passed
+allocation, synchronization, and 256x256 matmul with 34,057,748,480 bytes free.
+Evidence: `/root/competition/preflight_a2_20260715.json`.
