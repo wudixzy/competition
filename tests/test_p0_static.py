@@ -379,6 +379,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
         build_src = read("qwen3_6_scripts/build_corex_gdn_packed_decode.sh")
         kernel_src = read("qwen3_6_scripts/corex_gdn_packed_decode.cu")
+        run_config = read("computility-run.yaml")
         self.assertIn("build_corex_gdn_packed_decode.sh", patch_ops)
         self.assertIn("corex_gdn_packed_decode.so", build_src)
         self.assertIn('env_bool("BI100_GDN_COREX_PACKED_DECODE", False)',
@@ -387,6 +388,10 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("_corex_gdn_packed_decode.packed_decode", qwen_src)
         self.assertIn("state.size(0) == 1", kernel_src)
         self.assertIn("packed decode only supports one sequence", kernel_src)
+        self.assertIn("BI100_GDN_COREX_PACKED_DECODE", run_config)
+        self.assertRegex(
+            run_config,
+            r"name: BI100_GDN_COREX_PACKED_DECODE\s+value: 1")
 
     def test_corex_attention_head_rms_norm_is_decode_only_and_fallback_safe(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")

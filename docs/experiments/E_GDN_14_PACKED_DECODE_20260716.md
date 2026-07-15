@@ -84,7 +84,7 @@ Remote artifacts:
 
 ## Decision
 
-`PRODUCTION BOUNDARY GATE PASS; TP4 SERVICE QUALIFICATION PENDING`.
+`QUALIFIED TP4 WINNER`.
 
 The larger boundary and cross-device stability justify one guarded production
 integration after E-MOE-20 qualification. Do not merge it based on this
@@ -140,4 +140,50 @@ Production artifacts are in private branch
 ```text
 /root/E_GDN_14_prod/results/production_gpu{1,2,3}.json
 /root/E_GDN_14_prod/results/production_v2_gpu{1,2,3}.json
+```
+
+## TP4 service qualification
+
+The service test used one installed binary and changed only
+`BI100_GDN_COREX_PACKED_DECODE=0/1`. E-MOE-20 and custom IPC remained enabled;
+all service arguments, request seeds, prompt salts, and cache conditions were
+identical. The flag0 source fallback passed full smoke `15/15`, Agent workload
+`9/9`, and the historical 1,000-token qualification hash before performance
+measurement.
+
+| Pair | Flag0 Output TPS P10 | Flag1 Output TPS P10 | Change | Wall change |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 20.28395 | 21.95640 | +8.25% | -4.72% |
+| 2 | 20.22108 | 21.75182 | +7.57% | -4.10% |
+| 3 | 20.34747 | 21.93097 | +7.78% | -4.19% |
+
+Flag1 TTFT P90 was `2.1945/2.2064/2.2019s`, success was 100% in every pair,
+and cache hit rate remained `86.82%`. Local overlap-weighted scores increased
+from `1610.39/1611.65/1628.43` to `1701.43/1691.79/1711.25`; this local short
+prompt score is not directly comparable with the official 8,000 requirement.
+
+Candidate quality passed full smoke `15/15`, Agent workload `9/9`, and two
+independent 1,000-token runs. Both candidate runs remained finite, stopped at
+1,000 tokens, and reproduced the historical qualification hash
+`1766c3c44bfb672e32b2e35419c5e06490e539e54250ab2fc1012c539e68835f`.
+
+The final long-context gate used new run IDs:
+
+| Prompt | Cold (s) | Warm (s) | Warm cached | Result |
+| --- | ---: | ---: | ---: | --- |
+| 99,500 | 159.161 | 17.368 | 99,296 | cold/warm hash equal |
+| 235,000 | 567.031 | 57.019 | 234,544 | cold/warm hash equal |
+
+Both requests completed eight tokens with `finish_reason=stop`; health stayed
+200 and the service log contained no fatal, OOM, or traceback. E-GDN-14 meets
+the predeclared requirement of at least 5% Output TPS improvement in all three
+pairs and is enabled in `computility-run.yaml`. The exact shape guard and
+default-off code fallback remain mandatory.
+
+TP4 evidence is under:
+
+```text
+/root/e_gdn_14_tp4/flag0
+/root/e_gdn_14_tp4/flag1
+/root/e_gdn_14_tp4/service_flag{0,1}.log
 ```
