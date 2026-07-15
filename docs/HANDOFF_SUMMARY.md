@@ -90,6 +90,11 @@ q/k、输出和 recurrent state 全部逐位一致；完整 prep+recurrent 为
 `0.19362 -> 0.16757 ms`（`1.155x`），约投影节省 `0.78 ms/token`。短上下文
 候选栈累计投影更新为约 `12.6 ms/token`，即约 `16.0-16.3 TPS`。
 
+E-GDN-13 将 E-GDN-10/12 放回同一个完整 rank-local 层复测，E-GDN-03/05-only
+参考为 `0.54915 ms`，当前 E-GDN-03/05/10/12 为 `0.44950 ms`（`1.222x`），
+输出、conv state 和 temporal state 均逐位一致。组合净省约 `2.99 ms/token`，
+因此短上下文候选栈统一改用约 `13.1 ms/token`、`16.1-16.4 TPS` 的未资格化投影。
+
 新实例 `ssh-a2d0a302.default.gpu.phanthy.com` 的 GPU0 仍为 257 MiB、100% 利用率且
 无容器内可见进程；GPU1-3 CUDA 探针正常。TP4 服务资格验证仍需宿主侧复位或健康
 四卡实例。证据见 `docs/experiments/E_MOE_11_COMBINED_EXACT_TAIL_20260715.md`。
