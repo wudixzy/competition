@@ -32,3 +32,5 @@ command:
 env:
     - name: VLLM_ENGINE_ITERATION_TIMEOUT_S
       value: 3600
+    - name: BI100_MOE_COREX_DIRECT_ROUTED
+      value: 1

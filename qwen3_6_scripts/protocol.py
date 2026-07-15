@@ -410,12 +410,37 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 normalized.append(msg)
                 continue
             if msg.get("content") is None:
-                if msg.get("reasoning_content") is None:
+                if (msg.get("reasoning_content") is None
+                        and not msg.get("tool_calls")):
                     raise ValueError(
                         "Each message must have at least one of 'content' or "
-                        "'reasoning_content'.")
+                        "'reasoning_content', or contain 'tool_calls'.")
                 msg = {**msg, "content": ""}
             normalized.append(msg)
+
+        # Qwen's tokenizer template accepts at most one system message and
+        # requires it to be first. OpenAI-compatible clients may send several
+        # system messages, including after conversation history. Preserve
+        # their order and semantics by merging text content at the beginning.
+        system_messages = [
+            msg for msg in normalized
+            if isinstance(msg, dict) and msg.get("role") == "system"
+        ]
+        if system_messages:
+            system_contents = [
+                msg.get("content") for msg in system_messages
+            ]
+            if all(isinstance(content, str)
+                   for content in system_contents):
+                merged_system = {
+                    **system_messages[0],
+                    "content": "\n\n".join(system_contents),
+                }
+                normalized = [merged_system] + [
+                    msg for msg in normalized
+                    if not (isinstance(msg, dict)
+                            and msg.get("role") == "system")
+                ]
         data = {**data, "messages": normalized}
         return data
 

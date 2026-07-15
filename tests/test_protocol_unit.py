@@ -236,6 +236,54 @@ class ProtocolUnitTest(unittest.TestCase):
             2,
         )
 
+    def test_assistant_tool_calls_allow_null_content(self):
+        messages = [
+            {"role": "user", "content": "look it up"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": "call_lookup_1",
+                    "type": "function",
+                    "function": {
+                        "name": "lookup",
+                        "arguments": '{"query":"value"}',
+                    },
+                }],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_lookup_1",
+                "content": "result",
+            },
+        ]
+        request = self.request(messages=messages, tools=[_tool()])
+        self.assertEqual(request.messages[1]["content"], "")
+        self.assertEqual(request.messages[1]["tool_calls"][0]["id"],
+                         "call_lookup_1")
+
+    def test_message_without_content_reasoning_or_tool_calls_is_rejected(self):
+        self.assert_validation_error(messages=[{
+            "role": "assistant",
+            "content": None,
+        }])
+
+    def test_multiple_system_messages_merge_at_beginning(self):
+        request = self.request(messages=[
+            {"role": "user", "content": "question"},
+            {"role": "system", "content": "SYSTEM_A"},
+            {"role": "assistant", "content": "history"},
+            {"role": "system", "content": "SYSTEM_B"},
+        ])
+        self.assertEqual(request.messages[0], {
+            "role": "system",
+            "content": "SYSTEM_A\n\nSYSTEM_B",
+        })
+        self.assertEqual(
+            [message["role"] for message in request.messages],
+            ["system", "user", "assistant"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
