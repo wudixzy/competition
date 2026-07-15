@@ -56,3 +56,11 @@ Stop this route if the direct two-stage boundary misses the speed gates. Do not
 scan launch parameters around a weak algorithm. If only the paired activation
 variant fails numerically, retain the staged architecture and reject that
 fusion alone.
+
+## First decision
+
+Physical GPU1 passed the algorithm gate. The staged path measured `6.005x` on
+the fixed boundary and `2.945x` including routing, with 500/500 finite random
+steps and `0.00012207` maximum endpoint error. The activation-fused path was
+faster but had over twice the sequence mean error and twice the sequence max
+error. Only staged advances to cross-device and production-dispatch work.
