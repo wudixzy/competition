@@ -1597,21 +1597,25 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         return out  # partial, all-reduce done in forward()
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        router_and_shared_gate, _ = self.router_shared_gate(hidden_states)
-        router_logits = router_and_shared_gate[..., :self.num_experts]
-        gate_score = router_and_shared_gate[..., self.num_experts:]
+        with bi100_timer("moe.router"):
+            router_and_shared_gate, _ = self.router_shared_gate(hidden_states)
+            router_logits = router_and_shared_gate[..., :self.num_experts]
+            gate_score = router_and_shared_gate[..., self.num_experts:]
         with bi100_timer("moe.routed"):
             routed_out = self._pure_pytorch_experts(hidden_states, router_logits)
 
-        gate_up, _ = self.shared_expert_gate_up(hidden_states)
-        shared_out = self.act_fn(gate_up)
-        shared_out, _ = self.shared_expert_down(shared_out)
-        # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style).
-        shared_out = shared_out * torch.sigmoid(gate_score)
+        with bi100_timer("moe.shared"):
+            gate_up, _ = self.shared_expert_gate_up(hidden_states)
+            shared_out = self.act_fn(gate_up)
+            shared_out, _ = self.shared_expert_down(shared_out)
+            # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style).
+            shared_out = shared_out * torch.sigmoid(gate_score)
 
-        out = routed_out + shared_out
+        with bi100_timer("moe.combine"):
+            out = routed_out + shared_out
         if self.experts.tp_size > 1:
-            out = tensor_model_parallel_all_reduce(out)
+            with bi100_timer("moe.all_reduce"):
+                out = tensor_model_parallel_all_reduce(out)
         return out
 
 
@@ -1670,22 +1674,27 @@ class Qwen3_5DecoderLayer(nn.Module):
         temporal_state: Optional[torch.Tensor] = None,
         gdn_capture_offset: Optional[int] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if residual is None:
-            residual = hidden_states
-            hidden_states = self.input_layernorm(hidden_states)
-        else:
-            hidden_states, residual = self.input_layernorm(hidden_states, residual)
+        with bi100_timer("layer.input_norm"):
+            if residual is None:
+                residual = hidden_states
+                hidden_states = self.input_layernorm(hidden_states)
+            else:
+                hidden_states, residual = self.input_layernorm(
+                    hidden_states, residual)
 
         if self.layer_type == "linear_attention":
-            hidden_states = self.linear_attn(
-                hidden_states, attn_metadata, conv_state, temporal_state,
-                capture_offset=gdn_capture_offset)
+            with bi100_timer("layer.gdn"):
+                hidden_states = self.linear_attn(
+                    hidden_states, attn_metadata, conv_state, temporal_state,
+                    capture_offset=gdn_capture_offset)
         else:
-            hidden_states = self.self_attn(
-                positions, hidden_states, kv_cache, attn_metadata)
+            with bi100_timer("layer.full_attn"):
+                hidden_states = self.self_attn(
+                    positions, hidden_states, kv_cache, attn_metadata)
 
-        hidden_states, residual = self.post_attention_layernorm(
-            hidden_states, residual)
+        with bi100_timer("layer.post_attn_norm"):
+            hidden_states, residual = self.post_attention_layernorm(
+                hidden_states, residual)
 
         hidden_states = self.mlp(hidden_states)
 

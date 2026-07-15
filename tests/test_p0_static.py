@@ -325,8 +325,22 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("BI100_IN_STARTUP_PROFILE", profile_src)
         self.assertIn("BI100_PROFILE_INCLUDE_STARTUP", profile_src)
         self.assertIn("[BI100_PROFILE]", profile_src)
+        self.assertIn("BI100_PROFILE_FILTER", profile_src)
+        self.assertIn("fnmatch.fnmatchcase", profile_src)
         self.assertIn("bi100_timer", qwen_src)
         self.assertIn("bi100_timer", paged_src)
+        for region in [
+                "moe.router",
+                "moe.routed",
+                "moe.shared",
+                "moe.combine",
+                "moe.all_reduce",
+                "layer.input_norm",
+                "layer.gdn",
+                "layer.full_attn",
+                "layer.post_attn_norm",
+        ]:
+            self.assertIn(f'bi100_timer("{region}")', qwen_src)
 
     def test_corex_gdn_causal_conv_is_built_with_explicit_fallback(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
