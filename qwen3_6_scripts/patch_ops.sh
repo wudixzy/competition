@@ -158,6 +158,9 @@ build_stage "installing scheduler and attention patches"
 # also bypasses auto chunked prefill on
 python3 ./patch_xformers_sdpa_seq.py
 
+build_stage "installing sharded greedy vocabulary reduction"
+python3 ./patch_sharded_greedy_argmax.py
+
 build_stage "installing API parsers and serving modules"
 # --- tool parser: Qwen3 XML tool call format ---------------------------------
 # Registers "qwen3_coder" parser for Qwen3.6 XML-style tool calls:
