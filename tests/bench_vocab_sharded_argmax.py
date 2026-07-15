@@ -62,19 +62,18 @@ def _reference_token(local_logits: Any, rank: int, world_size: int,
 
 
 def _sharded_token(local_logits: Any, rank: int, world_size: int,
-                   local_vocab_size: int, dist: Any, torch: Any) -> Any:
+                   local_vocab_size: int, ipc_group: Any,
+                   ipc_all_reduce: Any, torch: Any) -> Any:
     local_value, local_index = torch.max(local_logits, dim=-1)
     global_index = local_index + rank * local_vocab_size
-    # Every FP16 value and token id below 2**24 is exact in FP32, allowing one
-    # two-element gather instead of separate value and index collectives.
-    packed = torch.stack((local_value.float(), global_index.float()), dim=-1)
-    gathered = ([torch.empty_like(packed) for _ in range(world_size)]
-                if rank == 0 else None)
-    dist.gather(packed, gather_list=gathered, dst=0)
-    if rank != 0:
-        return None
-
-    candidates = torch.cat(gathered, dim=0)
+    # Every FP16 value and token id below 2**24 is exact in FP32. Each rank
+    # writes a disjoint row, so an IPC sum all-reduce reconstructs the complete
+    # candidate table without arithmetic between non-zero values.
+    candidates = torch.zeros(
+        (world_size, 2), device=local_logits.device, dtype=torch.float32)
+    candidates[rank, 0] = local_value.float()
+    candidates[rank, 1] = global_index.float()
+    ipc_all_reduce(candidates, group=ipc_group, async_op=True)
     values = candidates[:, 0]
     token_ids = candidates[:, 1].to(torch.long)
     sentinel = torch.full_like(token_ids, torch.iinfo(torch.long).max)
@@ -113,6 +112,7 @@ def worker(rank: int, world_size: int, init_method: str, vocab_size: int,
            queue: mp.Queue) -> None:
     setup_corex_env()
     os.environ.update({
+        "ENABLE_CUSTOM_IPC": "1",
         "LOCAL_RANK": str(rank),
         "RANK": str(rank),
         "WORLD_SIZE": str(world_size),
@@ -120,6 +120,10 @@ def worker(rank: int, world_size: int, init_method: str, vocab_size: int,
     try:
         import torch
         import torch.distributed as dist
+        from ixformer.contrib.torch.extension.ixformer_torch.distributed import (
+            create_ixformer_group_from_pg,
+        )
+        from ixformer.distributed import all_reduce as ipc_all_reduce
 
         if vocab_size % world_size:
             raise ValueError("vocab size must divide evenly across TP ranks")
@@ -134,6 +138,7 @@ def worker(rank: int, world_size: int, init_method: str, vocab_size: int,
             rank=rank,
             world_size=world_size,
         )
+        ipc_group = create_ixformer_group_from_pg()
         device = torch.device(f"cuda:{rank}")
         generator = torch.Generator(device=device).manual_seed(20260715 + rank)
 
@@ -145,7 +150,8 @@ def worker(rank: int, world_size: int, init_method: str, vocab_size: int,
             )
             reference = _reference_token(logits, rank, world_size, dist, torch)
             candidate = _sharded_token(
-                logits, rank, world_size, local_vocab_size, dist, torch)
+                logits, rank, world_size, local_vocab_size, ipc_group,
+                ipc_all_reduce, torch)
             if rank == 0:
                 exact_matches += int(torch.equal(reference, candidate))
 
@@ -163,7 +169,8 @@ def worker(rank: int, world_size: int, init_method: str, vocab_size: int,
             _set_case(logits, rank, local_vocab_size, case, torch)
             reference = _reference_token(logits, rank, world_size, dist, torch)
             candidate = _sharded_token(
-                logits, rank, world_size, local_vocab_size, dist, torch)
+                logits, rank, world_size, local_vocab_size, ipc_group,
+                ipc_all_reduce, torch)
             if rank == 0:
                 edge_results[case] = bool(torch.equal(reference, candidate))
 
@@ -177,7 +184,8 @@ def worker(rank: int, world_size: int, init_method: str, vocab_size: int,
             for _ in range(warmup):
                 if candidate:
                     operation(fixed_logits, rank, world_size,
-                              local_vocab_size, dist, torch)
+                              local_vocab_size, ipc_group, ipc_all_reduce,
+                              torch)
                 else:
                     operation(fixed_logits, rank, world_size, dist, torch)
             torch.cuda.synchronize()
@@ -190,7 +198,8 @@ def worker(rank: int, world_size: int, init_method: str, vocab_size: int,
                 for _ in range(iterations):
                     if candidate:
                         operation(fixed_logits, rank, world_size,
-                                  local_vocab_size, dist, torch)
+                                  local_vocab_size, ipc_group, ipc_all_reduce,
+                                  torch)
                     else:
                         operation(fixed_logits, rank, world_size, dist, torch)
                 torch.cuda.synchronize()
