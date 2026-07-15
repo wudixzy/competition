@@ -304,6 +304,7 @@ class P0StaticCoverageTest(unittest.TestCase):
                 "BI100_GDN_FINITE_CHECK",
                 "BI100_GDN_COREX_BETA_DECAY",
                 "BI100_GDN_COREX_QK_MAP",
+                "BI100_GEMMA_COREX_RMS_NORM",
                 "BI100_DNN_CHUNK",
                 "BI100_PROFILE",
                 "BI100_PROFILE_INCLUDE_STARTUP",
@@ -347,6 +348,21 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("BI100_GDN_COREX_GATED_NORM", qwen_src)
         self.assertIn("forward_decode", qwen_src)
         self.assertIn("return self.forward(hidden_states, gate)", qwen_src)
+
+    def test_corex_gemma_rms_norm_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_gemma_rms_norm.sh")
+        kernel_src = read("qwen3_6_scripts/corex_gemma_rms_norm.cu")
+        self.assertIn("build_corex_gemma_rms_norm.sh", patch_ops)
+        self.assertIn("corex_gemma_rms_norm.so", build_src)
+        self.assertIn("BI100_GEMMA_COREX_RMS_NORM", qwen_src)
+        self.assertIn("class Qwen3_5GemmaRMSNorm", qwen_src)
+        self.assertIn("super().forward_cuda(x, residual)", qwen_src)
+        self.assertIn("squares.mean(dim=-1, keepdim=True)", qwen_src)
+        self.assertIn("_corex_gemma_rms_norm.apply_inverse", qwen_src)
+        self.assertIn("__fmul_rn(value, value)", kernel_src)
+        self.assertIn("__fadd_rn(1.0f", kernel_src)
 
     def test_corex_gdn_beta_decay_is_built_with_explicit_fallback(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")

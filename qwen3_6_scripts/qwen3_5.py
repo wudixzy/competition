@@ -103,6 +103,11 @@ except ImportError:
     _corex_gdn_gated_norm = None
 
 try:
+    from vllm import corex_gemma_rms_norm as _corex_gemma_rms_norm
+except ImportError:
+    _corex_gemma_rms_norm = None
+
+try:
     from vllm import corex_gdn_beta_decay as _corex_gdn_beta_decay
 except ImportError:
     _corex_gdn_beta_decay = None
@@ -139,6 +144,9 @@ _USE_COREX_GDN_CAUSAL_CONV = (
 _USE_COREX_GDN_GATED_NORM = (
     _corex_gdn_gated_norm is not None
     and env_bool("BI100_GDN_COREX_GATED_NORM", True))
+_USE_COREX_GEMMA_RMS_NORM = (
+    _corex_gemma_rms_norm is not None
+    and env_bool("BI100_GEMMA_COREX_RMS_NORM", True))
 _USE_COREX_GDN_BETA_DECAY = (
     _corex_gdn_beta_decay is not None
     and env_bool("BI100_GDN_COREX_BETA_DECAY", True))
@@ -152,6 +160,46 @@ _USE_COREX_MOE_WEIGHT_GATHER = (
     _corex_moe_weight_gather is not None
     and env_bool("BI100_MOE_COREX_WEIGHT_GATHER", True))
 _USE_FUSED_MOE_ACTIVATION = env_bool("BI100_MOE_FUSED_ACTIVATION", True)
+
+
+class Qwen3_5GemmaRMSNorm(GemmaRMSNorm):
+    """Exact T=1 Gemma RMSNorm using PyTorch's reduction order."""
+
+    def forward_cuda(
+        self,
+        x: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        use_corex = (
+            _USE_COREX_GEMMA_RMS_NORM
+            and x.is_cuda
+            and x.dtype == torch.float16
+            and self.weight.dtype == torch.float16
+            and x.dim() == 2
+            and x.shape == (1, 2048)
+            and x.is_contiguous()
+            and self.weight.is_contiguous()
+            and (residual is None
+                 or (residual.is_cuda
+                     and residual.dtype == torch.float16
+                     and residual.shape == x.shape
+                     and residual.is_contiguous())))
+        if not use_corex:
+            return super().forward_cuda(x, residual)
+
+        if residual is None:
+            converted, squares = _corex_gemma_rms_norm.prepare(x)
+            saved_residual = None
+        else:
+            converted, squares, saved_residual = (
+                _corex_gemma_rms_norm.prepare_residual(x, residual))
+        inverse = torch.rsqrt(
+            squares.mean(dim=-1, keepdim=True) + self.variance_epsilon)
+        output = _corex_gemma_rms_norm.apply_inverse(
+            converted, self.weight, inverse)
+        if saved_residual is None:
+            return output
+        return output, saved_residual
 
 
 # ---------------------------------------------------------------------------
@@ -1632,10 +1680,10 @@ class Qwen3_5DecoderLayer(nn.Module):
         super().__init__()
         self.layer_idx = layer_idx
         self.layer_type = layer_type
-        self.input_layernorm = GemmaRMSNorm(text_cfg.hidden_size,
-                                           eps=text_cfg.rms_norm_eps)
-        self.post_attention_layernorm = GemmaRMSNorm(text_cfg.hidden_size,
-                                                     eps=text_cfg.rms_norm_eps)
+        self.input_layernorm = Qwen3_5GemmaRMSNorm(
+            text_cfg.hidden_size, eps=text_cfg.rms_norm_eps)
+        self.post_attention_layernorm = Qwen3_5GemmaRMSNorm(
+            text_cfg.hidden_size, eps=text_cfg.rms_norm_eps)
 
         if layer_type == "linear_attention":
             self.linear_attn = GatedDeltaNet(text_cfg, layer_idx,
@@ -1713,7 +1761,8 @@ class Qwen3_5Model(nn.Module):
                 cache_config=cache_config, quant_config=quant_config)
             for i in range(text_cfg.num_hidden_layers)
         ])
-        self.norm = GemmaRMSNorm(text_cfg.hidden_size, eps=text_cfg.rms_norm_eps)
+        self.norm = Qwen3_5GemmaRMSNorm(
+            text_cfg.hidden_size, eps=text_cfg.rms_norm_eps)
 
     def forward(
         self,
