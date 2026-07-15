@@ -34,3 +34,5 @@ env:
       value: 3600
     - name: BI100_MOE_COREX_DIRECT_ROUTED
       value: 1
+    - name: BI100_GDN_COREX_PACKED_DECODE
+      value: 1

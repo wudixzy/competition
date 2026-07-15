@@ -21,13 +21,15 @@ token 全部 finite 且输出 hash 与资格基线一致。99.5K cold/warm 为
 `234,544` tokens，两组 cold/warm 输出完全一致。API 层同时修复 assistant
 `tool_calls` 搭配 `content:null`，以及多条文本 system message 的顺序合并问题。
 
-下一算法主线是 E-GDN-14 packed decode，不再继续扫描 YAML 或 kernel launch
-参数。三张健康物理卡上的 primitive 候选为 `0.1084-0.1104 ms`，对纯 PyTorch
-参考提升 `2.71x-2.88x`；1,000/1,000 步全部 finite，output max abs
-`6.48e-5`，state max abs `4.41e-4`。由于当前已资格生产边界实测约
-`0.1652 ms/layer`，保守投影只约节省 `1.68 ms/token`，该结果仅允许进入
-shape-guarded 生产接入和服务质量/A-B 门禁，尚未合入 `main`。实验分支为
-`exp/E-GDN-14-packed-decode@207105e`。
+E-GDN-14 packed decode 随后完成生产资格。V2 删除 decayed-state 的冗余全量
+写回，并把 normalized q/k 提升为 block 共享数据；GPU1-3 对当前生产边界达到
+`4.71x-5.24x`，候选绝对延迟 `0.0367-0.0378 ms/layer`，1,000/1,000 步 finite
+且误差分布未扩大。三组同 binary TP4 配对 Output TPS P10 从
+`20.28395/20.22108/20.34747` 提升到 `21.95640/21.75182/21.93097`，即
+`+8.25%/+7.57%/+7.78%`；success 100%，full smoke `15/15`、Agent `9/9`、
+两次 1,000-token 历史 hash、99.5K/235K cold-warm 全部通过。提交配置已启用
+`BI100_GDN_COREX_PACKED_DECODE=1`，代码默认仍为 `0` 并保留精确 shape guard。
+私有集成分支为 `exp/E-GDN-14-production-integration`，禁止推送仍公开的 GitHub。
 
 ## 2026-07-15 TP4 候选栈更新
 

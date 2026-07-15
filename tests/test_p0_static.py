@@ -304,6 +304,7 @@ class P0StaticCoverageTest(unittest.TestCase):
                 "BI100_GDN_FINITE_CHECK",
                 "BI100_GDN_COREX_BETA_DECAY",
                 "BI100_GDN_COREX_QK_MAP",
+                "BI100_GDN_COREX_PACKED_DECODE",
                 "BI100_DNN_CHUNK",
                 "BI100_PROFILE",
                 "BI100_PROFILE_INCLUDE_STARTUP",
@@ -372,6 +373,25 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("_corex_gdn_qk_map.qk_map", qwen_src)
         self.assertIn("q_raw.repeat_interleave", qwen_src)
         self.assertIn("kQueryScale", kernel_src)
+
+    def test_corex_gdn_packed_decode_is_default_off_and_shape_guarded(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_gdn_packed_decode.sh")
+        kernel_src = read("qwen3_6_scripts/corex_gdn_packed_decode.cu")
+        run_config = read("computility-run.yaml")
+        self.assertIn("build_corex_gdn_packed_decode.sh", patch_ops)
+        self.assertIn("corex_gdn_packed_decode.so", build_src)
+        self.assertIn('env_bool("BI100_GDN_COREX_PACKED_DECODE", False)',
+                      qwen_src)
+        self.assertIn("temporal_state.shape == (1, 8, 128, 128)", qwen_src)
+        self.assertIn("_corex_gdn_packed_decode.packed_decode", qwen_src)
+        self.assertIn("state.size(0) == 1", kernel_src)
+        self.assertIn("packed decode only supports one sequence", kernel_src)
+        self.assertIn("BI100_GDN_COREX_PACKED_DECODE", run_config)
+        self.assertRegex(
+            run_config,
+            r"name: BI100_GDN_COREX_PACKED_DECODE\s+value: 1")
 
     def test_corex_attention_head_rms_norm_is_decode_only_and_fallback_safe(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
