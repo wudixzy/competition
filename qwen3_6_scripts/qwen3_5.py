@@ -1488,8 +1488,8 @@ class Qwen3_5MoeSparseBlock(nn.Module):
                 and w13.shape[0] == w2.shape[0]
                 and w13.shape[2] == w2.shape[1]
                 and w13.shape[1] == 2 * w2.shape[2]
-                and w13.shape[2] % 2 == 0
-                and w2.shape[2] % 2 == 0)
+                and w13.shape[1] * w13.shape[2] % 8 == 0
+                and w2.shape[1] * w2.shape[2] % 8 == 0)
             if use_corex_gather:
                 w13_sel, w2_sel = _corex_moe_weight_gather.gather(
                     w13, w2, eids)
