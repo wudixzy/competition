@@ -118,3 +118,9 @@ Finish the current E-MOE-20 same-binary TP4 qualification first. E-GDN-14 is
 the next implementation candidate only if E-MOE-20 is stable, or if E-MOE-20
 fails and a fresh profile still ranks this packed GDN boundary above other
 unqualified work.
+
+E-MOE-20 subsequently passed qualification and was merged. E-GDN-14 v2 then
+passed its real production-boundary gate on GPU1-3 at `0.0367-0.0378 ms`,
+`4.71x-5.24x` faster than the qualified beta/qk/recurrent path. The next action
+is TP4 service quality and same-binary A/B; further kernel tuning is prohibited
+until that endpoint evidence exists.

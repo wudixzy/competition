@@ -31,6 +31,8 @@ __global__ void gdn_packed_decode_kernel(
   const int state_offset = batch_head * kHeadDim * kHeadDim;
 
   __shared__ half norm_squares[kHeadDim * 2];
+  __shared__ float normalized_query[kHeadDim];
+  __shared__ float normalized_key[kHeadDim];
   const half raw_query = mixed_qkv[query_offset + column];
   const half raw_key = mixed_qkv[key_offset + column];
   norm_squares[column] = __hmul(raw_query, raw_query);
@@ -53,6 +55,10 @@ __global__ void gdn_packed_decode_kernel(
       __hadd(norm_squares[0], epsilon))));
   const half key_inverse = __float2half(rsqrtf(__half2float(
       __hadd(norm_squares[kHeadDim], epsilon))));
+  normalized_query[column] = __half2float(
+      __hmul(raw_query, query_inverse)) * kQueryScale;
+  normalized_key[column] = __half2float(__hmul(raw_key, key_inverse));
+  __syncthreads();
 
   const int coefficient_offset = batch * kValueHeads + value_head;
   const float beta_value = __half2float(beta_input[coefficient_offset]);
@@ -70,10 +76,7 @@ __global__ void gdn_packed_decode_kernel(
   for (int row = 0; row < kHeadDim; ++row) {
     const int index = state_offset + row * kHeadDim + column;
     const float decayed = state[index] * decay;
-    state[index] = decayed;
-    const float key = __half2float(__hmul(
-        mixed_qkv[key_offset + row], key_inverse));
-    memory += key * decayed;
+    memory += normalized_key[row] * decayed;
   }
 
   const float value = __half2float(mixed_qkv[value_offset + column]);
@@ -82,13 +85,10 @@ __global__ void gdn_packed_decode_kernel(
 #pragma unroll
   for (int row = 0; row < kHeadDim; ++row) {
     const int index = state_offset + row * kHeadDim + column;
-    const float key = __half2float(__hmul(
-        mixed_qkv[key_offset + row], key_inverse));
-    const float updated = state[index] + key * delta;
+    const float decayed = state[index] * decay;
+    const float updated = decayed + normalized_key[row] * delta;
     state[index] = updated;
-    const float query = __half2float(__hmul(
-        mixed_qkv[query_offset + row], query_inverse)) * kQueryScale;
-    result += query * updated;
+    result += normalized_query[row] * updated;
   }
   output[vector_offset + column] = result;
 }

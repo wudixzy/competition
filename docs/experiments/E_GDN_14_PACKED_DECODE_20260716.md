@@ -84,7 +84,7 @@ Remote artifacts:
 
 ## Decision
 
-`PRIMITIVE GATE PASS; PRODUCTION INTEGRATION PENDING`.
+`PRODUCTION BOUNDARY GATE PASS; TP4 SERVICE QUALIFICATION PENDING`.
 
 The larger boundary and cross-device stability justify one guarded production
 integration after E-MOE-20 qualification. Do not merge it based on this
@@ -92,3 +92,52 @@ microbenchmark. The production candidate must pass the Agent workload matrix,
 multimodal smoke, deterministic repeated decode, and 99.5K/235K cold-warm
 requests before a three-pair TP4 service A/B. A service gain below 5% in any
 clean pair closes the candidate without block-size tuning.
+
+## Production boundary and v2 dataflow
+
+The guarded production integration is based on `main@101f0d7` and remains
+default-off behind `BI100_GDN_COREX_PACKED_DECODE=0`. It matches only one
+decode token with FP16 contiguous post-convolution input, four local key heads,
+eight local value heads, 128-wide heads, and contiguous FP32
+`[1,8,128,128]` state. Unsupported inputs retain the existing E-GDN-10/12 and
+`bmm/baddbmm_` path.
+
+The first production comparison used the qualified beta/decay and q/k-map
+extensions as its baseline rather than pure PyTorch. It passed the relative
+`1.5x` gate on all cards, but GPU1 and GPU2 narrowly missed the absolute
+`0.110 ms` gate:
+
+| GPU | Current boundary (ms) | Packed v1 (ms) | Speedup | Strict pass |
+| --- | ---: | ---: | ---: | --- |
+| GPU1 | 0.19509 | 0.11091 | 1.759x | no |
+| GPU2 | 0.17551 | 0.11015 | 1.593x | no |
+| GPU3 | 0.19795 | 0.10904 | 1.815x | yes |
+
+The result was not accepted by relaxing the threshold. A dataflow audit found
+that v1 wrote the complete decayed state and immediately read and wrote it
+again for the rank-one update. V2 keeps the original state through the memory
+reduction, recomputes the identical FP32 decay multiplication in the update
+pass, and writes only the final state. It also computes normalized q/k once
+per block in shared memory instead of once per output column. No launch shape
+or service parameter changed.
+
+| GPU | Current boundary (ms) | Packed v2 (ms) | Speedup |
+| --- | ---: | ---: | ---: |
+| GPU1 | 0.17306 | 0.03673 | 4.712x |
+| GPU2 | 0.19798 | 0.03776 | 5.243x |
+| GPU3 | 0.17459 | 0.03674 | 4.752x |
+
+All v2 runs passed 1,000/1,000 finite steps. Output max/mean abs remained
+`6.4753e-5/1.4640e-6`; final-state max/mean abs remained
+`4.4093e-4/1.2445e-5`. The candidate latency now has substantial margin below
+`0.110 ms`. Relative to the measured current boundary, the saved
+`0.136-0.160 ms/layer` projects to about `4.1-4.8 ms/token` over 30 GDN
+layers. This is still a projection, not a service result.
+
+Production artifacts are in private branch
+`exp/E-GDN-14-production-integration`; remote evidence is under:
+
+```text
+/root/E_GDN_14_prod/results/production_gpu{1,2,3}.json
+/root/E_GDN_14_prod/results/production_v2_gpu{1,2,3}.json
+```
