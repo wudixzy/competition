@@ -2,8 +2,8 @@
 
 ## 2026-07-16 当前主线与下一步
 
-ModelHub 私有仓库的生产主线现为 `main@2d3a0e5`，已合入 E-MOE-20 direct
-routed-expert kernel、Agent 请求兼容修复和资格文档。评测配置只在精确
+ModelHub 私有仓库的 E-MOE-20 资格基线为 `main@2d3a0e5`，当前生产主线已继续
+合入 E-GDN-14 packed decode、Agent 请求兼容修复和资格文档。评测配置只在精确
 `T=1/FP16/top_k=8/E=256/H=2048/I=128` 条件下启用
 `BI100_MOE_COREX_DIRECT_ROUTED=1`，其他形状完整回退；GitHub 仍可匿名读取，
 在仓库所有者手动改为 private 前禁止推送 GitHub。
@@ -29,7 +29,8 @@ E-GDN-14 packed decode 随后完成生产资格。V2 删除 decayed-state 的冗
 `+8.25%/+7.57%/+7.78%`；success 100%，full smoke `15/15`、Agent `9/9`、
 两次 1,000-token 历史 hash、99.5K/235K cold-warm 全部通过。提交配置已启用
 `BI100_GDN_COREX_PACKED_DECODE=1`，代码默认仍为 `0` 并保留精确 shape guard。
-私有集成分支为 `exp/E-GDN-14-production-integration`，禁止推送仍公开的 GitHub。
+资格历史保留在私有分支 `exp/E-GDN-14-production-integration`，winner 已合入
+生产 `main`；禁止推送仍公开的 GitHub。
 
 ## 2026-07-15 TP4 候选栈更新
 
