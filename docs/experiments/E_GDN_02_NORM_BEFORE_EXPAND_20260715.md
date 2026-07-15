@@ -1,5 +1,9 @@
 # E-GDN-02: Normalize q/k before head expansion
 
+> Superseded shape note: this probe followed stale 48-value-head source
+> comments and used 12 local heads. E-GDN-09 reran the same exact boundary at
+> the checkpoint's real eight local heads and confirmed the rejection.
+
 ## Scope
 
 The Gated DeltaNet decode path expands each of four local q/k heads three times

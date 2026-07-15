@@ -49,6 +49,7 @@ def main() -> int:
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--iterations", type=int, default=300)
     parser.add_argument("--repeats", type=int, default=9)
+    parser.add_argument("--value-heads", type=int, default=8)
     parser.add_argument("--seed", type=int, default=20260715)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
@@ -60,7 +61,9 @@ def main() -> int:
     dtype = torch.float16
     batch = 1
     key_heads = 4
-    value_heads = 12
+    value_heads = args.value_heads
+    if value_heads % key_heads:
+        parser.error("--value-heads must be divisible by four key heads")
     head_dim = 128
     expand_ratio = value_heads // key_heads
     scale = head_dim ** -0.5
