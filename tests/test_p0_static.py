@@ -345,6 +345,16 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("forward_decode", qwen_src)
         self.assertIn("return self.forward(hidden_states, gate)", qwen_src)
 
+    def test_corex_moe_exact_reduce_is_built_with_explicit_fallback(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        qwen_src = read("qwen3_6_scripts/qwen3_5.py")
+        build_src = read("qwen3_6_scripts/build_corex_moe_exact_reduce.sh")
+        self.assertIn("build_corex_moe_exact_reduce.sh", patch_ops)
+        self.assertIn("corex_moe_exact_reduce.so", build_src)
+        self.assertIn("BI100_MOE_COREX_EXACT_REDUCE", qwen_src)
+        self.assertIn("_corex_moe_exact_reduce.exact_reduce", qwen_src)
+        self.assertIn("expert_out * ws.unsqueeze", qwen_src)
+
     def test_docker_sets_corex_environment_and_invokes_explicit_bash(self):
         dockerfile = read("Dockerfile")
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")

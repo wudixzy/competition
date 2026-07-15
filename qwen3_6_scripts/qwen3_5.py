@@ -102,6 +102,11 @@ try:
 except ImportError:
     _corex_gdn_gated_norm = None
 
+try:
+    from vllm import corex_moe_exact_reduce as _corex_moe_exact_reduce
+except ImportError:
+    _corex_moe_exact_reduce = None
+
 from vllm.model_executor.models.interfaces import (HasInnerState, SupportsLoRA,
                                                    SupportsMultiModal)
 
@@ -119,6 +124,9 @@ _USE_COREX_GDN_CAUSAL_CONV = (
 _USE_COREX_GDN_GATED_NORM = (
     _corex_gdn_gated_norm is not None
     and env_bool("BI100_GDN_COREX_GATED_NORM", True))
+_USE_COREX_MOE_EXACT_REDUCE = (
+    _corex_moe_exact_reduce is not None
+    and env_bool("BI100_MOE_COREX_EXACT_REDUCE", True))
 
 
 # ---------------------------------------------------------------------------
@@ -1474,8 +1482,14 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             # bmm: (K,H,I) @ (K,I,1) → (K,H,1) → (K,H)
             expert_out = torch.bmm(w2_sel, act.unsqueeze(-1)).squeeze(-1)  # (K, H)
 
-            out = (expert_out * ws.unsqueeze(-1)).sum(0, keepdim=True).to(
-                hidden_states.dtype)                           # (1, H)
+            if (_USE_COREX_MOE_EXACT_REDUCE
+                    and expert_out.dtype == torch.float16
+                    and ws.dtype == torch.float16
+                    and expert_out.shape[0] == 8):
+                out = _corex_moe_exact_reduce.exact_reduce(expert_out, ws)
+            else:
+                out = (expert_out * ws.unsqueeze(-1)).sum(
+                    0, keepdim=True).to(hidden_states.dtype)   # (1, H)
         else:
             # General path (prefill / multi-seq): group assignments once. The
             # previous implementation scanned the full (T, top_k) routing
