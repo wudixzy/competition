@@ -362,6 +362,47 @@ def test_sampling_boundaries(base: str) -> None:
     }, expect=400)
 
 
+def test_random_sampling_fallback(base: str) -> None:
+    data = post_chat(base, {
+        "model": "llm",
+        "messages": [{"role": "user", "content": "直接回答一个英文颜色词。"}],
+        "max_tokens": 8,
+        "thinking": False,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "seed": 20260715,
+    })
+    _assert_content(data)
+    assert data["usage"]["completion_tokens"] > 0, data
+
+
+def test_logprobs_fallback(base: str) -> None:
+    data = post_chat(base, {
+        "model": "llm",
+        "messages": [{"role": "user", "content": "直接回答：A"}],
+        "max_tokens": 2,
+        "thinking": False,
+        "temperature": 0,
+        "logprobs": True,
+        "top_logprobs": 2,
+    })
+    content = data["choices"][0].get("logprobs", {}).get("content") or []
+    assert content, data
+    assert all(item.get("top_logprobs") for item in content), data
+
+
+def test_prompt_logprobs_fallback(base: str) -> None:
+    data = post_chat(base, {
+        "model": "llm",
+        "messages": [{"role": "user", "content": "直接回答：B"}],
+        "max_tokens": 2,
+        "thinking": False,
+        "temperature": 0,
+        "prompt_logprobs": 1,
+    })
+    assert data.get("prompt_logprobs"), data
+
+
 def test_seed_determinism(base: str) -> None:
     payload = {
         "model": "llm",
@@ -441,6 +482,9 @@ FULL_ONLY_TESTS: list[Callable[[str], None]] = [
     test_tool_call_forced_streaming,
     test_multilingual_multiturn,
     test_sampling_boundaries,
+    test_random_sampling_fallback,
+    test_logprobs_fallback,
+    test_prompt_logprobs_fallback,
     test_seed_determinism,
     test_image_semantics,
 ]
