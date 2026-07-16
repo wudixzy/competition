@@ -1053,6 +1053,15 @@ class Scheduler:
                         num_new_tokens,
                         budget.remaining_token_budget(),
                         self.cache_config.block_size))
+                if budget_token_count != num_new_tokens:
+                    logger.info(
+                        "[BI100 GDN FAST-FORWARD] request=%s "
+                        "checkpoint_tokens=%d logical_tokens=%d "
+                        "physical_query_tokens=%d",
+                        seq_group.request_id,
+                        num_new_tokens - budget_token_count,
+                        num_new_tokens,
+                        budget_token_count)
 
             if enable_chunking and self.scheduler_config.is_multi_step:
                 blocks_to_copy: List[Tuple[int, int]] = []
