@@ -137,6 +137,9 @@ class SchedulingBudget:
     _request_ids_num_batched_tokens: Set[str] = field(default_factory=set)
     _request_ids_num_curr_seqs: Set[str] = field(default_factory=set)
     _num_batched_tokens: int = 0
+    _num_scheduled_tokens: int = 0
+    _request_num_scheduled_tokens: Dict[str, int] = field(
+        default_factory=dict)
     _num_curr_seqs: int = 0
 
     def can_schedule(self, *, num_new_tokens: int, num_new_seqs: int):
@@ -148,18 +151,26 @@ class SchedulingBudget:
     def remaining_token_budget(self):
         return self.token_budget - self.num_batched_tokens
 
-    def add_num_batched_tokens(self, req_id: str, num_batched_tokens: int):
+    def add_num_batched_tokens(
+            self, req_id: str, num_batched_tokens: int,
+            num_scheduled_tokens: Optional[int] = None):
         if req_id in self._request_ids_num_batched_tokens:
             return
 
+        if num_scheduled_tokens is None:
+            num_scheduled_tokens = num_batched_tokens
         self._request_ids_num_batched_tokens.add(req_id)
         self._num_batched_tokens += num_batched_tokens
+        self._num_scheduled_tokens += num_scheduled_tokens
+        self._request_num_scheduled_tokens[req_id] = num_scheduled_tokens
 
     def subtract_num_batched_tokens(self, req_id: str,
                                     num_batched_tokens: int):
         if req_id in self._request_ids_num_batched_tokens:
             self._request_ids_num_batched_tokens.remove(req_id)
             self._num_batched_tokens -= num_batched_tokens
+            self._num_scheduled_tokens -= (
+                self._request_num_scheduled_tokens.pop(req_id))
 
     def add_num_seqs(self, req_id: str, num_curr_seqs: int):
         if req_id in self._request_ids_num_curr_seqs:
@@ -176,6 +187,10 @@ class SchedulingBudget:
     @property
     def num_batched_tokens(self):
         return self._num_batched_tokens
+
+    @property
+    def num_scheduled_tokens(self):
+        return self._num_scheduled_tokens
 
     @property
     def num_curr_seqs(self):
@@ -1084,7 +1099,9 @@ class Scheduler:
                 ScheduledSequenceGroup(seq_group=seq_group,
                                        token_chunk_size=num_new_tokens))
             budget.add_num_batched_tokens(
-                seq_group.request_id, budget_token_count)
+                seq_group.request_id,
+                budget_token_count,
+                num_scheduled_tokens=num_new_tokens)
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
 
         # Queue requests that couldn't be scheduled.
@@ -1192,7 +1209,7 @@ class Scheduler:
         return SchedulerOutputs(
             scheduled_seq_groups=scheduled_seq_groups,
             num_prefill_groups=num_prefill_groups,
-            num_batched_tokens=budget.num_batched_tokens,
+            num_batched_tokens=budget.num_scheduled_tokens,
             blocks_to_swap_in=swapped_in.blocks_to_swap_in,
             blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
             blocks_to_copy=blocks_to_copy,
@@ -1273,7 +1290,7 @@ class Scheduler:
             num_prefill_groups=(len(prefills.seq_groups) +
                                 len(swapped_in.prefill_seq_groups) +
                                 len(running_scheduled.prefill_seq_groups)),
-            num_batched_tokens=budget.num_batched_tokens,
+            num_batched_tokens=budget.num_scheduled_tokens,
             blocks_to_swap_in=swapped_in.blocks_to_swap_in,
             blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
             blocks_to_copy=running_scheduled.blocks_to_copy +

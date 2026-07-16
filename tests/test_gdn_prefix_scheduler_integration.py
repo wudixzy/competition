@@ -92,6 +92,7 @@ class GdnPrefixSchedulerIntegrationTest(unittest.TestCase):
         self.assertEqual(len(output.seq_groups), 1)
         self.assertEqual(output.seq_groups[0].token_chunk_size, 235000)
         self.assertEqual(budget.num_batched_tokens, 8)
+        self.assertEqual(budget.num_scheduled_tokens, 235000)
 
 
 if __name__ == "__main__":

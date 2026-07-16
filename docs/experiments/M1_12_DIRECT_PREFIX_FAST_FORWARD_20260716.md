@@ -39,8 +39,11 @@ normal chunk, the helper returns the unchanged staged plan.
 
 `SequenceGroupMetadata.token_chunk_size` carries logical progress. The
 existing model-runner prefix-hit path uses `computed_block_nums` to crop input
-tokens to the physical suffix. `SchedulerOutputs.num_batched_tokens` counts
-that suffix, and the engine updates sequence progress using the logical size.
+tokens to the physical suffix. `SchedulingBudget.num_batched_tokens` counts
+that suffix for capacity checks, while `SchedulingBudget.num_scheduled_tokens`
+and `SchedulerOutputs.num_batched_tokens` preserve the logical count consumed
+by engine statistics. The engine also updates sequence progress using the
+logical size.
 
 ## Fixed Gate
 
@@ -59,13 +62,41 @@ No chunk, block, budget, YAML, or threshold scan is permitted. Any scheduler,
 model-runner, state, cache, correctness, or restoration failure rejects the
 candidate and restores production main.
 
+## First TP4 Runtime Finding
+
+The first isolated TP4 boundary run used an 8712-token cold/warm pair. The
+cold request returned HTTP 200. The warm trace selected the exact 8704-token
+checkpoint and executed an 8-token suffix, proving that the scheduler and
+model-runner fast-forward path reached model execution. The engine then died
+in `_get_stats`: `SchedulerOutputs.num_batched_tokens` was the physical value
+8 while `ScheduledSequenceGroup.token_chunk_size` was the logical value 8712,
+so vLLM computed a negative generation-token counter and Prometheus rejected
+it.
+
+This was a scheduler accounting contract error, not a model-state or numerical
+failure. The revised budget records physical and logical token counts
+separately. Capacity checks remain physical; scheduler outputs retain vLLM's
+logical statistics semantics. Disabling metrics or changing model execution
+was explicitly rejected as a workaround.
+
 ## Status
 
-`INTEGRATION`: 140 local tests pass with 13 environment skips. An additional
-test invokes the real vLLM 0.6.3 `Scheduler._schedule_prefills` under the
-CoreX runtime with a mocked block manager. It produced logical
-`token_chunk_size=235000`, physical `num_batched_tokens=8`, one scheduled
+`READY_FOR_FIXED_RETRY`: 153 local tests pass with 22 environment skips when
+the optional Pillow-dependent remote client test is excluded. The revised
+budget has a dependency-free unit test covering add/subtract behavior for
+physical 8 and logical 235000 tokens. The real vLLM 0.6.3
+`Scheduler._schedule_prefills` integration test also passes under CoreX: it
+produces logical `token_chunk_size=235000`, physical
+`num_batched_tokens=8`, logical `num_scheduled_tokens=235000`, one scheduled
 group, and a running sequence as required.
+
+Production was restored to scheduler SHA-256
+`ef7e7c0e3bb50f5854df3348029d316637b601e978049ffc4861a9bcb52ffdc5`.
+Health and models endpoints return HTTP 200, all three TP4 workers are alive,
+`max_model_len=262144`, and a one-token chat smoke returns HTTP 200. The next
+candidate action is one fixed 8712-token cold/warm retry. A new model-runner,
+state, numerical, or engine-contract failure ends M1-12 without parameter
+tuning.
 
 The isolated instance exposes one healthy 32 GiB BI100 card, which is
 insufficient to load the 35B FP16 model without the unavailable second healthy

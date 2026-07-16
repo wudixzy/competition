@@ -1,4 +1,5 @@
 import ast
+from dataclasses import dataclass, field
 import pathlib
 import typing
 import unittest
@@ -53,7 +54,43 @@ def _load_helpers():
     return namespace
 
 
+def _load_scheduling_budget():
+    tree = ast.parse(SCHEDULER.read_text(), filename=str(SCHEDULER))
+    budget_class = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "SchedulingBudget")
+    module = ast.Module(body=[budget_class], type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {
+        "dataclass": dataclass,
+        "field": field,
+        "Dict": typing.Dict,
+        "Optional": typing.Optional,
+        "Set": typing.Set,
+    }
+    exec(compile(module, str(SCHEDULER), "exec"), namespace)
+    return namespace["SchedulingBudget"]
+
+
 class GdnPrefixSchedulerTest(unittest.TestCase):
+
+    def test_budget_separates_physical_and_logical_tokens(self):
+        budget = _load_scheduling_budget()(token_budget=8192, max_num_seqs=1)
+        budget.add_num_batched_tokens(
+            "m1-12", 8, num_scheduled_tokens=235000)
+        self.assertEqual(budget.num_batched_tokens, 8)
+        self.assertEqual(budget.num_scheduled_tokens, 235000)
+        self.assertEqual(budget.remaining_token_budget(), 8184)
+
+        budget.subtract_num_batched_tokens("m1-12", 8)
+        self.assertEqual(budget.num_batched_tokens, 0)
+        self.assertEqual(budget.num_scheduled_tokens, 0)
+
+    def test_scheduler_outputs_report_logical_token_count(self):
+        source = SCHEDULER.read_text()
+        self.assertEqual(
+            source.count(
+                "num_batched_tokens=budget.num_scheduled_tokens"), 2)
 
     def test_checkpoint_capacity_covers_native_context(self):
         scheduler_capacity = _assigned_attribute_int(
