@@ -73,6 +73,41 @@ def _accumulate_gdn_cached_tokens(
     return (current_cached_tokens or 0) + newly_cached_tokens
 
 
+def _plan_gdn_prefix_fast_forward(
+        checkpoint_keys: Iterable[Tuple[int, ...]],
+        computed_block_nums: List[int], num_computed_tokens: int,
+        prompt_len: int, nominal_chunk_size: int,
+        remaining_token_budget: int, block_size: int) -> Tuple[int, int]:
+    """Return logical progress and physical query tokens for a direct hit.
+
+    The scheduler normally uses one value for both quantities. A GDN prefix
+    state makes it safe to advance over a much larger logical prefix while
+    sending only the suffix after that checkpoint to the model runner.
+    """
+    fallback = (nominal_chunk_size, nominal_chunk_size)
+    if (num_computed_tokens != 0 or prompt_len <= 0
+            or nominal_chunk_size <= 0 or remaining_token_budget <= 0
+            or block_size <= 0):
+        return fallback
+
+    strict_blocks = _limit_gdn_blocks_to_strict_prefix(
+        computed_block_nums, prompt_len, block_size)
+    selected_blocks = _select_gdn_prefix_checkpoint(
+        checkpoint_keys, strict_blocks)
+    if not selected_blocks:
+        return fallback
+
+    checkpoint_tokens = len(selected_blocks) * block_size
+    logical_chunk_size = min(
+        prompt_len, checkpoint_tokens + remaining_token_budget)
+    physical_query_tokens = logical_chunk_size - checkpoint_tokens
+    if (physical_query_tokens <= 0
+            or physical_query_tokens > remaining_token_budget
+            or logical_chunk_size <= nominal_chunk_size):
+        return fallback
+    return logical_chunk_size, physical_query_tokens
+
+
 class PreemptionMode(enum.Enum):
     """Preemption modes.
 
@@ -1002,6 +1037,23 @@ class Scheduler:
             waiting_queue.popleft()
             self._allocate_and_set_running(seq_group)
 
+            budget_token_count = num_new_tokens
+            if (enable_chunking
+                    and self.cache_config.enable_prefix_caching
+                    and len(waiting_seqs) == 1):
+                computed_block_nums = list(
+                    self.block_manager.get_common_computed_block_ids(
+                        waiting_seqs))
+                num_new_tokens, budget_token_count = (
+                    _plan_gdn_prefix_fast_forward(
+                        self._gdn_prefix_checkpoints.keys(),
+                        computed_block_nums,
+                        waiting_seqs[0].data.get_num_computed_tokens(),
+                        waiting_seqs[0].data.get_len(),
+                        num_new_tokens,
+                        budget.remaining_token_budget(),
+                        self.cache_config.block_size))
+
             if enable_chunking and self.scheduler_config.is_multi_step:
                 blocks_to_copy: List[Tuple[int, int]] = []
                 # init_multi_step_from_lookahead_slots happens in append_slots
@@ -1022,7 +1074,8 @@ class Scheduler:
             seq_groups.append(
                 ScheduledSequenceGroup(seq_group=seq_group,
                                        token_chunk_size=num_new_tokens))
-            budget.add_num_batched_tokens(seq_group.request_id, num_new_tokens)
+            budget.add_num_batched_tokens(
+                seq_group.request_id, budget_token_count)
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
 
         # Queue requests that couldn't be scheduled.
