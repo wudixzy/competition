@@ -1,10 +1,13 @@
 import pathlib
+import sys
 import unittest
 
-from tests import submission_preflight
+TESTS = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(TESTS))
+import submission_preflight
 
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = TESTS.parent
 
 
 class SubmissionPreflightTest(unittest.TestCase):
