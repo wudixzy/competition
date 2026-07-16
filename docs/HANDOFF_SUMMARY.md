@@ -1,5 +1,20 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-16 真实评测与 MRoPE 致命错误
+
+最新 881 请求评测只有 269 成功、612 失败，Output TPS P10 `4.03`、TTFT P90
+`29.706s`、cache hit `42%`。Docker traceback 显示
+`Qwen3_5InterleavedMRotaryEmbedding.forward` 收到 26540 个 positions，但当前
+Q/K 仅对应一个小物理 chunk，最终触发 invalid view 并终止 async engine。这不是
+普通图片 4xx，也不能用后续 612 个失败请求反推每个 API 类型的兼容率。
+
+M1-14 修复 vendor vLLM 0.6.3 的 chunk/prefix MRoPE 对齐：完整 MRoPE map 保留
+request-level delta，再精确切到 `[context_len:seq_len]`；partial/full prefix hit
+同步裁剪三个 position axes，并在进入 GPU 前检查长度等于物理 input token 数。
+本地 159 tests 通过、22 项环境跳过；第二实例真实 vendor 源码副本补丁和幂等
+`py_compile` 通过。TP4 长图片 cold/warm 回归通过前不合入 main。详情见
+`docs/experiments/M1_14_MROPE_CHUNK_ALIGNMENT_20260716.md`。
+
 ## 2026-07-16 当前主线与下一步
 
 ModelHub 私有仓库的 E-MOE-20 资格基线为 `main@2d3a0e5`，当前生产主线已继续
@@ -956,3 +971,22 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   `1.0164x`，40 层预计只省 `0.394 ms/token`，低于 5% 集成门槛，因此拒绝，
   不修改当前候选运行时。证据见
   `docs/experiments/E_MOE_19_SHARED_COMBINE_20260715.md`。
+
+## 2026-07-16 M1-14 MRoPE chunk 对齐与长上下文 decode 结论
+
+- 881 请求评测中的 engine-fatal 并非模型路径问题：MRoPE 位置张量保留了完整
+  `26,540` token，而本轮物理 query 只有 `64` token，最终在 rotary reshape
+  处触发 `shape '[26540, -1, 256]'`。
+- `fix/M1-14-mrope-chunk-alignment` 在完整 MRoPE 映射上按当前 prefill chunk
+  精确切片，并在 partial/full prefix hit 后同步裁剪。160 个本地测试通过；真实
+  CoreX vendor 函数验证三轴从 `26,540` 正确裁到 `64/64/64`。
+- 独立生产扫测在服务全程健康时得到 32K/64K/131K/235K 的 64-token decode
+  TPS 分别为 `10.188/7.024/5.120/3.698`。这复现了评测 P10 `4.03`，说明
+  MRoPE 修复后下一个高收益方向是 `>32768` 直接 paged decode，而非继续调整
+  YAML/scheduler 参数。
+- TP4 唯一首块 240,132-token 请求完成真正 `cached=0` cold 和
+  `cached=240128` warm，输出哈希一致、HTTP/health 均为 200，日志无 shape
+  invalid/fatal/OOM/Gloo/worker loss。M1-14 已通过合并门禁。
+- 嵌套请求从 180,096-token partial hit 扩展到 240K 时曾与后续 full hit 输出
+  分叉，但两个 full hit 相互一致，唯一零缓存 cold/warm 也一致；该问题作为独立
+  prefix 分段数值/语义问题保留，不能再归因于 MRoPE shape 修复。
