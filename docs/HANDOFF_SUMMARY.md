@@ -1007,3 +1007,15 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   `query.float() @ key.float()` 的 FP32 输入语义。下一 direct kernel 不能依赖
   WMMA 冒充 exact QK，也不能物化全局 weights；必须融合直接分页读取与稳定的
   online softmax，并通过明确的模型级质量门禁。
+
+## 2026-07-16 M1-17 warp-reduced direct decode 结论
+
+- M1-17 用 BI100 64-lane warp 将每个 token 的 256 维串行 QK 改为每 lane
+  4 维加 shuffle tree。64K/100K 相对 E-ATTN-05 达到 `1.720x/1.547x`，说明
+  direct paged decode 存在性能空间。
+- 数值门禁未通过：100K worst abs 虽从 E-ATTN-06 的 `0.05937` 降到
+  `0.03424`，但 `1e-3` close 只有 65/100；64K 也只有 75/100。改变 reduction
+  order 不能可靠逼近 authoritative FP32 matmul，因此拒绝，不做第二 seed 或模型接入。
+- 下一步只做 M1-16 组件级 profile，量化 exact K gather、FP32 QK、softmax、
+  contiguous PV 与 paged PV。只有“不物化 global weights”的乐观上限仍能比
+  E-ATTN-05 提升超过 5%，才实现 M1-18 fused exact score-to-paged-V；否则关闭该线。
