@@ -61,8 +61,16 @@ candidate and restores production main.
 
 ## Status
 
-`LOCAL`: 82 focused unit tests pass. Runtime qualification is pending on an
-isolated instance; production remains unchanged and healthy.
+`INTEGRATION`: 140 local tests pass with 13 environment skips. An additional
+test invokes the real vLLM 0.6.3 `Scheduler._schedule_prefills` under the
+CoreX runtime with a mocked block manager. It produced logical
+`token_chunk_size=235000`, physical `num_batched_tokens=8`, one scheduled
+group, and a running sequence as required.
+
+The isolated instance exposes one healthy 32 GiB BI100 card, which is
+insufficient to load the 35B FP16 model without the unavailable second healthy
+GPU. TP4 API qualification therefore remains pending on the main four-card
+instance. Production has not been changed and remains healthy.
 
 ## Repository Contract
 
