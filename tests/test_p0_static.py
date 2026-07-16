@@ -257,6 +257,12 @@ class P0StaticCoverageTest(unittest.TestCase):
                       unit_src)
         self.assertIn("test_alignment_mismatch_fails_before_gpu_execution",
                       unit_src)
+        probe_src = read("tests/mrope_chunk_api.py")
+        self.assertIn('for label in ("cold", "warm")', probe_src)
+        self.assertIn('cold["prompt_tokens"] <= 8192', probe_src)
+        self.assertIn('warm["cached_tokens"] <= 0', probe_src)
+        self.assertIn('cold["output_sha256"] != warm["output_sha256"]',
+                      probe_src)
 
     def test_scheduler_gates_kv_hits_on_exact_gdn_state(self):
         scheduler_src = read("qwen3_6_scripts/scheduler.py")

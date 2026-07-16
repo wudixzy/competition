@@ -73,6 +73,9 @@ fix remains unchanged.
 - local non-GPU suite: 159 pass, 22 environment skips;
 - real CoreX vendor `model_runner.py` copy: all anchors apply, second patch is
   byte-idempotent, `py_compile` passes;
+- dedicated streaming `tests/mrope_chunk_api.py` probe: sends an image plus a
+  prompt over 8,192 tokens twice and checks usage, cache hit, output hash, and
+  post-request health;
 - TP4 long-image chunk/prefix API regression: pending.
 
 ## Decision boundary
