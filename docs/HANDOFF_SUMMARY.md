@@ -1019,3 +1019,13 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 - 下一步只做 M1-16 组件级 profile，量化 exact K gather、FP32 QK、softmax、
   contiguous PV 与 paged PV。只有“不物化 global weights”的乐观上限仍能比
   E-ATTN-05 提升超过 5%，才实现 M1-18 fused exact score-to-paged-V；否则关闭该线。
+
+## 2026-07-16 M1-18 exact-QK 组件剖析结论
+
+- 第二实例 GPU1 的 7-trial 同步测量显示，65K/100K 的 exact-QK/direct-PV
+  组件和为 `8.9086/11.0811 ms`，而 E-ATTN-05 为 `7.0830/9.2203 ms`，即慢
+  `25.77%/20.18%`。结果与 M1-16 端到端时间在 0.6% 内一致。
+- K bit-exact，contiguous PV exact，direct paged PV worst abs `7.629e-06`；失败
+  原因是成本而非正确性。即使取消 global weights 写回，也没有超过 5% 的理论空间。
+- M1-18 按前置门禁拒绝，不实现、不调 kernel。当前 long-context direct-decode
+  路线关闭，下一步必须回到 M1-11 全模型 profile 选择其他评分热点。
