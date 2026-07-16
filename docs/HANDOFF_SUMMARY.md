@@ -978,10 +978,15 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   `26,540` token，而本轮物理 query 只有 `64` token，最终在 rotary reshape
   处触发 `shape '[26540, -1, 256]'`。
 - `fix/M1-14-mrope-chunk-alignment` 在完整 MRoPE 映射上按当前 prefill chunk
-  精确切片，并在 partial/full prefix hit 后同步裁剪。159 个本地测试通过；真实
+  精确切片，并在 partial/full prefix hit 后同步裁剪。160 个本地测试通过；真实
   CoreX vendor 函数验证三轴从 `26,540` 正确裁到 `64/64/64`。
 - 独立生产扫测在服务全程健康时得到 32K/64K/131K/235K 的 64-token decode
   TPS 分别为 `10.188/7.024/5.120/3.698`。这复现了评测 P10 `4.03`，说明
   MRoPE 修复后下一个高收益方向是 `>32768` 直接 paged decode，而非继续调整
   YAML/scheduler 参数。
-- TP4 多模态 cold/warm 长请求门禁正在远端执行；通过前该修复不合入 `main`。
+- TP4 唯一首块 240,132-token 请求完成真正 `cached=0` cold 和
+  `cached=240128` warm，输出哈希一致、HTTP/health 均为 200，日志无 shape
+  invalid/fatal/OOM/Gloo/worker loss。M1-14 已通过合并门禁。
+- 嵌套请求从 180,096-token partial hit 扩展到 240K 时曾与后续 full hit 输出
+  分叉，但两个 full hit 相互一致，唯一零缓存 cold/warm 也一致；该问题作为独立
+  prefix 分段数值/语义问题保留，不能再归因于 MRoPE shape 修复。

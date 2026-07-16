@@ -70,7 +70,7 @@ fix remains unchanged.
 - full prefix-hit last-token crop: pass;
 - mismatch fail-fast: pass;
 - patch idempotency: pass;
-- local non-GPU suite: 159 pass, 22 environment skips;
+- local non-GPU suite: 160 pass, 22 environment skips;
 - real CoreX vendor `model_runner.py` copy: all anchors apply, second patch is
   byte-idempotent, `py_compile` passes;
 - real vendor `MRotaryEmbedding.get_input_positions` semantic probe: a
@@ -80,7 +80,33 @@ fix remains unchanged.
 - dedicated streaming `tests/mrope_chunk_api.py` probe: sends an image plus a
   prompt over 8,192 tokens twice and checks usage, cache hit, output hash, and
   post-request health;
-- TP4 long-image chunk/prefix API regression: pending.
+- the probe's original PNG had an invalid IDAT CRC/stream; the replacement is
+  checked with standard-library PNG CRC and zlib validation;
+- TP4 long-image chunk/prefix API regression: pass.
+
+## TP4 multimodal qualification
+
+The patched runtime kept the same four-GPU launch configuration and
+`max_model_len=262144`. All requests returned HTTP 200 and every post-request
+health check returned 200. The server log contained no MRoPE shape error,
+traceback, fatal, OOM, Gloo error, engine death, or worker loss.
+
+| Prompt | Cold cache | Warm cache | Cold/warm hash | Result |
+|---:|---:|---:|:---:|:---:|
+| 72,111 | 0 | 72,096 | same | pass |
+| 180,111 | 72,096 | 180,096 | same | pass |
+| 240,132, unique first block | 0 | 240,128 | same | pass |
+
+The zero-cache 240,132-token cold request took 600.44 s (TTFT 598.78 s); its
+warm repeat took 5.75 s (TTFT 3.65 s). This is a correctness/stability gate,
+not a TTFT qualification claim.
+
+An intentionally nested 240,111-token request first reused 180,096 cached
+tokens and produced a different eight-token continuation than its subsequent
+240,096-token full-prefix hit. Two further full-prefix repeats were mutually
+identical, and the unique zero-cache cold/warm pair was also identical. This
+isolates a separate partial-prefix segmentation/numerical issue; it does not
+reproduce the MRoPE length fault and does not kill the engine.
 
 ## Independent long-context decode evidence
 
@@ -103,12 +129,14 @@ tuning cannot remove the remaining cost. The next performance experiment must
 target the `>32768` paged decode implementation itself; the current runtime
 falls back to a PyTorch gather/attention path there.
 
-## Decision boundary
+## Decision
 
-Do not merge until a TP4 image request that crosses a prefill chunk completes
-cold and warm with HTTP 200, aligned position/query trace, identical output,
-and a healthy engine afterward. This correctness fix takes priority over the
-M1-14 WMMA/paged-attention capability probe. Long-context decode performance
-remains a separate problem: the controlled 32K-235K sweep reproduces the
-evaluation P10 and makes a direct paged-decode kernel the next performance
-priority after service stability is restored.
+`QUALIFY`. The 240K unique cold/warm gate proves chunked multimodal MRoPE
+alignment, prefix reuse, output identity, and engine survival on TP4. Merge the
+fix independently from the unresolved nested partial-prefix divergence.
+
+Long-context decode remains a separate problem: the controlled 32K-235K sweep
+reproduces the evaluation P10 and makes a numerically qualified direct
+paged-decode kernel the next performance priority. M1-15 later confirmed that
+another exact gather-layout rewrite does not improve the current E-ATTN-05
+production path.
