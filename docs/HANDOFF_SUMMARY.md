@@ -971,3 +971,17 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   `1.0164x`，40 层预计只省 `0.394 ms/token`，低于 5% 集成门槛，因此拒绝，
   不修改当前候选运行时。证据见
   `docs/experiments/E_MOE_19_SHARED_COMBINE_20260715.md`。
+
+## 2026-07-16 M1-14 MRoPE chunk 对齐与长上下文 decode 结论
+
+- 881 请求评测中的 engine-fatal 并非模型路径问题：MRoPE 位置张量保留了完整
+  `26,540` token，而本轮物理 query 只有 `64` token，最终在 rotary reshape
+  处触发 `shape '[26540, -1, 256]'`。
+- `fix/M1-14-mrope-chunk-alignment` 在完整 MRoPE 映射上按当前 prefill chunk
+  精确切片，并在 partial/full prefix hit 后同步裁剪。159 个本地测试通过；真实
+  CoreX vendor 函数验证三轴从 `26,540` 正确裁到 `64/64/64`。
+- 独立生产扫测在服务全程健康时得到 32K/64K/131K/235K 的 64-token decode
+  TPS 分别为 `10.188/7.024/5.120/3.698`。这复现了评测 P10 `4.03`，说明
+  MRoPE 修复后下一个高收益方向是 `>32768` 直接 paged decode，而非继续调整
+  YAML/scheduler 参数。
+- TP4 多模态 cold/warm 长请求门禁正在远端执行；通过前该修复不合入 `main`。
