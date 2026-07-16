@@ -1,12 +1,16 @@
 import ast
+import binascii
 import importlib.util
 import pathlib
+import struct
 import sys
 import tempfile
 import unittest
+import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PATCH_PATH = ROOT / "qwen3_6_scripts" / "patch_model_runner.py"
+API_PROBE_PATH = ROOT / "tests" / "mrope_chunk_api.py"
 MODEL_RUNNER = ROOT / "vllm" / "worker" / "model_runner.py"
 sys.path.insert(0, str(PATCH_PATH.parent))
 
@@ -14,6 +18,15 @@ sys.path.insert(0, str(PATCH_PATH.parent))
 def _load_patch_module():
     spec = importlib.util.spec_from_file_location(
         "qwen36_patch_model_runner_unit", PATCH_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_api_probe_module():
+    spec = importlib.util.spec_from_file_location(
+        "qwen36_mrope_chunk_api_unit", API_PROBE_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
@@ -78,6 +91,26 @@ class MropeChunkAlignmentTest(unittest.TestCase):
         helper = _load_slice_helper(source)
         with self.assertRaisesRegex(RuntimeError, "length mismatch"):
             helper([list(range(10)) for _ in range(3)], 3, 8, 6)
+
+    def test_api_probe_png_has_valid_chunks_and_payload(self):
+        data = _load_api_probe_module()._TEST_PNG
+        self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+        offset = 8
+        compressed = bytearray()
+        while offset < len(data):
+            length = struct.unpack(">I", data[offset:offset + 4])[0]
+            chunk_type = data[offset + 4:offset + 8]
+            payload = data[offset + 8:offset + 8 + length]
+            expected_crc = struct.unpack(
+                ">I", data[offset + 8 + length:offset + 12 + length])[0]
+            self.assertEqual(
+                binascii.crc32(chunk_type + payload) & 0xffffffff,
+                expected_crc,
+            )
+            if chunk_type == b"IDAT":
+                compressed.extend(payload)
+            offset += 12 + length
+        self.assertEqual(zlib.decompress(compressed), b"\x01\x00\xff")
 
     def test_patch_is_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:

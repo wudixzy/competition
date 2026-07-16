@@ -14,8 +14,8 @@ from typing import Any
 # A deterministic 1x1 PNG. The server image processor expands it to its
 # configured minimum size, while the repeated text forces chunked prefill.
 _TEST_PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
-    "/x8AAusB9Wl2nGQAAAAASUVORK5CYII=")
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+    "+A8AAQUBAScY42YAAAAASUVORK5CYII=")
 
 
 def _data_url() -> str:
