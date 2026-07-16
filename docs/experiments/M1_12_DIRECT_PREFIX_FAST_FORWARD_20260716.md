@@ -81,7 +81,7 @@ was explicitly rejected as a workaround.
 
 ## Status
 
-`READY_FOR_FIXED_RETRY`: 153 local tests pass with 22 environment skips when
+`QUALIFIED`: 153 local tests pass with 22 environment skips when
 the optional Pillow-dependent remote client test is excluded. The revised
 budget has a dependency-free unit test covering add/subtract behavior for
 physical 8 and logical 235000 tokens. The real vLLM 0.6.3
@@ -90,13 +90,31 @@ produces logical `token_chunk_size=235000`, physical
 `num_batched_tokens=8`, logical `num_scheduled_tokens=235000`, one scheduled
 group, and a running sequence as required.
 
-Production was restored to scheduler SHA-256
+Production was restored before the fixed retry to scheduler SHA-256
 `ef7e7c0e3bb50f5854df3348029d316637b601e978049ffc4861a9bcb52ffdc5`.
 Health and models endpoints return HTTP 200, all three TP4 workers are alive,
-`max_model_len=262144`, and a one-token chat smoke returns HTTP 200. The next
-candidate action is one fixed 8712-token cold/warm retry. A new model-runner,
-state, numerical, or engine-contract failure ends M1-12 without parameter
-tuning.
+`max_model_len=262144`, and a one-token chat smoke returns HTTP 200.
+
+The fixed 8712-token retry then passed: cold/warm wall time was
+`13.941s/1.104s`, the warm request reported 8704 cached tokens, selected the
+exact 8704-token GDN checkpoint, and executed one 8-token suffix. Both response
+message hashes were
+`08178bc1656d39216ebd0156dece0615f479841cbfc8445d428fa76c2e3f7595`;
+the server remained healthy with no statistics error.
+
+The fixed 235000-token qualification also passed. Cold/warm wall time was
+`548.585s/3.822s`, warm cached tokens were exactly 234992, and the scheduler
+executed one 8-token suffix from the 234992-token checkpoint. The response
+hash was identical cold/warm. Compared with M1-11's same one-token warm result
+of `39.698s`, direct fast-forward reduces warm wall time by 90.37%. The cold
+path does not select fast-forward and remained within the prior production
+range of `506.698-567.031s`.
+
+Post-long-context gates passed: full smoke `15/15`, Agent workload matrix
+`9/9`, and a fixed eight-request short decode run achieved 100% success,
+Output TPS P10 `21.9098`, TTFT P90 `2.0883s`, and cache hit rate `86.87%`.
+These results match the qualified production decode range, so M1-12 can be
+merged without any parameter or YAML change.
 
 The isolated instance exposes one healthy 32 GiB BI100 card, which is
 insufficient to load the 35B FP16 model without the unavailable second healthy
