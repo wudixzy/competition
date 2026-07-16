@@ -245,6 +245,19 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("do_convert_rgb=True", src)
         self.assertIn("input_data_format=ChannelDimension.LAST", src)
 
+    def test_model_runner_patch_aligns_mrope_with_physical_query(self):
+        src = read("qwen3_6_scripts/patch_model_runner.py")
+        unit_src = read("tests/test_mrope_chunk_alignment_unit.py")
+        self.assertIn("def _slice_mrope_positions", src)
+        self.assertIn("context_len=0", src)
+        self.assertIn("inter_data.seq_lens[seq_idx]", src)
+        self.assertIn("len(inter_data.input_tokens[seq_idx])", src)
+        self.assertIn("positions, uncomputed_start, None", src)
+        self.assertIn("test_chunked_multimodal_positions_match_current_query",
+                      unit_src)
+        self.assertIn("test_alignment_mismatch_fails_before_gpu_execution",
+                      unit_src)
+
     def test_scheduler_gates_kv_hits_on_exact_gdn_state(self):
         scheduler_src = read("qwen3_6_scripts/scheduler.py")
         model_src = read("qwen3_6_scripts/qwen3_5.py")
