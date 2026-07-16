@@ -990,3 +990,20 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 - 嵌套请求从 180,096-token partial hit 扩展到 240K 时曾与后续 full hit 输出
   分叉，但两个 full hit 相互一致，唯一零缓存 cold/warm 也一致；该问题作为独立
   prefix 分段数值/语义问题保留，不能再归因于 MRoPE shape 修复。
+
+## 2026-07-16 M1-15/M1-16 长上下文 attention 结论
+
+- M1-15 shared-memory tiled gather 在独立 native 对比中保持完全 exact 且看似
+  `1.96x-2.51x`，但与当前 E-ATTN-05 scalar CoreX 生产实现严格 A/B 后，
+  32K/64K/100K/235K 增量只有 `+0.6%/-0.1%/+0.03%/+0.1%`。该路线按 5%
+  门槛拒绝，不合入、不继续调 tile/grid；详见私有分支
+  `exp/M1-15-tiled-paged-gather`。
+- M1-16 保留 exact K、PyTorch FP32 QK 和全局 softmax，仅让 PV 直接读取
+  paged V。K/logits/weights 全 exact，100/100 输出满足 `1e-3`，worst abs
+  `1.5259e-5`，证明 E-ATTN-06 的 `0.05937` 主要来自 QK/分区 softmax；但
+  64K/100K 只有 `0.800x/0.830x`，故拒绝。详见私有分支
+  `exp/M1-16-exact-qk-direct-pv`。
+- CoreX WMMA 仅支持 FP16 matrix input + FP32 accumulator，不能保留当前
+  `query.float() @ key.float()` 的 FP32 输入语义。下一 direct kernel 不能依赖
+  WMMA 冒充 exact QK，也不能物化全局 weights；必须融合直接分页读取与稳定的
+  online softmax，并通过明确的模型级质量门禁。
