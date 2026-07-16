@@ -73,6 +73,41 @@ def _accumulate_gdn_cached_tokens(
     return (current_cached_tokens or 0) + newly_cached_tokens
 
 
+def _plan_gdn_prefix_fast_forward(
+        checkpoint_keys: Iterable[Tuple[int, ...]],
+        computed_block_nums: List[int], num_computed_tokens: int,
+        prompt_len: int, nominal_chunk_size: int,
+        remaining_token_budget: int, block_size: int) -> Tuple[int, int]:
+    """Return logical progress and physical query tokens for a direct hit.
+
+    The scheduler normally uses one value for both quantities. A GDN prefix
+    state makes it safe to advance over a much larger logical prefix while
+    sending only the suffix after that checkpoint to the model runner.
+    """
+    fallback = (nominal_chunk_size, nominal_chunk_size)
+    if (num_computed_tokens != 0 or prompt_len <= 0
+            or nominal_chunk_size <= 0 or remaining_token_budget <= 0
+            or block_size <= 0):
+        return fallback
+
+    strict_blocks = _limit_gdn_blocks_to_strict_prefix(
+        computed_block_nums, prompt_len, block_size)
+    selected_blocks = _select_gdn_prefix_checkpoint(
+        checkpoint_keys, strict_blocks)
+    if not selected_blocks:
+        return fallback
+
+    checkpoint_tokens = len(selected_blocks) * block_size
+    logical_chunk_size = min(
+        prompt_len, checkpoint_tokens + remaining_token_budget)
+    physical_query_tokens = logical_chunk_size - checkpoint_tokens
+    if (physical_query_tokens <= 0
+            or physical_query_tokens > remaining_token_budget
+            or logical_chunk_size <= nominal_chunk_size):
+        return fallback
+    return logical_chunk_size, physical_query_tokens
+
+
 class PreemptionMode(enum.Enum):
     """Preemption modes.
 
@@ -102,6 +137,9 @@ class SchedulingBudget:
     _request_ids_num_batched_tokens: Set[str] = field(default_factory=set)
     _request_ids_num_curr_seqs: Set[str] = field(default_factory=set)
     _num_batched_tokens: int = 0
+    _num_scheduled_tokens: int = 0
+    _request_num_scheduled_tokens: Dict[str, int] = field(
+        default_factory=dict)
     _num_curr_seqs: int = 0
 
     def can_schedule(self, *, num_new_tokens: int, num_new_seqs: int):
@@ -113,18 +151,26 @@ class SchedulingBudget:
     def remaining_token_budget(self):
         return self.token_budget - self.num_batched_tokens
 
-    def add_num_batched_tokens(self, req_id: str, num_batched_tokens: int):
+    def add_num_batched_tokens(
+            self, req_id: str, num_batched_tokens: int,
+            num_scheduled_tokens: Optional[int] = None):
         if req_id in self._request_ids_num_batched_tokens:
             return
 
+        if num_scheduled_tokens is None:
+            num_scheduled_tokens = num_batched_tokens
         self._request_ids_num_batched_tokens.add(req_id)
         self._num_batched_tokens += num_batched_tokens
+        self._num_scheduled_tokens += num_scheduled_tokens
+        self._request_num_scheduled_tokens[req_id] = num_scheduled_tokens
 
     def subtract_num_batched_tokens(self, req_id: str,
                                     num_batched_tokens: int):
         if req_id in self._request_ids_num_batched_tokens:
             self._request_ids_num_batched_tokens.remove(req_id)
             self._num_batched_tokens -= num_batched_tokens
+            self._num_scheduled_tokens -= (
+                self._request_num_scheduled_tokens.pop(req_id))
 
     def add_num_seqs(self, req_id: str, num_curr_seqs: int):
         if req_id in self._request_ids_num_curr_seqs:
@@ -141,6 +187,10 @@ class SchedulingBudget:
     @property
     def num_batched_tokens(self):
         return self._num_batched_tokens
+
+    @property
+    def num_scheduled_tokens(self):
+        return self._num_scheduled_tokens
 
     @property
     def num_curr_seqs(self):
@@ -1002,6 +1052,32 @@ class Scheduler:
             waiting_queue.popleft()
             self._allocate_and_set_running(seq_group)
 
+            budget_token_count = num_new_tokens
+            if (enable_chunking
+                    and self.cache_config.enable_prefix_caching
+                    and len(waiting_seqs) == 1):
+                computed_block_nums = list(
+                    self.block_manager.get_common_computed_block_ids(
+                        waiting_seqs))
+                num_new_tokens, budget_token_count = (
+                    _plan_gdn_prefix_fast_forward(
+                        self._gdn_prefix_checkpoints.keys(),
+                        computed_block_nums,
+                        waiting_seqs[0].data.get_num_computed_tokens(),
+                        waiting_seqs[0].data.get_len(),
+                        num_new_tokens,
+                        budget.remaining_token_budget(),
+                        self.cache_config.block_size))
+                if budget_token_count != num_new_tokens:
+                    logger.info(
+                        "[BI100 GDN FAST-FORWARD] request=%s "
+                        "checkpoint_tokens=%d logical_tokens=%d "
+                        "physical_query_tokens=%d",
+                        seq_group.request_id,
+                        num_new_tokens - budget_token_count,
+                        num_new_tokens,
+                        budget_token_count)
+
             if enable_chunking and self.scheduler_config.is_multi_step:
                 blocks_to_copy: List[Tuple[int, int]] = []
                 # init_multi_step_from_lookahead_slots happens in append_slots
@@ -1022,7 +1098,10 @@ class Scheduler:
             seq_groups.append(
                 ScheduledSequenceGroup(seq_group=seq_group,
                                        token_chunk_size=num_new_tokens))
-            budget.add_num_batched_tokens(seq_group.request_id, num_new_tokens)
+            budget.add_num_batched_tokens(
+                seq_group.request_id,
+                budget_token_count,
+                num_scheduled_tokens=num_new_tokens)
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
 
         # Queue requests that couldn't be scheduled.
@@ -1130,7 +1209,7 @@ class Scheduler:
         return SchedulerOutputs(
             scheduled_seq_groups=scheduled_seq_groups,
             num_prefill_groups=num_prefill_groups,
-            num_batched_tokens=budget.num_batched_tokens,
+            num_batched_tokens=budget.num_scheduled_tokens,
             blocks_to_swap_in=swapped_in.blocks_to_swap_in,
             blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
             blocks_to_copy=blocks_to_copy,
@@ -1211,7 +1290,7 @@ class Scheduler:
             num_prefill_groups=(len(prefills.seq_groups) +
                                 len(swapped_in.prefill_seq_groups) +
                                 len(running_scheduled.prefill_seq_groups)),
-            num_batched_tokens=budget.num_batched_tokens,
+            num_batched_tokens=budget.num_scheduled_tokens,
             blocks_to_swap_in=swapped_in.blocks_to_swap_in,
             blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
             blocks_to_copy=running_scheduled.blocks_to_copy +
