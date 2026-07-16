@@ -1053,3 +1053,14 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   `361/2013/4322`。固定其他项时需要约 `+466 Input TPS` 或 `+2329 Cache TPS`。
 - 下一项只审计 prefix-cache retention/admission 是否能在固定 KV 容量内保留短且
   高频共享前缀；先做 trace/simulation，不能修改 cache usage 记账或以 YAML 调参替代。
+
+## 2026-07-16 M1-21 cache trace 诊断分支
+
+- 现有公开材料只有理论 token-weighted prefix hit `65.6%`、会话分布和历史官方
+  `42%`，没有 881 请求的 block identity/order，不能直接修改 LRU。
+- 私有分支 `exp/M1-21-prefix-cache-trace@a84746c` 只输出 allocator 已计算的链式
+  block hash 和必要容量元数据，不输出 token/消息/tool/原始 request id，也不改变
+  allocator；离线模拟器比较现有 LRU 与一个固定 frequency-aware 策略。
+- 8 项行为测试、60 项聚焦/静态门禁及真实 vendor 源副本的两次幂等 patch/compile
+  通过。该分支默认打开 trace，只用于 diagnostic evaluator log，不能用于正式分数。
+- 正式提交继续使用 production `main`，不要合入 trace patch 或其 Docker ENV。
