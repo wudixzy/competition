@@ -1040,3 +1040,16 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 - 正确 vendor shared-memory 映射及 FP16 gate/up round-trip 后，三层仍稳定为
   worst abs `0.0078125`、mean abs 约 `4.61e-5`，超过 `1e-3/1e-5` 门禁。
   因此拒绝，不实现 W2、不调 WMMA tile、不做模型接入。
+
+## 2026-07-16 M1-20 当前评分组成
+
+- 当前 TP4 main 的 4K/7.8K/16K dataset-shaped 三组 cold/warm 回放 18/18
+  成功，Output TPS P10 `21.506`；服务 PID 23178 和 health/models 200 保持不变，
+  新日志无 fatal/OOM/Gloo/MRoPE/worker loss。
+- Cold Input TPS P10/aggregate 为 `587.5/719.4`，warm Cache TPS P10/aggregate
+  为 `3271.7/7716.5`。balanced cold/warm 的 TTFT P90 为 `21.454s`，cache hit
+  为 `49.93%`。
+- 聚合加权代理 `6696.0`，距 8000 约 1304 分；Output/Input/Cache 贡献约
+  `361/2013/4322`。固定其他项时需要约 `+466 Input TPS` 或 `+2329 Cache TPS`。
+- 下一项只审计 prefix-cache retention/admission 是否能在固定 KV 容量内保留短且
+  高频共享前缀；先做 trace/simulation，不能修改 cache usage 记账或以 YAML 调参替代。
