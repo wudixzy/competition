@@ -2,6 +2,19 @@
 
 ## 2026-07-17 当前 RC 状态
 
+- 私有 RC `rc/submission-preflight-20260717@215ca46` 已通过本地 174 项和
+  远端 CoreX 172 项单测，submission preflight 7/7；远端真实退出码均为 0。
+  RC 不改变模型 runtime 或 YAML 语义，证据见
+  `docs/experiments/M1_23_SUBMISSION_RC_AND_LONG_STABILITY_20260717.md`。
+- 三轮 TP4 长稳定性矩阵 18/18 通过：32K/65K/131K/235K 均为零缓存 cold、
+  完整 warm 命中且 8-token hash 一致；三次 1,000-token 短上下文 decode hash
+  一致，服务日志无 fatal/OOM/Gloo/shape/worker-loss。
+- 更强的 235K+1,000-token cold/warm 均完成且服务健康，但输出在生成 token 97
+  分叉；32K/65K/131K 的 256-token 对照均一致。下一 runtime 门禁 M1-24 必须
+  保留 cold 最后 scheduler chunk 的 replay 边界并复测，不得把当前结果误报为
+  完整长生成 bit-exact。
+- `ssh-913ffbfe` 未向容器透传 GPU PCI/字符设备，不能作为第二实验机；该问题
+  不是安装 Torch 可以修复的。
 - 当前 RC 由私有 ModelHub `main@46e8a12` 演进，提交时以通过本节门禁的 main
   最新 head 为准；M1-12 direct prefix
   fast-forward、M1-14 MRoPE chunk/prefix 对齐、E-MOE-20 direct routed decode
