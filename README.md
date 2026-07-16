@@ -23,7 +23,7 @@ docker run -dit --network=host --ipc=host \
   enginex-iluvatar-vllm:bi100-qwen3.6 \
   -m vllm.entrypoints.openai.api_server \
   --model /model --port 1111 --served-model-name llm \
-  --max-model-len 100000 --trust-remote-code -tp 4 --gpu-memory-utilization 0.90 \
+  --max-model-len 262144 --trust-remote-code -tp 4 --gpu-memory-utilization 0.90 \
   --max-num-seqs 1 --disable-log-requests --disable-frontend-multiprocessing \
   --max-num-batched-tokens 8192 --enable-chunked-prefill \
   --max-seq-len-to-capture 32768 --enable-auto-tool-choice \
@@ -52,6 +52,7 @@ curl http://localhost:1111/v1/chat/completions \
 可以直接使用 Python 标准库运行：
 
 ```bash
+python tests/submission_preflight.py
 python tests/test_p0_static.py
 python tests/test_clients_unit.py
 python tests/test_paged_attn_unit.py
@@ -63,7 +64,12 @@ python tests/test_patch_worker_profile_override_unit.py
 python tests/test_protocol_unit.py
 python tests/test_serving_chat_unit.py
 python tests/test_tool_parser_unit.py
+python tests/test_submission_preflight_unit.py
 ```
+
+`submission_preflight.py` 对根目录制品、固定 YAML argv/env、离线 wheel
+size/SHA256、关键文件 LF 换行、全部 shell 语法和 Python 语法执行统一 RC 门禁；
+任何检查失败都返回非 0，禁止提交。
 
 该检查覆盖 patch fail-fast、动态 vLLM/transformers 路径、registry alias、
 顶层 thinking、`tool_choice="none"`、streaming tool arguments 序列化、

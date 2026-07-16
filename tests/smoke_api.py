@@ -3,15 +3,14 @@ from __future__ import annotations
 
 import argparse
 import base64
-import io
 import json
 import pathlib
+import struct
 import time
 import urllib.error
 import urllib.request
+import zlib
 from typing import Any, Callable
-
-from PIL import Image
 
 
 Json = dict[str, Any]
@@ -418,10 +417,23 @@ def test_seed_determinism(base: str) -> None:
 
 
 def _solid_png_data_url(rgb: tuple[int, int, int]) -> str:
-    image = Image.new("RGB", (256, 256), color=rgb)
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    if len(rgb) != 3 or any(channel < 0 or channel > 255 for channel in rgb):
+        raise ValueError(f"invalid RGB color: {rgb}")
+
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        checksum = zlib.crc32(kind + payload) & 0xffffffff
+        return (struct.pack(">I", len(payload)) + kind + payload
+                + struct.pack(">I", checksum))
+
+    width = height = 256
+    scanline = b"\x00" + bytes(rgb) * width
+    payload = scanline * height
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    image = (b"\x89PNG\r\n\x1a\n"
+             + chunk(b"IHDR", header)
+             + chunk(b"IDAT", zlib.compress(payload, level=9))
+             + chunk(b"IEND", b""))
+    encoded = base64.b64encode(image).decode("ascii")
     return f"data:image/png;base64,{encoded}"
 
 

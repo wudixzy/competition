@@ -117,6 +117,9 @@ class P0StaticCoverageTest(unittest.TestCase):
     def test_smoke_client_http_error_paths_are_exercised(self):
         src = read("tests/smoke_api.py")
         unit_src = read("tests/test_clients_unit.py")
+        self.assertNotIn("from PIL", src)
+        self.assertIn("def _solid_png_data_url", src)
+        self.assertIn("zlib.compress", src)
         self.assertIn("except urllib.error.HTTPError", src)
         self.assertIn("except json.JSONDecodeError", src)
         self.assertIn("test_smoke_request_json_preserves_json_http_error_body",

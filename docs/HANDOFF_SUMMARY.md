@@ -1,5 +1,26 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-17 当前 RC 状态
+
+- 当前 RC 由私有 ModelHub `main@46e8a12` 演进，提交时以通过本节门禁的 main
+  最新 head 为准；M1-12 direct prefix
+  fast-forward、M1-14 MRoPE chunk/prefix 对齐、E-MOE-20 direct routed decode
+  和 E-GDN-14 packed decode 均已完成 TP4 资格并进入 main。
+- 当前生产实例使用 262144 context，GPU/CPU KV blocks 为 `16878/6553`，
+  health/models HTTP 200，短 decode Output TPS P10 为 `21.506`。本地评分回放
+  aggregate proxy 为 `6696.0`，仍需新的官方 881 结果验证真实得分。
+- M1-22 three-bucket cuBLAS MoE 因启动后 GPU KV blocks 降至 `9751`、只能容纳
+  `156016` tokens 而关闭；该实验不进入 main/YAML，也不得继续 bucket/workspace
+  参数扫描。
+- M1-21 cache trace 仅位于私有诊断分支，必须先取得真实 881 block 到达序列并让
+  离线模拟超过预设收益门槛，才允许修改 cache retention。正式性能提交不能包含
+  trace 开关。
+- 提交前运行 `python tests/submission_preflight.py`。它验证固定 YAML 合同、离线
+  wheel 哈希、Docker patch 入口、诊断开关隔离、LF 换行及源码语法。
+
+下方按时间保留早期实验和当时的“下一步”记录；发生冲突时以本节和日期更新较新的
+结论为准。
+
 ## 2026-07-16 真实评测与 MRoPE 致命错误
 
 最新 881 请求评测只有 269 成功、612 失败，Output TPS P10 `4.03`、TTFT P90
@@ -11,8 +32,8 @@ Q/K 仅对应一个小物理 chunk，最终触发 invalid view 并终止 async e
 M1-14 修复 vendor vLLM 0.6.3 的 chunk/prefix MRoPE 对齐：完整 MRoPE map 保留
 request-level delta，再精确切到 `[context_len:seq_len]`；partial/full prefix hit
 同步裁剪三个 position axes，并在进入 GPU 前检查长度等于物理 input token 数。
-本地 159 tests 通过、22 项环境跳过；第二实例真实 vendor 源码副本补丁和幂等
-`py_compile` 通过。TP4 长图片 cold/warm 回归通过前不合入 main。详情见
+本地 160 tests 通过、22 项环境跳过；第二实例真实 vendor 源码副本补丁和幂等
+`py_compile` 通过。TP4 长图片 cold/warm 回归随后通过并已合入 main。详情见
 `docs/experiments/M1_14_MROPE_CHUNK_ALIGNMENT_20260716.md`。
 
 ## 2026-07-16 当前主线与下一步
@@ -796,7 +817,7 @@ python3 tests/bench_perf.py --base http://127.0.0.1:8000 \
   --max-tokens 64 --prompt-salt A-clean --out bench-A.json
 ```
 
-性能矩阵建议按一次只改一个变量推进：
+以下性能矩阵是早期草案，已因主办方固定命令和后续 256K 资格要求作废，禁止执行：
 
 ```text
 A: max_num_batched_tokens=8192,  gpu_memory_util=0.90, tile=32
@@ -822,8 +843,8 @@ F: max_num_batched_tokens=12288, gpu_memory_util=0.92, tile=64
 
 ## Docker 状态
 
-当前阶段按项目要求未执行 Docker build。Docker build 是最终收尾步骤，应在远端
-smoke、benchmark 和必要调参完成后再运行：
+当前本地主机没有 Docker CLI，不能在此重建镜像；ModelHub 构建和同基础镜像的远端
+`patch_ops.sh`/TP4 服务资格已经通过。最终提交仍应由平台重新构建，并检查完整日志：
 
 ```bash
 docker build -t qwen36-bi100-dev . 2>&1 | tee build.log

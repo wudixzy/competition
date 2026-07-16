@@ -10,10 +10,10 @@
 #   - DO NOT install BI-V150 corex Triton 2.1.0 (pkgs/triton): that causes
 #     GPU hang on BI-V100 because the Triton CUDA PTX kernels are incompatible.
 
-# Recommended server start command for TP=4 support 100K, needs chunked prefill
+# Recommended server start command for TP=4 support 256K, needs chunked prefill
 # CUDA_VISIBLE_DEVICES="4,5,6,7" VLLM_ENGINE_ITERATION_TIMEOUT_S=3600 python3 -m vllm.entrypoints.openai.api_server \
 #     --model /workspace/models/Qwen3.6-35B-A3B --port 1111 --served-model-name llm \
-#     --max-model-len 100000 --trust-remote-code -tp 4 --gpu-memory-utilization 0.90 \
+#     --max-model-len 262144 --trust-remote-code -tp 4 --gpu-memory-utilization 0.90 \
 #     --max-num-seqs 1 --disable-log-requests --disable-frontend-multiprocessing \
 #     --max-num-batched-tokens 8192 --enable-chunked-prefill --enable-prefix-caching \
 #     --max-seq-len-to-capture 32768 --enable-auto-tool-choice \
@@ -22,7 +22,7 @@
 # With prefix caching (GDN align-mode, requires chunked prefill):
 # CUDA_VISIBLE_DEVICES="4,5,6,7" VLLM_ENGINE_ITERATION_TIMEOUT_S=3600 python3 -m vllm.entrypoints.openai.api_server \
 #     --model /workspace/models/Qwen3.6-35B-A3B --port 1111 --served-model-name llm \
-#     --max-model-len 100000 --trust-remote-code -tp 4 --gpu-memory-utilization 0.90 \
+#     --max-model-len 262144 --trust-remote-code -tp 4 --gpu-memory-utilization 0.90 \
 #     --max-num-seqs 1 --disable-log-requests --disable-frontend-multiprocessing \
 #     --max-num-batched-tokens 8192 --enable-chunked-prefill --enable-prefix-caching \
 #     --max-seq-len-to-capture 32768 --enable-auto-tool-choice \

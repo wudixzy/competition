@@ -1,8 +1,11 @@
+import base64
 import json
 import pathlib
+import struct
 import sys
 import tempfile
 import unittest
+import zlib
 from io import BytesIO
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -53,6 +56,28 @@ def _stream_chunks() -> list[dict | str]:
 
 
 class StreamingClientTest(unittest.TestCase):
+
+    def test_smoke_solid_png_uses_only_stdlib_and_preserves_rgb(self):
+        encoded = smoke_api._solid_png_data_url((12, 34, 56)).split(",", 1)[1]
+        image = base64.b64decode(encoded)
+        self.assertEqual(image[:8], b"\x89PNG\r\n\x1a\n")
+
+        offset = 8
+        chunks = {}
+        while offset < len(image):
+            size = struct.unpack(">I", image[offset:offset + 4])[0]
+            kind = image[offset + 4:offset + 8]
+            payload = image[offset + 8:offset + 8 + size]
+            chunks.setdefault(kind, []).append(payload)
+            offset += 12 + size
+        width, height = struct.unpack(">II", chunks[b"IHDR"][0][:8])
+        self.assertEqual((width, height), (256, 256))
+        raw = zlib.decompress(b"".join(chunks[b"IDAT"]))
+        self.assertEqual(raw[:4], b"\x00\x0c\x22\x38")
+        self.assertEqual(raw[-3:], b"\x0c\x22\x38")
+
+        with self.assertRaises(ValueError):
+            smoke_api._solid_png_data_url((256, 0, 0))
 
     def test_benchmark_first_event_supports_all_output_delta_types(self):
         deltas = [
