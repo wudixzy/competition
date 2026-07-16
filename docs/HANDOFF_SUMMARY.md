@@ -1029,3 +1029,14 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   原因是成本而非正确性。即使取消 global weights 写回，也没有超过 5% 的理论空间。
 - M1-18 按前置门禁拒绝，不实现、不调 kernel。当前 long-context direct-decode
   路线关闭，下一步必须回到 M1-11 全模型 profile 选择其他评分热点。
+
+## 2026-07-16 M1-19 effective-tile MoE 结论
+
+- 真实 7,800-token、40-layer route trace 的 16-row expert-tail padding 只有
+  `1.02897x-1.03282x`，证明 vLLM/MegaBlocks 风格 tile map 能消除旧 hybrid
+  的 1.77x 重尾工作量。
+- 固定 BI100 WMMA `16x32x32` 的 W13+activation 原型在三层达到
+  `1.702x/1.705x/1.733x`，workspace 约 17.0 MB，padding exact zero。
+- 正确 vendor shared-memory 映射及 FP16 gate/up round-trip 后，三层仍稳定为
+  worst abs `0.0078125`、mean abs 约 `4.61e-5`，超过 `1e-3/1e-5` 门禁。
+  因此拒绝，不实现 W2、不调 WMMA tile、不做模型接入。
