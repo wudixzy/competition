@@ -45,16 +45,26 @@ the evaluator Docker critical path:
    only the submission build path changes.
 
 The freshly built bundle loaded 10/10 libraries on the authoritative CoreX
-host. Local unit discovery passes 176 tests with 22 environment skips, and
-submission preflight passes 8/8 including the binary-set and hash gate.
+host. A Docker-equivalent run against a copy of the base image's original
+site-package vLLM completed the full `patch_ops.sh` flow in 13 seconds,
+including all hashes, dynamic loads, transformers/vLLM patching, import gates,
+and Python compilation. The old compiler-only phase took 227 seconds.
+
+Local and remote unit discovery both pass 176 tests with 22 environment skips.
+Local and remote submission preflight pass 8/8 including the binary-set and
+hash gate. Evidence remains on the CoreX host under
+`/tmp/docker-build-fix-validation/`; the production service stayed unchanged
+and returned HTTP 200 from both health endpoints after validation.
 
 ## Remaining gates
 
-Before replacing production main, obtain at least one of:
+The candidate is qualified for merging as a build-reliability fix. To close
+the incident's root-cause analysis, still obtain at least one of:
 
 - the platform build log proving the old compiler path, timeout, or related
   resource failure; or
-- a clean Docker build of this branch from the official `v1.2.3` base image.
+- a clean platform Docker build of this branch from the official `v1.2.3`
+  base image.
 
 After merge, rerun the platform image build while the repository is public and
 archive the final build log. Runtime TP4 performance is expected to be
