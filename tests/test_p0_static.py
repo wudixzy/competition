@@ -355,7 +355,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
         build_src = read("qwen3_6_scripts/build_corex_gdn_causal_conv.sh")
-        self.assertIn("build_corex_gdn_causal_conv.sh", patch_ops)
+        self.assertNotIn("build_corex_gdn_causal_conv.sh", patch_ops)
         self.assertIn("corex_gdn_causal_conv.so", build_src)
         self.assertIn("_USE_COREX_GDN_CAUSAL_CONV", qwen_src)
         self.assertIn("BI100_GDN_COREX_CAUSAL_CONV", qwen_src)
@@ -365,7 +365,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
         build_src = read("qwen3_6_scripts/build_corex_gdn_gated_norm.sh")
-        self.assertIn("build_corex_gdn_gated_norm.sh", patch_ops)
+        self.assertNotIn("build_corex_gdn_gated_norm.sh", patch_ops)
         self.assertIn("corex_gdn_gated_norm.so", build_src)
         self.assertIn("BI100_GDN_COREX_GATED_NORM", qwen_src)
         self.assertIn("forward_decode", qwen_src)
@@ -376,7 +376,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
         build_src = read("qwen3_6_scripts/build_corex_gdn_beta_decay.sh")
         kernel_src = read("qwen3_6_scripts/corex_gdn_beta_decay.cu")
-        self.assertIn("build_corex_gdn_beta_decay.sh", patch_ops)
+        self.assertNotIn("build_corex_gdn_beta_decay.sh", patch_ops)
         self.assertIn("corex_gdn_beta_decay.so", build_src)
         self.assertIn("BI100_GDN_COREX_BETA_DECAY", qwen_src)
         self.assertIn("_corex_gdn_beta_decay.beta_decay", qwen_src)
@@ -389,7 +389,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
         build_src = read("qwen3_6_scripts/build_corex_gdn_qk_map.sh")
         kernel_src = read("qwen3_6_scripts/corex_gdn_qk_map.cu")
-        self.assertIn("build_corex_gdn_qk_map.sh", patch_ops)
+        self.assertNotIn("build_corex_gdn_qk_map.sh", patch_ops)
         self.assertIn("corex_gdn_qk_map.so", build_src)
         self.assertIn("BI100_GDN_COREX_QK_MAP", qwen_src)
         self.assertIn("_corex_gdn_qk_map.qk_map", qwen_src)
@@ -402,7 +402,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         build_src = read("qwen3_6_scripts/build_corex_gdn_packed_decode.sh")
         kernel_src = read("qwen3_6_scripts/corex_gdn_packed_decode.cu")
         run_config = read("computility-run.yaml")
-        self.assertIn("build_corex_gdn_packed_decode.sh", patch_ops)
+        self.assertNotIn("build_corex_gdn_packed_decode.sh", patch_ops)
         self.assertIn("corex_gdn_packed_decode.so", build_src)
         self.assertIn('env_bool("BI100_GDN_COREX_PACKED_DECODE", False)',
                       qwen_src)
@@ -420,7 +420,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
         build_src = read("qwen3_6_scripts/build_corex_attn_head_rms_norm.sh")
         kernel_src = read("qwen3_6_scripts/corex_attn_head_rms_norm.cu")
-        self.assertIn("build_corex_attn_head_rms_norm.sh", patch_ops)
+        self.assertNotIn("build_corex_attn_head_rms_norm.sh", patch_ops)
         self.assertIn("corex_attn_head_rms_norm.so", build_src)
         self.assertIn("BI100_ATTN_COREX_HEAD_RMS_NORM", qwen_src)
         self.assertIn("class Qwen3_5AttentionHeadRMSNorm", qwen_src)
@@ -433,7 +433,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
         build_src = read("qwen3_6_scripts/build_corex_moe_exact_reduce.sh")
-        self.assertIn("build_corex_moe_exact_reduce.sh", patch_ops)
+        self.assertNotIn("build_corex_moe_exact_reduce.sh", patch_ops)
         self.assertIn("corex_moe_exact_reduce.so", build_src)
         self.assertIn("BI100_MOE_COREX_EXACT_REDUCE", qwen_src)
         self.assertIn("_corex_moe_exact_reduce.serial_float", qwen_src)
@@ -446,7 +446,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
         build_src = read("qwen3_6_scripts/build_corex_moe_weight_gather.sh")
         kernel_src = read("qwen3_6_scripts/corex_moe_weight_gather.cu")
-        self.assertIn("build_corex_moe_weight_gather.sh", patch_ops)
+        self.assertNotIn("build_corex_moe_weight_gather.sh", patch_ops)
         self.assertIn("corex_moe_weight_gather.so", build_src)
         self.assertIn("BI100_MOE_COREX_WEIGHT_GATHER", qwen_src)
         self.assertIn("_corex_moe_weight_gather.gather", qwen_src)
@@ -461,7 +461,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         kernel_src = read("qwen3_6_scripts/corex_moe_direct_routed.cu")
         knobs = read("docs/ENV_KNOBS.md")
         submission = read("computility-run.yaml")
-        self.assertIn("build_corex_moe_direct_routed.sh", patch_ops)
+        self.assertNotIn("build_corex_moe_direct_routed.sh", patch_ops)
         self.assertIn("corex_moe_direct_routed.so", build_src)
         self.assertIn(
             'env_bool("BI100_MOE_COREX_DIRECT_ROUTED", False)', qwen_src)
@@ -483,7 +483,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         paged_src = read("qwen3_6_scripts/paged_attn.py")
         build_src = read("qwen3_6_scripts/build_corex_paged_kv_gather.sh")
-        self.assertIn("build_corex_paged_kv_gather.sh", patch_ops)
+        self.assertNotIn("build_corex_paged_kv_gather.sh", patch_ops)
         self.assertIn("corex_paged_kv_gather.so", build_src)
         self.assertIn("BI100_ATTN_COREX_PAGED_GATHER", paged_src)
         self.assertIn("_corex_paged_kv_gather.gather", paged_src)
@@ -513,6 +513,31 @@ class P0StaticCoverageTest(unittest.TestCase):
             self.assertIn(name, dockerfile)
         self.assertIn("[BI100 BUILD]", patch_ops)
         self.assertEqual(patch_ops.splitlines()[0], "#!/usr/bin/env bash")
+
+    def test_patch_ops_installs_hash_pinned_corex_bundle_without_compiler(self):
+        patch_ops = read("qwen3_6_scripts/patch_ops.sh")
+        installer = read("qwen3_6_scripts/install_prebuilt_corex.sh")
+        manifest = read(
+            "qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/SHA256SUMS")
+        artifacts = [
+            "corex_attn_head_rms_norm.so",
+            "corex_gdn_beta_decay.so",
+            "corex_gdn_causal_conv.so",
+            "corex_gdn_gated_norm.so",
+            "corex_gdn_packed_decode.so",
+            "corex_gdn_qk_map.so",
+            "corex_moe_direct_routed.so",
+            "corex_moe_exact_reduce.so",
+            "corex_moe_weight_gather.so",
+            "corex_paged_kv_gather.so",
+        ]
+        self.assertIn("bash ./install_prebuilt_corex.sh", patch_ops)
+        self.assertNotIn("build_corex_", patch_ops)
+        self.assertIn("sha256sum --strict --check SHA256SUMS", installer)
+        self.assertIn("torch.ops.load_library", installer)
+        self.assertEqual(len(manifest.splitlines()), len(artifacts))
+        for artifact in artifacts:
+            self.assertIn(artifact, manifest)
 
     def test_patch_ops_uses_offline_transformers_wheel_and_metadata_gate(self):
         src = read("qwen3_6_scripts/patch_ops.sh")

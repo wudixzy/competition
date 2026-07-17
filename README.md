@@ -8,6 +8,11 @@
 docker build -t enginex-iluvatar-vllm:bi100-qwen3.6 -f Dockerfile .
 ```
 
+Docker 构建会校验并安装仓库内由 CoreX 3.2.3/ivcore10 生成的 10 个扩展，
+不在评测构建阶段重新运行 clang。扩展源码和独立构建脚本仍保留用于开发，正式
+镜像只接受 `qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/SHA256SUMS`
+中固定的二进制。
+
 
 启动容器镜像
 
@@ -68,8 +73,8 @@ python tests/test_submission_preflight_unit.py
 ```
 
 `submission_preflight.py` 对根目录制品、固定 YAML argv/env、离线 wheel
-size/SHA256、关键文件 LF 换行、全部 shell 语法和 Python 语法执行统一 RC 门禁；
-任何检查失败都返回非 0，禁止提交。
+size/SHA256、10 个预编译 CoreX 扩展的集合/大小/SHA256、关键文件 LF 换行、
+全部 shell 语法和 Python 语法执行统一 RC 门禁；任何检查失败都返回非 0，禁止提交。
 
 该检查覆盖 patch fail-fast、动态 vLLM/transformers 路径、registry alias、
 顶层 thinking、`tool_choice="none"`、streaming tool arguments 序列化、
