@@ -21,31 +21,14 @@ class PrebuiltCorexInstallerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
             vllm_root = root / "vllm"
-            fake_packages = root / "fake_packages"
             vllm_root.mkdir()
-            fake_packages.mkdir()
-            (fake_packages / "torch.py").write_text(
-                """\
-import pathlib
-
-class _Ops:
-    def load_library(self, path):
-        if not pathlib.Path(path).is_file():
-            raise RuntimeError(path)
-
-ops = _Ops()
-""",
-                encoding="utf-8",
-            )
-            environment = os.environ.copy()
-            environment["PYTHONPATH"] = str(fake_packages)
             completed = subprocess.run(
                 ["bash", str(INSTALLER), str(vllm_root)],
                 check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=environment,
+                env=os.environ.copy(),
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             installed = {path.name for path in vllm_root.glob("corex_*.so")}
@@ -53,7 +36,7 @@ ops = _Ops()
             for name in EXPECTED_NAMES:
                 mode = (vllm_root / name).stat().st_mode
                 self.assertTrue(mode & stat.S_IXUSR)
-            self.assertEqual(completed.stdout.count("[ok] loaded"), 10)
+            self.assertEqual(completed.stdout.count("[ok] installed"), 10)
 
 
 if __name__ == "__main__":

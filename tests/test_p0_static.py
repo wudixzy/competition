@@ -534,7 +534,10 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("bash ./install_prebuilt_corex.sh", patch_ops)
         self.assertNotIn("build_corex_", patch_ops)
         self.assertIn("sha256sum --strict --check SHA256SUMS", installer)
-        self.assertIn("torch.ops.load_library", installer)
+        self.assertNotIn("import torch", installer)
+        self.assertNotIn("torch.ops.load_library", installer)
+        self.assertIn('header[:4] != b"\\x7fELF"', installer)
+        self.assertIn("machine != 62", installer)
         self.assertEqual(len(manifest.splitlines()), len(artifacts))
         for artifact in artifacts:
             self.assertIn(artifact, manifest)

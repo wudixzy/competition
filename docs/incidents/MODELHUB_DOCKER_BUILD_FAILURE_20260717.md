@@ -2,11 +2,11 @@
 
 ## Status
 
-The competition platform reported that public production commit `c9ed891`
-failed during image construction. Repository visibility was public for the
-submission, so this incident is distinct from the earlier private-clone
-failure. The platform build log is still required to identify the exact
-failing command.
+The competition platform reported that public production commits `c9ed891`
+and `7cb514e` failed during image construction. Repository visibility was
+public for both submissions, so this incident is distinct from the earlier
+private-clone failure. The platform build log is still required to identify
+the exact failing command.
 
 Do not attribute the failure to transformers, CoreX compilation, timeout,
 disk, or the base-image registry until the final failing log region is
@@ -28,6 +28,11 @@ available.
 The 227-second compiler path is therefore a material timeout and build
 reliability risk, but it is not yet proven to be this platform failure's root
 cause.
+
+The second failure on `7cb514e` shows that removing the compiler path was not
+by itself sufficient to make the platform build pass. It does not prove that
+the prebuilt bundle is invalid: ModelHub `main` points to the expected commit,
+the ten binary objects are tracked, and their fixed manifest passes locally.
 
 ## Build-hardening candidate
 
@@ -56,6 +61,23 @@ hash gate. Evidence remains on the CoreX host under
 `/tmp/docker-build-fix-validation/`; the production service stayed unchanged
 and returned HTTP 200 from both health endpoints after validation.
 
+## No-build-dlopen contingency
+
+Commit `7cb514e` also calls `torch.ops.load_library` for all ten extensions
+inside the Docker build layer. This passed on the CoreX host, but the platform
+builder may not expose GPU devices or driver libraries. Without the platform
+failure tail this is a risk hypothesis, not a confirmed root cause.
+
+Branch `fix/docker-build-no-dlopen` removes that build-host dependency while
+retaining the fixed SHA-256 manifest, exact artifact set, non-empty-file gate,
+and 64-bit little-endian x86-64 ELF validation. Runtime behavior is unchanged:
+the model and paged-attention modules import the `vllm.corex_*` extension
+modules during service startup, so an ABI or loader failure still prevents the
+service from becoming ready. The branch passes 176 local tests with 22 skips
+and submission preflight 8/8. It must not replace `main` until its isolated
+CoreX patch flow passes or the platform log identifies this build-time load as
+the failing step.
+
 ## Remaining gates
 
 The candidate is qualified for merging as a build-reliability fix. To close
@@ -70,3 +92,9 @@ After merge, rerun the platform image build while the repository is public and
 archive the final build log. Runtime TP4 performance is expected to be
 unchanged because the candidate installs the same source-built extensions and
 does not change `computility-run.yaml` or model code.
+
+For either a successful or failed rerun, retain the complete interval from the
+first `[BI100 BUILD]` line through the final Docker error, together with the
+failed Docker step number and total build duration. A status-only "image build
+failed" result is insufficient to choose safely between registry, file-copy,
+dependency, patch-anchor, loader, and platform-timeout failures.

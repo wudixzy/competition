@@ -40,15 +40,23 @@ done
 
 python3 - "$VLLM_ROOT" "${artifacts[@]}" <<'PY'
 import pathlib
+import struct
 import sys
-
-import torch
 
 root = pathlib.Path(sys.argv[1])
 for name in sys.argv[2:]:
     path = root / name
     if not path.is_file() or path.stat().st_size == 0:
         raise SystemExit(f"installed CoreX extension is empty: {path}")
-    torch.ops.load_library(str(path))
-    print(f"[ok] loaded prebuilt CoreX extension {path}")
+    header = path.read_bytes()[:20]
+    if len(header) < 20 or header[:4] != b"\x7fELF":
+        raise SystemExit(f"installed CoreX extension is not ELF: {path}")
+    if header[4:6] != b"\x02\x01":
+        raise SystemExit(
+            f"installed CoreX extension is not 64-bit little-endian ELF: {path}")
+    machine = struct.unpack_from("<H", header, 18)[0]
+    if machine != 62:
+        raise SystemExit(
+            f"installed CoreX extension is not x86-64 ELF: {path} machine={machine}")
+    print(f"[ok] installed prebuilt CoreX extension {path}")
 PY
