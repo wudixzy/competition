@@ -61,14 +61,14 @@ hash gate. Evidence remains on the CoreX host under
 `/tmp/docker-build-fix-validation/`; the production service stayed unchanged
 and returned HTTP 200 from both health endpoints after validation.
 
-## No-build-dlopen contingency
+## Explicit no-build-dlopen contingency
 
 Commit `7cb514e` also calls `torch.ops.load_library` for all ten extensions
 inside the Docker build layer. This passed on the CoreX host, but the platform
 builder may not expose GPU devices or driver libraries. Without the platform
 failure tail this is a risk hypothesis, not a confirmed root cause.
 
-Branch `fix/docker-build-no-dlopen` removes that build-host dependency while
+Branch `fix/docker-build-no-dlopen` removes that explicit build-host dependency while
 retaining the fixed SHA-256 manifest, exact artifact set, non-empty-file gate,
 and 64-bit little-endian x86-64 ELF validation. Runtime behavior is unchanged:
 the model and paged-attention modules import the `vllm.corex_*` extension
@@ -87,9 +87,44 @@ support the build-environment hypothesis; another failure still requires the
 platform failure tail and must not be attributed to the binaries without that
 evidence.
 
+## Static model-registry verification
+
+A follow-up audit found that `ba22e68` did not fully eliminate build-time
+runtime loading. `patch_vllm_qwen3_5.py` still executed the installed
+`qwen3_5.py` module as an optional verification step. That module imports
+Torch, vLLM, and all available `vllm.corex_*` extension modules at module load
+time. The installer no longer called `torch.ops.load_library`, but the model
+verification could still perform equivalent indirect loads and could hang or
+fail on a platform builder without GPU devices or driver exposure.
+
+Implementation milestone `fe37107` replaces that execution with fail-fast
+static verification:
+
+1. parse the installed model source with `ast.parse`;
+2. require both Qwen3.5 causal-LM class declarations;
+3. require all six exact Qwen3/Qwen3.5/Qwen3.6 registry aliases;
+4. prohibit `exec_module`, `import torch`, and `load_library` in the registry
+   patcher through submission preflight;
+5. prove with a unit fixture that model-module import side effects are never
+   executed.
+
+Local discovery passes 177 tests with 22 skips and submission preflight passes
+8/8. On the CoreX 3.2.3 host, a fresh private-ModelHub clone patched isolated
+copies of the base-image vLLM and Transformers packages in less than one
+second. Its complete build log contained no Torch/CUDA, TensorFlow, Triton, or
+model-class dynamic-import markers. A separate runtime process then loaded all
+10 extensions, and production `/health` plus `/v1/models` remained HTTP 200.
+
+This is the first candidate in this incident that removes both custom
+compilation and model/runtime execution from the Docker patch layer while
+preserving runtime startup failure on an invalid extension ABI. It still does
+not establish the historical platform root cause without the missing platform
+failure tail.
+
 ## Remaining gates
 
-The candidate is qualified for merging as a build-reliability fix. To close
+The static-verification candidate is qualified for merging as a
+build-reliability fix. To close
 the incident's root-cause analysis, still obtain at least one of:
 
 - the platform build log proving the old compiler path, timeout, or related
