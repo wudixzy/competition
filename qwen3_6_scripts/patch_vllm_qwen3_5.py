@@ -10,10 +10,22 @@ The registry patch installs Qwen3.6 aliases so /model/config.json does not
 need to be edited by hand.
 """
 
+import ast
+
 from patch_utils import package_root, replace_once
 
 VLLM_ROOT = package_root("vllm")
 REGISTRY = VLLM_ROOT / "model_executor" / "models" / "registry.py"
+MODEL = VLLM_ROOT / "model_executor" / "models" / "qwen3_5.py"
+
+EXPECTED_REGISTRY_ENTRIES = (
+    '"Qwen3ForCausalLM": ("qwen3_5", "Qwen3_5ForCausalLM")',
+    '"Qwen3MoeForCausalLM": ("qwen3_5", "Qwen3_5MoeForCausalLM")',
+    '"Qwen3_5ForCausalLM": ("qwen3_5", "Qwen3_5ForCausalLM")',
+    '"Qwen3_5MoeForCausalLM": ("qwen3_5", "Qwen3_5MoeForCausalLM")',
+    '"Qwen3_6ForCausalLM": ("qwen3_5", "Qwen3_5ForCausalLM")',
+    '"Qwen3_6MoeForCausalLM": ("qwen3_5", "Qwen3_5MoeForCausalLM")',
+)
 
 
 def main():
@@ -31,22 +43,28 @@ def main():
         required=True,
         already_contains='"Qwen3_6MoeForCausalLM"')
 
-    print("\n=== Verification ===")
-    try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "qwen3_5",
-            str(VLLM_ROOT / "model_executor" / "models" / "qwen3_5.py"),
-        )
-        mod = importlib.util.module_from_spec(spec)
-        # Quick check: does the class exist?
-        spec.loader.exec_module(mod)
-        cls = mod.Qwen3_5ForCausalLM
-        print(f"  Qwen3_5ForCausalLM found: {cls}")
-        cls_moe = mod.Qwen3_5MoeForCausalLM
-        print(f"  Qwen3_5MoeForCausalLM found: {cls_moe}")
-    except Exception as e:
-        print(f"  [optional] verification failed (may be OK at runtime): {e}")
+    print("\n=== Static verification ===")
+    model_source = MODEL.read_text(encoding="utf-8")
+    tree = ast.parse(model_source, filename=str(MODEL))
+    class_names = {
+        node.name for node in tree.body if isinstance(node, ast.ClassDef)
+    }
+    required_classes = {"Qwen3_5ForCausalLM", "Qwen3_5MoeForCausalLM"}
+    missing_classes = required_classes - class_names
+    if missing_classes:
+        raise RuntimeError(
+            f"Qwen3.5 model classes missing: {sorted(missing_classes)}")
+
+    registry_source = REGISTRY.read_text(encoding="utf-8")
+    missing_entries = [
+        entry for entry in EXPECTED_REGISTRY_ENTRIES
+        if entry not in registry_source
+    ]
+    if missing_entries:
+        raise RuntimeError(
+            f"Qwen3.5 registry entries missing: {missing_entries}")
+    print("  model syntax and class declarations verified without import")
+    print(f"  registry aliases verified: {len(EXPECTED_REGISTRY_ENTRIES)}")
 
     print("\nDone. Registry aliases installed; do not edit /model/config.json.")
 

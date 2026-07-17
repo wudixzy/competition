@@ -103,6 +103,28 @@ class RegistryPatchUnitTest(unittest.TestCase):
                 with redirect_stdout(StringIO()):
                     module.main()
 
+    def test_registry_verification_does_not_execute_model_module(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            package = _make_fake_vllm(
+                root, "MODEL_REGISTRY = {\n" + _REGISTRY_ANCHOR + "\n}\n")
+            marker = root / "model-imported"
+            model = package / "model_executor" / "models" / "qwen3_5.py"
+            model.write_text(
+                f"open({str(marker)!r}, 'w').write('executed')\n\n"
+                "class Qwen3_5ForCausalLM:\n"
+                "    ...\n\n"
+                "class Qwen3_5MoeForCausalLM:\n"
+                "    ...\n",
+                encoding="utf-8",
+            )
+            module = _load_patch_module(root)
+
+            with redirect_stdout(StringIO()):
+                module.main()
+
+            self.assertFalse(marker.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

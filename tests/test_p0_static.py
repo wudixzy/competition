@@ -50,10 +50,16 @@ class P0StaticCoverageTest(unittest.TestCase):
         ]:
             self.assertIn(name, src)
         self.assertNotIn("Set config.json", src)
+        self.assertIn("ast.parse", src)
+        self.assertNotIn("exec_module", src)
+        self.assertNotIn("import torch", src)
         self.assertIn("test_registry_alias_patch_installs_qwen36_aliases",
                       unit_src)
         self.assertIn("test_registry_alias_patch_fails_fast_when_anchor_missing",
                       unit_src)
+        self.assertIn(
+            "test_registry_verification_does_not_execute_model_module",
+            unit_src)
 
     def test_protocol_thinking_and_tool_choice_none(self):
         src = read("qwen3_6_scripts/protocol.py")

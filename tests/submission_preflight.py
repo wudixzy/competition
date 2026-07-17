@@ -205,6 +205,16 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
         ]:
             if fragment not in text:
                 raise ValueError(f"Dockerfile missing: {fragment}")
+        registry_patcher = (
+            root / "qwen3_6_scripts" / "patch_vllm_qwen3_5.py"
+        ).read_text(encoding="utf-8")
+        for forbidden in ("exec_module", "import torch", "load_library"):
+            if forbidden in registry_patcher:
+                raise ValueError(
+                    "model registry patch executes runtime code during image "
+                    f"construction: {forbidden}")
+        if "ast.parse" not in registry_patcher:
+            raise ValueError("model registry patch lacks static AST verification")
         return "base image and offline patch entrypoint match"
 
     def wheel_asset() -> str:
