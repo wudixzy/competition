@@ -74,9 +74,18 @@ and 64-bit little-endian x86-64 ELF validation. Runtime behavior is unchanged:
 the model and paged-attention modules import the `vllm.corex_*` extension
 modules during service startup, so an ABI or loader failure still prevents the
 service from becoming ready. The branch passes 176 local tests with 22 skips
-and submission preflight 8/8. It must not replace `main` until its isolated
-CoreX patch flow passes or the platform log identifies this build-time load as
-the failing step.
+and submission preflight 8/8. On the CoreX 3.2.3 host, a complete patch against
+isolated copies of the base-image vLLM and Transformers packages took 11
+seconds, remote preflight passed 8/8, and a separate runtime process loaded all
+10 installed extensions. The production service was not restarted and stayed
+HTTP 200 on `/health` and `/v1/models` before and after validation.
+
+This qualifies the contingency for a fast-forward into `main`: it removes a
+build-only dependency without changing the files installed into vLLM, model
+behavior, or the evaluator launch contract. A successful platform build would
+support the build-environment hypothesis; another failure still requires the
+platform failure tail and must not be attributed to the binaries without that
+evidence.
 
 ## Remaining gates
 
