@@ -941,6 +941,11 @@ class SequenceGroupMetadataDelta(
     computed_block_nums: Optional[List[int]] = None
     state: Optional[SequenceGroupState] = msgspec.field(
         default_factory=lambda: SequenceGroupState())
+    # BI100 hybrid prefix-cache actions. Fields are appended for msgspec wire
+    # compatibility with the pre-existing array-like structure.
+    gdn_restore_key: Optional[Tuple[int, bytes]] = None
+    gdn_capture_points: Optional[List[Tuple[int, Tuple[int, bytes]]]] = None
+    gdn_evict_keys: Optional[List[Tuple[int, bytes]]] = None
 
 
 class SequenceGroupMetadata(
@@ -1006,6 +1011,11 @@ class SequenceGroupMetadata(
     # Zero means speculative decoding is disabled for some reasons.
     # TODO: We should maintain this states out of the sequence group.
     num_speculative_tokens: Optional[int] = None
+    # BI100 hybrid prefix-cache actions. These are internal scheduler-to-worker
+    # metadata and never surface through the OpenAI API.
+    gdn_restore_key: Optional[Tuple[int, bytes]] = None
+    gdn_capture_points: Optional[List[Tuple[int, Tuple[int, bytes]]]] = None
+    gdn_evict_keys: Optional[List[Tuple[int, bytes]]] = None
 
     def __post_init__(self):
         if self.seq_data is not None and self.token_chunk_size is None:
@@ -1052,6 +1062,12 @@ class SequenceGroupMetadata(
         self.token_chunk_size = sequence_group_metadata_delta.token_chunk_size
         self.do_sample = sequence_group_metadata_delta.do_sample
         self.is_prompt = sequence_group_metadata_delta.is_prompt
+        self.computed_block_nums = (
+            sequence_group_metadata_delta.computed_block_nums)
+        self.gdn_restore_key = sequence_group_metadata_delta.gdn_restore_key
+        self.gdn_capture_points = (
+            sequence_group_metadata_delta.gdn_capture_points)
+        self.gdn_evict_keys = sequence_group_metadata_delta.gdn_evict_keys
 
     def finish_step(self) -> None:
         assert self.state is not None

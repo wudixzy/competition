@@ -1,7 +1,17 @@
 """A block manager that manages token blocks."""
-from typing import Dict, List, Optional
-from typing import Sequence as GenericSequence
-from typing import Tuple
+import hashlib
+import struct
+from collections.abc import Mapping
+from typing import Any, Dict, List, Optional, Sequence as GenericSequence, Tuple
+
+try:
+    from PIL import Image
+except Exception:  # pragma: no cover - optional dependency in some envs
+    Image = None  # type: ignore
+try:
+    import torch
+except Exception:  # pragma: no cover - optional dependency in some envs
+    torch = None  # type: ignore
 
 from vllm.core.block.block_table import BlockTable
 from vllm.core.block.cpu_gpu_block_allocator import CpuGpuBlockAllocator
@@ -10,11 +20,14 @@ from vllm.core.block.prefix_caching_block import (ComputedBlocksTracker,
                                                   LastAccessBlocksTracker)
 from vllm.core.block.utils import check_no_caching_or_swa_for_blockmgr_encdec
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
+from vllm.logger import init_logger
 from vllm.sequence import Sequence, SequenceGroup, SequenceStatus
 from vllm.utils import Device
 
 SeqId = int
 EncoderSeqId = str
+
+logger = init_logger(__name__)
 
 
 class BlockSpaceManagerV2(BlockSpaceManager):
@@ -99,6 +112,7 @@ class BlockSpaceManagerV2(BlockSpaceManager):
 
         self.block_tables: Dict[SeqId, BlockTable] = {}
         self.cross_block_tables: Dict[EncoderSeqId, BlockTable] = {}
+        self._warned_mm_namespace_requests = set[str]()
 
         self._computed_blocks_tracker = ComputedBlocksTracker(
             self.block_allocator)
@@ -144,11 +158,16 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         else:
             return AllocStatus.LATER
 
-    def _allocate_sequence(self, seq: Sequence) -> BlockTable:
+    def _allocate_sequence(
+        self,
+        seq: Sequence,
+        cache_namespace: Optional[bytes] = None,
+    ) -> BlockTable:
         block_table = BlockTable(
             block_size=self.block_size,
             block_allocator=self.block_allocator,
             max_block_sliding_window=self.max_block_sliding_window,
+            cache_namespace=cache_namespace,
         )
         if seq.get_token_ids():
             # Add blocks to the block table only if the sequence is non empty.
@@ -166,7 +185,15 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         # NOTE: Here we assume that all sequences in the group have the same
         # prompt.
         seq = waiting_seqs[0]
-        block_table: BlockTable = self._allocate_sequence(seq)
+        request_id = seq_group.request_id
+        cache_namespace = self._get_cache_namespace(
+            seq,
+            request_id=request_id
+        )
+        block_table: BlockTable = self._allocate_sequence(
+            seq,
+            cache_namespace=cache_namespace,
+        )
         self.block_tables[seq.seq_id] = block_table
 
         # Track seq
@@ -196,8 +223,31 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         if seq_group.is_encoder_decoder():
             encoder_seq = seq_group.get_encoder_seq()
             assert encoder_seq is not None
-            block_table = self._allocate_sequence(encoder_seq)
+            encoder_cache_namespace = self._get_cache_namespace(
+                encoder_seq,
+                request_id=request_id)
+            block_table = self._allocate_sequence(
+                encoder_seq, cache_namespace=encoder_cache_namespace)
             self.cross_block_tables[request_id] = block_table
+
+    def _get_cache_namespace(self, seq: Sequence,
+                             request_id: str) -> bytes:
+        if not seq.multi_modal_data:
+            return b""
+
+        try:
+            return self._hash_multi_modal_namespace(seq.multi_modal_data)
+        except TypeError:
+            if request_id not in self._warned_mm_namespace_requests:
+                logger.warning(
+                    "Request %s has unsupported multimodal input for cache "
+                    "namespace hashing. Falling back to request-local "
+                    "namespace isolation.",
+                    request_id,
+                )
+                self._warned_mm_namespace_requests.add(request_id)
+            return self._request_local_fallback_cache_namespace(
+                request_id=request_id)
 
     def can_append_slots(self, seq_group: SequenceGroup,
                          num_lookahead_slots: int) -> bool:
@@ -323,6 +373,100 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         # NOTE(sang): This assumes seq_block_ids doesn't contain any None.
         return self.block_allocator.get_common_computed_block_ids(
             computed_seq_block_ids)  # type: ignore
+
+    def get_content_hashes(self, seq: Sequence) -> List[bytes]:
+        return self.block_tables[seq.seq_id].get_content_hashes()
+
+    def _request_local_fallback_cache_namespace(self,
+                                               request_id: str) -> bytes:
+        return hashlib.sha256(
+            ("multimodal-unsupported:" + request_id).encode()).digest()
+
+    def _hash_multi_modal_namespace(self, mm_data: Any) -> bytes:
+        digest = hashlib.sha256()
+        self._hash_multi_modal_obj(digest, mm_data)
+        return digest.digest()
+
+    @staticmethod
+    def _sort_map_keys(mm_map: Mapping[Any, Any]) -> List[Any]:
+        return sorted(mm_map.keys(), key=lambda key: repr(key))
+
+    @classmethod
+    def _hash_multi_modal_obj(cls, digest: Any, value: Any) -> None:
+        if value is None:
+            digest.update(b"none|")
+            return
+        if isinstance(value, Mapping):
+            digest.update(b"map|")
+            digest.update(struct.pack("!Q", len(value)))
+            for key in cls._sort_map_keys(value):
+                digest.update(b"k|")
+                cls._hash_multi_modal_obj(digest, key)
+                digest.update(b"v|")
+                cls._hash_multi_modal_obj(digest, value[key])
+            return
+        if isinstance(value, list):
+            digest.update(b"list|")
+            digest.update(struct.pack("!Q", len(value)))
+            for item in value:
+                cls._hash_multi_modal_obj(digest, item)
+            return
+        if isinstance(value, tuple):
+            digest.update(b"tuple|")
+            digest.update(struct.pack("!Q", len(value)))
+            for item in value:
+                cls._hash_multi_modal_obj(digest, item)
+            return
+        if isinstance(value, str):
+            encoded = value.encode()
+            digest.update(b"str|")
+            digest.update(struct.pack("!Q", len(encoded)))
+            digest.update(encoded)
+            return
+        if isinstance(value, bytes):
+            digest.update(b"bytes|")
+            digest.update(struct.pack("!Q", len(value)))
+            digest.update(value)
+            return
+        if isinstance(value, bytearray):
+            cls._hash_multi_modal_obj(digest, bytes(value))
+            return
+        if isinstance(value, bool):
+            digest.update(b"bool|")
+            digest.update(b"1" if value else b"0")
+            return
+        if isinstance(value, int):
+            digest.update(b"int|")
+            digest.update(str(value).encode())
+            return
+        if isinstance(value, float):
+            digest.update(b"float|")
+            digest.update(struct.pack("!d", value))
+            return
+        if torch is not None and isinstance(value, torch.Tensor):
+            digest.update(b"tensor|")
+            tensor = value.detach().cpu().contiguous()
+            digest.update(struct.pack("!Q", len(tensor.shape)))
+            for dim in tensor.shape:
+                digest.update(struct.pack("!Q", int(dim)))
+            digest.update(str(tensor.dtype).encode())
+            # Byte views work for bfloat16 and other dtypes that NumPy cannot
+            # materialize directly.
+            tensor_bytes = tensor.view(torch.uint8).numpy().tobytes()
+            digest.update(struct.pack("!Q", len(tensor_bytes)))
+            digest.update(tensor_bytes)
+            return
+        if Image is not None and isinstance(value, Image.Image):
+            digest.update(b"image|")
+            digest.update(value.mode.encode())
+            digest.update(struct.pack("!II", value.width, value.height))
+            image_bytes = value.tobytes()
+            digest.update(struct.pack("!Q", len(image_bytes)))
+            digest.update(image_bytes)
+            return
+
+        raise TypeError(f"Unsupported multimodal namespace value type {type(value)}")
+
 
     def fork(self, parent_seq: Sequence, child_seq: Sequence) -> None:
         if parent_seq.seq_id not in self.block_tables:

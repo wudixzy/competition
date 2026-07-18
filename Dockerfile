@@ -8,4 +8,7 @@ ENV VLLM_ENGINE_ITERATION_TIMEOUT_S=3600 PYTHONUNBUFFERED=1 PYTHONFAULTHANDLER=1
 RUN mkdir /workspace
 WORKDIR /workspace/
 COPY ./qwen3_6_scripts /workspace/qwen3_6_scripts
+COPY ./vllm/core/block/prefix_caching_block.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block/prefix_caching_block.py
+COPY ./vllm/core/block/block_table.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block/block_table.py
+COPY ./vllm/core/block_manager_v2.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block_manager_v2.py
 RUN cd ./qwen3_6_scripts && bash ./patch_ops.sh

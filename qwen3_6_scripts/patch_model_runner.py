@@ -137,6 +137,163 @@ MULTIMODAL_MROPE_REPLACEMENT = """\
                 inter_data.mrope_input_positions[
                     seq_idx] = mrope_input_positions"""
 
+MODEL_INPUT_FIELDS_ANCHOR = """\
+    multi_modal_kwargs: Optional[BatchedTensorInputs] = None
+    request_ids_to_seq_ids: Optional[Dict[str, List[int]]] = None"""
+
+MODEL_INPUT_FIELDS_REPLACEMENT = """\
+    multi_modal_kwargs: Optional[BatchedTensorInputs] = None
+    # BI100 scheduler-owned GDN prefix-cache actions. These plain Python
+    # objects are included in the multiprocess model-input broadcast.
+    gdn_restore_key: Optional[Tuple[int, bytes]] = None
+    gdn_capture_points: Optional[List[Tuple[int, Tuple[int, bytes]]]] = None
+    gdn_evict_keys: Optional[List[Tuple[int, bytes]]] = None
+    request_ids_to_seq_ids: Optional[Dict[str, List[int]]] = None"""
+
+BASE_BROADCAST_ANCHOR = """\
+            \"multi_modal_kwargs\": self.multi_modal_kwargs,
+            \"prompt_adapter_mapping\": self.prompt_adapter_mapping,
+            \"prompt_adapter_requests\": self.prompt_adapter_requests,
+            \"virtual_engine\": self.virtual_engine,
+            \"request_ids_to_seq_ids\": self.request_ids_to_seq_ids,
+            \"finished_requests_ids\": self.finished_requests_ids,
+        }
+        _add_attn_metadata_broadcastable_dict(tensor_dict, self.attn_metadata)
+        return tensor_dict
+
+    @classmethod"""
+
+BASE_BROADCAST_REPLACEMENT = """\
+            \"multi_modal_kwargs\": self.multi_modal_kwargs,
+            \"gdn_restore_key\": self.gdn_restore_key,
+            \"gdn_capture_points\": self.gdn_capture_points,
+            \"gdn_evict_keys\": self.gdn_evict_keys,
+            \"prompt_adapter_mapping\": self.prompt_adapter_mapping,
+            \"prompt_adapter_requests\": self.prompt_adapter_requests,
+            \"virtual_engine\": self.virtual_engine,
+            \"request_ids_to_seq_ids\": self.request_ids_to_seq_ids,
+            \"finished_requests_ids\": self.finished_requests_ids,
+        }
+        _add_attn_metadata_broadcastable_dict(tensor_dict, self.attn_metadata)
+        return tensor_dict
+
+    @classmethod"""
+
+SAMPLING_BROADCAST_ANCHOR = """\
+            \"multi_modal_kwargs\": self.multi_modal_kwargs,
+            \"prompt_adapter_mapping\": self.prompt_adapter_mapping,
+            \"prompt_adapter_requests\": self.prompt_adapter_requests,
+            \"virtual_engine\": self.virtual_engine,
+            \"request_ids_to_seq_ids\": self.request_ids_to_seq_ids,
+            \"finished_requests_ids\": self.finished_requests_ids,
+        }
+        _add_attn_metadata_broadcastable_dict(tensor_dict, self.attn_metadata)
+        _add_sampling_metadata_broadcastable_dict(tensor_dict,
+                                                  self.sampling_metadata)"""
+
+SAMPLING_BROADCAST_REPLACEMENT = """\
+            \"multi_modal_kwargs\": self.multi_modal_kwargs,
+            \"gdn_restore_key\": self.gdn_restore_key,
+            \"gdn_capture_points\": self.gdn_capture_points,
+            \"gdn_evict_keys\": self.gdn_evict_keys,
+            \"prompt_adapter_mapping\": self.prompt_adapter_mapping,
+            \"prompt_adapter_requests\": self.prompt_adapter_requests,
+            \"virtual_engine\": self.virtual_engine,
+            \"request_ids_to_seq_ids\": self.request_ids_to_seq_ids,
+            \"finished_requests_ids\": self.finished_requests_ids,
+        }
+        _add_attn_metadata_broadcastable_dict(tensor_dict, self.attn_metadata)
+        _add_sampling_metadata_broadcastable_dict(tensor_dict,
+                                                  self.sampling_metadata)"""
+
+BUILDER_INIT_ANCHOR = """\
+        self.finished_requests_ids = finished_requests_ids
+        self.decode_only = True
+
+        # Intermediate data"""
+
+BUILDER_INIT_REPLACEMENT = """\
+        self.finished_requests_ids = finished_requests_ids
+        self.decode_only = True
+        self.gdn_restore_key = None
+        self.gdn_capture_points = None
+        self.gdn_evict_keys = None
+
+        # Intermediate data"""
+
+ADD_SEQ_GROUP_ANCHOR = """\
+    def add_seq_group(self, seq_group_metadata: SequenceGroupMetadata):
+        \"\"\"Add a sequence group to the builder.\"\"\"
+        seq_ids = seq_group_metadata.seq_data.keys()"""
+
+ADD_SEQ_GROUP_REPLACEMENT = """\
+    def add_seq_group(self, seq_group_metadata: SequenceGroupMetadata):
+        \"\"\"Add a sequence group to the builder.\"\"\"
+        gdn_actions = (
+            seq_group_metadata.gdn_restore_key,
+            seq_group_metadata.gdn_capture_points,
+            seq_group_metadata.gdn_evict_keys,
+        )
+        if any(value is not None for value in gdn_actions):
+            if not seq_group_metadata.is_prompt:
+                raise RuntimeError(\"GDN prefix-cache actions require prefill\")
+            if any(value is not None for value in (
+                    self.gdn_restore_key, self.gdn_capture_points,
+                    self.gdn_evict_keys)):
+                raise RuntimeError(
+                    \"only one GDN prefix-cache action group is supported\")
+            (self.gdn_restore_key, self.gdn_capture_points,
+             self.gdn_evict_keys) = gdn_actions
+        seq_ids = seq_group_metadata.seq_data.keys()"""
+
+BUILD_RESULT_ANCHOR = """\
+            lora_mapping=lora_mapping,
+            lora_requests=lora_requests,
+            multi_modal_kwargs=multi_modal_kwargs,
+            request_ids_to_seq_ids=request_ids_to_seq_ids,"""
+
+BUILD_RESULT_REPLACEMENT = """\
+            lora_mapping=lora_mapping,
+            lora_requests=lora_requests,
+            multi_modal_kwargs=multi_modal_kwargs,
+            gdn_restore_key=self.gdn_restore_key,
+            gdn_capture_points=self.gdn_capture_points,
+            gdn_evict_keys=self.gdn_evict_keys,
+            request_ids_to_seq_ids=request_ids_to_seq_ids,"""
+
+EXECUTE_KWARGS_ANCHOR = """\
+        seqlen_agnostic_kwargs = {
+            \"finished_requests_ids\": model_input.finished_requests_ids,
+            \"request_ids_to_seq_ids\": model_input.request_ids_to_seq_ids,
+        } if self.has_inner_state else {}
+        if (self.observability_config is not None"""
+
+EXECUTE_KWARGS_REPLACEMENT = """\
+        seqlen_agnostic_kwargs = {
+            \"finished_requests_ids\": model_input.finished_requests_ids,
+            \"request_ids_to_seq_ids\": model_input.request_ids_to_seq_ids,
+        } if self.has_inner_state else {}
+        gdn_prefix_kwargs = {}
+        if model_input.gdn_restore_key is not None:
+            gdn_prefix_kwargs[\"gdn_restore_key\"] = model_input.gdn_restore_key
+        if model_input.gdn_capture_points is not None:
+            gdn_prefix_kwargs[\"gdn_capture_points\"] = (
+                model_input.gdn_capture_points)
+        if model_input.gdn_evict_keys is not None:
+            gdn_prefix_kwargs[\"gdn_evict_keys\"] = model_input.gdn_evict_keys
+        if (self.observability_config is not None"""
+
+MODEL_CALL_ANCHOR = """\
+                **MultiModalInputs.as_kwargs(multi_modal_kwargs,
+                                             device=self.device),
+                **seqlen_agnostic_kwargs)"""
+
+MODEL_CALL_REPLACEMENT = """\
+                **MultiModalInputs.as_kwargs(multi_modal_kwargs,
+                                             device=self.device),
+                **seqlen_agnostic_kwargs,
+                **gdn_prefix_kwargs)"""
+
 
 def patch_model_runner(model_runner: pathlib.Path) -> None:
     replace_once(
@@ -173,6 +330,54 @@ def patch_model_runner(model_runner: pathlib.Path) -> None:
         MULTIMODAL_MROPE_REPLACEMENT,
         required=True,
         already_contains="Compute the full MRoPE map once",
+    )
+    replace_once(
+        model_runner,
+        MODEL_INPUT_FIELDS_ANCHOR,
+        MODEL_INPUT_FIELDS_REPLACEMENT,
+        already_contains="gdn_restore_key: Optional[Tuple[int, bytes]]",
+    )
+    replace_once(
+        model_runner,
+        BASE_BROADCAST_ANCHOR,
+        BASE_BROADCAST_REPLACEMENT,
+        already_contains=BASE_BROADCAST_REPLACEMENT,
+    )
+    replace_once(
+        model_runner,
+        SAMPLING_BROADCAST_ANCHOR,
+        SAMPLING_BROADCAST_REPLACEMENT,
+        already_contains=SAMPLING_BROADCAST_REPLACEMENT,
+    )
+    replace_once(
+        model_runner,
+        BUILDER_INIT_ANCHOR,
+        BUILDER_INIT_REPLACEMENT,
+        already_contains="self.gdn_restore_key = None",
+    )
+    replace_once(
+        model_runner,
+        ADD_SEQ_GROUP_ANCHOR,
+        ADD_SEQ_GROUP_REPLACEMENT,
+        already_contains="gdn_actions = (",
+    )
+    replace_once(
+        model_runner,
+        BUILD_RESULT_ANCHOR,
+        BUILD_RESULT_REPLACEMENT,
+        already_contains="gdn_restore_key=self.gdn_restore_key",
+    )
+    replace_once(
+        model_runner,
+        EXECUTE_KWARGS_ANCHOR,
+        EXECUTE_KWARGS_REPLACEMENT,
+        already_contains="gdn_prefix_kwargs = {}",
+    )
+    replace_once(
+        model_runner,
+        MODEL_CALL_ANCHOR,
+        MODEL_CALL_REPLACEMENT,
+        already_contains="**gdn_prefix_kwargs)",
     )
 
 

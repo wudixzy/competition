@@ -1,4 +1,6 @@
 """Token blocks."""
+import hashlib
+import struct
 from os.path import commonprefix
 from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
@@ -9,7 +11,7 @@ from vllm.core.block.naive_block import (BlockPool, NaiveBlock,
                                          NaiveBlockAllocator)
 from vllm.core.evictor_v2 import EvictionPolicy, Evictor, make_evictor
 
-PrefixHash = int
+PrefixHash = bytes
 
 # By default, we init our block access time as _DEFAULT_LAST_ACCESSED_TIME
 # so that if we find one block is still hold _DEFAULT_LAST_ACCESSED_TIME,
@@ -71,6 +73,7 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         # A mapping of prefix hash to block index. All blocks which have a
         # prefix hash will be in this dict, even if they have refcount 0.
         self._cached_blocks: Dict[PrefixHash, BlockId] = {}
+        self._cache_namespace: Optional[bytes] = None
 
         # A list of immutable block IDs that have been touched by scheduler
         # and should be marked as computed after an entire batch of sequences
@@ -124,6 +127,7 @@ class PrefixCachingBlockAllocator(BlockAllocator):
     ) -> Block:
         # Bind block to self.
         allocator = self
+        cache_namespace = self._cache_namespace
 
         return PrefixCachingBlock(
             prev_block=prev_block,
@@ -132,7 +136,109 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             block_id=block_id,
             allocator=allocator,
             computed=computed,
+            cache_namespace=cache_namespace,
         )
+
+    def _init_block(
+        self,
+        prev_block: Optional[Block],
+        token_ids: List[int],
+        block_size: int,
+        *,
+        physical_block_id: Optional[int] = None,
+        cache_namespace: Optional[bytes] = None,
+    ) -> Block:
+        prev_namespace = self._cache_namespace
+        self._cache_namespace = cache_namespace
+        try:
+            return self._block_pool.init_block(
+                prev_block=prev_block,
+                token_ids=token_ids,
+                block_size=block_size,
+                physical_block_id=physical_block_id)
+        finally:
+            self._cache_namespace = prev_namespace
+
+    def allocate_immutable_block_with_cache_namespace(
+        self,
+        prev_block: Optional[Block],
+        token_ids: List[int],
+        cache_namespace: bytes,
+        device: Optional[Device] = None,
+    ) -> Block:
+        """Allocates an immutable block with a namespace prefix."""
+        assert device is None
+        assert_prefix_caching_block_or_none(prev_block)
+
+        block = self._init_block(prev_block=prev_block,
+                                 token_ids=token_ids,
+                                 block_size=self._block_size,
+                                 physical_block_id=None,
+                                 cache_namespace=cache_namespace)
+        assert block.content_hash is not None
+
+        cached_block_id = self._cached_blocks.get(block.content_hash, None)
+        if cached_block_id is not None:
+            self.metric_data.query(hit=True)
+            block.block_id = cached_block_id
+            self._incr_refcount_cached_block(block)
+            return block
+        self.metric_data.query(hit=False)
+        self._block_pool.free_block(block)
+
+        block = self.allocate_mutable_block_with_cache_namespace(
+            prev_block=prev_block,
+            cache_namespace=cache_namespace,
+            device=device)
+        block.append_token_ids(token_ids)
+        return block
+
+    def allocate_immutable_blocks_with_cache_namespace(
+            self,
+            prev_block: Optional[Block],
+            block_token_ids: List[List[int]],
+            cache_namespace: bytes,
+            device: Optional[Device] = None) -> List[Block]:
+        if not block_token_ids:
+            return []
+
+        blocks = []
+        prev_block = self.allocate_immutable_block_with_cache_namespace(
+            prev_block=prev_block,
+            token_ids=block_token_ids[0],
+            cache_namespace=cache_namespace,
+            device=device)
+        blocks.append(prev_block)
+
+        for token_ids in block_token_ids[1:]:
+            prev_block = self.allocate_immutable_block_with_cache_namespace(
+                prev_block=prev_block,
+                token_ids=token_ids,
+                cache_namespace=cache_namespace,
+                device=device)
+            blocks.append(prev_block)
+
+        return blocks
+
+    def allocate_mutable_block_with_cache_namespace(
+        self,
+        prev_block: Optional[Block],
+        cache_namespace: bytes,
+        device: Optional[Device] = None,
+    ) -> Block:
+        """Allocates a mutable block with an optional namespace context."""
+        assert device is None
+        assert_prefix_caching_block_or_none(prev_block)
+
+        block_id = self._allocate_block_id()
+        block = self._init_block(prev_block=prev_block,
+                                 token_ids=[],
+                                 block_size=self._block_size,
+                                 physical_block_id=block_id,
+                                 cache_namespace=cache_namespace)
+        assert not block.computed
+        assert block.content_hash is None
+        return block
 
     def allocate_immutable_block(self,
                                  prev_block: Optional[Block],
@@ -148,29 +254,11 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         Returns:
             Block: The allocated immutable block.
         """
-        assert device is None
-        assert_prefix_caching_block_or_none(prev_block)
-
-        # First, try to create a block that points to cached data
-        block = self._block_pool.init_block(prev_block=prev_block,
-                                            token_ids=token_ids,
-                                            block_size=self._block_size,
-                                            physical_block_id=None)
-        assert block.content_hash is not None
-
-        cached_block_id = self._cached_blocks.get(block.content_hash, None)
-        if cached_block_id is not None:
-            self.metric_data.query(hit=True)
-            block.block_id = cached_block_id
-            self._incr_refcount_cached_block(block)
-            return block
-        self.metric_data.query(hit=False)
-        self._block_pool.free_block(block)
-
-        # No cached block => Allocate a new block
-        block = self.allocate_mutable_block(prev_block)
-        block.append_token_ids(token_ids)
-        return block
+        return self.allocate_immutable_block_with_cache_namespace(
+            prev_block=prev_block,
+            token_ids=token_ids,
+            cache_namespace=b"",
+            device=device)
 
     def allocate_immutable_blocks(
             self,
@@ -202,10 +290,10 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         assert_prefix_caching_block_or_none(prev_block)
 
         block_id = self._allocate_block_id()
-        block = self._block_pool.init_block(prev_block=prev_block,
-                                            token_ids=[],
-                                            block_size=self._block_size,
-                                            physical_block_id=block_id)
+        block = self._init_block(prev_block=prev_block,
+                                 token_ids=[],
+                                 block_size=self._block_size,
+                                 physical_block_id=block_id)
         assert not block.computed
         assert block.content_hash is None
         return block
@@ -663,6 +751,7 @@ class PrefixCachingBlock(Block):
         allocator: BlockAllocator,
         block_id: Optional[int] = None,
         computed: bool = False,
+        cache_namespace: Optional[bytes] = None,
     ):
         assert isinstance(allocator, PrefixCachingBlockAllocator), (
             "Currently this class is only tested with "
@@ -671,7 +760,10 @@ class PrefixCachingBlock(Block):
         assert_prefix_caching_block_or_none(prev_block)
 
         self._prev_block = prev_block
-        self._cached_content_hash: Optional[int] = None
+        self._cached_content_hash: Optional[bytes] = None
+        self._cache_namespace = cache_namespace or b""
+        if self._prev_block is not None and not self._cache_namespace:
+            self._cache_namespace = self._prev_block.cache_namespace
         self._cached_num_tokens_total: int = 0
         self._allocator = allocator
         self._last_accessed: float = _DEFAULT_LAST_ACCESSED_TIME
@@ -786,7 +878,11 @@ class PrefixCachingBlock(Block):
         return self._prev_block
 
     @property
-    def content_hash(self) -> Optional[int]:
+    def cache_namespace(self) -> bytes:
+        return self._cache_namespace
+
+    @property
+    def content_hash(self) -> Optional[bytes]:
         """Return the content-based hash of the current block, or None if it is
         not yet defined.
 
@@ -815,12 +911,17 @@ class PrefixCachingBlock(Block):
         self._cached_content_hash = PrefixCachingBlock.hash_block_tokens(
             is_first_block,
             prev_block_hash,
-            cur_block_token_ids=self.token_ids)
+            cur_block_token_ids=self.token_ids,
+            cache_namespace=self._cache_namespace)
         return self._cached_content_hash
 
     @staticmethod
-    def hash_block_tokens(is_first_block: bool, prev_block_hash: Optional[int],
-                          cur_block_token_ids: List[int]) -> int:
+    def hash_block_tokens(
+        is_first_block: bool,
+        prev_block_hash: Optional[PrefixHash],
+        cur_block_token_ids: List[int],
+        cache_namespace: Optional[bytes] = None,
+    ) -> bytes:
         """Computes a hash value corresponding to the contents of a block and
         the contents of the preceding block(s). The hash value is used for
         prefix caching.
@@ -836,10 +937,22 @@ class PrefixCachingBlock(Block):
             block. The current block is assumed to be full.
 
         Returns:
-        - int: The computed hash value for the block.
+        - bytes: The computed hash value for the block.
         """
         assert (prev_block_hash is None) == is_first_block
-        return hash((is_first_block, prev_block_hash, *cur_block_token_ids))
+        digest = hashlib.sha256()
+        digest.update(b"vllm-prefix-cache-v2")
+        if is_first_block:
+            digest.update(cache_namespace or b"")
+        else:
+            assert prev_block_hash is not None
+            digest.update(prev_block_hash)
+
+        if cur_block_token_ids:
+            digest.update(struct.pack(
+                f"!{len(cur_block_token_ids)}q",
+                *(int(token_id) for token_id in cur_block_token_ids)))
+        return digest.digest()
 
 
 class ComputedBlocksTracker:

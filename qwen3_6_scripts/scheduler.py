@@ -2,7 +2,7 @@ import enum
 import os
 import random
 import time
-from collections import OrderedDict, deque
+from collections import deque
 from dataclasses import dataclass, field
 from typing import (Callable, Deque, Dict, Iterable, List, Optional, Set,
                     Tuple, Union)
@@ -17,6 +17,22 @@ from vllm.sequence import (Sequence, SequenceData, SequenceGroup,
                            SequenceStatus)
 from vllm.utils import Device, PyObjectCache
 
+try:
+    from vllm.gdn_prefix import (GdnPrefixKey, GdnPrefixStatePolicy,
+                                 capture_points_for_step,
+                                 final_capture_key,
+                                 gdn_cache_policy_from_env,
+                                 gdn_restore_mode_from_env,
+                                 key_at_strict_boundary,
+                                 keys_from_block_hashes,
+                                 strict_prefix_block_count)
+except ImportError:  # Local source-tree tests.
+    from qwen3_6_scripts.gdn_prefix import (
+        GdnPrefixKey, GdnPrefixStatePolicy, capture_points_for_step,
+        final_capture_key, gdn_cache_policy_from_env,
+        gdn_restore_mode_from_env, key_at_strict_boundary,
+        keys_from_block_hashes, strict_prefix_block_count)
+
 logger = init_logger(__name__)
 
 # Test-only. If configured, decode is preempted with
@@ -27,55 +43,8 @@ ARTIFICIAL_PREEMPTION_PROB = 0.5
 ARTIFICIAL_PREEMPTION_MAX_CNT = 500
 
 
-def _select_gdn_prefix_checkpoint(
-        checkpoint_keys: Iterable[Tuple[int, ...]],
-        computed_block_nums: List[int]) -> List[int]:
-    """Return the longest computed prefix with an exact GDN state."""
-    best: Tuple[int, ...] = ()
-    for key in checkpoint_keys:
-        key_len = len(key)
-        if (key_len > len(best)
-                and key_len <= len(computed_block_nums)
-                and tuple(computed_block_nums[:key_len]) == key):
-            best = key
-    return list(best)
-
-
-def _make_gdn_prefix_checkpoint(
-        block_table: List[int], previous_computed_tokens: int,
-        total_computed_tokens: int,
-        block_size: int) -> Optional[Tuple[int, ...]]:
-    """Build the last complete-block key strictly before this step's end."""
-    if total_computed_tokens <= 1:
-        return None
-    boundary_tokens = ((total_computed_tokens - 1) // block_size) * block_size
-    if boundary_tokens <= previous_computed_tokens:
-        return None
-    num_blocks = boundary_tokens // block_size
-    if len(block_table) < num_blocks:
-        return None
-    return tuple(block_table[:num_blocks])
-
-
-def _limit_gdn_blocks_to_strict_prefix(
-        computed_block_nums: List[int], prompt_len: int,
-        block_size: int) -> List[int]:
-    max_blocks = max(0, (prompt_len - 1) // block_size)
-    return computed_block_nums[:max_blocks]
-
-
-def _accumulate_gdn_cached_tokens(
-        current_cached_tokens: Optional[int], num_computed_tokens: int,
-        selected_block_count: int, block_size: int) -> int:
-    """Count tokens skipped by staged GDN checkpoint restores."""
-    selected_tokens = selected_block_count * block_size
-    newly_cached_tokens = max(0, selected_tokens - num_computed_tokens)
-    return (current_cached_tokens or 0) + newly_cached_tokens
-
-
 def _plan_gdn_prefix_fast_forward(
-        checkpoint_keys: Iterable[Tuple[int, ...]],
-        computed_block_nums: List[int], num_computed_tokens: int,
+        restore_key: Optional[GdnPrefixKey], num_computed_tokens: int,
         prompt_len: int, nominal_chunk_size: int,
         remaining_token_budget: int, block_size: int) -> Tuple[int, int]:
     """Return logical progress and physical query tokens for a direct hit.
@@ -85,19 +54,12 @@ def _plan_gdn_prefix_fast_forward(
     sending only the suffix after that checkpoint to the model runner.
     """
     fallback = (nominal_chunk_size, nominal_chunk_size)
-    if (num_computed_tokens != 0 or prompt_len <= 0
+    if (restore_key is None or num_computed_tokens != 0 or prompt_len <= 0
             or nominal_chunk_size <= 0 or remaining_token_budget <= 0
             or block_size <= 0):
         return fallback
 
-    strict_blocks = _limit_gdn_blocks_to_strict_prefix(
-        computed_block_nums, prompt_len, block_size)
-    selected_blocks = _select_gdn_prefix_checkpoint(
-        checkpoint_keys, strict_blocks)
-    if not selected_blocks:
-        return fallback
-
-    checkpoint_tokens = len(selected_blocks) * block_size
+    checkpoint_tokens = restore_key[0] * block_size
     logical_chunk_size = min(
         prompt_len, checkpoint_tokens + remaining_token_budget)
     physical_query_tokens = logical_chunk_size - checkpoint_tokens
@@ -447,13 +409,21 @@ class Scheduler:
         # can and must be released after the current step.
         # This is used to evict the finished requests from the Mamba cache.
         self._finished_requests_ids: List[str] = list()
-        # Mirrors each worker's GDN state LRU. Only these physical KV prefixes
-        # are safe to skip because they have an exact recurrent-state snapshot.
-        self._gdn_prefix_checkpoints: OrderedDict[
-            Tuple[int, ...], None] = OrderedDict()
-        # Keep every staged checkpoint for one model-native 256K prompt.
-        # With the fixed 8K chunk size this requires 262144 / 8192 entries.
-        self._gdn_prefix_checkpoint_max = 32
+        self._gdn_prefix_policy = GdnPrefixStatePolicy(
+            gdn_cache_policy_from_env())
+        self._gdn_restore_mode = gdn_restore_mode_from_env()
+        self._gdn_replay_alignment = scheduler_config.max_num_batched_tokens
+        if (self._gdn_restore_mode == "aligned"
+                and (self._gdn_replay_alignment <= 0
+                     or self._gdn_replay_alignment
+                     % self.cache_config.block_size != 0)):
+            raise RuntimeError(
+                "aligned GDN restore requires max_num_batched_tokens to be "
+                "a positive multiple of the KV block size")
+        self._gdn_request_restore_keys: Dict[
+            str, Optional[GdnPrefixKey]] = {}
+        self._gdn_request_capture_targets: Dict[
+            str, Tuple[GdnPrefixKey, ...]] = {}
         # Time at previous scheduling step
         self.prev_time = 0.0
         # Did we schedule a prompt at previous step?
@@ -1056,15 +1026,48 @@ class Scheduler:
             if (enable_chunking
                     and self.cache_config.enable_prefix_caching
                     and len(waiting_seqs) == 1):
+                prompt_seq = waiting_seqs[0]
                 computed_block_nums = list(
                     self.block_manager.get_common_computed_block_ids(
                         waiting_seqs))
+                block_hashes = self.block_manager.get_content_hashes(prompt_seq)
+                max_live_blocks = min(
+                    len(computed_block_nums), len(block_hashes),
+                    strict_prefix_block_count(
+                        prompt_seq.data.get_len(),
+                        self.cache_config.block_size))
+                live_keys = keys_from_block_hashes(
+                    block_hashes[:max_live_blocks])
+                if self._gdn_restore_mode == "aligned":
+                    live_keys = [
+                        key for key in live_keys
+                        if (key[0] * self.cache_config.block_size
+                            % self._gdn_replay_alignment == 0)
+                    ]
+                restore_key = self._gdn_prefix_policy.select_restore(
+                    live_keys, len(live_keys))
+                self._gdn_request_restore_keys[
+                    seq_group.request_id] = restore_key
+
+                capture_targets = []
+                branch_key = self._gdn_prefix_policy.repeated_branch_candidate(
+                    live_keys, len(live_keys))
+                if branch_key is not None:
+                    capture_targets.append(branch_key)
+                final_key = final_capture_key(
+                    block_hashes, prompt_seq.data.get_len(),
+                    self.cache_config.block_size, self._gdn_restore_mode,
+                    self._gdn_replay_alignment)
+                if final_key is not None and final_key not in capture_targets:
+                    capture_targets.append(final_key)
+                self._gdn_request_capture_targets[seq_group.request_id] = tuple(
+                    capture_targets)
+
                 num_new_tokens, budget_token_count = (
                     _plan_gdn_prefix_fast_forward(
-                        self._gdn_prefix_checkpoints.keys(),
-                        computed_block_nums,
-                        waiting_seqs[0].data.get_num_computed_tokens(),
-                        waiting_seqs[0].data.get_len(),
+                        restore_key,
+                        prompt_seq.data.get_num_computed_tokens(),
+                        prompt_seq.data.get_len(),
                         num_new_tokens,
                         budget.remaining_token_budget(),
                         self.cache_config.block_size))
@@ -1394,52 +1397,79 @@ class Scheduler:
                 block_tables[seq_id] = self.block_manager.get_block_table(seq)
                 self.block_manager.access_all_blocks_in_seq(seq, now)
 
+            common_computed_block_nums = []
             if self.cache_config.enable_prefix_caching:
-                common_computed_block_nums = (
+                raw_computed_block_nums = list(
                     self.block_manager.get_common_computed_block_ids(
                         seq_group.get_seqs(status=SequenceStatus.RUNNING)))
-                if seq_group.is_prefill():
-                    # vLLM's full-hit path recomputes the last token. Limit
-                    # candidates to a strict prefix of this scheduled step,
-                    # not merely a strict prefix of the complete prompt.
-                    prompt_seq = seq_group.get_seqs(
-                        status=SequenceStatus.RUNNING)[0]
-                    scheduled_seq_len = min(
-                        prompt_seq.data.get_len(),
-                        prompt_seq.data.get_num_computed_tokens()
-                        + token_chunk_size)
-                    common_computed_block_nums = (
-                        _limit_gdn_blocks_to_strict_prefix(
-                            common_computed_block_nums,
-                            scheduled_seq_len,
-                            self.cache_config.block_size))
-                    common_computed_block_nums = (
-                        _select_gdn_prefix_checkpoint(
-                            self._gdn_prefix_checkpoints.keys(),
-                            common_computed_block_nums))
-                    if common_computed_block_nums:
-                        self._gdn_prefix_checkpoints.move_to_end(
-                            tuple(common_computed_block_nums))
+                if not seq_group.is_prefill():
+                    common_computed_block_nums = raw_computed_block_nums
 
             do_sample = True
             is_prompt = seq_group.is_prefill()
             # We should send the metadata to workers when the first prefill
             # is sent. Subsequent requests could be chunked prefill or decode.
             is_first_prefill = False
+            gdn_restore_key = None
+            gdn_capture_points = None
+            gdn_evict_keys = None
             if is_prompt:
+                gdn_capture_points = []
+                gdn_evict_keys = []
                 seqs = seq_group.get_seqs()
                 # Prefill has only 1 sequence.
                 assert len(seqs) == 1
                 num_computed_tokens = seqs[0].data.get_num_computed_tokens()
                 is_first_prefill = num_computed_tokens == 0
-                if (self.cache_config.enable_prefix_caching
-                        and seq_group.metrics is not None):
-                    seq_group.metrics.num_cached_tokens = (
-                        _accumulate_gdn_cached_tokens(
-                            seq_group.metrics.num_cached_tokens,
-                            num_computed_tokens,
-                            len(common_computed_block_nums),
-                            self.cache_config.block_size))
+                logical_end_tokens = min(
+                    seqs[0].data.get_len(),
+                    num_computed_tokens + token_chunk_size)
+                if self.cache_config.enable_prefix_caching:
+                    restore_key = self._gdn_request_restore_keys.get(
+                        seq_group.request_id)
+                    if is_first_prefill and restore_key is not None:
+                        gdn_restore_key = restore_key
+                        common_computed_block_nums = raw_computed_block_nums[
+                            :restore_key[0]]
+                        if len(common_computed_block_nums) != restore_key[0]:
+                            raise RuntimeError(
+                                "GDN restore key exceeds the live KV prefix")
+                    else:
+                        # Once this request has started, the request-local Mamba
+                        # state is authoritative. Never let a longer raw KV hit
+                        # skip ahead without a matching recurrent state.
+                        max_context_blocks = (num_computed_tokens
+                                              // self.cache_config.block_size)
+                        common_computed_block_nums = raw_computed_block_nums[
+                            :max_context_blocks]
+
+                    restore_tokens = (
+                        restore_key[0] * self.cache_config.block_size
+                        if is_first_prefill and restore_key is not None else 0)
+                    if seq_group.metrics is not None and restore_tokens:
+                        seq_group.metrics.num_cached_tokens = max(
+                            seq_group.metrics.num_cached_tokens or 0,
+                            restore_tokens)
+
+                    capture_targets = list(
+                        self._gdn_request_capture_targets.get(
+                            seq_group.request_id, ()))
+                    if self._gdn_prefix_policy.policy == "fine32":
+                        step_key = key_at_strict_boundary(
+                            self.block_manager.get_content_hashes(seqs[0]),
+                            logical_end_tokens, self.cache_config.block_size)
+                        capture_targets = ([step_key]
+                                           if step_key is not None else [])
+                    if self._gdn_prefix_policy.policy != "off":
+                        physical_context_tokens = (
+                            restore_tokens if is_first_prefill
+                            else num_computed_tokens)
+                        gdn_capture_points = list(capture_points_for_step(
+                            capture_targets, physical_context_tokens,
+                            logical_end_tokens, self.cache_config.block_size))
+                        gdn_evict_keys = list(
+                            self._gdn_prefix_policy.admit(
+                                key for _, key in gdn_capture_points))
                 # In the next iteration, all prompt tokens are not computed.
                 # It means the prefill is chunked, and we don't need sampling.
                 # NOTE: We use get_len instead of get_prompt_len because when
@@ -1449,27 +1479,11 @@ class Scheduler:
                         seqs[0].data.get_len()):
                     do_sample = False
 
-                checkpoint_key = _make_gdn_prefix_checkpoint(
-                    block_tables[seqs[0].seq_id],
-                    num_computed_tokens,
-                    num_computed_tokens + token_chunk_size,
-                    self.cache_config.block_size)
-                # On a new request with a prefix hit, attention metadata only
-                # carries the reused blocks, so the worker cannot save a new
-                # longer checkpoint in this pass. Subsequent chunks use the
-                # full block table and can extend the checkpoint LRU.
-                can_save_checkpoint = (
-                    checkpoint_key is not None
-                    and (not is_first_prefill
-                         or not common_computed_block_nums))
-                if can_save_checkpoint:
-                    assert checkpoint_key is not None
-                    if checkpoint_key in self._gdn_prefix_checkpoints:
-                        self._gdn_prefix_checkpoints.move_to_end(checkpoint_key)
-                    self._gdn_prefix_checkpoints[checkpoint_key] = None
-                    while (len(self._gdn_prefix_checkpoints)
-                           > self._gdn_prefix_checkpoint_max):
-                        self._gdn_prefix_checkpoints.popitem(last=False)
+                if logical_end_tokens >= seqs[0].data.get_len():
+                    self._gdn_request_restore_keys.pop(seq_group.request_id,
+                                                       None)
+                    self._gdn_request_capture_targets.pop(seq_group.request_id,
+                                                          None)
 
             # It assumes the scheduled_seq_groups is ordered by
             # prefill < decoding.
@@ -1496,6 +1510,9 @@ class Scheduler:
                     if scheduler_outputs.num_prefill_groups > 0 else None,
                     mm_processor_kwargs=seq_group.mm_processor_kwargs,
                     prompt_adapter_request=seq_group.prompt_adapter_request,
+                    gdn_restore_key=gdn_restore_key,
+                    gdn_capture_points=gdn_capture_points,
+                    gdn_evict_keys=gdn_evict_keys,
                 )
             else:
                 # When SPMD mode is enabled, we only send delta data except for
@@ -1511,6 +1528,9 @@ class Scheduler:
                     do_sample=do_sample,
                     token_chunk_size=token_chunk_size,
                     computed_block_nums=common_computed_block_nums,
+                    gdn_restore_key=gdn_restore_key,
+                    gdn_capture_points=gdn_capture_points,
+                    gdn_evict_keys=gdn_evict_keys,
                 )
             seq_group_metadata_list.append(seq_group_metadata)
 
@@ -1564,6 +1584,9 @@ class Scheduler:
         if seq_group.is_finished():
             # Free cross-attention block table, if it exists
             self._free_seq_group_cross_attn_blocks(seq_group)
+
+            self._gdn_request_restore_keys.pop(seq_group.request_id, None)
+            self._gdn_request_capture_targets.pop(seq_group.request_id, None)
 
             # Add the finished requests to the finished requests list.
             # This list will be used to update the Mamba cache in the

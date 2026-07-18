@@ -1,5 +1,12 @@
 # M1-21 Prefix-Cache Trace Design
 
+> 2026-07-19 update: the old version-1/64-bit trace contract below is retained
+> as experiment history. The implemented successor is version 4 with
+> `sha256_base64`, exact 32-byte chained hashes, and separate raw-KV versus
+> usable KV/GDN-intersection metrics. See
+> `M1_31_STABLE_GDN_PREFIX_STATE_20260719.md`. The production image still keeps
+> tracing disabled by default.
+
 ## Status
 
 `DIAGNOSTIC ONLY`. This branch must not replace the qualified submission until

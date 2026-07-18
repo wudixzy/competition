@@ -1,5 +1,27 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-19 M1-31 稳定 GDN 前缀状态候选
+
+- 已删除按可回收物理 block id 识别 GDN 状态的旧方案，改为
+  `(完整 block 数, 链式 SHA-256)`；多模态请求把规范化后的图片/张量内容摘要
+  纳入首块 namespace，不支持的类型按 request-local namespace 隔离，禁止跨请求
+  误复用。
+- scheduler 是 GDN 状态目录的唯一真相源，向 TP4 worker 明确广播
+  `restore/capture/evict`。worker 不再猜测命中或自行 LRU；scheduler 要求恢复但
+  worker 缺状态时直接报错，避免已经跳过输入后静默使用错误状态。
+- 候选策略为 `fine32`（默认、容量 32）、`admission64`（容量 64，只保存重复
+  branch 和 final）与 `off`。`direct` 保持默认；`aligned` 仅是 8192 边界回退。
+  `computility-run.yaml` 的固定 262144/TP4/8192 参数未修改。
+- trace 协议升级到 version 4，使用 `sha256_base64`，只在
+  `BI100_CACHE_TRACE=1` 时输出。离线 simulator 同时报告 raw KV 连续命中和
+  KV/GDN 状态交集实际可跳过 token，禁止二者相加造成重复计数。
+- 本地 `unittest discover` 为 191 项通过、23 项可选依赖跳过；submission
+  preflight 8/8。当前文档指定实例 `ssh-a2d0a302` 已失效，2026-07-19 快速门禁
+  返回 `Connection closed by UNKNOWN port 65535`，因此 TP4 correctness、235K
+  cold/warm 与性能 A/B 仍未执行。本候选不得标记为 qualified，也不得仅凭离线
+  模拟宣称得分提升。完整设计见
+  `docs/experiments/M1_31_STABLE_GDN_PREFIX_STATE_20260719.md`。
+
 ## 2026-07-17 当前 RC 状态
 
 - 私有 RC `rc/submission-preflight-20260717@215ca46` 已通过本地 174 项和

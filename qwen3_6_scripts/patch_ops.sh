@@ -31,6 +31,21 @@
 set -euo pipefail
 
 build_stage() { printf '[BI100 BUILD] %s\n' "$1" >&2; }
+require_file() {
+    local path=$1
+    [[ -f "$path" ]] || {
+        printf 'required patch source is missing: %s\n' "$path" >&2
+        exit 2
+    }
+}
+install_patch_file() {
+    local source=$1
+    local target=$2
+
+    require_file "$source"
+    mkdir -p "$(dirname "$target")"
+    install -m 0644 "$source" "$target"
+}
 
 build_stage "patch script entered"
 
@@ -81,6 +96,27 @@ source /tmp/qwen36_patch_paths.env
 
 echo "VLLM_ROOT=${VLLM_ROOT}"
 echo "TRANSFORMERS_ROOT=${TRANSFORMERS_ROOT}"
+[[ -d "$VLLM_ROOT" ]] || {
+    printf 'vLLM root does not exist: %s\n' "$VLLM_ROOT" >&2
+    exit 2
+}
+
+VLLM_OVERRIDE_ROOT="./vendor_overrides/vllm"
+[[ -d "$VLLM_OVERRIDE_ROOT" ]] || {
+    printf 'vLLM override directory missing: %s\n' "$VLLM_OVERRIDE_ROOT" >&2
+    exit 2
+}
+
+build_stage "installing authoritative vLLM core block overrides"
+install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/core/block/prefix_caching_block.py" \
+    "${VLLM_ROOT}/core/block/prefix_caching_block.py"
+install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/core/block/block_table.py" \
+    "${VLLM_ROOT}/core/block/block_table.py"
+install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/core/block_manager_v2.py" \
+    "${VLLM_ROOT}/core/block_manager_v2.py"
 
 build_stage "installing hash-pinned CoreX 3.2.3 extensions"
 bash ./install_prebuilt_corex.sh "${VLLM_ROOT}"
@@ -88,6 +124,7 @@ bash ./install_prebuilt_corex.sh "${VLLM_ROOT}"
 build_stage "installing BI100 runtime modules"
 cp ./bi100_env.py "${VLLM_ROOT}/bi100_env.py"
 cp ./bi100_profile.py "${VLLM_ROOT}/bi100_profile.py"
+cp ./gdn_prefix.py "${VLLM_ROOT}/gdn_prefix.py"
 
 # --- paged_attn.py: replace forward_prefix with pure-PyTorch fallback -------
 # The Triton context_attention_fwd kernel hangs BI-V100 GPUs permanently
@@ -133,6 +170,9 @@ cp ./sequence.py "${VLLM_ROOT}/sequence.py"
 # when --enable-prefix-caching is active, so serving_chat.py can report it in
 # usage.prompt_tokens_details.cached_tokens (OpenAI-compatible API response).
 cp ./scheduler.py "${VLLM_ROOT}/core/scheduler.py"
+
+build_stage "installing diagnostic initial allocation trace"
+python3 ./patch_block_manager_cache_trace.py
 
 build_stage "installing scheduler and attention patches"
 # --- xformers: bypass cudnnFlashAttnForward (head_dim=256 > 128 limit) ------

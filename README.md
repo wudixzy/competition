@@ -76,6 +76,18 @@ python tests/test_submission_preflight_unit.py
 size/SHA256、10 个预编译 CoreX 扩展的集合/大小/SHA256、关键文件 LF 换行、
 全部 shell 语法和 Python 语法执行统一 RC 门禁；任何检查失败都返回非 0，禁止提交。
 
+M1-31 引入稳定 SHA-256 前缀键和 scheduler-owned GDN 状态动作协议。当前默认是
+`BI100_GDN_CACHE_POLICY=fine32`、`BI100_GDN_RESTORE_MODE=direct`；这两个默认值
+尚待新的 TP4 实例完成 cold/warm correctness 与 A/B 资格化。离线诊断可显式开启
+`BI100_CACHE_TRACE=1`，但正式性能提交必须保持关闭。设计和固定验证矩阵见
+[`docs/experiments/M1_31_STABLE_GDN_PREFIX_STATE_20260719.md`](docs/experiments/M1_31_STABLE_GDN_PREFIX_STATE_20260719.md)。
+
+完整本地标准库测试可运行：
+
+```bash
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
 该检查覆盖 patch fail-fast、动态 vLLM/transformers 路径、registry alias、
 顶层 thinking、`tool_choice="none"`、streaming tool arguments 序列化、
 streaming tool argument name JSON 转义和 guided decoding/tool_choice 冲突保护、
