@@ -1,5 +1,21 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-38 small-batch direct routed MoE 门禁
+
+- 固定 cache 矩阵的 warm 请求只剩 `T=8/16`，但生产 direct routed MoE 只覆盖
+  `T=1`；M1-38 因此先复用现有内核逐 token 处理小批量，不修改生产 runtime、
+  预置二进制或 YAML。
+- 原始 direct-loop 在 T=8/16 达到 `30.36x/27.58x`，40 层静态 warm-TTFT
+  投影分别改善 `48.95%/82.41%`，但最大误差 `3.6621e-4`、平均误差约
+  `1.36e-5`，超过 E-MOE-20 的固定数值边界。
+- 唯一备选按 reference 的 expert 升序并逐项 FP16 累加；T=8/16 仍有
+  `18.70x/19.29x`，但最大误差 `2.4414e-4`、平均误差约 `1.23e-5`，说明剩余
+  漂移来自 direct GEMV 与 vendor GEMM 的归约差异，而非末端 routed reduction。
+- 两次结果均 finite、速度/投影通过但数值门禁失败，状态为
+  `NUMERICAL_REJECTED`。停止阈值、launch、seed 和容差扫描，不接入服务、不执行
+  TP4 A/B。完整证据见
+  `docs/experiments/M1_38_SMALL_BATCH_DIRECT_MOE_20260721.md`。
+
 ## 2026-07-21 M1-37 persistent online-softmax 能力门禁
 
 - 缓存候选 M1-35 只提升 `4.1381%`，M1-29 又缺完整 881 trace；按计划转入一次
