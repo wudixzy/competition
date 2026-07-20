@@ -9,10 +9,16 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from transformers import AutoTokenizer
-
-
 Json = dict[str, Any]
+
+
+def eviction_target_mods(eviction_count: int, target_mod: int) -> tuple[int, ...]:
+    if eviction_count <= 0:
+        raise ValueError("eviction_count must be positive")
+    if not 0 <= target_mod < 16:
+        raise ValueError("target_mod must be in [0, 15]")
+    return tuple((target_mod + index) % 16
+                 for index in range(eviction_count))
 
 
 def post_chat(base: str, payload: Json, timeout: float) -> Json:
@@ -95,6 +101,8 @@ def persist_report(path: Path, report: Json) -> None:
 
 
 def main() -> int:
+    from transformers import AutoTokenizer
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument(
@@ -102,12 +110,15 @@ def main() -> int:
         default="/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
     )
     parser.add_argument("--eviction-count", type=int, default=17)
+    parser.add_argument("--eviction-target-mod", type=int, default=1)
     parser.add_argument("--timeout-s", type=float, default=600)
     parser.add_argument("--run-id", default=str(time.time_ns()))
     parser.add_argument("--json-out", type=Path, required=True)
     args = parser.parse_args()
     if args.eviction_count < 17:
         parser.error("--eviction-count must be at least 17")
+    if not 0 <= args.eviction_target_mod < 16:
+        parser.error("--eviction-target-mod must be in [0, 15]")
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_path, trust_remote_code=True, local_files_only=True)
@@ -135,9 +146,11 @@ def main() -> int:
 
     eviction_payloads = []
     eviction_first = []
-    for index in range(args.eviction_count):
+    target_mods = eviction_target_mods(
+        args.eviction_count, args.eviction_target_mod)
+    for index, target_mod in enumerate(target_mods):
         payload, expected_tokens = make_payload(
-            tokenizer, f"{args.run_id}-evict-{index:02d}", (index + 1) % 16)
+            tokenizer, f"{args.run_id}-evict-{index:02d}", target_mod)
         response, summary = request_once(args.base, payload, args.timeout_s)
         assert summary["prompt_tokens"] == expected_tokens, summary
         eviction_payloads.append(payload)
