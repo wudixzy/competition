@@ -1,5 +1,15 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-20 天垓100基础镜像地址迁移（强制）
+
+- ModelHub 集群调整后，后续本地验证和性能榜单提交统一使用：
+  `harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3`。
+- 旧地址
+  `git.modelhub.org.cn:9443/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3`
+  已由平台迁移，不再作为任何分支或提交的构建基线。
+- `Dockerfile` 和 `tests/submission_preflight.py` 已同步；提交前必须运行
+  `python tests/submission_preflight.py`，防止回退到旧 registry。
+
 ## 2026-07-17 当前 RC 状态
 
 - 私有 RC `rc/submission-preflight-20260717@215ca46` 已通过本地 174 项和

@@ -192,11 +192,12 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
     def docker_contract() -> str:
         text = (root / "Dockerfile").read_text(encoding="utf-8")
         expected_base = (
-            "FROM git.modelhub.org.cn:9443/enginex-iluvatar/"
+            "FROM harbor.4pd.io/modelhubxc/enginex-iluvatar/"
             "bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3"
         )
         if text.splitlines()[0] != expected_base:
-            raise ValueError("base image changed")
+            raise ValueError(
+                "base image must use the current ModelHub Harbor endpoint")
         for fragment in [
             "COPY ./qwen3_6_scripts /workspace/qwen3_6_scripts",
             "RUN cd ./qwen3_6_scripts && bash ./patch_ops.sh",
