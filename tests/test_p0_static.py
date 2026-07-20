@@ -774,6 +774,19 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("compare_dataset_shaped_policies.py", src)
         self.assertIn("qualification.rc", src)
 
+    def test_m1_33_post_matrix_runner_enforces_long_capacity(self):
+        src = read("scripts/run_m1_33_post_matrix_gates.sh")
+        self.assertIn("stage_qualified", src)
+        self.assertIn("--target-prompt-tokens 131000", src)
+        self.assertIn("--min-completion-tokens 256", src)
+        self.assertIn("--min-cached-tokens 130944", src)
+        self.assertIn("--target-prompt-tokens 262000", src)
+        self.assertIn("--min-completion-tokens 16", src)
+        self.assertIn("--min-cached-tokens 261952", src)
+        self.assertIn("check_startup_capacity.py", src)
+        self.assertIn("fatal_scan.rc", src)
+        self.assertIn("post_matrix.rc", src)
+
     def test_patch_scripts_do_not_keep_hardcoded_vllm_paths(self):
         for path in (ROOT / "qwen3_6_scripts").glob("patch_*.py"):
             src = path.read_text()
