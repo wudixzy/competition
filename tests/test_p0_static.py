@@ -745,6 +745,15 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("M1_32_FALLBACK_MODE=chunk64", src)
         self.assertIn("M1_32_FALLBACK_MIN_CACHED=234944", src)
 
+    def test_m1_34_direct_suffix_probe_runs_both_fresh_services(self):
+        src = read("scripts/run_m1_34_direct_suffix_probe.sh")
+        self.assertIn("for target_mod in 1 2", src)
+        self.assertIn("BI100_GDN_CACHE_POLICY=admission64", src)
+        self.assertIn("BI100_GDN_RESTORE_MODE=direct", src)
+        self.assertIn('--eviction-target-mod "$target_mod"', src)
+        self.assertIn("stop_service", src)
+        self.assertIn("classification.json", src)
+
     def test_dataset_shaped_matrix_uses_tracked_profile_driver(self):
         src = read("scripts/run_dataset_shaped_matrix.sh")
         self.assertIn(
