@@ -783,6 +783,20 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("live_conv.copy_(saved_conv", src)
         self.assertIn('"qualified": exact and saving_ms >=', src)
 
+    def test_persistent_online_softmax_probe_is_fixed_and_fail_closed(self):
+        kernel = read("tests/corex_prefix_online_softmax_persistent_ext.cu")
+        bench = read("tests/bench_prefix_online_softmax_persistent.py")
+        build = read("tests/build_corex_prefix_online_softmax_persistent.sh")
+        self.assertIn("constexpr int kTileSize = 512", kernel)
+        self.assertIn("constexpr int kThreads = 256", kernel)
+        self.assertIn("constexpr int kPersistentBlocks = 1024", kernel)
+        self.assertIn("row += gridDim.x", kernel)
+        self.assertIn("default=[456, 8192]", bench)
+        self.assertIn("default=1.5", bench)
+        self.assertIn("default=1e-5", bench)
+        self.assertIn('return 0 if report["qualified"] else 1', bench)
+        self.assertIn("--cuda-gpu-arch=ivcore10", build)
+
     def test_m1_34_matrix_runner_requires_guard_and_fixed_contract(self):
         src = read("scripts/run_m1_34_fixed_matrix.sh")
         for required_rc in (
