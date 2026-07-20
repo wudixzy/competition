@@ -16,6 +16,9 @@
   `BI100_MOE_COREX_DIRECT_ROUTED=1`、`BI100_GDN_COREX_PACKED_DECODE=1`，修复后的
   `fine32/direct` 绝对基线在远端运行。当前实例网关返回
   `Connection closed by UNKNOWN port 65535`，完成状态暂时无法读取。
+- `scripts/run_m1_32_remaining_gates.sh` 已固化恢复流程：验证固定矩阵后重启干净的
+  fine/direct 服务执行 131K exact 和 235K warm-repeat，再重启 aligned 服务执行
+  17 会话压力及 235K/1000 exact；每步均有超时、退出码和失败即停。
 - 下一步只执行预设的 `admission64/aligned` 正确性回退；若压力测试和 235K/1000
   exact replay 未通过，不运行完整性能矩阵。即使通过，当前 4K/7.8K/16K 矩阵下
   aligned 理论命中上限也只有 `14.68%`，无法达到 50% 门槛。缓存阶段未通过前停止

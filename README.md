@@ -156,6 +156,10 @@ python tests/long_context_api.py --base http://127.0.0.1:8000 \
   --target-prompt-tokens 99500 --output-dir long-context-artifacts
 ```
 
+M1-32 的固定基线矩阵完成后，可使用
+`scripts/run_m1_32_remaining_gates.sh` 顺序执行 direct 长上下文和 aligned 正确性
+回退。脚本会重启服务、校验已有矩阵合同、为每个阶段保存退出码，并在失败时停止。
+
 `smoke_api.py --mode quick` 覆盖基础 chat、thinking=false 三种格式、
 `tool_choice="none"`、`response_format={"type":"json_object"}`、
 `response_format={"type":"json_schema"}`、streaming SSE usage、异常请求 4xx

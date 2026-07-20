@@ -72,6 +72,7 @@ CMD_ARGS=(
 
 echo "[BI100] fixed evaluator contract; model=${MODEL_PATH_VAL} host=${HOST_VAL} port=${PORT_VAL}"
 echo "[BI100] fixed kernels; moe_direct=${BI100_MOE_COREX_DIRECT_ROUTED} gdn_packed=${BI100_GDN_COREX_PACKED_DECODE}"
+echo "[BI100] GDN cache; policy=${BI100_GDN_CACHE_POLICY:-fine32} restore=${BI100_GDN_RESTORE_MODE:-direct}"
 printf ' %q' python3 -m vllm.entrypoints.openai.api_server "${CMD_ARGS[@]}"
 printf '\n'
 

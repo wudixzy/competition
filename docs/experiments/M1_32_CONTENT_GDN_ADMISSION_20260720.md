@@ -114,3 +114,12 @@ The production-equivalent `fine32/direct` matrix was launched under
 `bench_runs/m1_32/fine32_direct_fixed`. At the time this record was written the
 instance gateway returned `Connection closed by UNKNOWN port 65535`, so its
 final summary and the aligned fallback result remain external-state dependent.
+
+After connectivity returns, `scripts/run_m1_32_remaining_gates.sh` resumes only
+after that matrix has `matrix.rc=0` and passes its request-contract validation.
+It restarts a clean `fine32/direct` service for 131K/256 exact and 235K/256
+warm-repeat checks, then restarts `admission64/aligned` for the 17-session
+pressure check and 235K/1000 exact replay. Every gate has a timeout and a
+persisted exit code; any failure stops the service and prevents later gates.
+Set `M1_32_START_AT=aligned` only when the fine/direct long gates already have
+successful persisted evidence.
