@@ -22,6 +22,7 @@ try:
                                  capture_points_for_step,
                                  final_capture_key,
                                  gdn_cache_policy_from_env,
+                                 gdn_restore_alignment,
                                  gdn_restore_mode_from_env,
                                  key_at_strict_boundary,
                                  keys_from_block_hashes,
@@ -30,7 +31,8 @@ except ImportError:  # Local source-tree tests.
     from qwen3_6_scripts.gdn_prefix import (
         GdnPrefixKey, GdnPrefixStatePolicy, capture_points_for_step,
         final_capture_key, gdn_cache_policy_from_env,
-        gdn_restore_mode_from_env, key_at_strict_boundary,
+        gdn_restore_alignment, gdn_restore_mode_from_env,
+        key_at_strict_boundary,
         keys_from_block_hashes, strict_prefix_block_count)
 
 logger = init_logger(__name__)
@@ -412,14 +414,12 @@ class Scheduler:
         self._gdn_prefix_policy = GdnPrefixStatePolicy(
             gdn_cache_policy_from_env())
         self._gdn_restore_mode = gdn_restore_mode_from_env()
-        self._gdn_replay_alignment = scheduler_config.max_num_batched_tokens
-        if (self._gdn_restore_mode == "aligned"
-                and (self._gdn_replay_alignment <= 0
-                     or self._gdn_replay_alignment
-                     % self.cache_config.block_size != 0)):
-            raise RuntimeError(
-                "aligned GDN restore requires max_num_batched_tokens to be "
-                "a positive multiple of the KV block size")
+        try:
+            self._gdn_replay_alignment = gdn_restore_alignment(
+                self._gdn_restore_mode, self.cache_config.block_size,
+                scheduler_config.max_num_batched_tokens)
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from exc
         self._gdn_request_restore_keys: Dict[
             str, Optional[GdnPrefixKey]] = {}
         self._gdn_request_capture_targets: Dict[
@@ -1038,7 +1038,7 @@ class Scheduler:
                         self.cache_config.block_size))
                 live_keys = keys_from_block_hashes(
                     block_hashes[:max_live_blocks])
-                if self._gdn_restore_mode == "aligned":
+                if self._gdn_restore_mode != "direct":
                     live_keys = [
                         key for key in live_keys
                         if (key[0] * self.cache_config.block_size

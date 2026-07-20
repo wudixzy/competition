@@ -12,7 +12,9 @@ GdnPrefixKey = Tuple[int, bytes]
 GdnCapturePoint = Tuple[int, GdnPrefixKey]
 
 _VALID_POLICIES = {"fine32", "admission64", "off"}
-_VALID_RESTORE_MODES = {"direct", "aligned"}
+GDN_KERNEL_CHUNK_TOKENS = 64
+
+_VALID_RESTORE_MODES = {"direct", "chunk64", "aligned"}
 
 
 def _env_choice(name: str, default: str, choices: set[str]) -> str:
@@ -30,6 +32,26 @@ def gdn_cache_policy_from_env() -> str:
 def gdn_restore_mode_from_env() -> str:
     return _env_choice(
         "BI100_GDN_RESTORE_MODE", "direct", _VALID_RESTORE_MODES)
+
+
+def gdn_restore_alignment(restore_mode: str, block_size: int,
+                          scheduler_chunk_tokens: int) -> int:
+    """Return the content boundary required by a restore mode."""
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
+    if restore_mode == "direct":
+        return block_size
+    if restore_mode == "chunk64":
+        alignment = GDN_KERNEL_CHUNK_TOKENS
+    elif restore_mode == "aligned":
+        alignment = scheduler_chunk_tokens
+    else:
+        raise ValueError(f"unknown GDN restore mode: {restore_mode}")
+    if alignment <= 0 or alignment % block_size != 0:
+        raise ValueError(
+            f"{restore_mode} GDN restore requires a positive alignment "
+            f"divisible by block_size={block_size}; got {alignment}")
+    return alignment
 
 
 def make_prefix_key(block_count: int, digest: bytes) -> GdnPrefixKey:
@@ -67,7 +89,7 @@ def final_capture_key(
         restore_mode: str, replay_alignment: int) -> Optional[GdnPrefixKey]:
     if restore_mode == "direct":
         return key_at_strict_boundary(block_hashes, prompt_tokens, block_size)
-    if restore_mode != "aligned":
+    if restore_mode not in {"chunk64", "aligned"}:
         raise ValueError(f"unknown GDN restore mode: {restore_mode}")
     if (replay_alignment <= 0 or replay_alignment % block_size != 0
             or prompt_tokens <= 1):

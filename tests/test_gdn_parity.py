@@ -183,6 +183,36 @@ class GatedDeltaNetParityTest(unittest.TestCase):
         self.assertLess(
             torch.max(torch.abs(split_state - full_state)).item(), 1e-3)
 
+    def test_native_chunk_boundary_split_is_bit_exact(self):
+        torch.manual_seed(20260721)
+        batch, seq, heads, dim, split = 1, 193, 2, 16, 64
+        query = torch.randn(batch, seq, heads, dim)
+        key = torch.randn(batch, seq, heads, dim)
+        value = torch.randn(batch, seq, heads, dim)
+        g = -torch.rand(batch, seq, heads)
+        beta = torch.rand(batch, seq, heads)
+        initial_state = torch.randn(batch, heads, dim, dim)
+        production = _load_production_chunk_rule()
+
+        full_out, full_state = production(
+            query, key, value, g, beta, chunk_size=64,
+            initial_state=initial_state, output_final_state=True,
+            use_qk_l2norm_in_kernel=True)
+        first_out, boundary_state = production(
+            query[:, :split], key[:, :split], value[:, :split],
+            g[:, :split], beta[:, :split], chunk_size=64,
+            initial_state=initial_state, output_final_state=True,
+            use_qk_l2norm_in_kernel=True)
+        second_out, split_state = production(
+            query[:, split:], key[:, split:], value[:, split:],
+            g[:, split:], beta[:, split:], chunk_size=64,
+            initial_state=boundary_state, output_final_state=True,
+            use_qk_l2norm_in_kernel=True)
+
+        self.assertTrue(torch.equal(
+            torch.cat([first_out, second_out], dim=1), full_out))
+        self.assertTrue(torch.equal(split_state, full_state))
+
 
 if __name__ == "__main__":
     unittest.main()

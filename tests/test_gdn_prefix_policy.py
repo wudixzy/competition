@@ -9,6 +9,7 @@ from qwen3_6_scripts.gdn_prefix import (
     capture_points_for_step,
     final_capture_key,
     gdn_cache_policy_from_env,
+    gdn_restore_alignment,
     gdn_restore_mode_from_env,
     key_at_strict_boundary,
     keys_from_block_hashes,
@@ -38,14 +39,24 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         self.assertEqual(policy.select_restore(keys, 4), keys[2])
         self.assertEqual(policy.select_restore(keys, 2), keys[0])
 
-    def test_direct_and_aligned_final_capture_keys(self):
+    def test_direct_chunk64_and_aligned_final_capture_keys(self):
         hashes = [digest(i % 255) for i in range(14687)]
         self.assertEqual(
             final_capture_key(hashes, 235000, 16, "direct", 8192)[0],
             14687)
         self.assertEqual(
+            final_capture_key(hashes, 235000, 16, "chunk64", 64)[0],
+            14684)
+        self.assertEqual(
             final_capture_key(hashes, 235000, 16, "aligned", 8192)[0],
             14336)
+
+    def test_restore_alignment_matches_execution_granularity(self):
+        self.assertEqual(gdn_restore_alignment("direct", 16, 8192), 16)
+        self.assertEqual(gdn_restore_alignment("chunk64", 16, 8192), 64)
+        self.assertEqual(gdn_restore_alignment("aligned", 16, 8192), 8192)
+        with self.assertRaises(ValueError):
+            gdn_restore_alignment("chunk64", 24, 8192)
 
     def test_capture_points_are_relative_to_physical_context(self):
         targets = [(512, digest(1)), (544, digest(2))]
@@ -74,6 +85,10 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         }, clear=False):
             self.assertEqual(gdn_cache_policy_from_env(), "admission64")
             self.assertEqual(gdn_restore_mode_from_env(), "aligned")
+        with patch.dict(os.environ, {
+                "BI100_GDN_RESTORE_MODE": "chunk64",
+        }, clear=False):
+            self.assertEqual(gdn_restore_mode_from_env(), "chunk64")
         with patch.dict(os.environ, {"BI100_GDN_CACHE_POLICY": "typo"},
                         clear=False):
             with self.assertRaises(RuntimeError):
