@@ -3,6 +3,10 @@
 协作交接、远端阻塞点、最新验证结果和下一步建议见
 [`docs/HANDOFF_SUMMARY.md`](docs/HANDOFF_SUMMARY.md)。
 
+自 2026-07-20 起，天垓100 v1.2.3 基础镜像必须使用
+`harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3`。
+旧的 `git.modelhub.org.cn:9443` 地址已经停用，不得用于后续提交。
+
 ```
 # 本地构建
 docker build -t enginex-iluvatar-vllm:bi100-qwen3.6 -f Dockerfile .
