@@ -80,11 +80,16 @@ python tests/test_submission_preflight_unit.py
 size/SHA256、10 个预编译 CoreX 扩展的集合/大小/SHA256、关键文件 LF 换行、
 全部 shell 语法和 Python 语法执行统一 RC 门禁；任何检查失败都返回非 0，禁止提交。
 
-M1-31 引入稳定 SHA-256 前缀键和 scheduler-owned GDN 状态动作协议。当前默认是
-`BI100_GDN_CACHE_POLICY=fine32`、`BI100_GDN_RESTORE_MODE=direct`；这两个默认值
-尚待新的 TP4 实例完成 cold/warm correctness 与 A/B 资格化。离线诊断可显式开启
-`BI100_CACHE_TRACE=1`，但正式性能提交必须保持关闭。设计和固定验证矩阵见
-[`docs/experiments/M1_31_STABLE_GDN_PREFIX_STATE_20260719.md`](docs/experiments/M1_31_STABLE_GDN_PREFIX_STATE_20260719.md)。
+M1-31 引入稳定 SHA-256 前缀键和 scheduler-owned GDN 状态动作协议。M1-32 的严格
+同请求 TP4 A/B 中，`admission64/direct` 将有效命中从 49.93% 提高到 61.07%、代理
+分提高 8.99%，但在 17 会话压力后恢复 10592-token 状态时产生了不同输出，因此按
+正确性门槛拒绝，不能合并或改为默认。当前仍使用
+`BI100_GDN_CACHE_POLICY=fine32`、`BI100_GDN_RESTORE_MODE=direct`；`aligned` 只作为
+预设回退验证。离线诊断可显式开启 `BI100_CACHE_TRACE=1`，正式性能提交必须保持
+关闭。实现设计见
+[`docs/experiments/M1_31_STABLE_GDN_PREFIX_STATE_20260719.md`](docs/experiments/M1_31_STABLE_GDN_PREFIX_STATE_20260719.md)，
+TP4 证据和阶段决策见
+[`docs/experiments/M1_32_CONTENT_GDN_ADMISSION_20260720.md`](docs/experiments/M1_32_CONTENT_GDN_ADMISSION_20260720.md)。
 
 完整本地标准库测试可运行：
 
@@ -167,7 +172,10 @@ Output TPS P10、Input TPS、Cache TPS、缓存命中率和加权分。
 安全重算和刷新后再次命中。
 
 `long_context_api.py` 精确构造 99,500-token chat prompt，在固定 100K 合同边界内
-验证首次 prefill、近全量 prefix hit、API usage 和两次响应等价性。
+验证首次 prefill、近全量 prefix hit、API usage 和两次响应等价性。默认
+`--equivalence-mode exact` 比较 cold/warm；235K direct 门禁可使用
+`--equivalence-mode warm-repeat` 发送第三次请求，只允许 cold/warm 分叉，但要求两次
+warm 输出一致且所有 JSON 数值有限。
 GDN state 需要按 chunk 分阶段恢复；`cached_tokens` 会累计每阶段实际跳过的 token，
 而不是只报告第一个 8,176-token checkpoint。
 

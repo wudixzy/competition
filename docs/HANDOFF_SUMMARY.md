@@ -1,5 +1,27 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-20 M1-32 内容键 GDN 准入资格结果
+
+- 数据集形状矩阵已固定为 18 个严格同请求样本，并校验 client/server token 数、
+  16-token 目标误差、cold/warm salt 及跨策略完整请求合同；比较器拒绝非同请求 A/B。
+- 同请求 TP4 相对结果中，`admission64/direct` 相比 `fine32/direct` 将有效命中率
+  `49.9301% -> 61.0671%`、Input TPS `732.366 -> 824.430`、代理加权值
+  `6281.291 -> 6846.025`（`+8.99%`）。该轮漏带评测固定的 MoE/GDN 内核环境，
+  因此绝对 Output TPS 和得分只作诊断，不能作为正式基线。
+- `admission64/direct` 在 17 会话压力后报告完整恢复 10592 tokens，但同一确定性请求
+  的输出 hash 从 `bc4f55...` 变为 `eba366...`；服务健康且无 OOM/worker loss。
+  `fine32` 压力复测实际已淘汰目标状态并全量重算，不能证明该 direct 边界正确。
+  这是正确性硬失败，该策略不得设为默认、不得合入 `main`。
+- `launch_service` 已补齐评测固定的
+  `BI100_MOE_COREX_DIRECT_ROUTED=1`、`BI100_GDN_COREX_PACKED_DECODE=1`，修复后的
+  `fine32/direct` 绝对基线在远端运行。当前实例网关返回
+  `Connection closed by UNKNOWN port 65535`，完成状态暂时无法读取。
+- 下一步只执行预设的 `admission64/aligned` 正确性回退；若压力测试和 235K/1000
+  exact replay 未通过，不运行完整性能矩阵。即使通过，当前 4K/7.8K/16K 矩阵下
+  aligned 理论命中上限也只有 `14.68%`，无法达到 50% 门槛。缓存阶段未通过前停止
+  第三阶段融合分页注意力，不扫描 YAML、容量或 tile 参数。完整证据见
+  `docs/experiments/M1_32_CONTENT_GDN_ADMISSION_20260720.md`。
+
 ## 2026-07-20 天垓100基础镜像地址迁移（强制）
 
 - ModelHub 集群调整后，后续本地验证和性能榜单提交统一使用：

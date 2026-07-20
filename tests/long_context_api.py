@@ -4,13 +4,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import time
 import urllib.request
 from pathlib import Path
 from typing import Any
-
-from transformers import AutoTokenizer
-
 
 Json = dict[str, Any]
 
@@ -80,7 +78,29 @@ def assert_equivalent(first: Json, second: Json) -> None:
         first.get("usage") or {}).get("completion_tokens")
 
 
+def assert_finite(value: Any, path: str = "response") -> None:
+    if isinstance(value, float):
+        assert math.isfinite(value), f"non-finite value at {path}: {value}"
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            assert_finite(item, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            assert_finite(item, f"{path}[{index}]")
+
+
+def persist_report(path: Path, report: Json) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
 def main() -> int:
+    from transformers import AutoTokenizer
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument(
@@ -94,6 +114,15 @@ def main() -> int:
     parser.add_argument("--timeout-s", type=float, default=1800)
     parser.add_argument("--run-id", default=str(time.time_ns()))
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--equivalence-mode",
+        choices=("exact", "warm-repeat"),
+        default="exact",
+        help=(
+            "exact compares cold and warm; warm-repeat permits a cold/warm "
+            "difference but requires two cached warm responses to match"
+        ),
+    )
     args = parser.parse_args()
     if args.target_prompt_tokens + args.max_tokens > args.max_model_len:
         parser.error("prompt plus max tokens exceeds --max-model-len")
@@ -124,17 +153,36 @@ def main() -> int:
         "target_prompt_tokens": args.target_prompt_tokens,
         "max_tokens": args.max_tokens,
         "min_cached_tokens": args.min_cached_tokens,
+        "equivalence_mode": args.equivalence_mode,
         "first": first_summary,
         "second": second_summary,
     }
-    (args.output_dir / "long_context_summary.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    summary_path = args.output_dir / "long_context_summary.json"
+    persist_report(summary_path, report)
+    assert_finite(first, "cold_response")
+    assert_finite(second, "warm_response_1")
 
     assert first_summary["prompt_tokens"] == args.target_prompt_tokens, first_summary
     assert second_summary["prompt_tokens"] == args.target_prompt_tokens, second_summary
     assert first_summary["cached_tokens"] == 0, first_summary
-    assert_equivalent(first, second)
     assert second_summary["cached_tokens"] >= args.min_cached_tokens, second_summary
+    if args.equivalence_mode == "exact":
+        assert_equivalent(first, second)
+    else:
+        third, third_elapsed = post_chat(args.base, payload, args.timeout_s)
+        (args.output_dir / "long_context_response3.json").write_text(
+            json.dumps(third, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        third_summary = summarize(third, third_elapsed)
+        report["third"] = third_summary
+        persist_report(summary_path, report)
+        assert_finite(third, "warm_response_2")
+        assert third_summary["prompt_tokens"] == args.target_prompt_tokens, third_summary
+        assert third_summary["cached_tokens"] >= args.min_cached_tokens, third_summary
+        assert_equivalent(second, third)
+
+    persist_report(summary_path, report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 

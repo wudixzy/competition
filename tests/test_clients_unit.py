@@ -14,6 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 
 import bench_perf
+import long_context_api
 import smoke_api
 
 
@@ -56,6 +57,12 @@ def _stream_chunks() -> list[dict | str]:
 
 
 class StreamingClientTest(unittest.TestCase):
+
+    def test_long_context_finite_validation_is_recursive(self):
+        long_context_api.assert_finite({"choices": [{"score": 1.25}]})
+        with self.assertRaisesRegex(AssertionError, r"choices\[0\]\.score"):
+            long_context_api.assert_finite(
+                {"choices": [{"score": float("nan")}]})
 
     def test_smoke_solid_png_uses_only_stdlib_and_preserves_rgb(self):
         encoded = smoke_api._solid_png_data_url((12, 34, 56)).split(",", 1)[1]
