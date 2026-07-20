@@ -726,6 +726,12 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("${LD_LIBRARY_PATH:-}", src)
         self.assertIn("${PATH:-}", src)
 
+    def test_m1_32_runner_waits_for_port_release_between_services(self):
+        src = read("scripts/run_m1_32_remaining_gates.sh")
+        self.assertIn("wait_for_port_free", src)
+        self.assertIn('sock.bind(("127.0.0.1", 8000))', src)
+        self.assertIn('98 > "$output_dir/startup.rc"', src)
+
     def test_patch_scripts_do_not_keep_hardcoded_vllm_paths(self):
         for path in (ROOT / "qwen3_6_scripts").glob("patch_*.py"):
             src = path.read_text()

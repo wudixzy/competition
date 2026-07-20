@@ -82,6 +82,29 @@ stop_stale_services() {
     kill -KILL $pids 2>/dev/null || true
 }
 
+port_is_free() {
+    python3 - <<'PY'
+import socket
+
+sock = socket.socket()
+try:
+    sock.bind(("127.0.0.1", 8000))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+}
+
+wait_for_port_free() {
+    for _ in $(seq 1 120); do
+        port_is_free && return 0
+        sleep 1
+    done
+    echo "port 8000 remained busy after service shutdown" >&2
+    return 1
+}
+
 start_service() {
     local label=$1
     local policy=$2
@@ -91,6 +114,10 @@ start_service() {
     stop_service
     stop_stale_services
     mkdir -p "$output_dir"
+    if ! wait_for_port_free; then
+        printf '%s\n' 98 > "$output_dir/startup.rc"
+        return 98
+    fi
     BI100_GDN_CACHE_POLICY="$policy" \
     BI100_GDN_RESTORE_MODE="$mode" \
     MODEL_PATH="$MODEL_PATH" \
