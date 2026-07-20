@@ -1,14 +1,15 @@
 #!/bin/bash
 set -u -o pipefail
 
-if [[ $# -ne 2 ]]; then
-    echo "usage: $0 OUTPUT_DIR LABEL" >&2
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+    echo "usage: $0 OUTPUT_DIR LABEL [SALT_NAMESPACE]" >&2
     exit 2
 fi
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUTPUT_DIR=$1
 LABEL=$2
+SALT_NAMESPACE=${3:-$LABEL}
 MODEL_PATH=/root/public-storage/models/Qwen/Qwen3.6-35B-A3B
 PROFILE_SCRIPT="$ROOT/bench_runs/m1_32/profile_dataset_shaped_prompt.py"
 BASE=http://127.0.0.1:8000
@@ -30,7 +31,7 @@ fi
 
 for target in 4096 7800 16000; do
     for pair in 1 2 3; do
-        salt="${LABEL}_${target}_${pair}_$(date +%s%N)"
+        salt="${SALT_NAMESPACE}_${target}_${pair}"
         for phase in cold warm; do
             out="$OUTPUT_DIR/requests/${target}_pair${pair}_${phase}.json"
             PYTHONPATH="$ROOT/tests:$COREX_PYTHONPATH:${PYTHONPATH:-}" \
