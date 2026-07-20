@@ -74,6 +74,12 @@ result is exact. The M1-32 harness retains its existing default paths,
 arguments, and gates; its new fallback overrides only isolate M1-33 artifacts
 under `bench_runs/m1_33`.
 
+The offline trace simulator accepts
+`--gdn-restore-mode direct|chunk64|aligned`. It keeps `fine32/direct` as
+the comparison baseline while applying the selected mode only to
+`admission64` and `admission64_m1_29`, so qualification cannot gain points
+by weakening the baseline.
+
 ## Score Economics
 
 The fixed baseline is:

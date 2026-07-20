@@ -39,6 +39,7 @@ try:
         final_capture_key,
         key_at_strict_boundary,
         keys_from_block_hashes,
+        gdn_restore_alignment,
         strict_prefix_block_count,
     )
 except (ModuleNotFoundError, ImportError, OSError):
@@ -66,9 +67,35 @@ except (ModuleNotFoundError, ImportError, OSError):
     def final_capture_key(block_hashes: Sequence[bytes], prompt_tokens: int,
                          block_size: int, restore_mode: str,
                          replay_alignment: int) -> GdnPrefixKey | None:
-        if restore_mode != "direct":
+        if restore_mode == "direct":
+            return key_at_strict_boundary(
+                block_hashes, prompt_tokens, block_size)
+        if restore_mode not in {"chunk64", "aligned"}:
             raise ValueError(f"unknown GDN restore mode: {restore_mode}")
-        return key_at_strict_boundary(block_hashes, prompt_tokens, block_size)
+        if (replay_alignment <= 0 or replay_alignment % block_size != 0
+                or prompt_tokens <= 1):
+            return None
+        boundary_tokens = (
+            (prompt_tokens - 1) // replay_alignment * replay_alignment)
+        block_count = min(
+            len(block_hashes), boundary_tokens // block_size)
+        if block_count <= 0:
+            return None
+        return (block_count, block_hashes[block_count - 1])
+
+    def gdn_restore_alignment(restore_mode: str, block_size: int,
+                              scheduler_chunk_tokens: int) -> int:
+        if restore_mode == "direct":
+            return block_size
+        if restore_mode == "chunk64":
+            alignment = 64
+        elif restore_mode == "aligned":
+            alignment = scheduler_chunk_tokens
+        else:
+            raise ValueError(f"unknown GDN restore mode: {restore_mode}")
+        if alignment <= 0 or alignment % block_size != 0:
+            raise ValueError("restore alignment must be divisible by block size")
+        return alignment
 
     def capture_points_for_step(targets: Iterable[GdnPrefixKey],
                                physical_context_tokens: int,
@@ -363,7 +390,8 @@ def _evict(cache, last: Dict[bytes, Tuple[int, int]], frequency: Dict[bytes, int
 
 def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
               candidate: bool, policy: str,
-              gdn_chunk_tokens: int = 8192) -> Dict[str, Any]:
+              gdn_chunk_tokens: int = 8192,
+              restore_mode: str = "direct") -> Dict[str, Any]:
     if policy not in {"off", "fine32", "admission64"}:
         raise ValueError("policy must be one of off, fine32, admission64")
     if gdn_chunk_tokens <= 0:
@@ -418,6 +446,13 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
         # A recurrent state is usable only while the exact contiguous KV
         # prefix is also resident. State-only hits cannot restore attention KV.
         live_keys = keys_from_block_hashes(prompt_hashes[:hit])
+        restore_alignment = gdn_restore_alignment(
+            restore_mode, block_size, gdn_chunk_tokens)
+        if restore_mode != "direct":
+            live_keys = [
+                key for key in live_keys
+                if key[0] * block_size % restore_alignment == 0
+            ]
         restore_key = gdn_policy.select_restore(live_keys, len(live_keys))
         request_avoided_tokens = (
             restore_key[0] * block_size if restore_key is not None else 0)
@@ -479,7 +514,8 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
             if branch_key is not None:
                 capture_targets.append(branch_key)
             final_key = final_capture_key(
-                hashes, prompt_tokens, block_size, "direct", gdn_chunk_tokens)
+                hashes, prompt_tokens, block_size, restore_mode,
+                restore_alignment)
             if final_key is not None:
                 capture_targets.append(final_key)
         gdn_policy.admit(dict.fromkeys(capture_targets))
@@ -517,6 +553,7 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
     total_prompt_tokens = sum(record["prompt_tokens"] for record in records)
     return {
         "policy": policy,
+        "gdn_restore_mode": restore_mode,
         "kv_eviction_policy": (
             "frequency_aware_m1_29" if candidate else "lru"),
         "hit_blocks": hits,
@@ -546,12 +583,13 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
 
 def simulate(records: Sequence[Dict[str, Any]], capacity: int,
              candidate: bool = False, policy: str = "off",
-             gdn_chunk_tokens: int = 8192) -> Dict[str, Any]:
+             gdn_chunk_tokens: int = 8192,
+             restore_mode: str = "direct") -> Dict[str, Any]:
     if isinstance(candidate, str) and policy == "off":
         policy = candidate
         candidate = False
     result = _simulate(records, capacity, candidate, policy,
-                       gdn_chunk_tokens)
+                       gdn_chunk_tokens, restore_mode)
     del result["final_cache"]
     return result
 
@@ -571,6 +609,7 @@ def _metrics(raw: Dict[str, Any], total_prompt_tokens: int) -> Dict[str, Any]:
         and len(projected_latencies) == len(request_results))
     metrics = {
         "policy": raw["policy"],
+        "gdn_restore_mode": raw["gdn_restore_mode"],
         "kv_eviction_policy": raw["kv_eviction_policy"],
         "hit_tokens": raw["hit_tokens"],
         "hit_blocks": raw["hit_blocks"],
@@ -607,6 +646,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--expected-requests", type=int, default=881)
     parser.add_argument("--expected-block-size", type=int, default=16)
     parser.add_argument("--gdn-chunk-tokens", type=int, default=8192)
+    parser.add_argument(
+        "--gdn-restore-mode",
+        choices=("direct", "chunk64", "aligned"),
+        default="direct")
     parser.add_argument("--out", required=True)
     parser.add_argument("--baseline-cache-tps", type=float)
     parser.add_argument("--baseline-weighted-score", type=float)
@@ -652,10 +695,14 @@ def main(argv: list[str] | None = None) -> None:
     total_prompt_tokens = sum(record["prompt_tokens"] for record in records)
     policy_results = {}
     for policy in ("off", "fine32", "admission64"):
+        restore_mode = (
+            args.gdn_restore_mode if policy == "admission64" else "direct")
         policy_results[policy] = _simulate(
-            records, capacity, False, policy, args.gdn_chunk_tokens)
+            records, capacity, False, policy, args.gdn_chunk_tokens,
+            restore_mode)
     policy_results["admission64_m1_29"] = _simulate(
-        records, capacity, True, "admission64", args.gdn_chunk_tokens)
+        records, capacity, True, "admission64", args.gdn_chunk_tokens,
+        args.gdn_restore_mode)
     # The current submission policy is fine32; admission64 is the candidate.
     vllm_lru = _metrics(policy_results["fine32"], total_prompt_tokens)
     admission64 = _metrics(
@@ -675,6 +722,7 @@ def main(argv: list[str] | None = None) -> None:
         ),
         "capacity_blocks": capacity,
         "trace_version": 4,
+        "candidate_gdn_restore_mode": args.gdn_restore_mode,
         "trace_session_sha256": records[0]["trace_session_sha256"],
         "trace_ordinals": {
             "first": records[0]["ordinal"],

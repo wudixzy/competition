@@ -149,6 +149,22 @@ class AnalyzerTest(unittest.TestCase):
         self.assertEqual(admission["usable_gdn_state_avoided_tokens"], 0)
         self.assertEqual(fine["combined_hit_tokens"], 0)
 
+    def test_chunk64_mode_uses_only_native_recurrence_boundaries(self):
+        records = [
+            decoded(list(range(1, 9)), capacity=16, ordinal=1,
+                    prompt_tokens=128),
+            decoded(list(range(1, 9)), capacity=16, ordinal=2,
+                    prompt_tokens=128),
+        ]
+        direct = sim.simulate(
+            records, 16, policy="admission64", restore_mode="direct")
+        chunk64 = sim.simulate(
+            records, 16, policy="admission64", restore_mode="chunk64")
+
+        self.assertEqual(direct["usable_gdn_state_avoided_tokens"], 112)
+        self.assertEqual(chunk64["usable_gdn_state_avoided_tokens"], 64)
+        self.assertEqual(chunk64["gdn_restore_mode"], "chunk64")
+
     def test_main_reports_policies_and_optional_baseline_projection(self):
         records = [
             decoded([1, 2], capacity=2, ordinal=1),
@@ -176,6 +192,7 @@ class AnalyzerTest(unittest.TestCase):
             report = json.loads(out.read_text())
             self.assertIn("policy_metrics", report)
             self.assertEqual(report["trace_version"], 4)
+            self.assertEqual(report["candidate_gdn_restore_mode"], "direct")
             self.assertIn("off", report["policy_metrics"])
             self.assertIn("fine32", report["policy_metrics"])
             self.assertIn("admission64", report["policy_metrics"])
@@ -183,6 +200,22 @@ class AnalyzerTest(unittest.TestCase):
             self.assertFalse(
                 report["policy_metrics"]["admission64"]
                 ["per_request_timing_projection_complete"])
+
+            chunk64_out = root / "chunk64.json"
+            sim.main([
+                str(path),
+                "--expected-requests", "2",
+                "--expected-block-size", "16",
+                "--gdn-restore-mode", "chunk64",
+                "--out", str(chunk64_out),
+            ])
+            chunk64_report = json.loads(chunk64_out.read_text())
+            self.assertEqual(
+                chunk64_report["policy_metrics"]["fine32"]
+                ["gdn_restore_mode"], "direct")
+            self.assertEqual(
+                chunk64_report["policy_metrics"]["admission64"]
+                ["gdn_restore_mode"], "chunk64")
 
             with self.assertRaisesRegex(
                     ValueError, "aggregate hit-rate scaling is disabled"):
