@@ -113,7 +113,7 @@ sufficient.
 
 ## Current Status
 
-`COREX_OPERATOR_AND_TP4_PRESSURE_PASS`. Local discovery passes 214 tests with
+`LONG_CONTEXT_CORRECTNESS_PASS`. Local discovery passes 214 tests with
 24 optional dependency skips, and submission preflight passes 8/8. The local
 environment has no Torch, so the dedicated test was run on BI100/CoreX:
 
@@ -146,6 +146,20 @@ Every response ended with `finish_reason=length`. The eviction target hash was
 `d250e642...99fcf` before pressure, after pressure, and after refresh. This is
 the expected 64-token floor below the failed direct boundary of 10,592 tokens
 and is the first TP4 evidence that the root-cause correction survives state
-pressure. The automatic 235K/1,000-token exact gate is running; until it and
-the fixed-kernel matrix pass, the mode remains unqualified and cannot be used
-in a scoring submission.
+pressure. The automatic 235K/1,000-token exact gate also passed:
+
+| Request | Prompt | Cached | Completion | Finish | Elapsed |
+| --- | ---: | ---: | ---: | --- | ---: |
+| cold | 235,000 | 0 | 1,000 | `length` | 772.588 s |
+| warm | 235,000 | 234,944 | 1,000 | `length` | 225.197 s |
+
+Both complete message objects have SHA-256
+`a7d5a63c...81799`; the harness' direct object-equality assertion passed.
+`long_235k_exact.rc` and the aggregate `remaining_gates.rc` are both zero,
+and the service log contains no fatal, OOM, Gloo, or worker-loss event. The
+separate SHA-256 of only the response `content` is expected to differ from the
+harness hash, which covers the complete sorted message object.
+
+The fixed-kernel 18-request matrix is now running. Until its effective-hit,
+weighted-score, Output TPS, success-rate, and request-contract gates pass, the
+mode remains unqualified and cannot be used in a scoring submission.

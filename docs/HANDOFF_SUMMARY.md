@@ -16,8 +16,11 @@
   TP4 smoke、17 会话压力和 235K/1,000 exact。修正裸机运行时覆盖后，部署哈希
   前检、算子检查、TP4 startup/smoke 和 17 会话压力均为 `rc=0`；两个交错请求及
   淘汰目标在 cold/warm/pressure 后均保持相同输出 hash，warm 有效命中为
-  10,560 tokens。当前 235K/1,000 exact 正在运行，候选仍不得视为 qualified。
-  完整证据见
+  10,560 tokens。
+- 235K/1,000 exact 已通过：cold/warm 均生成 1,000 tokens 并以 `length` 结束，
+  warm 命中 234,944 tokens，完整 message hash 均为 `a7d5a63c...81799`；耗时分别
+  为 772.588s/225.197s，两个最终 rc 均为 0，日志无 fatal/OOM/Gloo/worker-loss。
+  当前固定内核 18 请求矩阵正在运行，候选仍不得视为 qualified。完整证据见
   `docs/experiments/M1_33_GDN_CHUNK64_RESTORE_20260721.md`。
 
 ## 2026-07-21 M1-32 固定内核绝对基线
