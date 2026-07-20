@@ -39,6 +39,12 @@ def setup_corex_env() -> None:
     _prepend_env_list("PATH", COREX_BIN_PATHS)
     _prepend_env_list("LD_LIBRARY_PATH", COREX_LIBRARY_PATHS)
     _prepend_env_list("PYTHONPATH", COREX_PYTHON_PATHS)
+    # multiprocessing.spawn copies the parent's live sys.path into each child;
+    # changing PYTHONPATH alone after interpreter startup is insufficient.
+    for path in reversed(COREX_PYTHON_PATHS):
+        if path in sys.path:
+            sys.path.remove(path)
+        sys.path.insert(0, path)
 
 
 def parse_gpus(value: str) -> list[int]:

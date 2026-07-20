@@ -56,7 +56,7 @@ class Bi100NcclPreflightUnitTest(unittest.TestCase):
             bi100_nccl_preflight.parse_gpus("")
 
     def test_nccl_setup_corex_env_prepends_paths(self):
-        with patch.dict(os.environ, {
+        with patch.object(sys, "path", ["/existing"]), patch.dict(os.environ, {
                 "PATH": "/bin",
                 "LD_LIBRARY_PATH": "/lib",
                 "PYTHONPATH": "/py",
@@ -68,6 +68,9 @@ class Bi100NcclPreflightUnitTest(unittest.TestCase):
                 "/usr/local/corex/lib:"))
             self.assertTrue(os.environ["PYTHONPATH"].startswith(
                 "/usr/local/corex/lib64/python3/dist-packages:"))
+            self.assertEqual(
+                sys.path[:len(bi100_nccl_preflight.COREX_PYTHON_PATHS)],
+                bi100_nccl_preflight.COREX_PYTHON_PATHS)
 
     def test_nccl_free_port_returns_bindable_local_port(self):
         port = bi100_nccl_preflight.free_port()
