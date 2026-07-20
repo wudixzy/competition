@@ -5,7 +5,13 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 RUN_ROOT=${M1_32_RUN_ROOT:-$ROOT/bench_runs/m1_32}
 MODEL_PATH=${MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
 START_AT=${M1_32_START_AT:-fine}
-FIXED_DIR="$RUN_ROOT/fine32_direct_fixed"
+FIXED_DIR=${M1_32_FIXED_DIR:-$RUN_ROOT/fine32_direct_fixed}
+FALLBACK_LABEL=${M1_32_FALLBACK_LABEL:-admission64_aligned_gate}
+FALLBACK_POLICY=${M1_32_FALLBACK_POLICY:-admission64}
+FALLBACK_MODE=${M1_32_FALLBACK_MODE:-aligned}
+FALLBACK_MIN_CACHED=${M1_32_FALLBACK_MIN_CACHED:-229376}
+FALLBACK_PRESSURE_RUN_ID=${M1_32_FALLBACK_PRESSURE_RUN_ID:-m1_32_admission64_aligned}
+FALLBACK_RUN_ID=${M1_32_FALLBACK_RUN_ID:-m1_32_aligned_235k}
 ACTIVE_PID=""
 
 export PYTHONPATH="$ROOT/tests:/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages:${PYTHONPATH:-}"
@@ -197,8 +203,8 @@ if [[ "$START_AT" == fine ]]; then
         --output-dir "$FINE_DIR/long_235k_warm_repeat"
 fi
 
-ALIGNED_DIR="$RUN_ROOT/admission64_aligned_gate"
-start_service admission64_aligned_gate admission64 aligned
+ALIGNED_DIR="$RUN_ROOT/$FALLBACK_LABEL"
+start_service "$FALLBACK_LABEL" "$FALLBACK_POLICY" "$FALLBACK_MODE"
 run_gate "$ALIGNED_DIR" smoke 300 \
     python3 "$ROOT/tests/smoke_api.py" \
     --base http://127.0.0.1:8000 --mode quick \
@@ -208,7 +214,7 @@ if [[ "$START_AT" != aligned-long ]]; then
         python3 "$ROOT/tests/prefix_cache_stress.py" \
         --base http://127.0.0.1:8000 --model-path "$MODEL_PATH" \
         --eviction-count 17 --timeout-s 600 \
-        --run-id m1_32_admission64_aligned \
+        --run-id "$FALLBACK_PRESSURE_RUN_ID" \
         --json-out "$ALIGNED_DIR/pressure.json"
 fi
 run_gate "$ALIGNED_DIR" long_235k_exact 7800 \
@@ -216,9 +222,9 @@ run_gate "$ALIGNED_DIR" long_235k_exact 7800 \
     --base http://127.0.0.1:8000 --model-path "$MODEL_PATH" \
     --target-prompt-tokens 235000 --max-tokens 1000 \
     --min-completion-tokens 1000 \
-    --max-model-len 262144 --min-cached-tokens 229376 \
+    --max-model-len 262144 --min-cached-tokens "$FALLBACK_MIN_CACHED" \
     --equivalence-mode exact --timeout-s 3600 \
-    --run-id m1_32_aligned_235k \
+    --run-id "$FALLBACK_RUN_ID" \
     --output-dir "$ALIGNED_DIR/long_235k_exact"
 
 printf '%s\n' 0 > "$RUN_ROOT/remaining_gates.rc"

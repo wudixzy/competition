@@ -68,6 +68,12 @@ gates pass.
 Any failed step stops the candidate. No alignment, capacity, or YAML sweep is
 allowed.
 
+`scripts/run_m1_33_chunk64_gates.sh` persists the operator result first and
+delegates to the existing timeout/cleanup service harness only after that
+result is exact. The M1-32 harness retains its existing default paths,
+arguments, and gates; its new fallback overrides only isolate M1-33 artifacts
+under `bench_runs/m1_33`.
+
 ## Score Economics
 
 The fixed baseline is:

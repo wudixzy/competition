@@ -734,6 +734,13 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("aligned-long", src)
         self.assertIn("--min-completion-tokens 1000", src)
 
+    def test_m1_33_chunk64_gates_are_fail_closed(self):
+        src = read("scripts/run_m1_33_chunk64_gates.sh")
+        self.assertIn("gdn_split_exactness.py", src)
+        self.assertIn("if [[ $operator_rc -ne 0 ]]", src)
+        self.assertIn("M1_32_FALLBACK_MODE=chunk64", src)
+        self.assertIn("M1_32_FALLBACK_MIN_CACHED=234944", src)
+
     def test_patch_scripts_do_not_keep_hardcoded_vllm_paths(self):
         for path in (ROOT / "qwen3_6_scripts").glob("patch_*.py"):
             src = path.read_text()
