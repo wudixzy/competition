@@ -95,6 +95,30 @@ class PatchTest(unittest.TestCase):
                 [sys.executable, str(SCRIPT)], env=env, capture_output=True
             ).returncode, 0)
 
+    def test_real_authoritative_override_patches_twice(self):
+        source = (ROOT / "vllm/core/block_manager_v2.py").read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            fake_package(root, source)
+            env = dict(
+                os.environ,
+                PYTHONPATH=str(ROOT / "qwen3_6_scripts")
+                + os.pathsep
+                + str(root),
+            )
+            target = root / "vllm/core/block_manager_v2.py"
+            subprocess.run([sys.executable, str(SCRIPT)], env=env, check=True,
+                           capture_output=True)
+            first = target.read_text()
+            self.assertIn(
+                "seq, self.block_tables[seq.seq_id]", first)
+            self.assertEqual(first.count("def _bi100_emit_cache_trace("), 1)
+            subprocess.run([sys.executable, str(SCRIPT)], env=env, check=True,
+                           capture_output=True)
+            self.assertEqual(first, target.read_text())
+            subprocess.run([sys.executable, "-m", "py_compile", str(target)],
+                           check=True)
+
     def test_helper_runtime_contract(self):
         spec = importlib.util.spec_from_file_location("trace_patch", SCRIPT)
         module = importlib.util.module_from_spec(spec)

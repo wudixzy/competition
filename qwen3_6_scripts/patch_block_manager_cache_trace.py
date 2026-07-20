@@ -1,5 +1,5 @@
 """Install the optional BI100 prefix-cache diagnostic trace."""
-from patch_utils import package_root, replace_once
+from patch_utils import package_root, replace_once, replace_one_of
 
 VLLM_ROOT = package_root("vllm")
 TARGET = VLLM_ROOT / "core" / "block_manager_v2.py"
@@ -147,15 +147,25 @@ def main():
                  required=True,
                  already_contains="self.block_tables[seq.seq_id] = block_table\n"
                                 "        self._bi100_capture_cache_trace(")
-    replace_once(TARGET,
-                 "        self._last_access_blocks_tracker.update_seq_blocks_last_access(\n"
-                 "            seq_id, self.block_tables[seq_id].physical_block_ids)\n\n        # Untrack seq",
-                 "        self._last_access_blocks_tracker.update_seq_blocks_last_access(\n"
-                 "            seq_id, self.block_tables[seq_id].physical_block_ids)\n        self._bi100_emit_cache_trace(\n            seq, self.block_tables[seq_id])\n\n        # Untrack seq",
-                 required=True,
-                 already_contains="self._last_access_blocks_tracker.update_seq_blocks_last_access(\n"
-                                "            seq_id, self.block_tables[seq_id].physical_block_ids)\n"
-                                "        self._bi100_emit_cache_trace(")
+    replacements = []
+    for table_key in ("seq_id", "seq.seq_id"):
+        prefix = (
+            "        self._last_access_blocks_tracker."
+            "update_seq_blocks_last_access(\n"
+            f"            seq_id, self.block_tables[{table_key}]."
+            "physical_block_ids)\n")
+        replacements.append((
+            prefix + "\n        # Untrack seq",
+            prefix + "        self._bi100_emit_cache_trace(\n"
+            f"            seq, self.block_tables[{table_key}])\n\n"
+            "        # Untrack seq",
+        ))
+    replace_one_of(
+        TARGET,
+        replacements,
+        required=True,
+        already_contains="        self._bi100_emit_cache_trace(\n"
+                         "            seq, self.block_tables[")
 
 
 if __name__ == "__main__":
