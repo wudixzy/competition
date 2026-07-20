@@ -1,5 +1,19 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-37 persistent online-softmax 能力门禁
+
+- 缓存候选 M1-35 只提升 `4.1381%`，M1-29 又缺完整 881 trace；按计划转入一次
+  split-reduction 备选。M1-37 保留固定 512 列、256 线程和原 FP32 树归约，只把
+  49,152-block 大启动改为最多 1,024 个 persistent blocks 循环处理行。
+- CoreX 编译成功。q=456 为 `5.1363x` 且通过 parity；q=8192 为 `6.1018x`，但
+  exponentiated scores `relL2=1.0341e-3`、running sum `relL2=6.8682e-4`，超过
+  固定 `1e-5` 门槛，说明 persistent grid 不能修复稀疏大行错误。
+- 监控管道误把末端命令写成 `probe.rc=0`；权威 JSON 为
+  `qualified=false/parity_ok=false/speed_ok=true`，JSON fail-closed 检查已写入
+  `qualification.rc=1`。候选标记 `NUMERICAL_REJECTED`，不集成、不扫描参数。
+  完整证据见
+  `docs/experiments/M1_37_PERSISTENT_ONLINE_SOFTMAX_20260721.md`。
+
 ## 2026-07-21 M1-36 direct GDN restore copy 探针
 
 - M1-35 距缓存阶段 `+5%` 门槛仍差 `57.7428` 分。M1-36 用生产真实 shape
