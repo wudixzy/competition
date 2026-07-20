@@ -24,16 +24,16 @@ try:
                                  gdn_cache_policy_from_env,
                                  gdn_restore_alignment,
                                  gdn_restore_mode_from_env,
-                                 key_at_strict_boundary,
                                  keys_from_block_hashes,
+                                 restore_key_is_eligible,
                                  strict_prefix_block_count)
 except ImportError:  # Local source-tree tests.
     from qwen3_6_scripts.gdn_prefix import (
         GdnPrefixKey, GdnPrefixStatePolicy, capture_points_for_step,
         final_capture_key, gdn_cache_policy_from_env,
         gdn_restore_alignment, gdn_restore_mode_from_env,
-        key_at_strict_boundary,
-        keys_from_block_hashes, strict_prefix_block_count)
+        keys_from_block_hashes, restore_key_is_eligible,
+        strict_prefix_block_count)
 
 logger = init_logger(__name__)
 
@@ -1038,12 +1038,14 @@ class Scheduler:
                         self.cache_config.block_size))
                 live_keys = keys_from_block_hashes(
                     block_hashes[:max_live_blocks])
-                if self._gdn_restore_mode != "direct":
-                    live_keys = [
-                        key for key in live_keys
-                        if (key[0] * self.cache_config.block_size
-                            % self._gdn_replay_alignment == 0)
-                    ]
+                live_keys = [
+                    key for key in live_keys
+                    if restore_key_is_eligible(
+                        key, prompt_seq.data.get_len(),
+                        self.cache_config.block_size,
+                        self._gdn_restore_mode,
+                        self._gdn_replay_alignment)
+                ]
                 restore_key = self._gdn_prefix_policy.select_restore(
                     live_keys, len(live_keys))
                 self._gdn_request_restore_keys[
@@ -1455,9 +1457,11 @@ class Scheduler:
                         self._gdn_request_capture_targets.get(
                             seq_group.request_id, ()))
                     if self._gdn_prefix_policy.policy == "fine32":
-                        step_key = key_at_strict_boundary(
+                        step_key = final_capture_key(
                             self.block_manager.get_content_hashes(seqs[0]),
-                            logical_end_tokens, self.cache_config.block_size)
+                            logical_end_tokens, self.cache_config.block_size,
+                            self._gdn_restore_mode,
+                            self._gdn_replay_alignment)
                         capture_targets = ([step_key]
                                            if step_key is not None else [])
                     if self._gdn_prefix_policy.policy != "off":

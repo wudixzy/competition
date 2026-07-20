@@ -14,6 +14,7 @@ from qwen3_6_scripts.gdn_prefix import (
     key_at_strict_boundary,
     keys_from_block_hashes,
     make_prefix_key,
+    restore_key_is_eligible,
 )
 
 
@@ -50,6 +51,24 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         self.assertEqual(
             final_capture_key(hashes, 235000, 16, "aligned", 8192)[0],
             14336)
+
+    def test_direct_avoids_single_token_prefill_replay(self):
+        hashes = [digest(i % 255) for i in range(700)]
+        self.assertEqual(
+            final_capture_key(hashes, 10593, 16, "direct", 16)[0], 661)
+        self.assertEqual(
+            final_capture_key(hashes, 10594, 16, "direct", 16)[0], 662)
+        self.assertFalse(restore_key_is_eligible(
+            (662, hashes[661]), 10593, 16, "direct", 16))
+        self.assertTrue(restore_key_is_eligible(
+            (661, hashes[660]), 10593, 16, "direct", 16))
+
+    def test_aligned_restore_eligibility_uses_fixed_boundary(self):
+        key = (512, digest(1))
+        self.assertTrue(restore_key_is_eligible(
+            key, 10000, 16, "aligned", 8192))
+        self.assertFalse(restore_key_is_eligible(
+            (511, digest(2)), 10000, 16, "aligned", 8192))
 
     def test_restore_alignment_matches_execution_granularity(self):
         self.assertEqual(gdn_restore_alignment("direct", 16, 8192), 16)

@@ -756,6 +756,13 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("stop_service", src)
         self.assertIn("classification.json", src)
 
+    def test_direct_restore_avoids_single_token_prefill_path(self):
+        policy_src = read("qwen3_6_scripts/gdn_prefix.py")
+        scheduler_src = read("qwen3_6_scripts/scheduler.py")
+        self.assertIn("GDN_DIRECT_MIN_REPLAY_TOKENS = 2", policy_src)
+        self.assertIn("restore_key_is_eligible", scheduler_src)
+        self.assertIn("step_key = final_capture_key(", scheduler_src)
+
     def test_dataset_shaped_matrix_uses_tracked_profile_driver(self):
         src = read("scripts/run_dataset_shaped_matrix.sh")
         self.assertIn(

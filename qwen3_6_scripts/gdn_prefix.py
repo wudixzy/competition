@@ -13,6 +13,7 @@ GdnCapturePoint = Tuple[int, GdnPrefixKey]
 
 _VALID_POLICIES = {"fine32", "admission64", "off"}
 GDN_KERNEL_CHUNK_TOKENS = 64
+GDN_DIRECT_MIN_REPLAY_TOKENS = 2
 
 _VALID_RESTORE_MODES = {"direct", "chunk64", "aligned"}
 
@@ -88,7 +89,16 @@ def final_capture_key(
         block_hashes: Sequence[bytes], prompt_tokens: int, block_size: int,
         restore_mode: str, replay_alignment: int) -> Optional[GdnPrefixKey]:
     if restore_mode == "direct":
-        return key_at_strict_boundary(block_hashes, prompt_tokens, block_size)
+        block_count = min(
+            len(block_hashes), strict_prefix_block_count(
+                prompt_tokens, block_size))
+        if (block_count > 0
+                and prompt_tokens - block_count * block_size
+                < GDN_DIRECT_MIN_REPLAY_TOKENS):
+            block_count -= 1
+        if block_count <= 0:
+            return None
+        return make_prefix_key(block_count, block_hashes[block_count - 1])
     if restore_mode not in {"chunk64", "aligned"}:
         raise ValueError(f"unknown GDN restore mode: {restore_mode}")
     if (replay_alignment <= 0 or replay_alignment % block_size != 0
@@ -100,6 +110,25 @@ def final_capture_key(
     if block_count <= 0:
         return None
     return make_prefix_key(block_count, block_hashes[block_count - 1])
+
+
+def restore_key_is_eligible(
+        key: GdnPrefixKey, prompt_tokens: int, block_size: int,
+        restore_mode: str, replay_alignment: int) -> bool:
+    """Return whether restoring ``key`` preserves the execution contract."""
+    make_prefix_key(*key)
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
+    boundary_tokens = key[0] * block_size
+    remaining_tokens = prompt_tokens - boundary_tokens
+    if remaining_tokens <= 0:
+        return False
+    if restore_mode == "direct":
+        return remaining_tokens >= GDN_DIRECT_MIN_REPLAY_TOKENS
+    if restore_mode not in {"chunk64", "aligned"}:
+        raise ValueError(f"unknown GDN restore mode: {restore_mode}")
+    return (replay_alignment > 0
+            and boundary_tokens % replay_alignment == 0)
 
 
 def capture_points_for_step(
