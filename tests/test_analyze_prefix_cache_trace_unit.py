@@ -133,6 +133,8 @@ class AnalyzerTest(unittest.TestCase):
         self.assertEqual(off["raw_kv_contiguous_hit_tokens"], 32)
         self.assertEqual(fine["usable_gdn_state_avoided_tokens"], 32)
         self.assertEqual(admission["usable_gdn_state_avoided_tokens"], 32)
+        self.assertEqual(admission["residual_prefill_tokens"], 64)
+        self.assertEqual(len(admission["request_results"]), 3)
 
     def test_gdn_state_without_live_kv_cannot_avoid_tokens(self):
         records = [
@@ -177,9 +179,13 @@ class AnalyzerTest(unittest.TestCase):
             self.assertIn("off", report["policy_metrics"])
             self.assertIn("fine32", report["policy_metrics"])
             self.assertIn("admission64", report["policy_metrics"])
+            self.assertIn("admission64_m1_29", report["policy_metrics"])
+            self.assertFalse(
+                report["policy_metrics"]["admission64"]
+                ["per_request_timing_projection_complete"])
 
             with self.assertRaisesRegex(
-                    ValueError, "baseline metrics file cannot be combined"):
+                    ValueError, "aggregate hit-rate scaling is disabled"):
                 sim.main([
                     str(path),
                     "--out", str(root / "out.json"),
@@ -189,17 +195,64 @@ class AnalyzerTest(unittest.TestCase):
                     "--baseline-metrics", str(path),
                 ])
 
+            with self.assertRaisesRegex(
+                    ValueError, "aggregate hit-rate scaling is disabled"):
+                sim.main([
+                    str(path),
+                    "--out", str(out),
+                    "--expected-requests", "2",
+                    "--expected-block-size", "16",
+                    "--baseline-cache-tps", "100",
+                    "--baseline-weighted-score", "1000",
+                ])
+
+    def test_per_request_residual_projection_uses_trace_timings(self):
+        records = [
+            record([1, 2], request_id=0, ordinal=1),
+            record([1, 2], request_id=1, ordinal=2),
+        ]
+        records[0].update({
+            "ttft_s": 2.0,
+            "request_latency_s": 3.0,
+            "time_in_queue_s": 0.1,
+            "observed_effective_cached_tokens": 0,
+        })
+        records[1].update({
+            "ttft_s": 1.0,
+            "request_latency_s": 2.0,
+            "time_in_queue_s": 0.1,
+            "observed_effective_cached_tokens": 16,
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            trace = root / "trace.log"
+            trace.write_text("\n".join(
+                sim.MARKER + json.dumps(item) for item in records) + "\n")
+            baseline = root / "baseline.json"
+            baseline.write_text(json.dumps({
+                "run_id": "timed",
+                "trace_session_sha256": "0123456789abcdef",
+                "cache_tps": 100.0,
+                "weighted_score": 1000.0,
+                "output_tps_p10": 21.0,
+                "success_rate": 1.0,
+            }))
+            out = root / "report.json"
             sim.main([
-                str(path),
-                "--out", str(out),
+                str(trace), "--out", str(out),
                 "--expected-requests", "2",
                 "--expected-block-size", "16",
-                "--baseline-cache-tps", "100",
-                "--baseline-weighted-score", "1000",
-                "--cache-coefficient", "0.5",
+                "--baseline-metrics", str(baseline),
             ])
-            projected = json.loads(out.read_text())
-            self.assertIn("weighted_cache_tps_upper_bound", projected)
+            report = json.loads(out.read_text())
+            metrics = report["policy_metrics"]["admission64"]
+            self.assertTrue(metrics["per_request_timing_projection_complete"])
+            self.assertIsNotNone(metrics["projected_ttft_p90_s"])
+            qualification = report["qualification"]["admission64"]
+            self.assertEqual(
+                qualification["projection_model"],
+                "per_request_residual_prefill")
+            self.assertIsNotNone(qualification["projected_weighted_score"])
 
     def test_docker_json_wrapper_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 ROOT = pathlib.Path(__file__).parents[1]
 SCRIPT = ROOT / "qwen3_6_scripts" / "patch_block_manager_cache_trace.py"
@@ -123,6 +124,15 @@ class PatchTest(unittest.TestCase):
         class Group:
             request_id = "secret-request"
 
+            def __init__(self):
+                self.metrics = SimpleNamespace(
+                    arrival_time=10.0,
+                    first_token_time=12.0,
+                    finished_time=14.0,
+                    time_in_queue=0.25,
+                    num_cached_tokens=4,
+                )
+
         class Table:
             def __init__(self, values):
                 self.values = values
@@ -145,7 +155,12 @@ class PatchTest(unittest.TestCase):
 
             os.environ["BI100_CACHE_TRACE"] = "1"
             with contextlib.redirect_stdout(output):
-                fake._bi100_capture_cache_trace(Group(), seq, Table([hash_a]))
+                group = Group()
+                fake._bi100_capture_cache_trace(group, seq, Table([hash_a]))
+                fake._bi100_update_cache_trace(
+                    seq, 2, (1, hash_a),
+                    [((1, hash_a), "final_prefill")],
+                    [(2, hash_b)], "admission64")
                 seq.token_ids = [10, 11, 12, 13, 14, 15, 16, 17]
                 fake._bi100_emit_cache_trace(seq, Table([hash_a, hash_b]))
             record = json.loads(output.getvalue().split(" ", 1)[1])
@@ -163,6 +178,18 @@ class PatchTest(unittest.TestCase):
             self.assertEqual(record["allocated_blocks"], 2)
             self.assertEqual(record["full_blocks"], 2)
             self.assertEqual(record["hash_encoding"], "sha256_base64")
+            self.assertEqual(record["gdn_policy"], "admission64")
+            self.assertEqual(record["raw_kv_contiguous_hit_blocks"], 2)
+            self.assertEqual(record["effective_gdn_hit_blocks"], 1)
+            self.assertEqual(record["gdn_admissions"][0]["reason"],
+                             "final_prefill")
+            self.assertEqual(record["gdn_evictions"][0]["reason"],
+                             "capacity_lru")
+            self.assertEqual(record["ttft_s"], 2.0)
+            self.assertEqual(record["request_latency_s"], 4.0)
+            self.assertEqual(record["time_in_queue_s"], 0.25)
+            self.assertEqual(record["observed_effective_cached_tokens"], 4)
+            self.assertEqual(record["generated_tokens"], 3)
             self.assertEqual(
                 base64.b64decode(record["block_hashes"]),
                 hash_a + hash_b

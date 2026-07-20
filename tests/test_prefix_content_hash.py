@@ -1,10 +1,13 @@
 import ast
 import hashlib
+import os
 import pathlib
 import struct
 import unittest
 from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import Any, List, Optional
+from unittest.mock import patch
 
 try:
     from PIL import Image
@@ -36,12 +39,16 @@ def _class_with_methods(path: pathlib.Path, source_class: str,
     ast.fix_missing_locations(module)
     namespace = {
         "Any": Any,
+        "Dict": dict,
         "Image": Image,
         "List": List,
         "Mapping": Mapping,
         "Optional": Optional,
         "PrefixHash": bytes,
+        "Sequence": Any,
+        "SequenceGroup": Any,
         "hashlib": hashlib,
+        "os": os,
         "struct": struct,
         "torch": None,
     }
@@ -53,7 +60,8 @@ PrefixHash = _class_with_methods(
     PREFIX_BLOCK, "PrefixCachingBlock", {"hash_block_tokens"}, "PrefixHash")
 NamespaceHash = _class_with_methods(
     BLOCK_MANAGER, "BlockSpaceManagerV2", {
-        "_sort_map_keys", "_hash_multi_modal_obj",
+        "_adapter_cache_namespace", "_build_runtime_cache_namespace",
+        "_get_cache_namespace", "_sort_map_keys", "_hash_multi_modal_obj",
         "_hash_multi_modal_namespace", "_request_local_fallback_cache_namespace",
     }, "NamespaceHash")
 
@@ -114,6 +122,7 @@ class PrefixContentHashTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             instance._hash_multi_modal_namespace({"bad": object()})
         instance._request_local_namespace = {}
+        instance._runtime_cache_namespace = b"r" * 32
         first = instance._request_local_fallback_cache_namespace("request-a")
         self.assertEqual(
             first,
@@ -121,6 +130,53 @@ class PrefixContentHashTest(unittest.TestCase):
         self.assertNotEqual(
             first,
             instance._request_local_fallback_cache_namespace("request-b"))
+
+    def test_runtime_namespace_covers_fixed_model_identity(self):
+        instance = NamespaceHash()
+        instance.block_size = 16
+        with patch.dict(os.environ, {
+                "BI100_PREFIX_MODEL_FINGERPRINT": "model-a",
+                "BI100_PREFIX_DTYPE": "float16",
+                "BI100_PREFIX_TP_SIZE": "4",
+        }, clear=False):
+            identity_a = instance._build_runtime_cache_namespace()
+        with patch.dict(os.environ, {
+                "BI100_PREFIX_MODEL_FINGERPRINT": "model-b",
+                "BI100_PREFIX_DTYPE": "float16",
+                "BI100_PREFIX_TP_SIZE": "4",
+        }, clear=False):
+            identity_b = instance._build_runtime_cache_namespace()
+        self.assertEqual(len(identity_a), 32)
+        self.assertNotEqual(identity_a, identity_b)
+
+        with patch.dict(os.environ, {"BI100_PREFIX_TP_SIZE": "0"},
+                        clear=False):
+            with self.assertRaises(RuntimeError):
+                instance._build_runtime_cache_namespace()
+
+    def test_text_namespace_is_adapter_sensitive(self):
+        instance = NamespaceHash()
+        instance.block_size = 16
+        instance._runtime_cache_namespace = b"r" * 32
+        instance._request_local_namespace = {}
+        instance._warned_mm_namespace_requests = set()
+        sequence = SimpleNamespace(multi_modal_data=None)
+        plain = SimpleNamespace(lora_request=None,
+                                prompt_adapter_request=None)
+        lora = SimpleNamespace(
+            lora_request=SimpleNamespace(
+                lora_name="adapter-a", lora_int_id=1,
+                lora_path="/adapter-a", base_model_name="base"),
+            prompt_adapter_request=None,
+        )
+        plain_namespace = instance._get_cache_namespace(
+            sequence, "plain", plain)
+        self.assertEqual(
+            plain_namespace,
+            instance._get_cache_namespace(sequence, "plain-2", plain))
+        self.assertNotEqual(
+            plain_namespace,
+            instance._get_cache_namespace(sequence, "lora", lora))
 
     def test_initial_mutable_block_keeps_namespace(self):
         source = BLOCK_TABLE.read_text()

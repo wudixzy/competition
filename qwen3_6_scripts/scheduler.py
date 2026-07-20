@@ -1470,6 +1470,23 @@ class Scheduler:
                         gdn_evict_keys = list(
                             self._gdn_prefix_policy.admit(
                                 key for _, key in gdn_capture_points))
+                    trace_update = getattr(
+                        self.block_manager, "_bi100_update_cache_trace", None)
+                    if callable(trace_update):
+                        capture_actions = []
+                        for _, key in gdn_capture_points:
+                            if self._gdn_prefix_policy.policy == "fine32":
+                                reason = "fine32_chunk"
+                            elif (capture_targets
+                                  and key == capture_targets[-1]):
+                                reason = "final_prefill"
+                            else:
+                                reason = "repeated_branch"
+                            capture_actions.append((key, reason))
+                        trace_update(
+                            seqs[0], len(raw_computed_block_nums),
+                            gdn_restore_key, capture_actions,
+                            gdn_evict_keys, self._gdn_prefix_policy.policy)
                 # In the next iteration, all prompt tokens are not computed.
                 # It means the prefill is chunked, and we don't need sampling.
                 # NOTE: We use get_len instead of get_prompt_len because when

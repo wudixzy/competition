@@ -1,5 +1,6 @@
 """A block manager that manages token blocks."""
 import hashlib
+import os
 import struct
 from collections.abc import Mapping
 from typing import Any, Dict, List, Optional, Sequence as GenericSequence, Tuple
@@ -113,6 +114,8 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         self.block_tables: Dict[SeqId, BlockTable] = {}
         self.cross_block_tables: Dict[EncoderSeqId, BlockTable] = {}
         self._warned_mm_namespace_requests = set[str]()
+        self._request_local_namespace: Dict[str, bytes] = {}
+        self._runtime_cache_namespace = self._build_runtime_cache_namespace()
 
         self._computed_blocks_tracker = ComputedBlocksTracker(
             self.block_allocator)
@@ -188,7 +191,8 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         request_id = seq_group.request_id
         cache_namespace = self._get_cache_namespace(
             seq,
-            request_id=request_id
+            request_id=request_id,
+            seq_group=seq_group,
         )
         block_table: BlockTable = self._allocate_sequence(
             seq,
@@ -225,29 +229,39 @@ class BlockSpaceManagerV2(BlockSpaceManager):
             assert encoder_seq is not None
             encoder_cache_namespace = self._get_cache_namespace(
                 encoder_seq,
-                request_id=request_id)
+                request_id=request_id,
+                seq_group=seq_group)
             block_table = self._allocate_sequence(
                 encoder_seq, cache_namespace=encoder_cache_namespace)
             self.cross_block_tables[request_id] = block_table
 
-    def _get_cache_namespace(self, seq: Sequence,
-                             request_id: str) -> bytes:
-        if not seq.multi_modal_data:
-            return b""
+    def _get_cache_namespace(self, seq: Sequence, request_id: str,
+                             seq_group: SequenceGroup) -> bytes:
+        digest = hashlib.sha256()
+        digest.update(b"bi100-request-prefix-namespace-v1|")
+        digest.update(self._runtime_cache_namespace)
+        digest.update(self._adapter_cache_namespace(seq_group))
 
-        try:
-            return self._hash_multi_modal_namespace(seq.multi_modal_data)
-        except TypeError:
-            if request_id not in self._warned_mm_namespace_requests:
-                logger.warning(
-                    "Request %s has unsupported multimodal input for cache "
-                    "namespace hashing. Falling back to request-local "
-                    "namespace isolation.",
-                    request_id,
-                )
-                self._warned_mm_namespace_requests.add(request_id)
-            return self._request_local_fallback_cache_namespace(
-                request_id=request_id)
+        if seq.multi_modal_data:
+            try:
+                mm_namespace = self._hash_multi_modal_namespace(
+                    seq.multi_modal_data)
+            except TypeError:
+                if request_id not in self._warned_mm_namespace_requests:
+                    logger.warning(
+                        "Request %s has unsupported multimodal input for "
+                        "cache namespace hashing. Falling back to "
+                        "request-local namespace isolation.",
+                        request_id,
+                    )
+                    self._warned_mm_namespace_requests.add(request_id)
+                mm_namespace = self._request_local_fallback_cache_namespace(
+                    request_id=request_id)
+            digest.update(b"mm|")
+            digest.update(mm_namespace)
+        else:
+            digest.update(b"text|")
+        return digest.digest()
 
     def can_append_slots(self, seq_group: SequenceGroup,
                          num_lookahead_slots: int) -> bool:
@@ -377,10 +391,73 @@ class BlockSpaceManagerV2(BlockSpaceManager):
     def get_content_hashes(self, seq: Sequence) -> List[bytes]:
         return self.block_tables[seq.seq_id].get_content_hashes()
 
+    def _build_runtime_cache_namespace(self) -> bytes:
+        """Bind first-block hashes to the fixed model runtime identity."""
+        model = os.getenv("BI100_PREFIX_MODEL_FINGERPRINT",
+                          "Qwen3.6-35B-A3B")
+        dtype = os.getenv("BI100_PREFIX_DTYPE", "float16")
+        tp_raw = os.getenv("BI100_PREFIX_TP_SIZE", "4")
+        try:
+            tp_size = int(tp_raw)
+        except ValueError as exc:
+            raise RuntimeError(
+                "BI100_PREFIX_TP_SIZE must be a positive integer") from exc
+        if tp_size <= 0:
+            raise RuntimeError(
+                "BI100_PREFIX_TP_SIZE must be a positive integer")
+
+        digest = hashlib.sha256()
+        digest.update(b"bi100-runtime-prefix-identity-v1|")
+        for label, value in (
+                (b"model", model),
+                (b"dtype", dtype),
+                (b"tp", str(tp_size)),
+                (b"block_size", str(self.block_size))):
+            encoded = value.encode("utf-8")
+            digest.update(label)
+            digest.update(struct.pack("!Q", len(encoded)))
+            digest.update(encoded)
+        return digest.digest()
+
+    @staticmethod
+    def _adapter_cache_namespace(seq_group: SequenceGroup) -> bytes:
+        digest = hashlib.sha256()
+        digest.update(b"bi100-adapter-prefix-identity-v1|")
+        lora = getattr(seq_group, "lora_request", None)
+        prompt_adapter = getattr(seq_group, "prompt_adapter_request", None)
+        identities = (
+            ("lora", lora, ("lora_name", "lora_int_id", "lora_path",
+                             "base_model_name")),
+            ("prompt", prompt_adapter,
+             ("prompt_adapter_name", "prompt_adapter_id",
+              "prompt_adapter_local_path",
+              "prompt_adapter_num_virtual_tokens")),
+        )
+        for kind, adapter, fields in identities:
+            digest.update(kind.encode("ascii"))
+            if adapter is None:
+                digest.update(b"none|")
+                continue
+            for field in fields:
+                value = str(getattr(adapter, field, ""))
+                encoded = value.encode("utf-8")
+                digest.update(field.encode("ascii"))
+                digest.update(struct.pack("!Q", len(encoded)))
+                digest.update(encoded)
+        return digest.digest()
+
     def _request_local_fallback_cache_namespace(self,
                                                request_id: str) -> bytes:
-        return hashlib.sha256(
-            ("multimodal-unsupported:" + request_id).encode()).digest()
+        namespace = self._request_local_namespace.get(request_id)
+        if namespace is None:
+            digest = hashlib.sha256()
+            digest.update(b"multimodal-unsupported-request-local-v1|")
+            digest.update(self._runtime_cache_namespace)
+            digest.update(os.urandom(32))
+            digest.update(request_id.encode("utf-8"))
+            namespace = digest.digest()
+            self._request_local_namespace[request_id] = namespace
+        return namespace
 
     def _hash_multi_modal_namespace(self, mm_data: Any) -> bytes:
         digest = hashlib.sha256()

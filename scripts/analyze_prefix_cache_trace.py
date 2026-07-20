@@ -17,6 +17,21 @@ from typing import Any, Dict, Tuple
 MARKER = "[BI100_CACHE_TRACE] "
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
+
+def _percentile(values: Sequence[float], percent: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return float(ordered[0])
+    rank = (len(ordered) - 1) * percent / 100.0
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return float(ordered[lower])
+    weight = rank - lower
+    return float(ordered[lower] * (1.0 - weight) + ordered[upper] * weight)
+
 try:
     from qwen3_6_scripts.gdn_prefix import (  # type: ignore
         GdnPrefixStatePolicy,
@@ -181,7 +196,12 @@ def _baseline_metrics(path: str) -> Dict[str, Any]:
     trace_session = _hex16(data.get("trace_session_sha256"), "baseline trace_session_sha256")
     cache_tps = data.get("cache_tps")
     weighted_score = data.get("weighted_score")
-    for name, value in (("cache_tps", cache_tps), ("weighted_score", weighted_score)):
+    output_tps_p10 = data.get("output_tps_p10")
+    success_rate = data.get("success_rate")
+    for name, value in (("cache_tps", cache_tps),
+                        ("weighted_score", weighted_score),
+                        ("output_tps_p10", output_tps_p10),
+                        ("success_rate", success_rate)):
         if (not isinstance(value, (int, float)) or isinstance(value, bool)
                 or not math.isfinite(value)):
             raise ValueError(f"baseline metrics {name} must be finite")
@@ -189,11 +209,17 @@ def _baseline_metrics(path: str) -> Dict[str, Any]:
         raise ValueError("baseline Cache TPS must be non-negative")
     if weighted_score <= 0:
         raise ValueError("baseline weighted score must be positive")
+    if output_tps_p10 < 0:
+        raise ValueError("baseline Output TPS P10 must be non-negative")
+    if not 0 <= success_rate <= 1:
+        raise ValueError("baseline success rate must be between zero and one")
     return {
         "run_id": run_id.strip(),
         "trace_session_sha256": trace_session,
         "cache_tps": float(cache_tps),
         "weighted_score": float(weighted_score),
+        "output_tps_p10": float(output_tps_p10),
+        "success_rate": float(success_rate),
         "source": _file_provenance(path),
     }
 
@@ -264,6 +290,24 @@ def read(paths: Sequence[str]) -> list[Dict[str, Any]]:
                 if not isinstance(total_tokens, int) or total_tokens < prompt_tokens:
                     raise ValueError("total_tokens must be at least prompt_tokens")
 
+                for field in ("ttft_s", "request_latency_s",
+                              "time_in_queue_s", "observed_input_tps",
+                              "observed_output_tps"):
+                    value = record.get(field)
+                    if value is not None and (
+                            not isinstance(value, (int, float))
+                            or isinstance(value, bool)
+                            or not math.isfinite(value) or value < 0):
+                        raise ValueError(f"{field} must be finite and non-negative")
+                observed_cached = record.get(
+                    "observed_effective_cached_tokens")
+                if observed_cached is not None and (
+                        not isinstance(observed_cached, int)
+                        or isinstance(observed_cached, bool)
+                        or not 0 <= observed_cached <= prompt_tokens):
+                    raise ValueError(
+                        "observed_effective_cached_tokens is inconsistent")
+
                 expected_prompt_allocated = (
                     prompt_tokens + block_size - 1) // block_size
                 expected_allocated = (total_tokens + block_size - 1) // block_size
@@ -329,6 +373,7 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
     frequency = defaultdict(int)
     hits = total = hit_tokens = gap_blocks = 0
     avoided_tokens = 0
+    request_results: list[Dict[str, Any]] = []
     gdn_policy = GdnPrefixStatePolicy(policy)
 
     for tick, record in enumerate(records, 1):
@@ -374,8 +419,44 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
         # prefix is also resident. State-only hits cannot restore attention KV.
         live_keys = keys_from_block_hashes(prompt_hashes[:hit])
         restore_key = gdn_policy.select_restore(live_keys, len(live_keys))
-        if restore_key is not None:
-            avoided_tokens += restore_key[0] * block_size
+        request_avoided_tokens = (
+            restore_key[0] * block_size if restore_key is not None else 0)
+        avoided_tokens += request_avoided_tokens
+        residual_prefill_tokens = max(
+            0, prompt_tokens - request_avoided_tokens)
+        request_result: Dict[str, Any] = {
+            "ordinal": record["ordinal"],
+            "prompt_tokens": prompt_tokens,
+            "raw_kv_contiguous_hit_tokens": hit * block_size,
+            "usable_gdn_state_avoided_tokens": request_avoided_tokens,
+            "residual_prefill_tokens": residual_prefill_tokens,
+        }
+
+        ttft_s = record.get("ttft_s")
+        request_latency_s = record.get("request_latency_s")
+        observed_cached = record.get("observed_effective_cached_tokens")
+        if (isinstance(ttft_s, (int, float))
+                and isinstance(request_latency_s, (int, float))
+                and isinstance(observed_cached, int)):
+            queue_s = float(record.get("time_in_queue_s", 0.0))
+            observed_residual = max(1, prompt_tokens - observed_cached)
+            prefill_s = max(0.0, float(ttft_s) - queue_s)
+            projected_prefill_s = (
+                prefill_s * residual_prefill_tokens / observed_residual)
+            projected_ttft_s = queue_s + projected_prefill_s
+            projected_latency_s = max(
+                projected_ttft_s,
+                float(request_latency_s) - float(ttft_s)
+                + projected_ttft_s)
+            request_result.update({
+                "observed_effective_cached_tokens": observed_cached,
+                "observed_residual_prefill_tokens": observed_residual,
+                "observed_ttft_s": float(ttft_s),
+                "projected_ttft_s": projected_ttft_s,
+                "observed_request_latency_s": float(request_latency_s),
+                "projected_request_latency_s": projected_latency_s,
+            })
+        request_results.append(request_result)
 
         capture_targets: list[Tuple[int, bytes]] = []
         if policy == "fine32":
@@ -436,6 +517,8 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
     total_prompt_tokens = sum(record["prompt_tokens"] for record in records)
     return {
         "policy": policy,
+        "kv_eviction_policy": (
+            "frequency_aware_m1_29" if candidate else "lru"),
         "hit_blocks": hits,
         "total_blocks": total,
         "hit_tokens": hit_tokens,
@@ -453,6 +536,9 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
         "combined_hit_tokens": avoided_tokens,
         "combined_hit_token_rate": (avoided_tokens / total_prompt_tokens
                                     if total_prompt_tokens else 0.0),
+        "residual_prefill_tokens": sum(
+            item["residual_prefill_tokens"] for item in request_results),
+        "request_results": request_results,
         "final_cache": cache,
         "gdn_policy_cache_size": len(gdn_policy),
     }
@@ -471,8 +557,21 @@ def simulate(records: Sequence[Dict[str, Any]], capacity: int,
 
 
 def _metrics(raw: Dict[str, Any], total_prompt_tokens: int) -> Dict[str, Any]:
-    return {
+    request_results = raw["request_results"]
+    projected_ttfts = [
+        item["projected_ttft_s"] for item in request_results
+        if "projected_ttft_s" in item
+    ]
+    projected_latencies = [
+        item["projected_request_latency_s"] for item in request_results
+        if "projected_request_latency_s" in item
+    ]
+    timing_complete = (
+        len(projected_ttfts) == len(request_results)
+        and len(projected_latencies) == len(request_results))
+    metrics = {
         "policy": raw["policy"],
+        "kv_eviction_policy": raw["kv_eviction_policy"],
         "hit_tokens": raw["hit_tokens"],
         "hit_blocks": raw["hit_blocks"],
         "total_blocks": raw["total_blocks"],
@@ -485,7 +584,20 @@ def _metrics(raw: Dict[str, Any], total_prompt_tokens: int) -> Dict[str, Any]:
         "usable_gdn_state_avoided_token_rate": raw["usable_gdn_state_avoided_token_rate"],
         "combined_hit_token_rate": raw["combined_hit_token_rate"],
         "combined_hit_tokens": raw["combined_hit_tokens"],
+        "residual_prefill_tokens": raw["residual_prefill_tokens"],
+        "residual_prefill_token_rate": (
+            raw["residual_prefill_tokens"] / total_prompt_tokens
+            if total_prompt_tokens else 0.0),
+        "residual_prefill_tokens_p90": _percentile([
+            item["residual_prefill_tokens"] for item in request_results
+        ], 90),
+        "per_request_timing_projection_complete": timing_complete,
+        "projected_ttft_p90_s": (
+            _percentile(projected_ttfts, 90) if timing_complete else None),
+        "projected_sequential_wall_s": (
+            sum(projected_latencies) if timing_complete else None),
     }
+    return metrics
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -499,25 +611,21 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--baseline-cache-tps", type=float)
     parser.add_argument("--baseline-weighted-score", type=float)
     parser.add_argument("--baseline-metrics")
-    parser.add_argument("--cache-coefficient", type=float, default=0.56)
     args = parser.parse_args(argv)
 
     records = read(args.logs)
 
-    if (args.baseline_metrics is not None
-            and (args.baseline_cache_tps is not None
-                 or args.baseline_weighted_score is not None)):
-        raise ValueError("baseline metrics file cannot be combined with manual baselines")
+    if (args.baseline_cache_tps is not None
+            or args.baseline_weighted_score is not None):
+        raise ValueError(
+            "aggregate hit-rate scaling is disabled; provide --baseline-metrics "
+            "and per-request timing fields in the trace")
 
     baseline = (_baseline_metrics(args.baseline_metrics)
                 if args.baseline_metrics is not None else None)
     if (baseline is not None
             and baseline["trace_session_sha256"] != records[0]["trace_session_sha256"]):
         raise ValueError("baseline metrics trace session does not match logs")
-
-    baseline_cache_tps = baseline["cache_tps"] if baseline is not None else args.baseline_cache_tps
-    baseline_weighted_score = (baseline["weighted_score"] if baseline is not None
-                              else args.baseline_weighted_score)
 
     if args.expected_requests <= 0:
         raise ValueError("expected request count must be positive")
@@ -546,9 +654,14 @@ def main(argv: list[str] | None = None) -> None:
     for policy in ("off", "fine32", "admission64"):
         policy_results[policy] = _simulate(
             records, capacity, False, policy, args.gdn_chunk_tokens)
+    policy_results["admission64_m1_29"] = _simulate(
+        records, capacity, True, "admission64", args.gdn_chunk_tokens)
     # The current submission policy is fine32; admission64 is the candidate.
     vllm_lru = _metrics(policy_results["fine32"], total_prompt_tokens)
-    frequency_aware = _metrics(policy_results["admission64"], total_prompt_tokens)
+    admission64 = _metrics(
+        policy_results["admission64"], total_prompt_tokens)
+    frequency_aware = _metrics(
+        policy_results["admission64_m1_29"], total_prompt_tokens)
 
     report = {
         "requests": len(records),
@@ -574,6 +687,7 @@ def main(argv: list[str] | None = None) -> None:
             for policy, result in policy_results.items()
         },
         "vllm_lru": vllm_lru,
+        "admission64": admission64,
         "frequency_aware": frequency_aware,
         "delta_hit_block_rate_percentage_points": (
             100 * (frequency_aware["raw_kv_contiguous_hit_block_rate"]
@@ -585,67 +699,55 @@ def main(argv: list[str] | None = None) -> None:
         ),
     }
 
-    if ((baseline_cache_tps is None) != (baseline_weighted_score is None)):
-        raise ValueError("baseline Cache TPS and weighted score must be provided together")
-
-    if baseline_cache_tps is not None:
-        if baseline_cache_tps < 0:
-            raise ValueError("baseline Cache TPS must be non-negative")
-        if baseline_weighted_score is None or baseline_weighted_score <= 0:
-            raise ValueError("baseline weighted score must be positive")
-        if args.cache_coefficient < 0:
-            raise ValueError("cache coefficient must be non-negative")
-        if frequency_aware["combined_hit_token_rate"] == 0:
-            raise ValueError("baseline LRU token hit rate is zero")
-
-        upper = baseline_cache_tps * (
-            frequency_aware["combined_hit_token_rate"]
-            / (vllm_lru["combined_hit_token_rate"] or math.inf)
-        )
-        delta_contribution = (upper - baseline_cache_tps) * args.cache_coefficient
-        candidate_score = baseline_weighted_score + delta_contribution
-        score_gain = candidate_score / baseline_weighted_score - 1.0
-
-        report["weighted_cache_tps_upper_bound"] = {
-            "baseline_cache_tps": baseline_cache_tps,
-            "baseline_weighted_score": baseline_weighted_score,
-            "baseline_metrics": baseline,
-            "manual_baseline_is_non_qualifying": baseline is None,
-            "coefficient": args.cache_coefficient,
-            "baseline_contribution": baseline_cache_tps * args.cache_coefficient,
-            "candidate_contribution": upper * args.cache_coefficient,
-            "candidate_cache_tps_upper_bound": upper,
-            "delta_contribution": delta_contribution,
-            "candidate_weighted_score_upper_bound": candidate_score,
-            "weighted_score_gain_fraction": score_gain,
-        }
-
-        gates = {
-            "candidate_token_hit_rate_above_50pct": (
-                frequency_aware["raw_kv_contiguous_hit_token_rate"] > 0.50
-                or frequency_aware["combined_hit_token_rate"] > 0.50
-            ),
-            "token_hit_rate_gain_at_least_5pp": (
-                frequency_aware["usable_gdn_state_avoided_token_rate"]
-                - vllm_lru["usable_gdn_state_avoided_token_rate"] >= 0.05
-            ),
-            "weighted_score_gain_at_least_5pct": score_gain >= 0.05,
-            "complete_unique_trace": len(records) == args.expected_requests,
-            "single_runtime_session": True,
-            "contiguous_ordered_trace": True,
-            "baseline_metrics_file_provided": baseline is not None,
-            "baseline_matches_trace_session": baseline is not None,
-            "sequential_allocator_lifecycle_replay": True,
-            "strict_contiguous_prefix_accounting": True,
-            "policy_coverage": {"off": True, "fine32": True,
-                                 "admission64": True},
-        }
-        report["qualification"] = {
-            "ok": all(isinstance(v, bool) and v for v in gates.values()
-                       if isinstance(v, bool)),
-            "gates": gates,
-            "projection_is_upper_bound": True,
-        }
+    if baseline is not None:
+        qualifications = {}
+        for name in ("admission64", "admission64_m1_29"):
+            candidate_metrics = report["policy_metrics"][name]
+            wall_s = candidate_metrics["projected_sequential_wall_s"]
+            timing_complete = wall_s is not None and wall_s > 0
+            projected_input_tps = (
+                total_prompt_tokens / wall_s if timing_complete else None)
+            projected_cache_tps = (
+                candidate_metrics["usable_gdn_state_avoided_tokens"] / wall_s
+                if timing_complete else None)
+            projected_score = (
+                baseline["output_tps_p10"] * 16.796
+                + projected_input_tps * 2.799
+                + projected_cache_tps * 0.56
+                if timing_complete else None)
+            score_gain = (
+                projected_score / baseline["weighted_score"] - 1.0
+                if projected_score is not None else None)
+            gates = {
+                "per_request_timing_complete": timing_complete,
+                "effective_hit_rate_at_least_50pct": (
+                    candidate_metrics["usable_gdn_state_avoided_token_rate"]
+                    >= 0.50),
+                "effective_hit_rate_gain_at_least_5pp": (
+                    candidate_metrics["usable_gdn_state_avoided_token_rate"]
+                    - vllm_lru["usable_gdn_state_avoided_token_rate"] >= 0.05),
+                "weighted_score_gain_at_least_5pct": (
+                    score_gain is not None and score_gain >= 0.05),
+                "output_tps_p10_at_least_20": (
+                    baseline["output_tps_p10"] >= 20.0),
+                "success_rate_at_least_99pct": (
+                    baseline["success_rate"] >= 0.99),
+                "projected_ttft_p90_at_most_5s": (
+                    candidate_metrics["projected_ttft_p90_s"] is not None
+                    and candidate_metrics["projected_ttft_p90_s"] <= 5.0),
+                "projected_weighted_score_at_least_8000": (
+                    projected_score is not None and projected_score >= 8000.0),
+            }
+            qualifications[name] = {
+                "ok": all(gates.values()),
+                "gates": gates,
+                "projection_model": "per_request_residual_prefill",
+                "projected_input_tps": projected_input_tps,
+                "projected_cache_tps": projected_cache_tps,
+                "projected_weighted_score": projected_score,
+                "weighted_score_gain_fraction": score_gain,
+            }
+        report["qualification"] = qualifications
 
     with open(args.out, "w", encoding="utf-8") as stream:
         json.dump(report, stream, indent=2, sort_keys=True)
