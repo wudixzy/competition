@@ -113,9 +113,9 @@ sufficient.
 
 ## Current Status
 
-`COREX_OPERATOR_PASS`. Local discovery passes 207 tests with 24 optional
-dependency skips, and submission preflight passes 8/8. The local environment
-has no Torch, so the dedicated test was run on BI100/CoreX:
+`COREX_OPERATOR_AND_TP4_PRESSURE_PASS`. Local discovery passes 214 tests with
+24 optional dependency skips, and submission preflight passes 8/8. The local
+environment has no Torch, so the dedicated test was run on BI100/CoreX:
 
 | Total | Split | Native aligned | Output max abs | State max abs | Exact |
 | ---: | ---: | --- | ---: | ---: | --- |
@@ -126,6 +126,26 @@ has no Torch, so the dedicated test was run on BI100/CoreX:
 | 2,401 | 2,400 | no | 1.676e-8 | 2.682e-7 | no |
 
 This isolates non-native recurrence splitting as the direct-mode failure
-mechanism and supports the 64-token candidate. TP4 smoke and pressure are
-running; the mode remains unqualified and cannot be used in a scoring
-submission yet.
+mechanism and supports the 64-token candidate. A deployment preflight also
+proved that the installed runtime source matched repository SHA-256
+`3aef3903...a01388`, accepted `chunk64`, and returned an alignment of 64. This
+preflight was added after the first attempt failed before model loading because
+the bare-host site package still contained the older `direct|aligned` module;
+that attempt is infrastructure-invalid, not a candidate correctness failure.
+
+The corrected TP4 run passed startup, smoke, and the 17-session pressure gate:
+
+| Case | Cold cached | Reused cached | Completion | Hash relation |
+| --- | ---: | ---: | ---: | --- |
+| interleaved A | 0 | 10,560 | 16 | identical |
+| interleaved B | 0 | 10,560 | 16 | identical |
+| eviction target after 17 sessions | 0 | 10,560 | 16 | identical |
+| eviction target after refresh | 0 | 10,560 | 16 | identical |
+
+Every response ended with `finish_reason=length`. The eviction target hash was
+`d250e642...99fcf` before pressure, after pressure, and after refresh. This is
+the expected 64-token floor below the failed direct boundary of 10,592 tokens
+and is the first TP4 evidence that the root-cause correction survives state
+pressure. The automatic 235K/1,000-token exact gate is running; until it and
+the fixed-kernel matrix pass, the mode remains unqualified and cannot be used
+in a scoring submission.

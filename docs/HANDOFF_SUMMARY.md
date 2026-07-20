@@ -13,8 +13,11 @@
   分割的输出与状态均逐位相等、最大误差 0；非对齐 2400 对照立即出现
   `2.682e-7` 状态误差，确认了根因方向。
 - `scripts/run_m1_33_chunk64_gates.sh` 先做 GPU 精确性检查，只有通过才启动
-  TP4 smoke、17 会话压力和 235K/1,000 exact；当前 TP4 门槛仍在运行，候选不得
-  视为 qualified。完整证据见
+  TP4 smoke、17 会话压力和 235K/1,000 exact。修正裸机运行时覆盖后，部署哈希
+  前检、算子检查、TP4 startup/smoke 和 17 会话压力均为 `rc=0`；两个交错请求及
+  淘汰目标在 cold/warm/pressure 后均保持相同输出 hash，warm 有效命中为
+  10,560 tokens。当前 235K/1,000 exact 正在运行，候选仍不得视为 qualified。
+  完整证据见
   `docs/experiments/M1_33_GDN_CHUNK64_RESTORE_20260721.md`。
 
 ## 2026-07-21 M1-32 固定内核绝对基线
