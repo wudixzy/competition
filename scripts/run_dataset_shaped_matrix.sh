@@ -12,6 +12,7 @@ LABEL=$2
 MODEL_PATH=/root/public-storage/models/Qwen/Qwen3.6-35B-A3B
 PROFILE_SCRIPT="$ROOT/bench_runs/m1_32/profile_dataset_shaped_prompt.py"
 BASE=http://127.0.0.1:8000
+COREX_PYTHONPATH=/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages
 
 mkdir -p "$OUTPUT_DIR/requests"
 : > "$OUTPUT_DIR/exit_codes.txt"
@@ -31,7 +32,8 @@ for target in 4096 7800 16000; do
         salt="${LABEL}_${target}_${pair}_$(date +%s%N)"
         for phase in cold warm; do
             out="$OUTPUT_DIR/requests/${target}_pair${pair}_${phase}.json"
-            PYTHONPATH="$ROOT/tests" timeout --signal=TERM --kill-after=20s 900s \
+            PYTHONPATH="$ROOT/tests:$COREX_PYTHONPATH:${PYTHONPATH:-}" \
+                timeout --signal=TERM --kill-after=20s 900s \
                 python3 "$PROFILE_SCRIPT" \
                 --model "$MODEL_PATH" \
                 --base "$BASE" \
