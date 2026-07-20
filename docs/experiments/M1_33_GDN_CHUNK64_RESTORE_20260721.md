@@ -52,8 +52,10 @@ gates pass.
 ## Qualification Order
 
 1. Local unit discovery, syntax checks, and submission preflight.
-2. CoreX operator test: splitting the DeltaNet rule exactly at token 64 must
-   produce bit-identical outputs and final state to an unsplit call.
+2. `tests/gdn_split_exactness.py` on CoreX: fixed native boundaries at
+   64, 128, 2,368, and 4,096 tokens must produce bit-identical outputs and
+   final states to unsplit calls. A 2,400-token non-native split is retained
+   as a diagnostic control but is not a passing alternative.
 3. TP4 smoke and the existing 17-session pressure replay. Reported cached
    tokens, message, finish reason, and completion-token count must agree.
 4. Fixed 18-request matrix with evaluator kernels. Required versus
