@@ -736,6 +736,10 @@ class P0StaticCoverageTest(unittest.TestCase):
 
     def test_m1_33_chunk64_gates_are_fail_closed(self):
         src = read("scripts/run_m1_33_chunk64_gates.sh")
+        self.assertIn("runtime_preflight", src)
+        self.assertIn("stale GDN runtime override", src)
+        self.assertIn('gdn_restore_alignment("chunk64", 16, 8192)', src)
+        self.assertIn("if [[ $runtime_rc -ne 0 ]]", src)
         self.assertIn("gdn_split_exactness.py", src)
         self.assertIn("if [[ $operator_rc -ne 0 ]]", src)
         self.assertIn("M1_32_FALLBACK_MODE=chunk64", src)
