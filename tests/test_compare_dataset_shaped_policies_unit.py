@@ -15,6 +15,8 @@ def summary(output: float, hit: float, score: float, ttft: float = 4.0):
         "validation": {
             "complete_matrix": True,
             "success_rate": 1.0,
+            "token_count_match": True,
+            "target_within_one_block": True,
         },
         "aggregate": {
             "output_tps_p10": output,

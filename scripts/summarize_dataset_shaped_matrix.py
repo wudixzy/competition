@@ -43,6 +43,8 @@ def load_requests(directory: Path) -> list[dict[str, Any]]:
             "pair": int(pair),
             "phase": phase,
             "ok": bool(timing.get("ok")),
+            "rendered_tokens_local": int(
+                data.get("rendered_tokens_local") or int(target)),
             "prompt_tokens": int(timing.get("prompt_tokens") or 0),
             "cached_tokens": int(timing.get("cached_tokens") or 0),
             "completion_tokens": int(timing.get("completion_tokens") or 0),
@@ -86,6 +88,8 @@ def summarize(directory: Path) -> dict[str, Any]:
         if warm_ttft > 0 else 0.0)
     prompt_tokens = sum(item["prompt_tokens"] for item in requests)
     cached_tokens = sum(item["cached_tokens"] for item in requests)
+    target_errors = [
+        item["prompt_tokens"] - item["target"] for item in requests]
     weighted = (
         output_tps_p10 * 16.796
         + input_tps_aggregate * 2.799
@@ -120,7 +124,12 @@ def summarize(directory: Path) -> dict[str, Any]:
             "cold_cached_zero": all(
                 item["cached_tokens"] == 0 for item in cold),
             "token_count_match": all(
-                item["prompt_tokens"] == item["target"] for item in requests),
+                item["prompt_tokens"] == item["rendered_tokens_local"]
+                for item in requests),
+            "target_within_one_block": all(
+                abs(error) < 16 for error in target_errors),
+            "target_token_error_max_abs": max(
+                (abs(error) for error in target_errors), default=0),
         },
         "aggregate": {
             "output_tps_p10": output_tps_p10,

@@ -36,6 +36,10 @@ def compare(baseline: dict[str, Any],
     stage_gates = {
         "complete_matrix": bool(
             candidate["validation"]["complete_matrix"]),
+        "client_server_token_count_match": bool(
+            candidate["validation"]["token_count_match"]),
+        "target_within_one_block": bool(
+            candidate["validation"]["target_within_one_block"]),
         "success_rate_at_least_99pct": float(
             candidate["validation"]["success_rate"]) >= 0.99,
         "effective_hit_gain_at_least_5pp": hit_gain + 1e-12 >= 0.05,
