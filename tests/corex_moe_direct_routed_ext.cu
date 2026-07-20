@@ -137,6 +137,48 @@ __global__ void direct_w2_reduce_kernel(
   }
 }
 
+__global__ void direct_w2_reduce_serial_half_kernel(
+    const __half* activated, const __half* w2, const int64_t* expert_ids,
+    const __half* weights, __half* output, int hidden, int intermediate) {
+  const int warp =
+      (static_cast<int>(blockIdx.x) * blockDim.x + threadIdx.x) / kWarpSize;
+  const int lane = threadIdx.x & (kWarpSize - 1);
+  if (warp >= hidden) {
+    return;
+  }
+
+  __half weighted_sum = __float2half_rn(0.0f);
+#pragma unroll
+  for (int slot = 0; slot < kTopK; ++slot) {
+    const int64_t expert = expert_ids[slot];
+    const int64_t weight_row =
+        (expert * hidden + warp) * static_cast<int64_t>(intermediate);
+    const __half2* activation2 = reinterpret_cast<const __half2*>(
+        activated + slot * intermediate);
+    const __half2* weight2 =
+        reinterpret_cast<const __half2*>(w2 + weight_row);
+    float expert_sum = 0.0f;
+    for (int index = lane; index < intermediate / 2;
+         index += kWarpSize) {
+      const __half2 x = activation2[index];
+      const __half2 weight = weight2[index];
+      expert_sum = fmaf(
+          __half2float(weight.x), __half2float(x.x), expert_sum);
+      expert_sum = fmaf(
+          __half2float(weight.y), __half2float(x.y), expert_sum);
+    }
+    expert_sum = warp_sum(expert_sum);
+    if (lane == 0) {
+      const __half expert_half = __float2half_rn(expert_sum);
+      const __half product = __hmul(expert_half, weights[slot]);
+      weighted_sum = __hadd(weighted_sum, product);
+    }
+  }
+  if (lane == 0) {
+    output[warp] = weighted_sum;
+  }
+}
+
 void check_half_cuda(const torch::Tensor& tensor, const char* name) {
   TORCH_CHECK(tensor.is_cuda(), name, " must be a CUDA tensor");
   TORCH_CHECK(tensor.scalar_type() == torch::kFloat16,
@@ -243,6 +285,40 @@ torch::Tensor direct_w2_reduce(const torch::Tensor& activated,
   return output;
 }
 
+torch::Tensor direct_w2_reduce_serial_half(
+    const torch::Tensor& activated,
+    const torch::Tensor& w2,
+    const torch::Tensor& expert_ids,
+    const torch::Tensor& weights) {
+  check_half_cuda(activated, "activated");
+  check_half_cuda(w2, "w2");
+  check_half_cuda(weights, "weights");
+  TORCH_CHECK(activated.dim() == 2 && activated.size(0) == kTopK,
+              "activated must have shape (8, intermediate)");
+  TORCH_CHECK(w2.dim() == 3 && w2.size(2) == activated.size(1),
+              "w2 must have shape (experts, hidden, intermediate)");
+  TORCH_CHECK(weights.dim() == 1 && weights.numel() == kTopK,
+              "weights must have shape (8,)");
+  TORCH_CHECK(activated.size(1) % 2 == 0,
+              "intermediate must be even");
+  check_ids(expert_ids, w2.size(0));
+  const int hidden = static_cast<int>(w2.size(1));
+  const int intermediate = static_cast<int>(w2.size(2));
+  auto output = torch::empty({1, hidden}, activated.options());
+  const int warps_per_block = kThreads / kWarpSize;
+  const int blocks = (hidden + warps_per_block - 1) / warps_per_block;
+  direct_w2_reduce_serial_half_kernel<<<
+      blocks, kThreads, 0, at::cuda::getCurrentCUDAStream()>>>(
+      reinterpret_cast<const __half*>(activated.data_ptr<at::Half>()),
+      reinterpret_cast<const __half*>(w2.data_ptr<at::Half>()),
+      expert_ids.data_ptr<int64_t>(),
+      reinterpret_cast<const __half*>(weights.data_ptr<at::Half>()),
+      reinterpret_cast<__half*>(output.data_ptr<at::Half>()),
+      hidden, intermediate);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  return output;
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def("w13", &direct_w13,
              "Direct selected-expert FP16 W13 matvec");
@@ -250,4 +326,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
              "Direct selected-expert W13 matvec with SiLU-and-multiply");
   module.def("w2_reduce", &direct_w2_reduce,
              "Direct selected-expert W2 matvec with routed-weight reduction");
+  module.def("w2_reduce_serial_half", &direct_w2_reduce_serial_half,
+             "Direct selected-expert W2 with serial FP16 reduction");
 }

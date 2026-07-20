@@ -797,6 +797,18 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn('return 0 if report["qualified"] else 1', bench)
         self.assertIn("--cuda-gpu-arch=ivcore10", build)
 
+    def test_small_batch_direct_moe_probe_is_bounded_and_fail_closed(self):
+        kernel = read("tests/corex_moe_direct_routed_ext.cu")
+        bench = read("tests/bench_moe_small_batch_direct_loop.py")
+        self.assertIn("MIN_SPEEDUP = {2: 1.25, 8: 1.5, 16: 1.5}", bench)
+        self.assertIn("PROJECTION_GATE_TOKENS = {8, 16}", bench)
+        self.assertIn('choices=("direct", "sorted-half")', bench)
+        self.assertIn("w2_reduce_serial_half", bench)
+        self.assertIn('return 0 if report["qualification"]["passed"] else 1',
+                      bench)
+        self.assertIn("direct_w2_reduce_serial_half_kernel", kernel)
+        self.assertIn("weighted_sum = __hadd(weighted_sum, product)", kernel)
+
     def test_m1_34_matrix_runner_requires_guard_and_fixed_contract(self):
         src = read("scripts/run_m1_34_fixed_matrix.sh")
         for required_rc in (
