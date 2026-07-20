@@ -1,5 +1,18 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-36 direct GDN restore copy 探针
+
+- M1-35 距缓存阶段 `+5%` 门槛仍差 `57.7428` 分。M1-36 用生产真实 shape
+  复现每 rank 30 层 GDN 状态，共 `16,465,920` bytes，比较当前
+  `CPU -> 临时 GPU -> live GPU` 与直接 `CPU -> live GPU`。
+- BI100 七轮交错测量保持逐位一致；当前路径中位数 `1.7792ms`，直接路径
+  `1.5627ms`，只节省 `0.2165ms`（`1.1385x`），远低于预先固定的
+  `15ms/restore` 绝对收益门槛。`probe.rc=1` 是门槛拒绝，不是运行故障。
+- 状态搬运微优化至此停止：不集成 direct copy、不运行重复 TP4 矩阵，也不修改
+  YAML/default/main。下一步只依据完整 trace 判断结构性缓存策略是否有收益；若无，
+  转入冷 prefill 注意力。完整证据见
+  `docs/experiments/M1_36_DIRECT_GDN_RESTORE_COPY_20260721.md`。
+
 ## 2026-07-21 M1-35 canonical GDN 状态保留
 
 - M1-34 的 warm 请求会在恢复已驻留 final 内容键后，再把相同约 16MiB/rank 状态
