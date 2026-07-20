@@ -42,6 +42,7 @@ def load_requests(directory: Path) -> list[dict[str, Any]]:
             "target": int(target),
             "pair": int(pair),
             "phase": phase,
+            "prompt_salt": str(data.get("prompt_salt") or ""),
             "ok": bool(timing.get("ok")),
             "rendered_tokens_local": int(
                 data.get("rendered_tokens_local") or int(target)),
@@ -90,6 +91,14 @@ def summarize(directory: Path) -> dict[str, Any]:
     cached_tokens = sum(item["cached_tokens"] for item in requests)
     target_errors = [
         item["prompt_tokens"] - item["target"] for item in requests]
+    pair_salts_match = all(
+        len({
+            item["prompt_salt"] for item in requests
+            if item["target"] == target and item["pair"] == pair
+        }) == 1
+        for target in (4096, 7800, 16000)
+        for pair in (1, 2, 3)
+    )
     weighted = (
         output_tps_p10 * 16.796
         + input_tps_aggregate * 2.799
@@ -130,6 +139,7 @@ def summarize(directory: Path) -> dict[str, Any]:
                 abs(error) < 16 for error in target_errors),
             "target_token_error_max_abs": max(
                 (abs(error) for error in target_errors), default=0),
+            "cold_warm_pair_salts_match": pair_salts_match,
         },
         "aggregate": {
             "output_tps_p10": output_tps_p10,

@@ -25,6 +25,7 @@ class DatasetMatrixSummaryTest(unittest.TestCase):
                         cached = target - 16 if phase == "warm" else 0
                         payload = {
                             "rendered_tokens_local": target,
+                            "prompt_salt": f"fixed_{target}_{pair}",
                             "timing": {
                                 "ok": True,
                                 "prompt_tokens": target,
@@ -42,6 +43,8 @@ class DatasetMatrixSummaryTest(unittest.TestCase):
             self.assertEqual(report["validation"]["success_rate"], 1.0)
             self.assertTrue(report["validation"]["token_count_match"])
             self.assertTrue(report["validation"]["target_within_one_block"])
+            self.assertTrue(
+                report["validation"]["cold_warm_pair_salts_match"])
             self.assertEqual(report["aggregate"]["output_tps_p10"], 21.0)
             aggregate = report["aggregate"]
             expected = (
@@ -68,6 +71,7 @@ class DatasetMatrixSummaryTest(unittest.TestCase):
                         rendered = target - 2 if target == 7800 else target
                         payload = {
                             "rendered_tokens_local": rendered,
+                            "prompt_salt": f"fixed_{target}_{pair}",
                             "timing": {
                                 "ok": True,
                                 "prompt_tokens": rendered,

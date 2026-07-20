@@ -32,6 +32,17 @@ def compare(baseline: dict[str, Any],
     output_ratio = (
         candidate_output / baseline_output
         if baseline_output > 0 else 0.0)
+    contract_fields = (
+        "path", "target", "pair", "phase", "prompt_salt",
+        "rendered_tokens_local")
+    baseline_contract = [
+        tuple(item.get(field) for field in contract_fields)
+        for item in baseline.get("requests", [])
+    ]
+    candidate_contract = [
+        tuple(item.get(field) for field in contract_fields)
+        for item in candidate.get("requests", [])
+    ]
 
     stage_gates = {
         "complete_matrix": bool(
@@ -40,6 +51,11 @@ def compare(baseline: dict[str, Any],
             candidate["validation"]["token_count_match"]),
         "target_within_one_block": bool(
             candidate["validation"]["target_within_one_block"]),
+        "cold_warm_pair_salts_match": bool(
+            candidate["validation"]["cold_warm_pair_salts_match"]),
+        "request_contract_identical": bool(
+            baseline_contract
+            and baseline_contract == candidate_contract),
         "success_rate_at_least_99pct": float(
             candidate["validation"]["success_rate"]) >= 0.99,
         "effective_hit_gain_at_least_5pp": hit_gain + 1e-12 >= 0.05,

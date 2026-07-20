@@ -17,6 +17,7 @@ def summary(output: float, hit: float, score: float, ttft: float = 4.0):
             "success_rate": 1.0,
             "token_count_match": True,
             "target_within_one_block": True,
+            "cold_warm_pair_salts_match": True,
         },
         "aggregate": {
             "output_tps_p10": output,
@@ -26,6 +27,14 @@ def summary(output: float, hit: float, score: float, ttft: float = 4.0):
             "cache_hit_rate": hit,
             "weighted_score": score,
         },
+        "requests": [{
+            "path": "4096_pair1_cold.json",
+            "target": 4096,
+            "pair": 1,
+            "phase": "cold",
+            "prompt_salt": "fixed_4096_1",
+            "rendered_tokens_local": 4096,
+        }],
     }
 
 
@@ -56,6 +65,15 @@ class DatasetPolicyCompareTest(unittest.TestCase):
         )
         self.assertTrue(report["final_metric_gates_passed"])
         self.assertIsNone(report["final_qualified"])
+
+    def test_different_prompt_contract_rejects_candidate(self):
+        baseline = summary(21.0, 0.50, 6000.0)
+        candidate = summary(22.0, 0.60, 7000.0)
+        candidate["requests"][0]["prompt_salt"] = "different"
+        report = MODULE.compare(baseline, candidate)
+        self.assertFalse(report["stage_qualified"])
+        self.assertFalse(
+            report["stage_gates"]["request_contract_identical"])
 
 
 if __name__ == "__main__":
