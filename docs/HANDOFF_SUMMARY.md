@@ -20,7 +20,11 @@
 - 235K/1,000 exact 已通过：cold/warm 均生成 1,000 tokens 并以 `length` 结束，
   warm 命中 234,944 tokens，完整 message hash 均为 `a7d5a63c...81799`；耗时分别
   为 772.588s/225.197s，两个最终 rc 均为 0，日志无 fatal/OOM/Gloo/worker-loss。
-  当前固定内核 18 请求矩阵正在运行，候选仍不得视为 qualified。完整证据见
+- 固定内核 18 请求矩阵成功率 100%、Output TPS P10 21.8027、有效命中 62.5202%、
+  Input TPS 875.7925，但 64-token 边界使 warm TTFT P90 从基线 1.4438s 升到
+  2.5111s，Cache TPS 降至 4122.5672，最终代理分仅 5126.1785。相对得分门槛失败，
+  `compare.rc/qualification.rc=1`，因此未运行后续容量门槛，候选不得用于提交。
+  下一步检查 admission64 对已驻留 final 内容键的重复捕获/覆盖。完整证据见
   `docs/experiments/M1_33_GDN_CHUNK64_RESTORE_20260721.md`。
 
 ## 2026-07-21 M1-32 固定内核绝对基线

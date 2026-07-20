@@ -113,7 +113,7 @@ sufficient.
 
 ## Current Status
 
-`LONG_CONTEXT_CORRECTNESS_PASS`. Local discovery passes 214 tests with
+`PERFORMANCE_REJECTED`. Local discovery passes 214 tests with
 24 optional dependency skips, and submission preflight passes 8/8. The local
 environment has no Torch, so the dedicated test was run on BI100/CoreX:
 
@@ -160,6 +160,23 @@ and the service log contains no fatal, OOM, Gloo, or worker-loss event. The
 separate SHA-256 of only the response `content` is expected to differ from the
 harness hash, which covers the complete sorted message object.
 
-The fixed-kernel 18-request matrix is now running. Until its effective-hit,
-weighted-score, Output TPS, success-rate, and request-contract gates pass, the
-mode remains unqualified and cannot be used in a scoring submission.
+The fixed-kernel 18-request matrix then passed its request, success, hit-rate,
+and Output TPS contracts but failed the predeclared weighted-score gate:
+
+| Metric | `fine32/direct` | `admission64/chunk64` | Delta |
+| --- | ---: | ---: | ---: |
+| Success | 100% | 100% | 0 pp |
+| Effective cache hit | 49.9301% | 62.5202% | +12.5901 pp |
+| Output TPS P10 | 21.6563 | 21.8027 | +0.68% |
+| Input TPS | 741.4479 | 875.7925 | +18.12% |
+| Cache TPS | 7,607.9233 | 4,122.5672 | -45.81% |
+| TTFT P90, all | 20.8748 s | 17.6645 s | -15.38% |
+| TTFT P90, warm | 1.4438 s | 2.5111 s | +73.92% |
+| Weighted proxy | 6,699.4888 | 5,126.1785 | -23.48% |
+
+The candidate restores 4,032/7,744/15,936 tokens, versus the direct
+baseline's 4,080/7,792/15,984. Recomputing the extra 48 tokens raises every
+warm TTFT enough to erase the larger hit count. `compare.rc=1` and
+`qualification.rc=1`; therefore the post-matrix 131K/256K capacity harness was
+correctly not run. The candidate remains useful correctness evidence, but it
+is rejected as a scoring policy and must not replace the submission default.
