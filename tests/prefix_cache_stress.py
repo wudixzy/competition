@@ -84,6 +84,16 @@ def assert_equivalent(reference: Json, candidate: Json) -> None:
         reference.get("usage") or {}).get("completion_tokens")
 
 
+def persist_report(path: Path, report: Json) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
@@ -102,6 +112,7 @@ def main() -> int:
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_path, trust_remote_code=True, local_files_only=True)
     report: Json = {"run_id": args.run_id, "interleaved": [], "eviction": []}
+    persist_report(args.json_out, report)
 
     interleaved = [
         make_payload(tokenizer, f"{args.run_id}-aligned", 0),
@@ -113,12 +124,14 @@ def main() -> int:
         assert summary["prompt_tokens"] == expected_tokens, summary
         first_results.append(response)
         report["interleaved"].append({"first": summary})
+        persist_report(args.json_out, report)
     for index, (payload, expected_tokens) in enumerate(interleaved):
         response, summary = request_once(args.base, payload, args.timeout_s)
         assert summary["prompt_tokens"] == expected_tokens, summary
         assert summary["cached_tokens"] >= 8176, summary
         assert_equivalent(first_results[index], response)
         report["interleaved"][index]["cached"] = summary
+        persist_report(args.json_out, report)
 
     eviction_payloads = []
     eviction_first = []
@@ -130,23 +143,22 @@ def main() -> int:
         eviction_payloads.append(payload)
         eviction_first.append(response)
         report["eviction"].append({"first": summary})
+        persist_report(args.json_out, report)
 
     replay, replay_summary = request_once(
         args.base, eviction_payloads[0], args.timeout_s)
-    assert_equivalent(eviction_first[0], replay)
     report["eviction"][0]["after_lru_pressure"] = replay_summary
+    persist_report(args.json_out, report)
+    assert_equivalent(eviction_first[0], replay)
 
     cached, cached_summary = request_once(
         args.base, eviction_payloads[0], args.timeout_s)
+    report["eviction"][0]["cached_after_refresh"] = cached_summary
+    persist_report(args.json_out, report)
     assert cached_summary["cached_tokens"] >= 8176, cached_summary
     assert_equivalent(eviction_first[0], cached)
-    report["eviction"][0]["cached_after_refresh"] = cached_summary
 
-    args.json_out.parent.mkdir(parents=True, exist_ok=True)
-    args.json_out.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    persist_report(args.json_out, report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
