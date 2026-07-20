@@ -678,6 +678,12 @@ class P0StaticCoverageTest(unittest.TestCase):
             self.assertNotIn(forbidden_override, src)
         self.assertIn('DEFAULT_PORT="8000"', src)
         self.assertIn("export VLLM_ENGINE_ITERATION_TIMEOUT_S=3600", src)
+        self.assertIn(
+            "export BI100_MOE_COREX_DIRECT_ROUTED="
+            "${BI100_MOE_COREX_DIRECT_ROUTED:-1}", src)
+        self.assertIn(
+            "export BI100_GDN_COREX_PACKED_DECODE="
+            "${BI100_GDN_COREX_PACKED_DECODE:-1}", src)
 
     def test_benchmark_defaults_to_evaluator_concurrency(self):
         src = read("tests/bench_perf.py")
