@@ -763,6 +763,15 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("restore_key_is_eligible", scheduler_src)
         self.assertIn("step_key = final_capture_key(", scheduler_src)
 
+    def test_admission64_skips_resident_final_recapture(self):
+        policy_src = read("qwen3_6_scripts/gdn_prefix.py")
+        scheduler_src = read("qwen3_6_scripts/scheduler.py")
+        self.assertIn("def should_capture_final(", policy_src)
+        self.assertIn('if self.policy == "admission64":', policy_src)
+        self.assertIn("key not in self._resident", policy_src)
+        self.assertIn("self._gdn_prefix_policy.should_capture_final(",
+                      scheduler_src)
+
     def test_m1_34_matrix_runner_requires_guard_and_fixed_contract(self):
         src = read("scripts/run_m1_34_fixed_matrix.sh")
         for required_rc in (
@@ -782,6 +791,17 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("check_startup_capacity.py", src)
         self.assertIn("compare_dataset_shaped_policies.py", src)
         self.assertIn("qualification.rc", src)
+
+    def test_m1_35_matrix_runner_checks_deployed_canonical_contract(self):
+        src = read("scripts/run_m1_35_canonical_matrix.sh")
+        self.assertIn('installed("gdn_prefix.py")', src)
+        self.assertIn('installed("core/scheduler.py")', src)
+        self.assertIn("runtime_digest != source_digest", src)
+        self.assertIn("admission.should_capture_final(key)", src)
+        self.assertIn("fine.should_capture_final(key)", src)
+        self.assertIn("M1_34_GUARD_DIR", src)
+        self.assertIn("M1_34_CANDIDATE_LABEL", src)
+        self.assertIn("run_m1_34_fixed_matrix.sh", src)
 
     def test_m1_34_post_matrix_runner_enforces_direct_long_context(self):
         src = read("scripts/run_m1_34_post_matrix_gates.sh")

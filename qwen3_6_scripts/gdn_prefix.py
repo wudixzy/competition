@@ -176,6 +176,15 @@ class GdnPrefixStatePolicy:
     def contains(self, key: GdnPrefixKey) -> bool:
         return key in self._resident
 
+    def should_capture_final(self, key: GdnPrefixKey) -> bool:
+        """Return whether a final state must be materialized on this request."""
+        make_prefix_key(*key)
+        if self.policy == "off":
+            return False
+        if self.policy == "admission64":
+            return key not in self._resident
+        return True
+
     def select_restore(
             self, live_prefix_keys: Sequence[GdnPrefixKey],
             max_blocks: int) -> Optional[GdnPrefixKey]:

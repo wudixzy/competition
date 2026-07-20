@@ -1060,7 +1060,10 @@ class Scheduler:
                     block_hashes, prompt_seq.data.get_len(),
                     self.cache_config.block_size, self._gdn_restore_mode,
                     self._gdn_replay_alignment)
-                if final_key is not None and final_key not in capture_targets:
+                if (final_key is not None
+                        and final_key not in capture_targets
+                        and self._gdn_prefix_policy.should_capture_final(
+                            final_key)):
                     capture_targets.append(final_key)
                 self._gdn_request_capture_targets[seq_group.request_id] = tuple(
                     capture_targets)

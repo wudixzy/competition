@@ -8,6 +8,7 @@ BASELINE_DIR=${M1_34_BASELINE_DIR:-$ROOT/bench_runs/m1_32/fine32_direct_fixed}
 CANDIDATE_DIR=${M1_34_MATRIX_DIR:-$RUN_ROOT/admission64_direct_guard2_fixed}
 MODEL_PATH=${MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
 SALT_NAMESPACE=${M1_34_SALT_NAMESPACE:-m1_32_ab}
+CANDIDATE_LABEL=${M1_34_CANDIDATE_LABEL:-admission64_direct_guard2_fixed}
 ACTIVE_PID=""
 
 export PYTHONPATH="$ROOT/tests:/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages:${PYTHONPATH:-}"
@@ -175,7 +176,7 @@ run_gate smoke 300 \
     --json-out "$CANDIDATE_DIR/smoke.json"
 run_gate matrix 7200 \
     bash "$ROOT/scripts/run_dataset_shaped_matrix.sh" \
-    "$CANDIDATE_DIR" admission64_direct_guard2_fixed "$SALT_NAMESPACE"
+    "$CANDIDATE_DIR" "$CANDIDATE_LABEL" "$SALT_NAMESPACE"
 run_gate summarize 120 \
     python3 "$ROOT/scripts/summarize_dataset_shaped_matrix.py" \
     "$CANDIDATE_DIR" --out "$CANDIDATE_DIR/summary.json"

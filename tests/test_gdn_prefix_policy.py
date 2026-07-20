@@ -103,6 +103,18 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         policy.admit([keys[1]])
         self.assertIsNone(policy.repeated_branch_candidate(keys, 2))
 
+    def test_admission64_retains_canonical_final_state(self):
+        key = make_prefix_key(2, digest(2))
+        admission = GdnPrefixStatePolicy("admission64")
+        self.assertTrue(admission.should_capture_final(key))
+        admission.admit([key])
+        self.assertFalse(admission.should_capture_final(key))
+
+        fine = GdnPrefixStatePolicy("fine32")
+        fine.admit([key])
+        self.assertTrue(fine.should_capture_final(key))
+        self.assertFalse(GdnPrefixStatePolicy("off").should_capture_final(key))
+
     def test_capacity_emits_explicit_oldest_evictions(self):
         policy = GdnPrefixStatePolicy("fine32")
         keys = [make_prefix_key(i + 1, digest(i % 255)) for i in range(34)]
