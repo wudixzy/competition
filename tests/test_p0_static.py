@@ -731,6 +731,8 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("wait_for_port_free", src)
         self.assertIn('sock.bind(("127.0.0.1", 8000))', src)
         self.assertIn('98 > "$output_dir/startup.rc"', src)
+        self.assertIn("aligned-long", src)
+        self.assertIn("--min-completion-tokens 1000", src)
 
     def test_patch_scripts_do_not_keep_hardcoded_vllm_paths(self):
         for path in (ROOT / "qwen3_6_scripts").glob("patch_*.py"):

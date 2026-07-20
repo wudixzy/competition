@@ -11,8 +11,9 @@ ACTIVE_PID=""
 export PYTHONPATH="$ROOT/tests:/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages:${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="/usr/local/corex/lib:/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib:${LD_LIBRARY_PATH:-}"
 
-if [[ "$START_AT" != fine && "$START_AT" != aligned ]]; then
-    echo "M1_32_START_AT must be fine or aligned" >&2
+if [[ "$START_AT" != fine && "$START_AT" != aligned \
+        && "$START_AT" != aligned-long ]]; then
+    echo "M1_32_START_AT must be fine, aligned, or aligned-long" >&2
     exit 2
 fi
 if [[ ! -d "$MODEL_PATH" ]]; then
@@ -202,16 +203,19 @@ run_gate "$ALIGNED_DIR" smoke 300 \
     python3 "$ROOT/tests/smoke_api.py" \
     --base http://127.0.0.1:8000 --mode quick \
     --json-out "$ALIGNED_DIR/smoke.json"
-run_gate "$ALIGNED_DIR" pressure 5400 \
-    python3 "$ROOT/tests/prefix_cache_stress.py" \
-    --base http://127.0.0.1:8000 --model-path "$MODEL_PATH" \
-    --eviction-count 17 --timeout-s 600 \
-    --run-id m1_32_admission64_aligned \
-    --json-out "$ALIGNED_DIR/pressure.json"
+if [[ "$START_AT" != aligned-long ]]; then
+    run_gate "$ALIGNED_DIR" pressure 5400 \
+        python3 "$ROOT/tests/prefix_cache_stress.py" \
+        --base http://127.0.0.1:8000 --model-path "$MODEL_PATH" \
+        --eviction-count 17 --timeout-s 600 \
+        --run-id m1_32_admission64_aligned \
+        --json-out "$ALIGNED_DIR/pressure.json"
+fi
 run_gate "$ALIGNED_DIR" long_235k_exact 7800 \
     python3 "$ROOT/tests/long_context_api.py" \
     --base http://127.0.0.1:8000 --model-path "$MODEL_PATH" \
     --target-prompt-tokens 235000 --max-tokens 1000 \
+    --min-completion-tokens 1000 \
     --max-model-len 262144 --min-cached-tokens 229376 \
     --equivalence-mode exact --timeout-s 3600 \
     --run-id m1_32_aligned_235k \

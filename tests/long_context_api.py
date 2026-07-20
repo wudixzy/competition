@@ -109,6 +109,7 @@ def main() -> int:
     )
     parser.add_argument("--target-prompt-tokens", type=int, default=99500)
     parser.add_argument("--max-tokens", type=int, default=16)
+    parser.add_argument("--min-completion-tokens", type=int, default=0)
     parser.add_argument("--max-model-len", type=int, default=100000)
     parser.add_argument("--min-cached-tokens", type=int, default=98304)
     parser.add_argument("--timeout-s", type=float, default=1800)
@@ -126,6 +127,9 @@ def main() -> int:
     args = parser.parse_args()
     if args.target_prompt_tokens + args.max_tokens > args.max_model_len:
         parser.error("prompt plus max tokens exceeds --max-model-len")
+    if not 0 <= args.min_completion_tokens <= args.max_tokens:
+        parser.error(
+            "--min-completion-tokens must be between zero and --max-tokens")
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_path, trust_remote_code=True, local_files_only=True)
@@ -135,6 +139,7 @@ def main() -> int:
         "model": "llm",
         "messages": [{"role": "user", "content": content}],
         "max_tokens": args.max_tokens,
+        "min_tokens": args.min_completion_tokens,
         "thinking": False,
         "temperature": 0,
         "seed": 20260712,
@@ -153,6 +158,7 @@ def main() -> int:
         "target_prompt_tokens": args.target_prompt_tokens,
         "max_tokens": args.max_tokens,
         "min_cached_tokens": args.min_cached_tokens,
+        "min_completion_tokens": args.min_completion_tokens,
         "equivalence_mode": args.equivalence_mode,
         "first": first_summary,
         "second": second_summary,
@@ -166,6 +172,8 @@ def main() -> int:
     assert second_summary["prompt_tokens"] == args.target_prompt_tokens, second_summary
     assert first_summary["cached_tokens"] == 0, first_summary
     assert second_summary["cached_tokens"] >= args.min_cached_tokens, second_summary
+    assert first_summary["completion_tokens"] >= args.min_completion_tokens, first_summary
+    assert second_summary["completion_tokens"] >= args.min_completion_tokens, second_summary
     if args.equivalence_mode == "exact":
         assert_equivalent(first, second)
     else:
@@ -180,6 +188,7 @@ def main() -> int:
         assert_finite(third, "warm_response_2")
         assert third_summary["prompt_tokens"] == args.target_prompt_tokens, third_summary
         assert third_summary["cached_tokens"] >= args.min_cached_tokens, third_summary
+        assert third_summary["completion_tokens"] >= args.min_completion_tokens, third_summary
         assert_equivalent(second, third)
 
     persist_report(summary_path, report)
