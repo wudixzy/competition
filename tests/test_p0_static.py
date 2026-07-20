@@ -745,6 +745,34 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("M1_32_FALLBACK_MODE=chunk64", src)
         self.assertIn("M1_32_FALLBACK_MIN_CACHED=234944", src)
 
+    def test_dataset_shaped_matrix_uses_tracked_profile_driver(self):
+        src = read("scripts/run_dataset_shaped_matrix.sh")
+        self.assertIn(
+            'PROFILE_SCRIPT="$ROOT/scripts/profile_dataset_shaped_prompt.py"',
+            src,
+        )
+        self.assertNotIn("bench_runs/m1_32/profile_dataset_shaped_prompt.py",
+                         src)
+        self.assertTrue(
+            (ROOT / "scripts/profile_dataset_shaped_prompt.py").is_file())
+
+    def test_m1_33_matrix_runner_is_fail_closed(self):
+        src = read("scripts/run_m1_33_fixed_matrix.sh")
+        for required_rc in (
+                "runtime_preflight/runtime.rc",
+                "operator_exactness/operator.rc",
+                "pressure.rc",
+                "long_235k_exact.rc",
+                "remaining_gates.rc",
+                "matrix.rc",
+        ):
+            self.assertIn(required_rc, src)
+        self.assertIn("BI100_GDN_CACHE_POLICY=admission64", src)
+        self.assertIn("BI100_GDN_RESTORE_MODE=chunk64", src)
+        self.assertIn("moe_direct=1 gdn_packed=1", src)
+        self.assertIn("compare_dataset_shaped_policies.py", src)
+        self.assertIn("qualification.rc", src)
+
     def test_patch_scripts_do_not_keep_hardcoded_vllm_paths(self):
         for path in (ROOT / "qwen3_6_scripts").glob("patch_*.py"):
             src = path.read_text()
