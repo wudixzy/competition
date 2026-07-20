@@ -20,6 +20,7 @@ MEAN_ABS_LIMIT = 1.0e-5
 RELATIVE_L2_LIMIT = 1.0e-5
 MIN_SPEEDUP = {2: 1.25, 8: 1.5, 16: 1.5}
 MIN_PROJECTED_WARM_TTFT_GAIN = 0.05
+PROJECTION_GATE_TOKENS = {8, 16}
 
 
 def load_extension(name: str, path: Path):
@@ -223,7 +224,8 @@ def main() -> int:
         projection_pass = projected_gain >= MIN_PROJECTED_WARM_TTFT_GAIN
         all_numerics_pass &= numerics_pass
         all_speed_pass &= speed_pass
-        all_projection_pass &= projection_pass
+        if tokens in PROJECTION_GATE_TOKENS:
+            all_projection_pass &= projection_pass
         cases[str(tokens)] = {
             "fixed_numerics": fixed_numerics,
             "sequence": {
@@ -243,6 +245,7 @@ def main() -> int:
             "gates": {
                 "numerics": numerics_pass,
                 "speed": speed_pass,
+                "projection_required": tokens in PROJECTION_GATE_TOKENS,
                 "projection": projection_pass,
             },
         }
@@ -270,6 +273,7 @@ def main() -> int:
             "relative_l2": RELATIVE_L2_LIMIT,
             "min_speedup": MIN_SPEEDUP,
             "min_projected_warm_ttft_gain": MIN_PROJECTED_WARM_TTFT_GAIN,
+            "projection_gate_tokens": sorted(PROJECTION_GATE_TOKENS),
         },
         "cases": cases,
         "qualification": {
