@@ -1,5 +1,22 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-35 canonical GDN 状态保留
+
+- M1-34 的 warm 请求会在恢复已驻留 final 内容键后，再把相同约 16MiB/rank 状态
+  从 GPU 复制到 CPU 并覆盖自身。M1-35 只对 `admission64` 跳过该重复捕获，LRU
+  仍由 scheduler restore 刷新；`fine32`、容量、淘汰、worker 协议和 YAML 不变。
+- 已安装 policy/scheduler 与仓库 SHA 一致，行为前检通过。固定矩阵 18/18 成功，
+  命中率 `61.0671%`、Output P10 `21.7783`、Input TPS `841.2359`、Cache TPS
+  `7600.5593`，日志无 fatal/CUDA/OOM/Gloo/worker-loss。
+- 相比 M1-34，warm 总 TTFT `11.2357s -> 10.9950s`，代理分
+  `6880.0051 -> 6976.7204`；但相对冻结基线只提升 `4.1381%`，仍低于 `5%`
+  阶段门槛约 `57.7428` 分。因此 `compare.rc/qualification.rc=1`，M1-35 标记
+  `PERFORMANCE_REJECTED`，不运行长上下文门禁、不靠重复测试碰阈值。
+- 下一步只允许先微基准验证 restore 是否存在
+  `CPU -> 临时 GPU -> live GPU` 的冗余搬运；若直接 CPU-to-live `copy_` 没有足够
+  绝对收益就停止缓存微优化。完整证据见
+  `docs/experiments/M1_35_CANONICAL_GDN_STATE_RETENTION_20260721.md`。
+
 ## 2026-07-21 M1-34 direct 单 token 回放防护
 
 - 精确重放 M1-32 的旧 `m1_32_admission64` 提示词后，修复前稳定复现：冷请求
