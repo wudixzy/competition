@@ -110,10 +110,33 @@ gate; only its pressure and 235K exact-replay correctness tests remain useful.
 - Do not scan YAML thresholds, state capacities, or kernel tiles to work around
   the failure.
 
-The production-equivalent `fine32/direct` matrix was launched under
-`bench_runs/m1_32/fine32_direct_fixed`. At the time this record was written the
-instance gateway returned `Connection closed by UNKNOWN port 65535`, so its
-final summary and the aligned fallback result remain external-state dependent.
+## Production-Equivalent Fixed Baseline
+
+The interrupted `fine32/direct` matrix completed all 18 requests and was read
+back on 2026-07-21. Its server log confirms both evaluator-fixed kernels were
+enabled (`moe_direct=1`, `gdn_packed=1`). All request-contract checks passed,
+including exact client/server token counts and cold/warm salt identity.
+
+| Metric | Fixed baseline | Required |
+| --- | ---: | ---: |
+| Success rate | 100% | >= 99% |
+| Output TPS P10 | 21.6563 | >= 20 |
+| Effective cache hit | 49.9301% | >= 50% |
+| Input TPS | 741.4479 | - |
+| Cache TPS | 7607.9233 | - |
+| TTFT P90, all | 20.8748 s | <= 5 s |
+| TTFT P90, warm | 1.4438 s | - |
+| Weighted proxy | 6699.4888 | >= 8000 |
+
+The baseline misses cache hit by only 0.0699 percentage points, but misses the
+weighted target by 1300.5112 and the all-request TTFT gate by 15.8748 seconds.
+Its cold TTFT P90 is 20.9465 seconds while warm TTFT P90 is 1.4438 seconds, so
+the remaining latency failure is the uncached prefill path rather than decode
+or warm restore.
+
+The production-equivalent result is stored under
+`bench_runs/m1_32/fine32_direct_fixed`. The instance gateway outage ended on
+2026-07-21; the aligned fallback result remains pending.
 
 After connectivity returns, `scripts/run_m1_32_remaining_gates.sh` resumes only
 after that matrix has `matrix.rc=0` and passes its request-contract validation.

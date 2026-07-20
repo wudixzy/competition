@@ -1,5 +1,17 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-32 固定内核绝对基线
+
+- `fine32/direct` 的生产等价 18 请求矩阵已完成，服务日志确认固定启用
+  `BI100_MOE_COREX_DIRECT_ROUTED=1` 和 `BI100_GDN_COREX_PACKED_DECODE=1`。
+- 成功率 `100%`、Output TPS P10 `21.6563`、有效命中 `49.9301%`、Input TPS
+  `741.4479`、Cache TPS `7607.9233`、代理加权值 `6699.4888`。
+- warm TTFT P90 仅 `1.4438s`，但 cold/全体 TTFT P90 为
+  `20.9465s/20.8748s`。因此当前硬差距是冷 prefill：距 8000 仍差
+  `1300.5112` 分，TTFT 距 5s 差 `15.8748s`；命中率只差 `0.0699` 个百分点。
+- 2026-07-21 实例和 ModelHub 连接恢复；私有实验分支已推送到 `c156cc3`，并在
+  `/root/competition-m1-32-latest` 启动剩余 direct/aligned 正确性门禁。
+
 ## 2026-07-20 M1-32 内容键 GDN 准入资格结果
 
 - 数据集形状矩阵已固定为 18 个严格同请求样本，并校验 client/server token 数、
@@ -14,8 +26,7 @@
   这是正确性硬失败，该策略不得设为默认、不得合入 `main`。
 - `launch_service` 已补齐评测固定的
   `BI100_MOE_COREX_DIRECT_ROUTED=1`、`BI100_GDN_COREX_PACKED_DECODE=1`，修复后的
-  `fine32/direct` 绝对基线在远端运行。当前实例网关返回
-  `Connection closed by UNKNOWN port 65535`，完成状态暂时无法读取。
+  `fine32/direct` 绝对基线见上方 2026-07-21 更新；此前网关中断现已恢复。
 - `scripts/run_m1_32_remaining_gates.sh` 已固化恢复流程：验证固定矩阵后重启干净的
   fine/direct 服务执行 131K exact 和 235K warm-repeat，再重启 aligned 服务执行
   17 会话压力及 235K/1000 exact；每步均有超时、退出码和失败即停。
