@@ -4,6 +4,8 @@ set -Eeuo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 RUN_ROOT=${M1_34_RUN_ROOT:-$ROOT/bench_runs/m1_34/direct_suffix_probe}
 MODEL_PATH=${MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
+DEFAULT_TARGET_MODS="1 2"
+TARGET_MODS=${M1_34_TARGET_MODS:-$DEFAULT_TARGET_MODS}
 ACTIVE_PID=""
 
 export PYTHONPATH="$ROOT/tests:/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages:${PYTHONPATH:-}"
@@ -13,7 +15,20 @@ if [[ ! -d "$MODEL_PATH" ]]; then
     echo "model directory is missing: $MODEL_PATH" >&2
     exit 2
 fi
-for target_mod in 1 2; do
+read -r -a target_mods <<< "$TARGET_MODS"
+if [[ ${#target_mods[@]} -eq 0 ]]; then
+    echo "M1_34_TARGET_MODS must contain at least one target" >&2
+    exit 2
+fi
+if [[ -n ${M1_34_RUN_ID:-} && ${#target_mods[@]} -ne 1 ]]; then
+    echo "M1_34_RUN_ID requires exactly one M1_34_TARGET_MODS value" >&2
+    exit 2
+fi
+for target_mod in "${target_mods[@]}"; do
+    if [[ ! "$target_mod" =~ ^([0-9]|1[0-5])$ ]]; then
+        echo "invalid target modulo: $target_mod" >&2
+        exit 2
+    fi
     if [[ -e "$RUN_ROOT/suffix_mod${target_mod}/pressure.rc" ]]; then
         echo "probe output already exists for suffix_mod${target_mod}" >&2
         exit 4
@@ -104,7 +119,7 @@ start_service() {
     return 124
 }
 
-for target_mod in 1 2; do
+for target_mod in "${target_mods[@]}"; do
     output_dir="$RUN_ROOT/suffix_mod${target_mod}"
     mkdir -p "$output_dir"
     if ! start_service "$output_dir"; then
@@ -118,11 +133,12 @@ for target_mod in 1 2; do
     printf '%s\n' 0 > "$output_dir/runtime_contract.rc"
 
     set +e
+    case_run_id=${M1_34_RUN_ID:-m1_34_direct_suffix_${target_mod}}
     timeout --signal=TERM --kill-after=20s 5400s \
         python3 "$ROOT/tests/prefix_cache_stress.py" \
         --base http://127.0.0.1:8000 --model-path "$MODEL_PATH" \
         --eviction-count 17 --eviction-target-mod "$target_mod" \
-        --timeout-s 600 --run-id "m1_34_direct_suffix_${target_mod}" \
+        --timeout-s 600 --run-id "$case_run_id" \
         --json-out "$output_dir/pressure.json" \
         > "$output_dir/pressure.stdout" 2> "$output_dir/pressure.stderr"
     pressure_rc=$?
@@ -147,16 +163,20 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
-rcs = {
-    suffix: int((root / f"suffix_mod{suffix}" / "pressure.rc").read_text())
-    for suffix in (1, 2)
-}
+rcs = {}
+for path in sorted(root.glob("suffix_mod*/pressure.rc")):
+    suffix = int(path.parent.name.removeprefix("suffix_mod"))
+    rcs[suffix] = int(path.read_text())
 if rcs == {1: 1, 2: 0}:
     classification = "single_token_specific"
 elif rcs == {1: 0, 2: 0}:
     classification = "direct_currently_stable"
-elif rcs[1] != 0 and rcs[2] != 0:
+elif set(rcs) == {1, 2} and all(rc != 0 for rc in rcs.values()):
     classification = "broader_direct_failure"
+elif len(rcs) == 1:
+    classification = (
+        "single_case_pass" if next(iter(rcs.values())) == 0
+        else "single_case_fail")
 else:
     classification = "inverted_or_inconclusive"
 report = {"pressure_rc": rcs, "classification": classification}

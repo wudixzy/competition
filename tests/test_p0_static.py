@@ -747,7 +747,9 @@ class P0StaticCoverageTest(unittest.TestCase):
 
     def test_m1_34_direct_suffix_probe_runs_both_fresh_services(self):
         src = read("scripts/run_m1_34_direct_suffix_probe.sh")
-        self.assertIn("for target_mod in 1 2", src)
+        self.assertIn('DEFAULT_TARGET_MODS="1 2"', src)
+        self.assertIn("M1_34_TARGET_MODS", src)
+        self.assertIn("M1_34_RUN_ID", src)
         self.assertIn("BI100_GDN_CACHE_POLICY=admission64", src)
         self.assertIn("BI100_GDN_RESTORE_MODE=direct", src)
         self.assertIn('--eviction-target-mod "$target_mod"', src)
