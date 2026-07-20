@@ -770,6 +770,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("BI100_GDN_CACHE_POLICY=admission64", src)
         self.assertIn("BI100_GDN_RESTORE_MODE=chunk64", src)
         self.assertIn("moe_direct=1 gdn_packed=1", src)
+        self.assertIn("check_startup_capacity.py", src)
         self.assertIn("compare_dataset_shaped_policies.py", src)
         self.assertIn("qualification.rc", src)
 

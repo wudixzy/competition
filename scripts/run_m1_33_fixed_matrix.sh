@@ -146,6 +146,10 @@ grep -Fq '[BI100] fixed kernels; moe_direct=1 gdn_packed=1' \
 grep -Fq '[BI100] GDN cache; policy=admission64 restore=chunk64' \
     "$CANDIDATE_DIR/server.log"
 printf '%s\n' 0 > "$CANDIDATE_DIR/runtime_contract.rc"
+run_gate startup_capacity 30 \
+    python3 "$ROOT/scripts/check_startup_capacity.py" \
+    "$CANDIDATE_DIR/server.log" --max-model-len 262144 --block-size 16 \
+    --out "$CANDIDATE_DIR/startup_capacity.json"
 
 run_gate smoke 300 \
     python3 "$ROOT/tests/smoke_api.py" \
