@@ -1,5 +1,27 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-34 direct 单 token 回放防护
+
+- 精确重放 M1-32 的旧 `m1_32_admission64` 提示词后，修复前稳定复现：冷请求
+  10,593 tokens、hash `bc4f55...85b3`，压力后命中 10,592 tokens 但 hash 变为
+  `eba366...1e65`。新提示词偶然通过，说明错误受首个生成 token 的数值边界影响，
+  不能用更换 prompt 排除。
+- 模型 routed MoE 明确在 `T == 1` 切换到单 token direct 内核，注意力头归一化也有
+  shape-one 专用路径；冷请求最后一个 token 原本位于多 token prefill。M1-34 因此只
+  要求 direct 恢复至少留下 2 个物理 prefill tokens。余数为 1 时回退一个 16-token
+  block，重算 17 tokens；余数 2..16 完全不变。
+- 安装运行时与仓库 SHA 一致。相同旧提示词修复后 cold/压力后/刷新后 hash 均为
+  `bc4f55...85b3`，恢复量按设计为 10,576，耗时 `15.229/2.259/2.502s`；启动、
+  运行时合同、压力、fatal 扫描和总 rc 全为 0，日志无 CUDA/OOM/Gloo/worker-loss。
+- 新增 fail-closed 的 `scripts/run_m1_34_fixed_matrix.sh` 和
+  `scripts/run_m1_34_post_matrix_gates.sh`。前者先验证上述 10,593/10,576/hash 合同，
+  再运行固定 `m1_32_ab` 18 请求矩阵；后者只在阶段门槛通过后执行 131K/256、
+  235K/1000、262K/16 exact 和 256K 容量门禁。
+- 本地 223 项通过、24 项可选依赖跳过，submission preflight 8/8。当前状态仅为
+  `CORRECTNESS_GUARD_PASSED; MATRIX_PENDING`；YAML、默认 `fine32/direct` 和 main
+  均未修改。完整证据见
+  `docs/experiments/M1_34_DIRECT_SINGLE_TOKEN_REPLAY_20260721.md`。
+
 ## 2026-07-21 M1-33 原生 64-token GDN 恢复候选
 
 - M1-32 `admission64/aligned` 已通过 17 会话压力和修正后的

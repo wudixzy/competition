@@ -763,6 +763,42 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("restore_key_is_eligible", scheduler_src)
         self.assertIn("step_key = final_capture_key(", scheduler_src)
 
+    def test_m1_34_matrix_runner_requires_guard_and_fixed_contract(self):
+        src = read("scripts/run_m1_34_fixed_matrix.sh")
+        for required_rc in (
+                "probe.rc",
+                "suffix_mod1/startup.rc",
+                "suffix_mod1/runtime_contract.rc",
+                "suffix_mod1/pressure.rc",
+                "suffix_mod1/fatal_scan.rc",
+                "matrix.rc",
+        ):
+            self.assertIn(required_rc, src)
+        self.assertIn('cold["prompt_tokens"] != 10593', src)
+        self.assertIn('replay["cached_tokens"] != 10576', src)
+        self.assertIn("BI100_GDN_CACHE_POLICY=admission64", src)
+        self.assertIn("BI100_GDN_RESTORE_MODE=direct", src)
+        self.assertIn("moe_direct=1 gdn_packed=1", src)
+        self.assertIn("check_startup_capacity.py", src)
+        self.assertIn("compare_dataset_shaped_policies.py", src)
+        self.assertIn("qualification.rc", src)
+
+    def test_m1_34_post_matrix_runner_enforces_direct_long_context(self):
+        src = read("scripts/run_m1_34_post_matrix_gates.sh")
+        self.assertIn("stage_qualified", src)
+        self.assertIn("BI100_GDN_RESTORE_MODE=direct", src)
+        self.assertIn("--target-prompt-tokens 131000", src)
+        self.assertIn("--min-completion-tokens 256", src)
+        self.assertIn("--min-cached-tokens 130992", src)
+        self.assertIn("--target-prompt-tokens 235000", src)
+        self.assertIn("--min-completion-tokens 1000", src)
+        self.assertIn("--min-cached-tokens 234992", src)
+        self.assertIn("--target-prompt-tokens 262000", src)
+        self.assertIn("--min-cached-tokens 261984", src)
+        self.assertIn("check_startup_capacity.py", src)
+        self.assertIn("fatal_scan.rc", src)
+        self.assertIn("post_matrix.rc", src)
+
     def test_dataset_shaped_matrix_uses_tracked_profile_driver(self):
         src = read("scripts/run_dataset_shaped_matrix.sh")
         self.assertIn(

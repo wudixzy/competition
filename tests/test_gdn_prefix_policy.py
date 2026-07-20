@@ -63,6 +63,19 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         self.assertTrue(restore_key_is_eligible(
             (661, hashes[660]), 10593, 16, "direct", 16))
 
+    def test_direct_capture_leaves_minimal_safe_suffix_for_all_remainders(self):
+        hashes = [digest(i % 255) for i in range(32)]
+        for prompt_tokens in range(18, 16 * 20 + 1):
+            with self.subTest(prompt_tokens=prompt_tokens):
+                key = final_capture_key(
+                    hashes, prompt_tokens, 16, "direct", 16)
+                self.assertIsNotNone(key)
+                remaining = prompt_tokens - key[0] * 16
+                self.assertGreaterEqual(remaining, 2)
+                self.assertLessEqual(remaining, 17)
+                self.assertTrue(restore_key_is_eligible(
+                    key, prompt_tokens, 16, "direct", 16))
+
     def test_aligned_restore_eligibility_uses_fixed_boundary(self):
         key = (512, digest(1))
         self.assertTrue(restore_key_is_eligible(
