@@ -96,17 +96,35 @@ is `3 * 8192 / (6 * (4096 + 7800 + 16000)) = 14.68%`, before any eviction.
 Consequently a full aligned performance matrix cannot reach the 50% cache
 gate; only its pressure and 235K exact-replay correctness tests remain useful.
 
+The aligned correctness fallback passed both remaining TP4 gates. Under
+17-session pressure, the aligned and unaligned test prompts restored 8,192
+tokens and retained identical outputs; the eviction target also stayed
+identical before pressure, after pressure, and after refresh. The corrected
+235K gate then forced both responses to generate the full 1,000 tokens:
+
+| Observation | Cold | Warm |
+| --- | ---: | ---: |
+| Cached tokens | 0 | 229,376 |
+| Completion tokens | 1,000 | 1,000 |
+| Elapsed | 762.489 s | 241.484 s |
+| Finish reason | `length` | `length` |
+| Message SHA-256 | `a7d5a63c...81799` | `a7d5a63c...81799` |
+
+`long_235k_exact.rc` and `remaining_gates.rc` are both zero. An earlier
+8-token run was explicitly archived as invalid and is not part of this
+qualification.
+
 ## Decision And Remaining Work
 
-- Keep `fine32/direct` as the submission default while its fixed-kernel
-  long-context qualification is completed.
-- Test `admission64/aligned` only as the predefined correctness fallback. Its
-  8192-token boundary is expected to lose the 3088/3104 shared branch, so a
-  full performance matrix is justified only after pressure and 235K/1000 exact
-  replay pass.
+- Keep `fine32/direct` as the submission default.
+- Treat `admission64/aligned` as correctness-qualified but performance-
+  disqualified: its fixed matrix hit ceiling is only 14.68%.
+- Test M1-33 `admission64/chunk64`, which aligns to the native DeltaNet
+  recurrence chunk while retaining much finer reuse. It must pass operator,
+  pressure, matrix, and long-context gates before any default change.
 - Do not start fused paged-attention implementation. Stage three is gated on a
-  correct cache candidate meeting the stage-two thresholds; M1-32 has not met
-  that gate.
+  correct cache candidate meeting the stage-two thresholds; aligned does not
+  meet that gate and M1-33 is still unqualified.
 - Do not scan YAML thresholds, state capacities, or kernel tiles to work around
   the failure.
 
@@ -136,13 +154,8 @@ or warm restore.
 
 The production-equivalent result is stored under
 `bench_runs/m1_32/fine32_direct_fixed`. The instance gateway outage ended on
-2026-07-21; the aligned fallback result remains pending.
-
-After connectivity returns, `scripts/run_m1_32_remaining_gates.sh` resumes only
-after that matrix has `matrix.rc=0` and passes its request-contract validation.
-It restarts a clean `fine32/direct` service for 131K/256 exact and 235K/256
-warm-repeat checks, then restarts `admission64/aligned` for the 17-session
-pressure check and 235K/1000 exact replay. Every gate has a timeout and a
-persisted exit code; any failure stops the service and prevents later gates.
-Set `M1_32_START_AT=aligned` only when the fine/direct long gates already have
-successful persisted evidence.
+2026-07-21. The direct 131K/256 exact and 235K/256 warm-repeat gates, aligned
+pressure gate, and corrected aligned 235K/1,000 exact gate all have successful
+persisted evidence. M1-32 is closed without a promotable cache policy:
+`admission64/direct` is incorrect and `admission64/aligned` cannot meet the
+cache-rate threshold.

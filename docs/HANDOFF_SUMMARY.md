@@ -1,5 +1,22 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-33 原生 64-token GDN 恢复候选
+
+- M1-32 `admission64/aligned` 已通过 17 会话压力和修正后的
+  235K/1,000-token exact 门槛；cold/warm 均生成 1,000 tokens，warm 命中
+  229,376，消息 hash 同为 `a7d5a63c...81799`，两个最终 rc 均为 0。
+- aligned 仅证明 8,192 边界正确，其固定矩阵命中上限仍只有 14.68%，不能晋级
+  性能方案。`admission64/direct` 的错误边界 10,592 对齐 KV block 16，但落在
+  DeltaNet 原生 64-token chunk 中间。
+- 新增隔离的 `BI100_GDN_RESTORE_MODE=chunk64`，不修改
+  `computility-run.yaml` 或默认 `fine32/direct`。CoreX 实测 64/128/2368/4096
+  分割的输出与状态均逐位相等、最大误差 0；非对齐 2400 对照立即出现
+  `2.682e-7` 状态误差，确认了根因方向。
+- `scripts/run_m1_33_chunk64_gates.sh` 先做 GPU 精确性检查，只有通过才启动
+  TP4 smoke、17 会话压力和 235K/1,000 exact；当前 TP4 门槛仍在运行，候选不得
+  视为 qualified。完整证据见
+  `docs/experiments/M1_33_GDN_CHUNK64_RESTORE_20260721.md`。
+
 ## 2026-07-21 M1-32 固定内核绝对基线
 
 - `fine32/direct` 的生产等价 18 请求矩阵已完成，服务日志确认固定启用

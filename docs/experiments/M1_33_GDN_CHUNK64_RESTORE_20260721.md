@@ -107,7 +107,19 @@ sufficient.
 
 ## Current Status
 
-`LOCAL_CANDIDATE`. Local source tests pass, but the local environment has no
-Torch, so the exact split test is skipped here. CoreX and TP4 runtime evidence
-is mandatory before this mode can be called qualified or used in a scoring
-submission.
+`COREX_OPERATOR_PASS`. Local discovery passes 207 tests with 24 optional
+dependency skips, and submission preflight passes 8/8. The local environment
+has no Torch, so the dedicated test was run on BI100/CoreX:
+
+| Total | Split | Native aligned | Output max abs | State max abs | Exact |
+| ---: | ---: | --- | ---: | ---: | --- |
+| 193 | 64 | yes | 0 | 0 | yes |
+| 193 | 128 | yes | 0 | 0 | yes |
+| 2,401 | 2,368 | yes | 0 | 0 | yes |
+| 4,097 | 4,096 | yes | 0 | 0 | yes |
+| 2,401 | 2,400 | no | 1.676e-8 | 2.682e-7 | no |
+
+This isolates non-native recurrence splitting as the direct-mode failure
+mechanism and supports the 64-token candidate. TP4 smoke and pressure are
+running; the mode remains unqualified and cannot be used in a scoring
+submission yet.
