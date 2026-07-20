@@ -772,6 +772,17 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("self._gdn_prefix_policy.should_capture_final(",
                       scheduler_src)
 
+    def test_gdn_restore_copy_probe_matches_tp4_rank_state(self):
+        src = read("tests/bench_gdn_restore_copy.py")
+        self.assertIn("LINEAR_LAYERS = 30", src)
+        self.assertIn("LOCAL_CONV_DIM = 2048", src)
+        self.assertIn("LOCAL_VALUE_HEADS = 8", src)
+        self.assertIn("--min-saving-ms", src)
+        self.assertIn("default=15.0", src)
+        self.assertIn("saved_conv.to(", src)
+        self.assertIn("live_conv.copy_(saved_conv", src)
+        self.assertIn('"qualified": exact and saving_ms >=', src)
+
     def test_m1_34_matrix_runner_requires_guard_and_fixed_contract(self):
         src = read("scripts/run_m1_34_fixed_matrix.sh")
         for required_rc in (
