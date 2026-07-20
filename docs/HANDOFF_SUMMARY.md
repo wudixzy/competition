@@ -17,9 +17,15 @@
   `scripts/run_m1_34_post_matrix_gates.sh`。前者先验证上述 10,593/10,576/hash 合同，
   再运行固定 `m1_32_ab` 18 请求矩阵；后者只在阶段门槛通过后执行 131K/256、
   235K/1000、262K/16 exact 和 256K 容量门禁。
-- 本地 223 项通过、24 项可选依赖跳过，submission preflight 8/8。当前状态仅为
-  `CORRECTNESS_GUARD_PASSED; MATRIX_PENDING`；YAML、默认 `fine32/direct` 和 main
-  均未修改。完整证据见
+- 固定 18 请求矩阵已完成：成功率 100%、命中率 `61.0671%`（`+11.1370pp`）、
+  Output P10 `21.3347`、Input TPS `841.9203`，但 Cache TPS `7437.7376`，代理分
+  `6880.0051` 仅提升 `2.6945%`，未达到阶段 `+5%` 门槛；因此
+  `compare.rc/qualification.rc=1`，后置长上下文门禁按设计未运行。
+- 分解显示九个 cold 请求合计节省 `13.469s`，但九个 warm 请求合计增加
+  `0.251s`。下一独立实验只删除已驻留 final 内容键的重复 GPU->CPU 捕获，保留首次
+  cold canonical 状态；不扫描容量或 YAML。本地 223 项通过、24 项跳过，preflight
+  8/8。M1-34 状态为 `CORRECTNESS_PASSED; PERFORMANCE_REJECTED`；默认
+  `fine32/direct` 和 main 均未修改。完整证据见
   `docs/experiments/M1_34_DIRECT_SINGLE_TOKEN_REPLAY_20260721.md`。
 
 ## 2026-07-21 M1-33 原生 64-token GDN 恢复候选

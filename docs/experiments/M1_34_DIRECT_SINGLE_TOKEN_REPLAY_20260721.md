@@ -89,13 +89,43 @@ fatal-log cleanliness.
 Local discovery passes 223 tests with 24 optional-dependency skips. Submission
 preflight passes 8/8, including the new scripts in shell syntax and LF checks.
 
+## Fixed Matrix Result
+
+The guarded direct candidate completed all 18 fixed-kernel requests with the
+same `m1_32_ab` contract as the frozen baseline:
+
+| Metric | `fine32/direct` | guarded `admission64/direct` | Delta |
+| --- | ---: | ---: | ---: |
+| Success | 100% | 100% | 0 pp |
+| Effective cache hit | 49.9301% | 61.0671% | +11.1370 pp |
+| Output TPS P10 | 21.6563 | 21.3347 | -1.49% |
+| Input TPS | 741.4479 | 841.9203 | +13.55% |
+| Cache TPS | 7,607.9233 | 7,437.7376 | -2.24% |
+| TTFT P90, all | 20.8748 s | 18.2191 s | -12.72% |
+| TTFT P90, warm | 1.4438 s | 1.4406 s | -0.23% |
+| Weighted proxy | 6,699.4888 | 6,880.0051 | +2.69% |
+
+All request-contract, success, hit-rate, and Output TPS gates passed. The
+weighted-score gain was only `2.6945%`, below the predeclared `5%` stage gate,
+so `compare.rc=1` and `qualification.rc=1`. The post-matrix long-context and
+capacity script correctly did not run.
+
+The score decomposition is more informative than the aggregate alone. Cold
+TTFT fell by `13.469s` across nine requests and added about `281.2` weighted
+points. Warm TTFT rose by `0.251s` in total, costing about `95.3` Cache-TPS
+points; Output P10 variation cost another `5.4`. Passing the stage would
+require roughly `0.401s` less total warm time, or about `45ms` per warm
+request, with the other measurements fixed.
+
 ## Current Decision
 
-Status: `CORRECTNESS_GUARD_PASSED; MATRIX_PENDING`.
+Status: `CORRECTNESS_PASSED; PERFORMANCE_REJECTED`.
 
-The narrow guard repairs the known direct correctness failure while preserving
-the high-value 16-token restore granularity for all fixed-matrix requests. It
-is not yet promotable: the fixed matrix must still gain at least five
-percentage points of effective hit rate and five percent weighted proxy while
-retaining Output TPS P10 >= 20 with no greater than two-percent regression.
-Long-context and 256K gates remain mandatory after that.
+The narrow guard repairs the known direct correctness failure and preserves
+the useful hit-rate gain, but M1-34 is not promotable under its declared score
+gate. The next isolated experiment is not a parameter scan: `admission64`
+currently recaptures and copies a final state back to CPU even when the same
+content key is already resident and was just restored. Retaining the first
+cold-captured canonical state should remove redundant warm-path transfer and
+also avoid replacing it with a replay-derived state. This must be tested on a
+new branch against the same fixed matrix; M1-34 remains closed evidence.
