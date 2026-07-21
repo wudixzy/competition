@@ -340,6 +340,8 @@ class P0StaticCoverageTest(unittest.TestCase):
                 "BI100_DNN_CHUNK",
                 "BI100_PROFILE",
                 "BI100_PROFILE_INCLUDE_STARTUP",
+                "BI100_PROFILE_MODE",
+                "BI100_PROFILE_FILTER",
         ]:
             self.assertIn(name, docs)
         self.assertIn("env_int(", paged_src)
@@ -354,7 +356,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         qwen_src = read("qwen3_6_scripts/qwen3_5.py")
         paged_src = read("qwen3_6_scripts/paged_attn.py")
         self.assertIn("cp ./bi100_profile.py", patch_ops)
-        self.assertIn('os.getenv("BI100_PROFILE", "0") == "1"', profile_src)
+        self.assertIn('_strict_bool("BI100_PROFILE")', profile_src)
         self.assertIn("BI100_IN_STARTUP_PROFILE", profile_src)
         self.assertIn("BI100_PROFILE_INCLUDE_STARTUP", profile_src)
         self.assertIn("[BI100_PROFILE]", profile_src)
@@ -569,9 +571,14 @@ class P0StaticCoverageTest(unittest.TestCase):
     def test_worker_profile_override_patch_is_diagnostic_only(self):
         patch_ops = read("qwen3_6_scripts/patch_ops.sh")
         patch_src = read("qwen3_6_scripts/patch_worker_profile_override.py")
+        guard_src = read(
+            "qwen3_6_scripts/patch_worker_startup_profile_guard.py")
         launch_src = read("launch_service")
         docs = read("docs/ENV_KNOBS.md")
         self.assertNotIn("patch_worker_profile_override.py", patch_ops)
+        self.assertIn("patch_worker_startup_profile_guard.py", patch_ops)
+        self.assertNotIn("num_gpu_blocks_override", guard_src)
+        self.assertIn("BI100_IN_STARTUP_PROFILE", guard_src)
         self.assertIn("num_gpu_blocks_override is not None", patch_src)
         self.assertIn("self.model_runner.profile_run()", patch_src)
         self.assertIn("BI100_IN_STARTUP_PROFILE", patch_src)

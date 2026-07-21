@@ -75,9 +75,12 @@ alternative. Reopening tile or launch scans would violate the stopping rule.
 
 The old `68.788% layer.full_attn` measurement was inclusive: it did not prove
 that the paged-prefix loop accelerated by M1-47 occupied that share. M1-48 is
-therefore the next measurement, not a new optimization. It separates model,
-GDN, MoE, projection/norm/RoPE, dense attention, paged-prefix attention, and
-host/service gaps for one exact 235K cold request.
+therefore the next measurement, not a new optimization. Its corrected protocol
+uses paired profile-off/profile-on services, streaming TTFT, exact TP-rank and
+per-chunk event counts, per-forward rank-spread rejection, and separate
+KV-write/dense/paged regions. The old
+`2.5770x` microbenchmark is not extrapolated across production chunks. Profile
+perturbation above 15% invalidates the report instead of being interpreted.
 
 ## Fixed decision sequence
 
@@ -86,10 +89,11 @@ host/service gaps for one exact 235K cold request.
    immediate-warm bound fails.
 2. Only after that passes, run candidate 235K warm-repeat, 262K exact-capacity,
    and multimodal gates. Capacity estimates never substitute for these runs.
-3. Run M1-48 once. A new cold-prefill experiment is allowed only for the
-   largest exclusive region with at least 20% service headroom. It gets one
-   primary implementation, at most one structural alternative, and the same
-   20% end-to-end cold-TTFT gate.
+3. Run M1-48 once. Its qualification only authorizes path ranking and always
+   records `promotion_authorized=false`. A new cold-prefill experiment is
+   allowed only for the largest exclusive region with at least 20% unprofiled
+   service headroom. It gets one primary implementation, at most one structural
+   alternative, and the same 20% end-to-end cold-TTFT gate.
 4. Obtain one complete privacy-safe 881 trace. Use per-request residual
    prefill and measured transfer costs to compare corrected `fine32`,
    `admission64`, and the frequency evictor. Aggregate hit-rate scaling is

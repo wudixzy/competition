@@ -89,7 +89,9 @@ from vllm.worker.model_runner import (_BATCH_SIZES_TO_CAPTURE,
                                       _get_graph_batch_size)
 from vllm.logger import init_logger
 from vllm.bi100_env import env_bool, env_int
-from vllm.bi100_profile import bi100_timer
+from vllm.bi100_profile import (bi100_profile_event_enabled,
+                                bi100_profile_flush,
+                                bi100_profile_transaction, bi100_timer)
 
 try:
     from vllm import corex_gdn_causal_conv as _corex_gdn_causal_conv
@@ -1397,55 +1399,55 @@ class Qwen3_5FullAttention(nn.Module):
     ) -> torch.Tensor:
         total_tokens = hidden_states.shape[0]
 
-        if self.use_packed_local_qgkv:
-            projected, _ = self.qgkv_proj(hidden_states)
-            qg, k, v = torch.split(
-                projected,
-                [self.local_num_heads * self.head_dim * 2,
-                 self.proj_kv_heads * self.head_dim,
-                 self.proj_kv_heads * self.head_dim],
-                dim=-1)
-        else:
-            qg, _ = self.q_proj(hidden_states)
-            k, _ = self.k_proj(hidden_states)
-            v, _ = self.v_proj(hidden_states)
+        with bi100_timer("full_attn.project_qgkv"):
+            if self.use_packed_local_qgkv:
+                projected, _ = self.qgkv_proj(hidden_states)
+                qg, k, v = torch.split(
+                    projected,
+                    [self.local_num_heads * self.head_dim * 2,
+                     self.proj_kv_heads * self.head_dim,
+                     self.proj_kv_heads * self.head_dim],
+                    dim=-1)
+            else:
+                qg, _ = self.q_proj(hidden_states)
+                k, _ = self.k_proj(hidden_states)
+                v, _ = self.v_proj(hidden_states)
 
-        # q projection output includes gate (dim doubled)
-        qg = qg.view(total_tokens, self.local_num_heads, self.head_dim * 2)
-        q = qg[:, :, :self.head_dim].reshape(total_tokens, -1)
-        gate = qg[:, :, self.head_dim:].reshape(total_tokens, -1)
+        with bi100_timer("full_attn.norm_rope"):
+            # q projection output includes gate (dim doubled).
+            qg = qg.view(total_tokens, self.local_num_heads,
+                         self.head_dim * 2)
+            q = qg[:, :, :self.head_dim].reshape(total_tokens, -1)
+            gate = qg[:, :, self.head_dim:].reshape(total_tokens, -1)
 
-        # q_norm on local Q heads
-        q = self.q_norm.forward_cuda(
-            q.view(total_tokens, self.local_num_heads, self.head_dim)
-            .contiguous()).view(total_tokens, -1)
+            q = self.q_norm.forward_cuda(
+                q.view(total_tokens, self.local_num_heads, self.head_dim)
+                .contiguous()).view(total_tokens, -1)
 
-        # GQA-aware TP: select rank-local KV head BEFORE k_norm and rope so
-        # that ixformer kernels always see num_kv_heads=1 (same as 27B path).
-        # Doing k_norm/rope on 2 KV heads (proj_kv_heads=2) triggers ixformer
-        # paths that can produce NaN; restricting to 1 head avoids the issue.
-        if self.q_per_kv_global is not None:
-            tp_rank = get_tensor_model_parallel_rank()
-            kv_idx = (tp_rank * self.local_num_heads) // self.q_per_kv_global
-            k = (k.view(total_tokens, self.proj_kv_heads, self.head_dim)
-                  [:, kv_idx, :].contiguous())   # (T, head_dim) — 1 head
-            v = (v.view(total_tokens, self.proj_kv_heads, self.head_dim)
-                  [:, kv_idx, :].contiguous())   # (T, head_dim) — 1 head
+            # Select the one rank-local KV head before k_norm and RoPE.
+            if self.q_per_kv_global is not None:
+                tp_rank = get_tensor_model_parallel_rank()
+                kv_idx = ((tp_rank * self.local_num_heads)
+                          // self.q_per_kv_global)
+                k = (k.view(total_tokens, self.proj_kv_heads, self.head_dim)
+                      [:, kv_idx, :].contiguous())
+                v = (v.view(total_tokens, self.proj_kv_heads, self.head_dim)
+                      [:, kv_idx, :].contiguous())
 
-        # k_norm on the (now always 1) rank-local KV head
-        k = self.k_norm.forward_cuda(
-            k.view(total_tokens, self.local_num_kv_heads, self.head_dim)
-            .contiguous()).view(total_tokens, -1)
+            k = self.k_norm.forward_cuda(
+                k.view(total_tokens, self.local_num_kv_heads, self.head_dim)
+                .contiguous()).view(total_tokens, -1)
+            q, k = self.rotary_emb(positions, q, k)
 
-        # rope: q=(T, local_num_heads*head_dim), k=(T, 1*head_dim) — mirrors 27B
-        q, k = self.rotary_emb(positions, q, k)
+        with bi100_timer("full_attn.attention"):
+            with bi100_timer(f"L{self.layer_idx}.full_attn"):
+                attn_out = self.attn(q, k, v, kv_cache, attn_metadata)
 
-        with bi100_timer(f"L{self.layer_idx}.full_attn"):
-            attn_out = self.attn(q, k, v, kv_cache, attn_metadata)
-
-        # Multiply by sigmoid gate before output projection
-        attn_out = attn_out * torch.sigmoid(gate.float()).to(attn_out.dtype)
-        output, _ = self.o_proj(attn_out)
+        with bi100_timer("full_attn.gate"):
+            attn_out = (attn_out
+                        * torch.sigmoid(gate.float()).to(attn_out.dtype))
+        with bi100_timer("full_attn.output_proj"):
+            output, _ = self.o_proj(attn_out)
         return output
 
 
@@ -1691,21 +1693,24 @@ class Qwen3_5MoeSparseBlock(nn.Module):
         return out  # partial, all-reduce done in forward()
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        router_and_shared_gate, _ = self.router_shared_gate(hidden_states)
-        router_logits = router_and_shared_gate[..., :self.num_experts]
-        gate_score = router_and_shared_gate[..., self.num_experts:]
+        with bi100_timer("moe.router"):
+            router_and_shared_gate, _ = self.router_shared_gate(hidden_states)
+            router_logits = router_and_shared_gate[..., :self.num_experts]
+            gate_score = router_and_shared_gate[..., self.num_experts:]
         with bi100_timer("moe.routed"):
             routed_out = self._pure_pytorch_experts(hidden_states, router_logits)
 
-        gate_up, _ = self.shared_expert_gate_up(hidden_states)
-        shared_out = self.act_fn(gate_up)
-        shared_out, _ = self.shared_expert_down(shared_out)
-        # Scalar sigmoid gate (Qwen2-MoE / Qwen3.5-MoE style).
-        shared_out = shared_out * torch.sigmoid(gate_score)
+        with bi100_timer("moe.shared"):
+            gate_up, _ = self.shared_expert_gate_up(hidden_states)
+            shared_out = self.act_fn(gate_up)
+            shared_out, _ = self.shared_expert_down(shared_out)
+            shared_out = shared_out * torch.sigmoid(gate_score)
 
-        out = routed_out + shared_out
+        with bi100_timer("moe.combine"):
+            out = routed_out + shared_out
         if self.experts.tp_size > 1:
-            out = tensor_model_parallel_all_reduce(out)
+            with bi100_timer("moe.all_reduce"):
+                out = tensor_model_parallel_all_reduce(out)
         return out
 
 
@@ -1764,24 +1769,30 @@ class Qwen3_5DecoderLayer(nn.Module):
         temporal_state: Optional[torch.Tensor] = None,
         gdn_capture_offsets: Optional[Iterable[int]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if residual is None:
-            residual = hidden_states
-            hidden_states = self.input_layernorm(hidden_states)
-        else:
-            hidden_states, residual = self.input_layernorm(hidden_states, residual)
+        with bi100_timer("layer.input_norm"):
+            if residual is None:
+                residual = hidden_states
+                hidden_states = self.input_layernorm(hidden_states)
+            else:
+                hidden_states, residual = self.input_layernorm(
+                    hidden_states, residual)
 
         if self.layer_type == "linear_attention":
-            hidden_states = self.linear_attn(
-                hidden_states, attn_metadata, conv_state, temporal_state,
-                capture_offsets=gdn_capture_offsets)
+            with bi100_timer("layer.gdn"):
+                hidden_states = self.linear_attn(
+                    hidden_states, attn_metadata, conv_state, temporal_state,
+                    capture_offsets=gdn_capture_offsets)
         else:
-            hidden_states = self.self_attn(
-                positions, hidden_states, kv_cache, attn_metadata)
+            with bi100_timer("layer.full_attn"):
+                hidden_states = self.self_attn(
+                    positions, hidden_states, kv_cache, attn_metadata)
 
-        hidden_states, residual = self.post_attention_layernorm(
-            hidden_states, residual)
+        with bi100_timer("layer.post_attn_norm"):
+            hidden_states, residual = self.post_attention_layernorm(
+                hidden_states, residual)
 
-        hidden_states = self.mlp(hidden_states)
+        with bi100_timer("layer.moe"):
+            hidden_states = self.mlp(hidden_states)
 
         return hidden_states, residual
 
@@ -1841,8 +1852,9 @@ class Qwen3_5Model(nn.Module):
         gdn_capture_offsets: Optional[Iterable[int]] = None,
     ) -> torch.Tensor:
         _validate_qwen_kv_cache_count(self.kv_cache_count, kv_caches)
-        hidden_states = (self.embed_tokens(input_ids)
-                         if inputs_embeds is None else inputs_embeds)
+        with bi100_timer("model.embed"):
+            hidden_states = (self.embed_tokens(input_ids)
+                             if inputs_embeds is None else inputs_embeds)
         residual = None
 
         attn_idx = 0
@@ -1881,7 +1893,8 @@ class Qwen3_5Model(nn.Module):
                 )
                 attn_idx += 1
 
-        hidden_states, _ = self.norm(hidden_states, residual)
+        with bi100_timer("model.final_norm"):
+            hidden_states, _ = self.norm(hidden_states, residual)
         self.captured_conv_states = {
             offset: torch.stack(states)
             for offset, states in captured_conv_states.items()
@@ -2080,6 +2093,7 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
             grid_thw=image_input["image_grid_thw"],
         )
 
+    @bi100_profile_transaction
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -2189,11 +2203,12 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
                 inputs_embeds[image_mask, :] = image_embeds.to(
                     inputs_embeds.dtype)
 
-        hidden_states = self.model(
-            input_ids, positions, kv_caches, attn_metadata,
-            conv_states, temporal_states,
-            inputs_embeds=inputs_embeds,
-            gdn_capture_offsets=interior_capture_offsets)
+        with bi100_timer("model.forward"):
+            hidden_states = self.model(
+                input_ids, positions, kv_caches, attn_metadata,
+                conv_states, temporal_states,
+                inputs_embeds=inputs_embeds,
+                gdn_capture_offsets=interior_capture_offsets)
 
         for offset, capture_key in capture_keys.items():
             if offset == query_len:
@@ -2202,11 +2217,41 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
             else:
                 captured_conv = self.model.captured_conv_states[offset]
                 captured_temporal = self.model.captured_temporal_states[offset]
-            self._gdn_prefix_cache[capture_key] = (
-                captured_conv.detach().cpu().clone(),
-                captured_temporal.detach().cpu().clone(),
-            )
+            with bi100_timer("gdn_prefix.save"):
+                self._gdn_prefix_cache[capture_key] = (
+                    captured_conv.detach().cpu().clone(),
+                    captured_temporal.detach().cpu().clone(),
+                )
 
+        if bi100_profile_event_enabled():
+            profile_prefill_tokens = int(
+                getattr(attn_metadata, "num_prefill_tokens", 0) or 0)
+            profile_decode_tokens = int(
+                getattr(attn_metadata, "num_decode_tokens", 0) or 0)
+            profile_context_len = 0
+            if profile_prefill_tokens > 0:
+                profile_seq_lens = getattr(attn_metadata, "seq_lens", None)
+                if (not isinstance(profile_seq_lens, list)
+                        or len(profile_seq_lens) != 1
+                        or not isinstance(profile_seq_lens[0], int)):
+                    raise RuntimeError(
+                        "BI100 profile requires one host-visible prefill "
+                        "sequence length")
+                profile_context_len = (
+                    profile_seq_lens[0] - profile_prefill_tokens)
+                if profile_context_len < 0:
+                    raise RuntimeError(
+                        "BI100 profile observed a negative prefill context")
+            bi100_profile_flush(
+                tp_rank=get_tensor_model_parallel_rank(),
+                phase=("prefill" if profile_prefill_tokens > 0 else "decode"),
+                prefill_tokens=profile_prefill_tokens,
+                decode_tokens=profile_decode_tokens,
+                context_len=profile_context_len,
+                gdn_restore=bool(gdn_restore_key is not None),
+                gdn_capture_points=len(gdn_capture_points),
+                gdn_evict_keys=len(gdn_evict_keys),
+            )
         return hidden_states
 
     def compute_logits(

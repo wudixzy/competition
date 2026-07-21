@@ -184,6 +184,40 @@
         "path": "/root/m1-49-gpu0-platform-state-20260722.txt",
         "sha256": "3cf1c9c2e485d407074250d11f75289beec13c48005c04be296aa395d3c8e6c9"
       }
+    },
+    {
+      "event": "four_gpu_preflight_after_connection_repair_20260722",
+      "gpu_results": [
+        false,
+        true,
+        true,
+        true
+      ],
+      "gpu0": {
+        "last_progress_stage": "mem_get_info",
+        "result": "timeout",
+        "returncode": 124
+      },
+      "json_path": "/tmp/bi100_preflight.json",
+      "json_sha256": "d859365d083fab740fc6ea0cceb0df26ccdd9f69c415f9fa40fcc803dbff73e3",
+      "matmul_size": 1024,
+      "passing_gpus": {
+        "capability": [
+          7,
+          0
+        ],
+        "checksum": 1073741824.0,
+        "free_memory_bytes": 34057748480,
+        "ids": [
+          1,
+          2,
+          3
+        ],
+        "total_memory_bytes": 34057748480
+      },
+      "preflight_exit_code": 1,
+      "service_started": false,
+      "timeout_seconds_per_gpu": 25
     }
   ],
   "schema": "bi100-m1-49-runtime-status-v1",

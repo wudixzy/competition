@@ -58,8 +58,42 @@
   CoreX 导入、`set_device` 和设备信息读取均已完成，同脚本 GPU1 正常通过。
   `ixsmi` 同时显示 GPU0 仅占 `257 MiB` 却保持 `100%/P0`，且没有可见
   compute PID，GPU1-3 利用率均为 0%。这发生在模型和 vLLM 启动之前。
-- 本地全量测试为 `360 passed, 25 skipped`，submission preflight `8/8`；
+- SSH 连接修复后再次执行完整四卡预检，结果仍为 `[false,true,true,true]`；
+  GPU0 最后阶段仍是 `mem_get_info`，GPU1-3 完成 1024 方阵校验。原始远端 JSON
+  SHA-256 为 `d859365d083fab740fc6ea0cceb0df26ccdd9f69c415f9fa40fcc803dbff73e3`，
+  本轮没有启动 vLLM 或 TP4 服务。
+- 本地全量测试为 `399 passed, 25 skipped`，submission preflight `8/8`；
   `computility-run.yaml`、`Dockerfile` 和 `main` 均未修改。
+
+## 2026-07-22 M1-48 测量协议修正
+
+- 私有准备分支 `prep/M1-48-on-M1-49-20260722` 基于 M1-49 `9460b71`；
+  M1-49 尚未获得真实 TP4 资格，因此 M1-48 只完成代码和门禁准备，未生成性能结论。
+- 两次独立审查确认旧 M1-48 不能用于决策：它把不同 shape 的 M1-47 `2.577x`
+  微基准外推到完整服务、使用非流式整包耗时、按 PID 而非 TP rank 聚合，并可能把
+  失败 forward 的事件串入下一请求。上述口径已全部删除或 fail-closed 修正。
+- 新协议固定重启后的 profile-off/profile-on 两臂，使用同一个 235K、1-token、
+  SSE 流式请求；只保存统计和输出 SHA-256。profile 扰动绝对值超过 15% 时报告
+  无效，不能据此选择下一内核。
+- event payload 现在绑定 rank 0-3、请求事务、严格字段和精确 region count；汇总器
+  验证 29 个 chunk、`28*8192+5624` 连续几何、十层 dense/paged 路径及
+  `8176+16`/`5616+8` 严格分段，并保留 signed residual。聚合与每个 forward
+  的 TP-rank spread 都必须不超过 10%，交替慢 rank 不能被请求总和掩盖；cold
+  请求只允许最终 chunk 捕获一个 GDN 状态，禁止提前逐 chunk 保存或淘汰。
+- `scripts/run_m1_48_prefill_profile.sh` 强制 M1-49 前置资格、三次四卡 preflight、
+  1 GiB 显存泄漏门、独立进程组清理和 fatal 扫描。最终 qualification 的 scope
+  仅为 `post-m1-49-diagnostic-path-ranking-only`，始终
+  `promotion_authorized=false`。
+- 原子 overlay 安装报告新增 profiler、paged attention 和 XFormers 文件的源/安装
+  哈希一致性；额外 identity gate 再将当前干净 revision 的源哈希逐项比对，防止复用
+  旧 overlay，并现场重读 active worker。独立 startup guard 只标记合成
+  `profile_run()`，不跳过容量探测、不启用 block override。最终 qualifier 会重新绑定
+  service TTFT、输出摘要、rank spread、全注意力字段及预资格清理，并从固定 log 与
+  service 报告重建完整 summary 后要求 canonical equality；额外 profile request 直接
+  拒绝。最终清理失败会删除 qualification。源码干净检查只排除生成的
+  `bench_runs/**` 证据。
+  Docker 与 bare-host 均通过幂等 `patch_xformers_profile.py` 安装计时点。
+  `computility-run.yaml`、`Dockerfile` 和 `main` 仍未修改。
 
 ## 2026-07-21 M1-45 内容寻址 CPU KV 二级缓存
 

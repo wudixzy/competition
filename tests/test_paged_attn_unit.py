@@ -79,6 +79,7 @@ def _install_stubs():
             return False
 
     profile_mod.bi100_timer = lambda name: _NoopTimer()
+    profile_mod.bi100_profile_count = lambda name, **metadata: None
     sys.modules["torch"] = torch_mod
     sys.modules["vllm"] = vllm_mod
     sys.modules["vllm.bi100_env"] = env_mod

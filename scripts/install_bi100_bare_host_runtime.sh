@@ -34,6 +34,7 @@ required=(
     vllm/core/block_manager_v2.py
     qwen3_6_scripts/patch_ops.sh
     qwen3_6_scripts/patch_utils.py
+    qwen3_6_scripts/patch_xformers_profile.py
 )
 for relative in "${required[@]}"; do
     if [[ ! -f "$ROOT/$relative" ]]; then
@@ -165,6 +166,18 @@ checks = {
         root / "qwen3_6_scripts/qwen3_5.py",
         vllm_root / "model_executor/models/qwen3_5.py",
     ),
+    "bi100_profile": (
+        root / "qwen3_6_scripts/bi100_profile.py",
+        vllm_root / "bi100_profile.py",
+    ),
+    "paged_attention": (
+        root / "qwen3_6_scripts/paged_attn.py",
+        vllm_root / "attention/ops/paged_attn.py",
+    ),
+    "xformers_backend": (
+        root / "vllm/attention/backends/xformers.py",
+        vllm_root / "attention/backends/xformers.py",
+    ),
     "gdn_prefix": (
         root / "qwen3_6_scripts/gdn_prefix.py",
         vllm_root / "gdn_prefix.py",
@@ -208,6 +221,13 @@ profile_patch_present = (
     "self.model_config.get_num_attention_layers(" in model_runner_text
 )
 qualified = qualified and profile_patch_present
+worker = vllm_root / "worker/worker.py"
+worker_text = worker.read_text(encoding="utf-8")
+startup_profile_guard_patch = (
+    "Mark this synthetic pass so BI100_PROFILE can exclude" in worker_text
+    and 'os.environ["BI100_IN_STARTUP_PROFILE"] = "1"' in worker_text
+)
+qualified = qualified and startup_profile_guard_patch
 versions = {
     name: importlib.metadata.version(name)
     for name in ("torch", "transformers", "vllm")
@@ -225,7 +245,9 @@ report = {
     "block_manager_base_sha256": digest(
         root / "vllm/core/block_manager_v2.py"),
     "model_runner_sha256": digest(model_runner),
+    "worker_sha256": digest(worker),
     "profile_attention_layer_patch": profile_patch_present,
+    "startup_profile_guard_patch": startup_profile_guard_patch,
 }
 rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
 output.write_text(rendered, encoding="utf-8")

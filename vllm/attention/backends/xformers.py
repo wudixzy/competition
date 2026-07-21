@@ -16,6 +16,7 @@ from vllm.attention.backends.utils import (CommonAttentionState,
                                            CommonMetadataBuilder)
 from vllm.attention.ops.paged_attn import (PagedAttention,
                                            PagedAttentionMetadata)
+from vllm.bi100_profile import bi100_timer
 from vllm.logger import init_logger
 
 logger = init_logger(__name__)
@@ -557,11 +558,11 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 # If kv_cache is not provided, the new key and value tensors are
                 # not cached. This happens during the initial memory
                 # profiling run.
-                PagedAttention.write_to_paged_cache(key, value, key_cache,
-                                                    value_cache,
-                                                    updated_slot_mapping,
-                                                    self.kv_cache_dtype,
-                                                    k_scale, v_scale)
+                with bi100_timer("xformers.kv_write"):
+                    PagedAttention.write_to_paged_cache(
+                        key, value, key_cache, value_cache,
+                        updated_slot_mapping, self.kv_cache_dtype,
+                        k_scale, v_scale)
 
         if attn_type == AttentionType.ENCODER:
             # Encoder attention - chunked prefill is not applicable;
@@ -606,8 +607,9 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 # normal attention.
                 # block tables are empty if the prompt does not have a cached
                 # prefix.
-                out = self._run_memory_efficient_xformers_forward(
-                    query, key, value, prefill_meta, attn_type=attn_type)
+                with bi100_timer("xformers.dense_prefill"):
+                    out = self._run_memory_efficient_xformers_forward(
+                        query, key, value, prefill_meta, attn_type=attn_type)
                 assert out.shape == output[:num_prefill_tokens].shape
                 output[:num_prefill_tokens] = out
             else:
@@ -619,23 +621,24 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 # TODO(Hai) this triton kernel has regression issue (broke) to
                 # deal with different data types between KV and FP8 KV cache,
                 # to be addressed separately.
-                out = PagedAttention.forward_prefix(
-                    query,
-                    key,
-                    value,
-                    self.kv_cache_dtype,
-                    key_cache,
-                    value_cache,
-                    prefill_meta.block_tables,
-                    prefill_meta.query_start_loc,
-                    prefill_meta.seq_lens_tensor,
-                    prefill_meta.context_lens_tensor,
-                    prefill_meta.max_query_len,
-                    self.alibi_slopes,
-                    self.sliding_window,
-                    k_scale,
-                    v_scale,
-                )
+                with bi100_timer("xformers.paged_prefill"):
+                    out = PagedAttention.forward_prefix(
+                        query,
+                        key,
+                        value,
+                        self.kv_cache_dtype,
+                        key_cache,
+                        value_cache,
+                        prefill_meta.block_tables,
+                        prefill_meta.query_start_loc,
+                        prefill_meta.seq_lens_tensor,
+                        prefill_meta.context_lens_tensor,
+                        prefill_meta.max_query_len,
+                        self.alibi_slopes,
+                        self.sliding_window,
+                        k_scale,
+                        v_scale,
+                    )
                 assert output[:num_prefill_tokens].shape == out.shape
                 output[:num_prefill_tokens] = out
 

@@ -158,6 +158,7 @@ python3 ./patch_model_runner.py
 
 build_stage "installing executor startup diagnostics"
 python3 ./patch_executor_startup_debug.py
+python3 ./patch_worker_startup_profile_guard.py
 
 build_stage "installing transformers Qwen3.5 model support"
 cp -r ./qwen3_5 "${TRANSFORMERS_ROOT}/models/"
@@ -196,6 +197,7 @@ build_stage "installing scheduler and attention patches"
 # works correctly during profiling runs with chunked-prefill-style batches.
 # also bypasses auto chunked prefill on
 python3 ./patch_xformers_sdpa_seq.py
+python3 ./patch_xformers_profile.py
 
 build_stage "installing API parsers and serving modules"
 # --- tool parser: Qwen3 XML tool call format ---------------------------------

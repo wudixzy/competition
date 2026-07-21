@@ -29,6 +29,8 @@
 | `BI100_PROFILE` | `0` | boolean | Enables lightweight CUDA-synchronized timers for BI100 hotspot profiling. | T4 |
 | `BI100_GDN_COREX_CAUSAL_CONV` | `1` | boolean | Enables the fused CoreX decode causal-convolution/state-update kernel when the extension is installed; set to `0` for the PyTorch reference path. | E-GDN-03 |
 | `BI100_PROFILE_INCLUDE_STARTUP` | `0` | boolean | Includes vLLM synthetic startup `profile_run()` in BI100 timers; default skips it so profiling focuses on real requests and avoids perturbing startup dummy runs. | T5 |
+| `BI100_PROFILE_MODE` | `sync` | `sync`, `event` | Diagnostic timer backend. M1-48 uses `event`; this variable is forbidden in submission YAML. | M1-48 |
+| `BI100_PROFILE_FILTER` | empty | comma-separated bounded globs | Restricts privacy-safe M1-48 timing regions. It is diagnostic-only and forbidden in submission YAML. | M1-48 |
 | `BI100_PYTORCH_DECODE_THRESHOLD` | `32768` | `1..262144` | Routes long-context decode to the pure PyTorch paged attention fallback. | T3 |
 | `BI100_UNSET_CUDA_VISIBLE_DEVICES` | `1` | boolean shell flag | Lets the contest container expose all four GPUs by default while allowing debug runs to preserve a caller-specified visibility mask. | T1 |
 | `ENABLE_CUSTOM_IPC` | `1` | boolean | Enables IxFormer CUDA-IPC all-reduce for same-node TP. Set `0` to restore the IxFormer NCCL path. E-COLL-01 measured +44.6% decode TPS P10 with 328 fewer GPU KV blocks; reduction order is quality-equivalent but not bit-exact. | E-COLL-01 |
