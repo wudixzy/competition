@@ -1,5 +1,19 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-47 融合 prefill 注意力设计门槛
+
+- 私有分支：`exp/M1-47-fused-paged-prefill-design-20260721`，仅冻结设计与门槛，
+  尚未改 runtime/YAML/main。
+- 审计确认真正 cold prefill 走 patched xFormers 的 256-query 纯 PyTorch
+  密集路径；现有 `corex_paged_kv_gather` 只覆盖长 decode，不能直接解决冷 TTFT。
+- 新 ABI 必须同时接受当前 `k_new/v_new` 与可选 paged prefix，明确支持
+  `ctx_len=0`；只支持 TP4 rank-local `Hq/Hkv/D=6/1/256`、block16、单序列。
+- 固定核心门槛仍为 74K/128K/235K 至少 `1.5x`，65K/235K cold TTFT 至少
+  改善 20%，warm 回退不超过 2%，相对 L2 不超过 `1e-5`。融合和一次
+  split-reduction 均失败后停止，不扫描参数。
+- 详细 ABI、网格和停止规则见
+  `docs/experiments/M1_47_FUSED_PAGED_PREFILL_ATTENTION_20260721.md`。
+
 ## 2026-07-21 M1-45 内容寻址 CPU KV 二级缓存
 
 - 私有分支：`exp/M1-45-content-cpu-kv-tier-20260721`；当前修正代码为
