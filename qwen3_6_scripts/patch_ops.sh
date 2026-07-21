@@ -129,6 +129,9 @@ cp ./bi100_env.py "${VLLM_ROOT}/bi100_env.py"
 cp ./bi100_profile.py "${VLLM_ROOT}/bi100_profile.py"
 cp ./gdn_prefix.py "${VLLM_ROOT}/gdn_prefix.py"
 
+build_stage "installing CoreX paged-KV swap compatibility"
+python3 ./patch_corex_swap_blocks.py
+
 # --- paged_attn.py: replace forward_prefix with pure-PyTorch fallback -------
 # The Triton context_attention_fwd kernel hangs BI-V100 GPUs permanently
 # (standard Triton 2.3.1 PTX is not supported by the corex runtime either).
