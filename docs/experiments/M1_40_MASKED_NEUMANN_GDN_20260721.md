@@ -60,5 +60,38 @@ not authorize integration.
 
 ## Status
 
-`READY_FOR_FIXED_BI100_GATE`. Local static tests are available without Torch;
-the numerical and performance decision requires one healthy BI100 card.
+`PERFORMANCE_REJECTED`.
+
+The fixed gate ran once on physical BI100 GPU0. The process returned `1`
+because one predeclared qualification gate failed; it completed normally and
+wrote the full report. All 100 stress samples were finite and passed parity.
+The worst stress errors were:
+
+| Boundary | Max absolute | Relative L2 |
+| --- | ---: | ---: |
+| Inverse | `2.98e-8` | `1.18e-8` |
+| Output | `1.40e-9` | `5.99e-8` |
+| Final state | `2.24e-8` | `7.59e-8` |
+
+The multiplication-only inverse is materially faster, but the gain is
+diluted by the unchanged remainder of the chunk rule:
+
+| Tokens | Inverse baseline | Candidate | Speedup | Complete baseline | Candidate | Speedup |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 64 | `3.999 ms` | `0.527 ms` | `7.585x` | `4.712 ms` | `1.158 ms` | `4.068x` |
+| 1024 | `4.566 ms` | `0.761 ms` | `5.998x` | `9.016 ms` | `5.082 ms` | `1.774x` |
+| 4096 | `5.747 ms` | `1.548 ms` | `3.712x` | `22.123 ms` | `17.801 ms` | `1.243x` |
+| 7800 | `7.219 ms` | `3.467 ms` | `2.082x` | `42.148 ms` | `33.486 ms` | `1.259x` |
+
+Peak allocated memory was equal to the exact baseline at every length. The
+4096-token complete-path result misses the fixed `1.5x` gate by a wide margin,
+so no model integration, service A/B, prebuilt artifact, or TP4 run is
+authorized. Do not scan `N`, `S`, chunk size, precision, tolerance, or launch
+configuration. A future GDN design must fuse a larger complete-layer boundary;
+accelerating this inverse alone has insufficient score leverage.
+
+Evidence:
+
+- `docs/experiments/evidence/M1_40_MASKED_NEUMANN_GDN_RESULT.json`
+- SHA-256 `3ee2cbaddd727ecf9fc740c95761ede5d4367374177d2416d48a7493ef2f194a`
+- remote source `/root/M1_40/result.json`

@@ -1,5 +1,18 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-40 masked-Neumann GDN 门禁
+
+- 私有分支：`exp/M1-40-masked-neumann-gdn-20260721`。
+- 固定 `N=3`、`S=8`、chunk-64 的乘法逆矩阵方案在 BI100 GPU0 通过全部
+  数值、100 样本压力、逆矩阵速度和峰值显存门禁。
+- 4096 token 时逆矩阵为 `3.712x`，但完整 GDN chunk-rule 只有 `1.243x`，
+  低于预先固定的 `1.5x` 门槛。
+- 状态为 `PERFORMANCE_REJECTED`：不修改模型、runtime、YAML，不扫描参数。
+  原始证据保存在
+  `docs/experiments/evidence/M1_40_MASKED_NEUMANN_GDN_RESULT.json`。
+- 当前实例仍是 GPU0/1/2 单卡预检通过、GPU3 超时；在四卡单测和 collective
+  均恢复前不要启动 TP4 服务。
+
 ## 2026-07-21 M1-38 small-batch direct routed MoE 门禁
 
 - 固定 cache 矩阵的 warm 请求只剩 `T=8/16`，但生产 direct routed MoE 只覆盖
