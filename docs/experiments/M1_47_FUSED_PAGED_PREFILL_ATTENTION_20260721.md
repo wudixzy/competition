@@ -1,8 +1,9 @@
 # M1-47: Fused paged prefill attention
 
-Status: runtime path and fixed ABI audited; first compiled-pipeline source is
-ready for CoreX qualification but is not installed or bundled; no runtime,
-YAML, or `main` change.
+Status: runtime path and fixed ABI audited; the first candidate has passed its
+isolated CoreX compile/link/import gate and is ready for GPU numerical and
+performance qualification, but is not installed or bundled; no runtime, YAML,
+or `main` change.
 
 ## Corrected scope
 
