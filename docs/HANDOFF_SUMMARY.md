@@ -4,8 +4,9 @@
 
 - 私有分支：`exp/M1-47-fused-paged-prefill-design-20260721`，仅冻结设计与门槛，
   尚未改 runtime/YAML/main。
-- 审计确认真正 cold prefill 走 patched xFormers 的 256-query 纯 PyTorch
-  密集路径；现有 `corex_paged_kv_gather` 只覆盖长 decode，不能直接解决冷 TTFT。
+- 固定 8192-token chunk 下，首 chunk 走 patched xFormers 的 256-query 密集路径，
+  后续 chunk 走长 paged context 的 PyTorch online-softmax 循环；235K 不会形成单个
+  235K dense query。现有 `corex_paged_kv_gather` 只覆盖长 decode，不能直接复用。
 - 新 ABI 必须同时接受当前 `k_new/v_new` 与可选 paged prefix，明确支持
   `ctx_len=0`；只支持 TP4 rank-local `Hq/Hkv/D=6/1/256`、block16、单序列。
 - 固定核心门槛仍为 74K/128K/235K 至少 `1.5x`，65K/235K cold TTFT 至少

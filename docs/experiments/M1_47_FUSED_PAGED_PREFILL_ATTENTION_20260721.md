@@ -16,11 +16,11 @@ V: [T, 1, 256] FP16
 GQA ratio: 6
 ```
 
-When there is no cached prefix, the patched xFormers fallback processes fixed
-256-query chunks. Each chunk materializes an FP32 score tensor
-`[6, 256, T]`, applies a causal mask and softmax, then performs PV. At 235K,
-one score tensor is about 1.44 GiB and the mask is about 60 MiB. The ten
-full-attention layers account for 68.788% of the measured 235K model time.
+For the first request chunk, the patched xFormers fallback processes fixed
+256-query tiles. Each tile materializes an FP32 score tensor `[6, 256, Q]`,
+applies a causal mask and softmax, then performs PV. The fixed
+`max_num_batched_tokens=8192` command bounds this initial dense `Q` at 8192;
+the runtime does not submit one 235K dense query tensor.
 
 The paged prefix path instead reads:
 
@@ -30,8 +30,12 @@ value_cache: [blocks, 1, 256, 16]    FP16
 block_table: [logical blocks]        INT32
 ```
 
-Its current Python loop gathers 512-token paged tiles, computes QK, updates
-FP32 online `m/l/o`, and computes PV. The existing
+After the first chunk, chunked prefill supplies an increasingly long paged
+context and at most 8192 current query tokens. Its current Python loop gathers
+512-token paged tiles, computes QK, updates FP32 online `m/l/o`, and computes
+PV. The ten full-attention layers account for 68.788% of the measured 235K
+model time, so this paged-prefix loop is the primary service-level target. The
+existing
 `corex_paged_kv_gather.so` is decode-only: it materializes complete FP32 K/V
 and has no Q, causal position, online softmax/LSE, or PV input. Its physical
 block indexing can be reused, but it cannot implement the fused target.
@@ -53,11 +57,11 @@ out         [Q, 6, 256]       FP16
 lse         [Q, 6]             FP32
 ```
 
-`ctx_len=0` and an empty block table are required supported cases; `k_new` and
-`v_new` supply cold-prefill keys and values. Cached prefill concatenates the
-logical paged prefix with current K/V without materializing a complete K/V or
-logit tensor. LSE is retained by the diagnostic ABI even if production hides
-it.
+`ctx_len=0` and an empty block table are required supported cases for the first
+chunk; `k_new` and `v_new` supply its keys and values. Later chunks concatenate
+the logical paged prefix with at most 8192 current K/V tokens without
+materializing a complete K/V or logit tensor. LSE is retained by the
+diagnostic ABI even if production hides it.
 
 Every other head count, head dimension, dtype, block size, batch size, encoder
 mode, or non-causal mode falls back to the current implementation. Decode is
@@ -73,7 +77,8 @@ alternative use the same cases:
 | --- | --- |
 | Small dense golden | `(ctx,Q)=(0,1),(0,8),(0,256),(240,16)` |
 | Paged boundary | `(ctx,Q)=(65520,16),(234992,8)` |
-| Core query tile | `Q=256`, total K/V lengths `74K`, `128K`, `235K` |
+| Core query tile | `Q=256`, paged contexts `74K`, `128K`, `235K` |
+| Service chunk geometry | `(ctx,Q)=(0,8192),(65536,8192),(122880,8192),(229376,5624)` |
 | Capacity edge | `ctx+Q+max_tokens <= 262144` |
 | Service cold | exact 65K and 235K prompts |
 | Service warm | same 65K and 235K requests after prefix restoration |
