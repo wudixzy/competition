@@ -191,7 +191,9 @@ class AnalyzerTest(unittest.TestCase):
             ])
             report = json.loads(out.read_text())
             self.assertIn("policy_metrics", report)
+            self.assertIn("control_policy_metrics", report)
             self.assertEqual(report["trace_version"], 4)
+            self.assertFalse(report["qualification_trace"])
             self.assertEqual(report["candidate_gdn_restore_mode"], "direct")
             self.assertIn("off", report["policy_metrics"])
             self.assertIn("fine32", report["policy_metrics"])
@@ -238,6 +240,36 @@ class AnalyzerTest(unittest.TestCase):
                     "--baseline-cache-tps", "100",
                     "--baseline-weighted-score", "1000",
                 ])
+
+    def test_main_reports_cpu_candidate_against_zero_cpu_control(self):
+        records = [
+            record([1, 2], capacity=2, request_id=0, ordinal=1),
+            record([3, 4], capacity=2, request_id=1, ordinal=2),
+            record([1, 2], capacity=2, request_id=2, ordinal=3),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            trace = root / "trace.log"
+            trace.write_text("\n".join(
+                sim.MARKER + json.dumps(item) for item in records) + "\n")
+            out = root / "report.json"
+            sim.main([
+                str(trace), "--out", str(out),
+                "--expected-requests", "3",
+                "--expected-block-size", "16",
+                "--cpu-capacity-blocks", "2",
+            ])
+            report = json.loads(out.read_text())
+            self.assertEqual(
+                report["control_policy_metrics"]["admission64"]
+                ["cpu_hit_blocks"], 0)
+            self.assertEqual(
+                report["policy_metrics"]["admission64"]
+                ["cpu_hit_blocks"], 2)
+            self.assertGreater(
+                report[
+                    "cpu_tier_admission64_effective_hit_gain_percentage_points"],
+                0)
 
     def test_per_request_residual_projection_uses_trace_timings(self):
         records = [
@@ -286,6 +318,7 @@ class AnalyzerTest(unittest.TestCase):
                 qualification["projection_model"],
                 "per_request_residual_prefill")
             self.assertIsNotNone(qualification["projected_weighted_score"])
+            self.assertFalse(qualification["ok"])
 
     def test_docker_json_wrapper_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -313,6 +346,150 @@ class AnalyzerTest(unittest.TestCase):
             report = json.loads(out.read_text())
             self.assertEqual(report["source_logs"][0]["bytes"], log.stat().st_size)
             self.assertEqual(len(report["source_logs"][0]["sha256"]), 64)
+
+    def test_cpu_recovers_gpu_evicted_prefix(self):
+        records = [
+            decoded([1, 2], capacity=2, ordinal=1),
+            decoded([3, 4], capacity=2, ordinal=2),
+            decoded([1, 2], capacity=2, ordinal=3),
+        ]
+        result = sim.simulate(records, 2, policy="fine32", cpu_capacity=2)
+        recovered = result["request_results"][2]
+        self.assertEqual(recovered["cpu_hit_blocks"], 2)
+        self.assertEqual(recovered["h2d_blocks"], 2)
+        self.assertEqual(recovered["d2h_blocks"], 0)
+        self.assertEqual(recovered["effective_hit_blocks"], 1)
+        self.assertEqual(recovered["residual_prefill_tokens"], 16)
+        self.assertEqual(result["d2h_blocks"], 2)
+
+    def test_gpu_first_avoids_cpu_promotion(self):
+        records = [
+            decoded([1, 2], capacity=2, ordinal=1),
+            decoded([1, 2], capacity=2, ordinal=2),
+        ]
+        result = sim.simulate(records, 2, policy="fine32", cpu_capacity=2)
+        warm = result["request_results"][1]
+        self.assertEqual(warm["cpu_hit_blocks"], 0)
+        self.assertEqual(warm["h2d_blocks"], 0)
+        self.assertEqual(warm["raw_kv_contiguous_hit_tokens"], 16)
+
+    def test_cpu_lru_replaces_oldest_copy(self):
+        records = [
+            decoded([1, 2], capacity=2, ordinal=1),
+            decoded([3, 4], capacity=2, ordinal=2),
+            decoded([1, 3], capacity=2, ordinal=3),
+            decoded([5, 6], capacity=2, ordinal=4),
+        ]
+        result = sim._simulate(records, 2, False, "off", cpu_capacity=2)
+        self.assertEqual(
+            list(result["final_cpu_cache"]), [digest(1), digest(3)])
+
+    def test_saturated_promotion_preserves_later_cpu_source(self):
+        records = [
+            decoded([1, 2], capacity=2, ordinal=1),
+            decoded([3, 4], capacity=2, ordinal=2),
+            decoded([1, 2], capacity=2, ordinal=3),
+        ]
+        result = sim._simulate(records, 2, False, "fine32", cpu_capacity=2)
+        promoted = result["request_results"][2]
+        self.assertEqual(promoted["cpu_hit_blocks"], 2)
+        self.assertEqual(promoted["h2d_blocks"], 2)
+        self.assertEqual(promoted["d2h_blocks"], 0)
+        self.assertEqual(list(result["final_cpu_cache"]),
+                         [digest(1), digest(2)])
+
+    def test_store_before_later_promotion_is_deferred(self):
+        records = [
+            decoded([1, 2], capacity=2, ordinal=1),
+            decoded([3, 4], capacity=2, ordinal=2),
+            decoded([5, 1], capacity=2, ordinal=3),
+        ]
+        result = sim._simulate(records, 2, False, "fine32", cpu_capacity=2)
+        mixed = result["request_results"][2]
+        self.assertEqual(mixed["cpu_hit_blocks"], 1)
+        self.assertEqual(mixed["h2d_blocks"], 1)
+        self.assertEqual(mixed["d2h_blocks"], 0)
+        self.assertGreaterEqual(result["d2h_skipped_blocks"], 1)
+        self.assertEqual(set(result["final_cpu_cache"]),
+                         {digest(1), digest(2)})
+
+    def test_same_step_d2h_destination_is_not_a_cpu_hit(self):
+        records = [
+            decoded([1, 2], capacity=2, ordinal=1),
+            decoded([3, 2], capacity=2, ordinal=2),
+        ]
+        result = sim.simulate(records, 2, policy="off", cpu_capacity=2)
+        second = result["request_results"][1]
+        self.assertEqual(second["cpu_hit_blocks"], 0)
+        self.assertEqual(second["h2d_blocks"], 0)
+        self.assertEqual(second["d2h_blocks"], 2)
+
+    def test_per_request_ttft_includes_transfer_cost(self):
+        records = [
+            decoded([1, 2], capacity=2, ordinal=1),
+            decoded([3, 4], capacity=2, ordinal=2),
+            decoded([1, 2], capacity=2, ordinal=3),
+        ]
+        records[2].update({
+            "ttft_s": 1.0,
+            "request_latency_s": 2.0,
+            "time_in_queue_s": 0.2,
+            "observed_effective_cached_tokens": 0,
+        })
+        result = sim.simulate(
+            records, 2, policy="fine32", cpu_capacity=2,
+            h2d_ms_per_block=10.0, d2h_ms_per_block=20.0)
+        timing = result["request_results"][2]
+        self.assertEqual(timing["h2d_blocks"], 2)
+        self.assertEqual(timing["d2h_blocks"], 0)
+        self.assertAlmostEqual(timing["baseline_prefill_s"], 0.8)
+        self.assertAlmostEqual(timing["projected_prefill_s"], 0.4)
+        self.assertAlmostEqual(timing["h2d_transfer_s"], 0.02)
+        self.assertAlmostEqual(timing["projected_ttft_s"], 0.62)
+
+    def test_decode_d2h_affects_latency_but_not_ttft(self):
+        records = [
+            decoded([1, 2], capacity=2, ordinal=1),
+            decoded([3, 4], capacity=2, ordinal=2,
+                    prompt_tokens=16, total_tokens=32),
+        ]
+        records[1].update({
+            "ttft_s": 1.0,
+            "request_latency_s": 2.0,
+            "time_in_queue_s": 0.0,
+            "observed_effective_cached_tokens": 0,
+        })
+        result = sim.simulate(
+            records, 2, policy="off", cpu_capacity=2,
+            h2d_ms_per_block=10.0, d2h_ms_per_block=10.0)
+        timing = result["request_results"][1]
+        self.assertEqual(timing["prefill_d2h_blocks"], 1)
+        self.assertEqual(timing["decode_d2h_blocks"], 1)
+        self.assertAlmostEqual(timing["projected_ttft_s"], 1.01)
+        self.assertAlmostEqual(timing["projected_request_latency_s"], 2.02)
+        self.assertAlmostEqual(timing["d2h_transfer_s"], 0.02)
+
+    def test_qualification_trace_requires_explicit_complete_881(self):
+        records = [{"ordinal": ordinal} for ordinal in range(1, 882)]
+        self.assertFalse(sim._qualification_trace(records))
+        self.assertTrue(sim._qualification_trace(
+            records, explicitly_declared=True))
+        self.assertFalse(sim._qualification_trace(
+            records[:-1], explicitly_declared=True))
+
+    def test_cpu_capacity_zero_regression(self):
+        records = [
+            decoded([1, 2], capacity=2, ordinal=1),
+            decoded([3, 4], capacity=2, ordinal=2),
+            decoded([1, 2], capacity=2, ordinal=3),
+        ]
+        result = sim.simulate(records, 2, policy="fine32", cpu_capacity=0)
+        self.assertEqual(result["raw_kv_contiguous_hit_tokens"], 0)
+        self.assertEqual(result["usable_gdn_state_avoided_tokens"], 0)
+        self.assertEqual(result["residual_prefill_tokens"], 96)
+        self.assertEqual(result["cpu_hit_blocks"], 0)
+        self.assertEqual(result["h2d_blocks"], 0)
+        self.assertEqual(result["d2h_blocks"], 0)
 
 
 if __name__ == "__main__":

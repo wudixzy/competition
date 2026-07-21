@@ -10,12 +10,18 @@ import os
 import re
 import string
 import sys
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from collections.abc import Iterable, Sequence
 from typing import Any, Dict, Tuple
 
 MARKER = "[BI100_CACHE_TRACE] "
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+# M1-44 fixed-shape medians at 131,072 tokens / 8,192 blocks.  The
+# projection intentionally charges the measured one-way cost per content
+# block, rather than scaling an aggregate cache rate.
+M1_44_D2H_MS_PER_BLOCK = 944.999061524868 / 8192.0
+M1_44_H2D_MS_PER_BLOCK = 1065.4232949018478 / 8192.0
 
 
 def _percentile(values: Sequence[float], percent: float) -> float | None:
@@ -45,8 +51,6 @@ try:
 except (ModuleNotFoundError, ImportError, OSError):
     # Fallback implementations for environments where the script is imported
     # directly and qwen3_6_scripts is unavailable.
-    from collections import OrderedDict
-
     GdnPrefixKey = Tuple[int, bytes]
 
     def strict_prefix_block_count(token_count: int, block_size: int) -> int:
@@ -334,6 +338,10 @@ def read(paths: Sequence[str]) -> list[Dict[str, Any]]:
                         or not 0 <= observed_cached <= prompt_tokens):
                     raise ValueError(
                         "observed_effective_cached_tokens is inconsistent")
+                qualification_trace = record.get("qualification_trace")
+                if (qualification_trace is not None
+                        and not isinstance(qualification_trace, bool)):
+                    raise ValueError("qualification_trace must be boolean")
 
                 expected_prompt_allocated = (
                     prompt_tokens + block_size - 1) // block_size
@@ -373,7 +381,7 @@ def read(paths: Sequence[str]) -> list[Dict[str, Any]]:
 
 
 def _evict(cache, last: Dict[bytes, Tuple[int, int]], frequency: Dict[bytes, int],
-          candidate: bool) -> None:
+          candidate: bool) -> bytes:
     if not cache:
         raise ValueError("request cannot fit in cache")
     if candidate:
@@ -386,20 +394,45 @@ def _evict(cache, last: Dict[bytes, Tuple[int, int]], frequency: Dict[bytes, int
             -last.get(block, (-1, -1))[1], block))
     cache.remove(victim)
     last.pop(victim, None)
+    return victim
+
+
+def _qualification_trace(records: Sequence[Dict[str, Any]],
+                         explicitly_declared: bool = False) -> bool:
+    """Only an explicitly declared, complete 881-request trace can qualify."""
+    if not explicitly_declared:
+        return False
+    if len(records) != 881:
+        return False
+    if [record["ordinal"] for record in records] != list(range(1, 882)):
+        return False
+    return True
 
 
 def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
               candidate: bool, policy: str,
               gdn_chunk_tokens: int = 8192,
-              restore_mode: str = "direct") -> Dict[str, Any]:
+              restore_mode: str = "direct",
+              cpu_capacity: int = 0,
+              h2d_ms_per_block: float = M1_44_H2D_MS_PER_BLOCK,
+              d2h_ms_per_block: float = M1_44_D2H_MS_PER_BLOCK) -> Dict[str, Any]:
     if policy not in {"off", "fine32", "admission64"}:
         raise ValueError("policy must be one of off, fine32, admission64")
     if gdn_chunk_tokens <= 0:
         raise ValueError("gdn_chunk_tokens must be positive")
+    if cpu_capacity < 0:
+        raise ValueError("cpu_capacity must be non-negative")
+    for name, value in (("h2d_ms_per_block", h2d_ms_per_block),
+                        ("d2h_ms_per_block", d2h_ms_per_block)):
+        if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not math.isfinite(value) or value < 0):
+            raise ValueError(f"{name} must be finite and non-negative")
     cache = set()
     last = {}
     frequency = defaultdict(int)
+    cpu_cache: OrderedDict[bytes, None] = OrderedDict()
     hits = total = hit_tokens = gap_blocks = 0
+    cpu_hits = h2d_blocks = d2h_blocks = d2h_skipped_blocks = 0
     avoided_tokens = 0
     request_results: list[Dict[str, Any]] = []
     gdn_policy = GdnPrefixStatePolicy(policy)
@@ -413,39 +446,110 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
         prompt_hashes = hashes[:prompt_full_blocks]
 
         hit = 0
+        cpu_hit = 0
+        request_h2d = 0
+        request_d2h = 0
+        effective_hit = 0
         saw_gap = False
         active_blocks = 0
+        h2d_claimed = False
+        ready_cpu = set(cpu_cache)
+        step_new_cpu: set[bytes] = set()
+        deferred_d2h: list[bytes] = []
+        deferred_hashes: set[bytes] = set()
+
+        def demote(victim: bytes) -> None:
+            nonlocal request_d2h, d2h_blocks
+            if cpu_capacity <= 0:
+                return
+            if victim in cpu_cache:
+                cpu_cache.move_to_end(victim)
+                return
+            if victim in deferred_hashes:
+                return
+            if len(cpu_cache) < cpu_capacity:
+                cpu_cache[victim] = None
+                step_new_cpu.add(victim)
+                request_d2h += 1
+                d2h_blocks += 1
+                return
+            deferred_d2h.append(victim)
+            deferred_hashes.add(victim)
+
+        def resolve_cpu_step(has_h2d: bool) -> None:
+            nonlocal request_d2h, d2h_blocks, d2h_skipped_blocks
+            if has_h2d:
+                d2h_skipped_blocks += len(deferred_d2h)
+            else:
+                for victim in deferred_d2h:
+                    cpu_victim = next(
+                        (item for item in cpu_cache
+                         if item not in step_new_cpu), None)
+                    if cpu_victim is None:
+                        d2h_skipped_blocks += 1
+                        continue
+                    del cpu_cache[cpu_victim]
+                    cpu_cache[victim] = None
+                    step_new_cpu.add(victim)
+                    request_d2h += 1
+                    d2h_blocks += 1
+            deferred_d2h.clear()
+            deferred_hashes.clear()
+            step_new_cpu.clear()
 
         def allocate_slot() -> None:
             nonlocal active_blocks
             if len(cache) + active_blocks >= capacity:
-                _evict(cache, last, frequency, candidate)
+                victim = _evict(cache, last, frequency, candidate)
+                demote(victim)
             active_blocks += 1
 
         for depth, block in enumerate(prompt_hashes):
             was_cached = block in cache
+            # A D2H destination becomes readable only after this scheduler
+            # step executes, so prompt lookup is limited to the start snapshot.
+            was_cpu_cached = not was_cached and block in ready_cpu
             if was_cached:
                 cache.remove(block)
                 active_blocks += 1
+            elif was_cpu_cached:
+                h2d_claimed = True
+                request_h2d += 1
+                h2d_blocks += 1
+                cpu_cache.move_to_end(block)
+                allocate_slot()
             else:
                 allocate_slot()
             frequency[block] += 1
+            if was_cpu_cached:
+                cpu_hit += 1
             if depth >= strict_blocks:
                 continue
-            if not saw_gap and was_cached:
-                hit += 1
+            source_hit = was_cached or was_cpu_cached
+            if not saw_gap and source_hit:
+                effective_hit += 1
+                if was_cached:
+                    hit += 1
             else:
                 saw_gap = True
                 if was_cached:
                     gap_blocks += 1
 
+        while active_blocks < record["prompt_allocated_blocks"]:
+            allocate_slot()
+        if active_blocks != record["prompt_allocated_blocks"]:
+            raise ValueError("prompt allocation replay diverged")
+        resolve_cpu_step(h2d_claimed)
+        prompt_d2h = request_d2h
+
         hits += hit
+        cpu_hits += cpu_hit
         total += strict_blocks
         hit_tokens += hit * block_size
 
         # A recurrent state is usable only while the exact contiguous KV
         # prefix is also resident. State-only hits cannot restore attention KV.
-        live_keys = keys_from_block_hashes(prompt_hashes[:hit])
+        live_keys = keys_from_block_hashes(prompt_hashes[:effective_hit])
         restore_alignment = gdn_restore_alignment(
             restore_mode, block_size, gdn_chunk_tokens)
         if restore_mode != "direct":
@@ -463,35 +567,16 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
             "ordinal": record["ordinal"],
             "prompt_tokens": prompt_tokens,
             "raw_kv_contiguous_hit_tokens": hit * block_size,
+            "raw_kv_contiguous_hit_blocks": hit,
+            "cpu_hit_blocks": cpu_hit,
+            "h2d_blocks": request_h2d,
+            "prefill_d2h_blocks": prompt_d2h,
+            "effective_hit_blocks": (
+                restore_key[0] if restore_key is not None else 0),
+            "effective_hit_tokens": request_avoided_tokens,
             "usable_gdn_state_avoided_tokens": request_avoided_tokens,
             "residual_prefill_tokens": residual_prefill_tokens,
         }
-
-        ttft_s = record.get("ttft_s")
-        request_latency_s = record.get("request_latency_s")
-        observed_cached = record.get("observed_effective_cached_tokens")
-        if (isinstance(ttft_s, (int, float))
-                and isinstance(request_latency_s, (int, float))
-                and isinstance(observed_cached, int)):
-            queue_s = float(record.get("time_in_queue_s", 0.0))
-            observed_residual = max(1, prompt_tokens - observed_cached)
-            prefill_s = max(0.0, float(ttft_s) - queue_s)
-            projected_prefill_s = (
-                prefill_s * residual_prefill_tokens / observed_residual)
-            projected_ttft_s = queue_s + projected_prefill_s
-            projected_latency_s = max(
-                projected_ttft_s,
-                float(request_latency_s) - float(ttft_s)
-                + projected_ttft_s)
-            request_result.update({
-                "observed_effective_cached_tokens": observed_cached,
-                "observed_residual_prefill_tokens": observed_residual,
-                "observed_ttft_s": float(ttft_s),
-                "projected_ttft_s": projected_ttft_s,
-                "observed_request_latency_s": float(request_latency_s),
-                "projected_request_latency_s": projected_latency_s,
-            })
-        request_results.append(request_result)
 
         capture_targets: list[Tuple[int, bytes]] = []
         if policy == "fine32":
@@ -520,15 +605,11 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
                 capture_targets.append(final_key)
         gdn_policy.admit(dict.fromkeys(capture_targets))
 
-        while active_blocks < record["prompt_allocated_blocks"]:
-            allocate_slot()
-        if active_blocks != record["prompt_allocated_blocks"]:
-            raise ValueError("prompt allocation replay diverged")
-
         mutable_tail = prompt_tokens % block_size != 0
         for block in hashes[len(prompt_hashes):]:
             if not mutable_tail:
                 allocate_slot()
+                resolve_cpu_step(False)
                 mutable_tail = True
             frequency[block] += 1
             if block in cache:
@@ -538,11 +619,55 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
         if record["total_tokens"] % block_size != 0:
             if not mutable_tail:
                 allocate_slot()
+                resolve_cpu_step(False)
                 mutable_tail = True
         elif mutable_tail:
             raise ValueError("final mutable-tail replay diverged")
         if active_blocks != record["allocated_blocks"]:
             raise ValueError("final allocation replay diverged")
+        if deferred_d2h or deferred_hashes or step_new_cpu:
+            raise ValueError("CPU transfer replay did not drain")
+
+        decode_d2h = request_d2h - prompt_d2h
+        request_result.update({
+            "d2h_blocks": request_d2h,
+            "decode_d2h_blocks": decode_d2h,
+        })
+        ttft_s = record.get("ttft_s")
+        request_latency_s = record.get("request_latency_s")
+        observed_cached = record.get("observed_effective_cached_tokens")
+        if (isinstance(ttft_s, (int, float))
+                and isinstance(request_latency_s, (int, float))
+                and isinstance(observed_cached, int)):
+            queue_s = float(record.get("time_in_queue_s", 0.0))
+            observed_residual = max(1, prompt_tokens - observed_cached)
+            prefill_s = max(0.0, float(ttft_s) - queue_s)
+            projected_prefill_s = (
+                prefill_s * residual_prefill_tokens / observed_residual)
+            h2d_s = request_h2d * h2d_ms_per_block / 1000.0
+            prefill_d2h_s = prompt_d2h * d2h_ms_per_block / 1000.0
+            decode_d2h_s = decode_d2h * d2h_ms_per_block / 1000.0
+            projected_ttft_s = (
+                queue_s + projected_prefill_s + h2d_s + prefill_d2h_s)
+            baseline_decode_s = max(
+                0.0, float(request_latency_s) - float(ttft_s))
+            projected_latency_s = (
+                projected_ttft_s + baseline_decode_s + decode_d2h_s)
+            request_result.update({
+                "observed_effective_cached_tokens": observed_cached,
+                "observed_residual_prefill_tokens": observed_residual,
+                "baseline_prefill_s": prefill_s,
+                "projected_prefill_s": projected_prefill_s,
+                "h2d_transfer_s": h2d_s,
+                "prefill_d2h_transfer_s": prefill_d2h_s,
+                "decode_d2h_transfer_s": decode_d2h_s,
+                "d2h_transfer_s": prefill_d2h_s + decode_d2h_s,
+                "observed_ttft_s": float(ttft_s),
+                "projected_ttft_s": projected_ttft_s,
+                "observed_request_latency_s": float(request_latency_s),
+                "projected_request_latency_s": projected_latency_s,
+            })
+        request_results.append(request_result)
 
         cache.update(hashes)
         if len(cache) > capacity:
@@ -560,6 +685,14 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
         "total_blocks": total,
         "hit_tokens": hit_tokens,
         "gap_blocks": gap_blocks,
+        "cpu_capacity_blocks": cpu_capacity,
+        "cpu_hit_blocks": cpu_hits,
+        "h2d_blocks": h2d_blocks,
+        "d2h_blocks": d2h_blocks,
+        "d2h_skipped_blocks": d2h_skipped_blocks,
+        "effective_hit_blocks": sum(
+            item["effective_hit_blocks"] for item in request_results),
+        "effective_hit_tokens": avoided_tokens,
         "raw_kv_contiguous_hit_tokens": hit_tokens,
         "raw_kv_contiguous_hit_block_rate": hits / total if total else 0.0,
         "raw_kv_hit_token_rate": (hit_tokens / total_prompt_tokens
@@ -577,6 +710,7 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
             item["residual_prefill_tokens"] for item in request_results),
         "request_results": request_results,
         "final_cache": cache,
+        "final_cpu_cache": cpu_cache,
         "gdn_policy_cache_size": len(gdn_policy),
     }
 
@@ -584,13 +718,17 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
 def simulate(records: Sequence[Dict[str, Any]], capacity: int,
              candidate: bool = False, policy: str = "off",
              gdn_chunk_tokens: int = 8192,
-             restore_mode: str = "direct") -> Dict[str, Any]:
+             restore_mode: str = "direct", cpu_capacity: int = 0,
+             h2d_ms_per_block: float = M1_44_H2D_MS_PER_BLOCK,
+             d2h_ms_per_block: float = M1_44_D2H_MS_PER_BLOCK) -> Dict[str, Any]:
     if isinstance(candidate, str) and policy == "off":
         policy = candidate
         candidate = False
     result = _simulate(records, capacity, candidate, policy,
-                       gdn_chunk_tokens, restore_mode)
+                       gdn_chunk_tokens, restore_mode, cpu_capacity,
+                       h2d_ms_per_block, d2h_ms_per_block)
     del result["final_cache"]
+    del result["final_cpu_cache"]
     return result
 
 
@@ -615,6 +753,19 @@ def _metrics(raw: Dict[str, Any], total_prompt_tokens: int) -> Dict[str, Any]:
         "hit_blocks": raw["hit_blocks"],
         "total_blocks": raw["total_blocks"],
         "gap_blocks": raw["gap_blocks"],
+        "cpu_capacity_blocks": raw["cpu_capacity_blocks"],
+        "cpu_hit_blocks": raw["cpu_hit_blocks"],
+        "cpu_hit_block_rate": (
+            raw["cpu_hit_blocks"] / raw["total_blocks"]
+            if raw["total_blocks"] else 0.0),
+        "h2d_blocks": raw["h2d_blocks"],
+        "d2h_blocks": raw["d2h_blocks"],
+        "d2h_skipped_blocks": raw["d2h_skipped_blocks"],
+        "effective_hit_blocks": raw["effective_hit_blocks"],
+        "effective_hit_tokens": raw["effective_hit_tokens"],
+        "effective_hit_block_rate": (
+            raw["effective_hit_blocks"] / raw["total_blocks"]
+            if raw["total_blocks"] else 0.0),
         "raw_kv_contiguous_hit_tokens": raw["raw_kv_contiguous_hit_tokens"],
         "raw_kv_contiguous_hit_blocks": raw["hit_blocks"],
         "raw_kv_contiguous_hit_block_rate": raw["raw_kv_contiguous_hit_block_rate"],
@@ -643,7 +794,14 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("logs", nargs="+")
     parser.add_argument("--capacity-blocks", type=int)
+    parser.add_argument("--cpu-capacity-blocks", "--cpu-tier-capacity-blocks",
+                        dest="cpu_capacity_blocks", type=int, default=0)
     parser.add_argument("--expected-requests", type=int, default=881)
+    parser.add_argument(
+        "--qualification-trace",
+        action="store_true",
+        help=("Explicitly declare that the input is the complete official "
+              "881-request trace. Structural checks still apply."))
     parser.add_argument("--expected-block-size", type=int, default=16)
     parser.add_argument("--gdn-chunk-tokens", type=int, default=8192)
     parser.add_argument(
@@ -654,6 +812,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--baseline-cache-tps", type=float)
     parser.add_argument("--baseline-weighted-score", type=float)
     parser.add_argument("--baseline-metrics")
+    parser.add_argument(
+        "--h2d-ms-per-block", type=float,
+        default=M1_44_H2D_MS_PER_BLOCK)
+    parser.add_argument(
+        "--d2h-ms-per-block", type=float,
+        default=M1_44_D2H_MS_PER_BLOCK)
     args = parser.parse_args(argv)
 
     records = read(args.logs)
@@ -691,20 +855,35 @@ def main(argv: list[str] | None = None) -> None:
         capacity = args.capacity_blocks
     if capacity <= 0:
         raise ValueError("capacity must be positive")
+    if args.cpu_capacity_blocks < 0:
+        raise ValueError("cpu capacity must be non-negative")
+    for name, value in (("h2d-ms-per-block", args.h2d_ms_per_block),
+                        ("d2h-ms-per-block", args.d2h_ms_per_block)):
+        if (not math.isfinite(value) or value < 0):
+            raise ValueError(f"{name} must be finite and non-negative")
 
     total_prompt_tokens = sum(record["prompt_tokens"] for record in records)
+    control_policy_results = {}
     policy_results = {}
     for policy in ("off", "fine32", "admission64"):
         restore_mode = (
             args.gdn_restore_mode if policy == "admission64" else "direct")
+        control_policy_results[policy] = _simulate(
+            records, capacity, False, policy, args.gdn_chunk_tokens,
+            restore_mode, 0, args.h2d_ms_per_block, args.d2h_ms_per_block)
         policy_results[policy] = _simulate(
             records, capacity, False, policy, args.gdn_chunk_tokens,
-            restore_mode)
+            restore_mode, args.cpu_capacity_blocks,
+            args.h2d_ms_per_block, args.d2h_ms_per_block)
     policy_results["admission64_m1_29"] = _simulate(
         records, capacity, True, "admission64", args.gdn_chunk_tokens,
-        args.gdn_restore_mode)
+        args.gdn_restore_mode, args.cpu_capacity_blocks,
+        args.h2d_ms_per_block, args.d2h_ms_per_block)
     # The current submission policy is fine32; admission64 is the candidate.
-    vllm_lru = _metrics(policy_results["fine32"], total_prompt_tokens)
+    vllm_lru = _metrics(
+        control_policy_results["fine32"], total_prompt_tokens)
+    admission64_control = _metrics(
+        control_policy_results["admission64"], total_prompt_tokens)
     admission64 = _metrics(
         policy_results["admission64"], total_prompt_tokens)
     frequency_aware = _metrics(
@@ -721,7 +900,12 @@ def main(argv: list[str] | None = None) -> None:
             for record in records
         ),
         "capacity_blocks": capacity,
+        "cpu_capacity_blocks": args.cpu_capacity_blocks,
+        "h2d_ms_per_block": args.h2d_ms_per_block,
+        "d2h_ms_per_block": args.d2h_ms_per_block,
         "trace_version": 4,
+        "qualification_trace": _qualification_trace(
+            records, explicitly_declared=args.qualification_trace),
         "candidate_gdn_restore_mode": args.gdn_restore_mode,
         "trace_session_sha256": records[0]["trace_session_sha256"],
         "trace_ordinals": {
@@ -734,9 +918,18 @@ def main(argv: list[str] | None = None) -> None:
             policy: _metrics(result, total_prompt_tokens)
             for policy, result in policy_results.items()
         },
+        "control_policy_metrics": {
+            policy: _metrics(result, total_prompt_tokens)
+            for policy, result in control_policy_results.items()
+        },
         "vllm_lru": vllm_lru,
+        "admission64_control": admission64_control,
         "admission64": admission64,
         "frequency_aware": frequency_aware,
+        "cpu_tier_admission64_effective_hit_gain_percentage_points": (
+            100 * (admission64["usable_gdn_state_avoided_token_rate"]
+                   - admission64_control[
+                       "usable_gdn_state_avoided_token_rate"])),
         "delta_hit_block_rate_percentage_points": (
             100 * (frequency_aware["raw_kv_contiguous_hit_block_rate"]
                     - vllm_lru["raw_kv_contiguous_hit_block_rate"])
@@ -767,6 +960,7 @@ def main(argv: list[str] | None = None) -> None:
                 projected_score / baseline["weighted_score"] - 1.0
                 if projected_score is not None else None)
             gates = {
+                "qualification_trace": report["qualification_trace"],
                 "per_request_timing_complete": timing_complete,
                 "effective_hit_rate_at_least_50pct": (
                     candidate_metrics["usable_gdn_state_avoided_token_rate"]
@@ -787,8 +981,9 @@ def main(argv: list[str] | None = None) -> None:
                     projected_score is not None and projected_score >= 8000.0),
             }
             qualifications[name] = {
-                "ok": all(gates.values()),
+                "ok": report["qualification_trace"] and all(gates.values()),
                 "gates": gates,
+                "qualification_trace": report["qualification_trace"],
                 "projection_model": "per_request_residual_prefill",
                 "projected_input_tps": projected_input_tps,
                 "projected_cache_tps": projected_cache_tps,

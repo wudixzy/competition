@@ -137,3 +137,21 @@ Two pressure prompts occupy 16,880 blocks, exceeding measured GPU capacity by
 exactly two blocks. This is the frozen pressure geometry for both clean-start
 runs. The diagnostic is not qualification evidence because it was candidate
 first, enabled cache tracing, and predates the saturated-promotion protection.
+
+## Offline replay contract
+
+`scripts/analyze_prefix_cache_trace.py --cpu-capacity-blocks 6553` models the
+measured GPU/CPU hierarchy without changing its default zero-CPU behavior. It
+uses GPU-first lookup, same-step D2H pending visibility, inclusive CPU copies,
+deferred saturated replacement, GDN/KV intersection, and separate prompt and
+decode transfer costs. The default per-block costs come from the fixed M1-44
+131,072-token medians; prompt transfers extend projected TTFT while decode D2H
+extends only projected request latency.
+
+The report contains both zero-CPU control metrics and candidate metrics. Score
+projection uses each request's residual prefill and projected latency, never an
+aggregate cache-hit multiplier. Reports remain non-qualifying unless the input
+is structurally complete at exactly 881 requests and the operator explicitly
+passes `--qualification-trace`. No complete real 881-request v4 trace is
+currently present in the repository, so synthetic replay cannot qualify this
+candidate.
