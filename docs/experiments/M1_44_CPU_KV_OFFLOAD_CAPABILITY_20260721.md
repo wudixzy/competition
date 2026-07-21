@@ -67,9 +67,42 @@ The next implementation must remain default-off and scheduler-owned:
 
 ## Status
 
-`IMPLEMENTED; REMOTE_CAPABILITY_GATE_PENDING`.
+`CAPABILITY_GATE_PASSED; RUNTIME_INTEGRATION_AUTHORIZED`.
 
 The current a163074c instance has healthy GPU 0-2 but GPU3 still times out, so
 M1-44 may run as a rank-local transfer capability test on GPU0. No TP4 service
 or qualification conclusion is allowed until all four GPUs pass CUDA and
 collective preflight.
+
+The first 4K smoke exposed a vendor interface mismatch before any transfer:
+vLLM 0.6.3 called `ixformer.functions.swap_blocks`, while CoreX 3.2.3 exposes
+the public `vllm_swap_blocks(src, dst, mapping)` function. The latter accepts a
+dictionary, whereas the worker emits a CPU `int64 [N, 2]` tensor. The
+idempotent `patch_corex_swap_blocks.py` now selects the available public symbol,
+validates and normalizes the mapping, and fails if neither symbol exists. It is
+installed by `patch_ops.sh`; malformed, duplicate, negative, non-CPU, and
+non-int64 mappings are rejected rather than hidden.
+
+## CoreX Result
+
+The fixed gate ran once on healthy GPU0 with `CUDA_VISIBLE_DEVICES=0`; it did
+not time out or OOM. Every sampled first, middle, and final block was bit-exact
+for all ten layers and both K/V planes after D2H and destructive overwrite plus
+H2D.
+
+| Tokens | Bytes/direction | D2H median | H2D median | Round trip | D2H | H2D |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 4,096 | 40 MiB | 29.590 ms | 32.564 ms | 62.154 ms | 1.320 GiB/s | 1.200 GiB/s |
+| 16,384 | 160 MiB | 118.196 ms | 132.598 ms | 250.794 ms | 1.322 GiB/s | 1.178 GiB/s |
+| 65,536 | 640 MiB | 472.399 ms | 532.578 ms | 1,004.977 ms | 1.323 GiB/s | 1.174 GiB/s |
+| 131,072 | 1.25 GiB | 945.000 ms | 1,065.420 ms | 2,010.420 ms | 1.323 GiB/s | 1.173 GiB/s |
+
+The 65K one-way limits pass with at least 1.46 seconds of margin, and the 131K
+round trip passes the five-second gate with 2.99 seconds of margin. The result
+therefore authorizes a default-off scheduler integration; it does not qualify
+TP4 behavior, cache hit improvement, TTFT, or final score.
+
+Evidence:
+
+- `docs/experiments/evidence/M1_44_CPU_KV_OFFLOAD_GATE.json`
+  (`99b148cf61d4a0fc2444fa3af4e105360666a795e1b0eac23fa195df05970ddf`)
