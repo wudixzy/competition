@@ -1,0 +1,50 @@
+{
+  "correction": {
+    "commit": "f3676841e8da1bd66676a2902e0a08322119dbdf",
+    "forward_invariant": "consumed full-attention cache count must equal len(kv_caches)",
+    "installed_file_sha256": {
+      "qwen3_5.py": "4a5c7c19d5edae26ad35c4389e5f58e66c215bcef5e1e60f575aca0f897ec5f5",
+      "qwen3_5/configuration_qwen3_5.py": "7f03ce61364ea297a04af414b148f03d0615269714836d439d81db3b5f12f9ff",
+      "qwen3_5_moe/configuration_qwen3_5_moe.py": "796de7d1b0353a6a6c4f0219abb3bcdac0e95810d215618aae62368ae721fd81"
+    },
+    "mechanism": "map nested text_config.layer_types full_attention entries to top-level layers_block_type=attention"
+  },
+  "decision": {
+    "qualified": false,
+    "reasons": [
+      "corrected TP4 service startup and fixed paged/block-major model A/B are pending"
+    ],
+    "status": "CONFIG_AND_LOCAL_GATES_PASSED_SERVICE_PENDING"
+  },
+  "diagnosis": {
+    "cache_engine_attention_layers_before": 40,
+    "cause": "vLLM 0.6.3 reads top-level hf_config.layers_block_type and otherwise treats every hidden layer as attention",
+    "model_full_attention_layers": 10,
+    "model_hidden_layers": 40,
+    "model_kv_consumption": "kv_caches[0:10] in full-attention ordinal order",
+    "model_linear_attention_layers": 30
+  },
+  "local_validation": {
+    "submission_preflight": "8/8 passed",
+    "unit_tests": {
+      "passed": 198,
+      "skipped": 13
+    }
+  },
+  "rejected_run": {
+    "error": "RuntimeError: block-major transfer requires 10 attention layers, got 40",
+    "phase": "initialize_cache before benchmark requests",
+    "remote_directory": "/root/competition-m1-46-runtime-85c325e/bench_runs/m1_46/layout_ab_admission64_v4_85c325e/block_major",
+    "service_log_bytes": 39933,
+    "service_log_sha256": "ab8683103f50ab43fab283b6b1711d8a52fe3df47c0a3a08fb8e82172feeada7"
+  },
+  "remote_config_smoke": {
+    "head_size": 256,
+    "model_config_attention_layers_after": 10,
+    "model_config_hidden_layers": 40,
+    "rank_local_kv_heads_tp4": 1,
+    "text_config_full_attention_layers": 10
+  },
+  "schema": "bi100-m1-46-hybrid-kv-layer-accounting-v1",
+  "version": 1
+}

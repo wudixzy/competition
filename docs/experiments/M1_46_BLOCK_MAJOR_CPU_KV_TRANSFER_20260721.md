@@ -176,3 +176,30 @@ A/B uses `admission64/direct` on both sides and changes only
 `BI100_CPU_KV_TRANSFER_LAYOUT`; this sparse policy admits final request states
 without the per-chunk capacity confound. YAML and production defaults remain
 unchanged until the complete gate qualifies.
+
+## Rejected 40-layer startup and structural correction
+
+The first `admission64/direct` block-major startup failed before any benchmark
+request with `block-major transfer requires 10 attention layers, got 40`. The
+extension was correct to fail closed. CoreX vLLM 0.6.3 reads the top-level
+`hf_config.layers_block_type`; the Qwen adapter exposed its hybrid ownership
+only as nested `text_config.layer_types`, so vLLM treated all 40 decoder layers
+as full attention. The model itself consumes a dense list of only ten KV caches
+for the ten `full_attention` layers and passes `kv_cache=None` to the other 30
+Gated DeltaNet layers.
+
+Commit `f367684` maps those nested types into the top-level vLLM contract and
+adds a model-forward invariant requiring exact KV-cache consumption. A real
+TP4 `ModelConfig` smoke now reports 40 hidden layers, 10 attention cache layers,
+one rank-local KV head, and head size 256. Local validation passed 198 tests
+with 13 environment skips and submission preflight 8/8. The rejected service
+log and correction hashes are recorded in
+`evidence/M1_46_HYBRID_KV_LAYER_ACCOUNTING.json`.
+
+This discovery invalidates the old model-layout comparator: its paged service
+allocated and swapped 40 cache layers while the fixed data-plane gate compared
+the ten bytesets actually consumed by the model. The old retention response is
+still valid evidence for the old stack, but it cannot be used as the M1-46
+timing denominator. Both sides of the next fixed A/B must start from the
+corrected ten-cache configuration; the thresholds and request order remain
+unchanged.

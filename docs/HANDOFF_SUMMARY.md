@@ -26,6 +26,12 @@
   `4x` 门槛。该结果只解锁独立私有分支上的 block-major pack/DMA/scatter 实现，
   尚不能作为模型 TTFT 收益；详见
   `docs/experiments/M1_46_BLOCK_MAJOR_CPU_KV_TRANSFER_20260721.md`。
+- M1-46 首次真实 block-major 启动发现旧版 vLLM 将 40 个混合层全部误算为 KV
+  attention layer，而 Qwen3.6 实际只消费 10 个 full-attention cache。`f367684`
+  已从嵌套 `text_config.layer_types` 补齐顶层 `layers_block_type`，远端 TP4
+  `ModelConfig` 现报告 `40 hidden / 10 attention / 1 KV head / head size 256`。
+  旧的 40 层 paged 模型计时不能作为布局 A/B 分母，必须在十层修正后重跑双方；
+  修正通过完整服务门禁前仍不改 YAML、不合并 main。
 
 ## 2026-07-21 M1-41 内容频率 KV 淘汰门禁
 
