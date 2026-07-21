@@ -1,0 +1,32 @@
+{
+  "contract": {
+    "equivalence_mode": "exact",
+    "max_tokens": 16,
+    "min_cached_tokens": 261984,
+    "min_completion_tokens": 16,
+    "target_prompt_tokens": 262000
+  },
+  "qualified": true,
+  "reasons": [],
+  "requests": {
+    "first": {
+      "cached_tokens": 0,
+      "completion_tokens": 16,
+      "elapsed_s": 615.437,
+      "finish_reason": "length",
+      "message_sha256": "fc19a13664c41925019fd02d692b7ed26df5deaa3168c81c61ef81e3b4cef02c",
+      "prompt_tokens": 262000
+    },
+    "second": {
+      "cached_tokens": 261984,
+      "completion_tokens": 16,
+      "elapsed_s": 7.74,
+      "finish_reason": "length",
+      "message_sha256": "fc19a13664c41925019fd02d692b7ed26df5deaa3168c81c61ef81e3b4cef02c",
+      "prompt_tokens": 262000
+    }
+  },
+  "schema": "bi100-long-context-safe-gate-v1",
+  "source_sha256": "4fac17d332009ecda88f327b53892efcb6ca31319a71fd64be41b9c267db95f2",
+  "version": 1
+}

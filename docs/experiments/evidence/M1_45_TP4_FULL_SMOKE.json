@@ -1,0 +1,115 @@
+{
+  "mode": "full",
+  "base": "http://127.0.0.1:8000",
+  "ok": true,
+  "tests": [
+    {
+      "name": "test_basic_chat",
+      "ok": true,
+      "elapsed_s": 3.8350451216101646,
+      "error": ""
+    },
+    {
+      "name": "test_thinking_disabled_variants",
+      "ok": true,
+      "elapsed_s": 3.630927298218012,
+      "error": ""
+    },
+    {
+      "name": "test_tool_choice_none",
+      "ok": true,
+      "elapsed_s": 4.182502817362547,
+      "error": ""
+    },
+    {
+      "name": "test_response_format_json_object",
+      "ok": true,
+      "elapsed_s": 40.15272865816951,
+      "error": ""
+    },
+    {
+      "name": "test_response_format_json_schema",
+      "ok": true,
+      "elapsed_s": 3.0167292281985283,
+      "error": ""
+    },
+    {
+      "name": "test_streaming_sse",
+      "ok": true,
+      "elapsed_s": 1.5490697212517262,
+      "error": ""
+    },
+    {
+      "name": "test_bad_request_4xx",
+      "ok": true,
+      "elapsed_s": 0.001562807708978653,
+      "error": ""
+    },
+    {
+      "name": "test_prefix_cache",
+      "ok": true,
+      "elapsed_s": 16.45039016753435,
+      "error": ""
+    },
+    {
+      "name": "test_stop",
+      "ok": true,
+      "elapsed_s": 1.7931308522820473,
+      "error": ""
+    },
+    {
+      "name": "test_tool_call_forced",
+      "ok": true,
+      "elapsed_s": 6.726278182119131,
+      "error": ""
+    },
+    {
+      "name": "test_tool_call_forced_streaming",
+      "ok": true,
+      "elapsed_s": 4.2926991656422615,
+      "error": ""
+    },
+    {
+      "name": "test_multilingual_multiturn",
+      "ok": true,
+      "elapsed_s": 2.698331095278263,
+      "error": ""
+    },
+    {
+      "name": "test_sampling_boundaries",
+      "ok": true,
+      "elapsed_s": 1.433379389345646,
+      "error": ""
+    },
+    {
+      "name": "test_random_sampling_fallback",
+      "ok": true,
+      "elapsed_s": 1.7286203056573868,
+      "error": ""
+    },
+    {
+      "name": "test_logprobs_fallback",
+      "ok": true,
+      "elapsed_s": 1.401083268225193,
+      "error": ""
+    },
+    {
+      "name": "test_prompt_logprobs_fallback",
+      "ok": true,
+      "elapsed_s": 1.3914434798061848,
+      "error": ""
+    },
+    {
+      "name": "test_seed_determinism",
+      "ok": true,
+      "elapsed_s": 2.6929607912898064,
+      "error": ""
+    },
+    {
+      "name": "test_image_semantics",
+      "ok": true,
+      "elapsed_s": 37.83308843895793,
+      "error": ""
+    }
+  ]
+}

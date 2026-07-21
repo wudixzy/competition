@@ -1,0 +1,40 @@
+{
+  "contract": {
+    "equivalence_mode": "warm-repeat",
+    "max_tokens": 256,
+    "min_cached_tokens": 234992,
+    "min_completion_tokens": 256,
+    "target_prompt_tokens": 235000
+  },
+  "qualified": true,
+  "reasons": [],
+  "requests": {
+    "first": {
+      "cached_tokens": 0,
+      "completion_tokens": 256,
+      "elapsed_s": 589.673,
+      "finish_reason": "length",
+      "message_sha256": "38e55c931021596eb5c6f3303eecc159a3dca6af6ff61741d5524c7b10517a26",
+      "prompt_tokens": 235000
+    },
+    "second": {
+      "cached_tokens": 234992,
+      "completion_tokens": 256,
+      "elapsed_s": 69.444,
+      "finish_reason": "length",
+      "message_sha256": "6cf3195ef4e3f707d08f0632c70caecde56ac1052f4625da0e417e9c97e91f82",
+      "prompt_tokens": 235000
+    },
+    "third": {
+      "cached_tokens": 234992,
+      "completion_tokens": 256,
+      "elapsed_s": 69.258,
+      "finish_reason": "length",
+      "message_sha256": "6cf3195ef4e3f707d08f0632c70caecde56ac1052f4625da0e417e9c97e91f82",
+      "prompt_tokens": 235000
+    }
+  },
+  "schema": "bi100-long-context-safe-gate-v1",
+  "source_sha256": "1b16615e49d2ca13fb51f3dddf223dff3b62cb1d25a331ed8ab90be9d1c6ee8e",
+  "version": 1
+}

@@ -1,9 +1,10 @@
 # M1-45: Content-addressed CPU KV tier
 
 Status: allocator metadata, single-GPU data-plane, TP4 eviction-pressure,
-131K direct equality, pooled fork/release, and multimodal isolation gates
-qualified; 235K/262K and full performance gates pending; disabled in
-submission configuration.
+131K direct equality, pooled fork/release, multimodal isolation, full API
+smoke, 235K warm-repeat, and 262K exact-capacity gates qualified; dataset
+performance and publication gates pending; disabled in submission
+configuration.
 
 ## Decision
 
@@ -284,3 +285,33 @@ The result qualifies the predeclared 131K/direct equality boundary. It does not
 replace the fresh 235K warm-repeat stability or 262K capacity gates, and it
 predates the pooled namespace correction. Its text-only `n=1` timing and digest
 remain valid for the reason documented in the namespace audit.
+
+## Final functional and capacity gates
+
+Runtime `0f043ab` completed the fixed full API suite with 18/18 tests passing;
+the slowest case took 40.153 seconds and the post-run fatal scan was empty.
+This includes prefix reuse, streaming, structured output, tools, deterministic
+sampling, multilingual turns, error handling, and image semantics. Evidence:
+`evidence/M1_45_TP4_FULL_SMOKE.json`.
+
+The fresh 235,000-token direct run generated 256 tokens. Its cold request took
+589.673 seconds with zero cached tokens. Two cached replays each restored
+234,992 tokens, took 69.444 and 69.258 seconds, and matched in completion
+length, finish reason, and message digest. The cold digest is intentionally not
+used as the direct-mode long-row equality contract; the two warm responses are
+the stability boundary. The safe qualifier independently returned
+`qualified=true`. Evidence:
+`evidence/M1_45_TP4_235K_WARM_REPEAT.json`.
+
+The fresh 262,000-token capacity run generated 16 tokens. Cold and warm
+requests took 615.437 and 7.740 seconds; the warm request restored 261,984
+tokens and both responses had the same completion length, finish reason, and
+message digest. The fatal scan was empty. A prior launch-only attempt failed
+before any request because its shell omitted the runtime library path; it is
+not benchmark evidence. The corrected run used the fixed service environment
+and returned `rc=0`. Evidence:
+`evidence/M1_45_TP4_262K_CAPACITY_EXACT.json`.
+
+These results close M1-45's functional, long-context, and capacity gates. They
+do not satisfy the separate dataset-shaped `+5%` proxy or final 881-request
+publication gates, so the selector remains absent from YAML and `main`.
