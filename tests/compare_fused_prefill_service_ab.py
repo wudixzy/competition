@@ -10,8 +10,8 @@ from typing import Any
 
 MIN_COLD_IMPROVEMENT = 0.20
 MAX_WARM_REGRESSION = 0.02
-MIN_OUTPUT_TPS_P10 = 20.0
 MAX_OUTPUT_REGRESSION = 0.02
+FULL_REPLAY_MIN_OUTPUT_TPS_P10 = 20.0
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -97,19 +97,19 @@ def compare(control: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
         reasons.append("invalid Output TPS P10")
     else:
         output_regression = 1.0 - candidate_output / control_output
-        if candidate_output < MIN_OUTPUT_TPS_P10:
-            reasons.append("candidate Output TPS P10 is below 20")
         if output_regression > MAX_OUTPUT_REGRESSION + 1e-12:
             reasons.append("candidate Output TPS P10 regressed by more than 2%")
 
     return {
-        "schema": "bi100-m1-47-service-ab-v1",
+        "schema": "bi100-m1-47-service-ab-v2",
         "thresholds": {
             "minimum_cold_ttft_improvement": MIN_COLD_IMPROVEMENT,
             "maximum_warm_ttft_regression": MAX_WARM_REGRESSION,
-            "minimum_output_tps_p10": MIN_OUTPUT_TPS_P10,
             "maximum_output_tps_regression": MAX_OUTPUT_REGRESSION,
+            "full_replay_minimum_output_tps_p10": (
+                FULL_REPLAY_MIN_OUTPUT_TPS_P10),
         },
+        "absolute_output_tps_gate": "deferred_to_full_881_replay",
         "rows": rows,
         "control_output_tps_p10": control_output,
         "candidate_output_tps_p10": candidate_output,

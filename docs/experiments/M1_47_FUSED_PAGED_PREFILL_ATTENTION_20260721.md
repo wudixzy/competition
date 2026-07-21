@@ -234,7 +234,10 @@ remain pending.
 - Core performance: at least `1.5x` at 74K, 128K, and 235K. Passing only a
   gather, QK, softmax, or PV substage does not qualify the end-to-end kernel.
 - Service: 65K and 235K cold TTFT improve at least 20%; warm paths regress at
-  most 2%; Output TPS P10 remains at least 20.
+  most 2%; the paired long-context probe's Output TPS P10 regresses at most
+  2%. Its absolute TPS is context-length dependent, so the required Output TPS
+  P10 of at least 20 is enforced by the complete 881-request replay rather
+  than this two-shape probe.
 - Correctness: response finite/deterministic; direct mode retains the existing
   131K equality boundary; aligned mode retains full 235K equality.
 - Capacity/stability: 262K remains supported with no OOM, segfault, collective

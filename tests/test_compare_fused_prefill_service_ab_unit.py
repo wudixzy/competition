@@ -31,23 +31,35 @@ def _report(mode: str, cold_scale: float = 1.0,
 class FusedPrefillServiceComparisonUnitTest(unittest.TestCase):
 
     def test_accepts_candidate_at_all_fixed_boundaries(self):
-        control = _report("control")
+        control = _report("control", output_tps=4.7)
         candidate = _report(
             "candidate", cold_scale=0.8, warm_scale=1.02,
-            output_tps=21.56)
+            output_tps=4.606)
         result = compare(control, candidate)
         self.assertTrue(result["qualified"], result)
         self.assertEqual(len(result["rows"]), 2)
+        self.assertEqual(
+            result["absolute_output_tps_gate"],
+            "deferred_to_full_881_replay")
 
     def test_rejects_each_service_regression(self):
         control = _report("control")
         for candidate in (
                 _report("candidate", cold_scale=0.81),
                 _report("candidate", cold_scale=0.8, warm_scale=1.021),
-                _report("candidate", cold_scale=0.8, output_tps=19.99),
                 _report("candidate", cold_scale=0.8, output_tps=21.55)):
             with self.subTest(candidate=candidate):
                 self.assertFalse(compare(control, candidate)["qualified"])
+
+    def test_absolute_output_gate_is_reserved_for_full_replay(self):
+        control = _report("control", output_tps=4.7)
+        candidate = _report(
+            "candidate", cold_scale=0.8, output_tps=4.606)
+        result = compare(control, candidate)
+        self.assertTrue(result["qualified"], result)
+        self.assertEqual(
+            result["thresholds"]["full_replay_minimum_output_tps_p10"],
+            20.0)
 
     def test_rejects_unqualified_or_mismatched_measurements(self):
         control = _report("control")
