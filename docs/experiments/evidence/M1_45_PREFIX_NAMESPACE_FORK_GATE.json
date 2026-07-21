@@ -1,0 +1,41 @@
+{
+  "cases": [
+    {
+      "block_count": 2,
+      "forked_hashes": [
+        "07d8c02854a6855aea73d4bacd2675c2d9f1ad3dea4c9ad40f06d57af04d1299",
+        "8d94b7c7ade835cedffc3472f6222b23d778705a476d7b2c5cc2f4679fca78ee"
+      ],
+      "free_blocks_after_release": 8,
+      "hashes_match": true,
+      "namespaces_match": true,
+      "release_order": "source-first",
+      "source_hashes": [
+        "07d8c02854a6855aea73d4bacd2675c2d9f1ad3dea4c9ad40f06d57af04d1299",
+        "8d94b7c7ade835cedffc3472f6222b23d778705a476d7b2c5cc2f4679fca78ee"
+      ],
+      "total_blocks": 8
+    },
+    {
+      "block_count": 2,
+      "forked_hashes": [
+        "07d8c02854a6855aea73d4bacd2675c2d9f1ad3dea4c9ad40f06d57af04d1299",
+        "8d94b7c7ade835cedffc3472f6222b23d778705a476d7b2c5cc2f4679fca78ee"
+      ],
+      "free_blocks_after_release": 8,
+      "hashes_match": true,
+      "namespaces_match": true,
+      "release_order": "fork-first",
+      "source_hashes": [
+        "07d8c02854a6855aea73d4bacd2675c2d9f1ad3dea4c9ad40f06d57af04d1299",
+        "8d94b7c7ade835cedffc3472f6222b23d778705a476d7b2c5cc2f4679fca78ee"
+      ],
+      "total_blocks": 8
+    }
+  ],
+  "namespace_sha256": "f85c867f8b7aef1340abcc0d47b1dc547204eeecd91edecd3d189dc051784",
+  "qualified": true,
+  "reasons": [],
+  "schema": "bi100-prefix-namespace-fork-gate-v1",
+  "version": 1
+}

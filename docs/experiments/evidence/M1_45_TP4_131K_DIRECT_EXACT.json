@@ -1,0 +1,23 @@
+{
+  "equivalence_mode": "exact",
+  "first": {
+    "cached_tokens": 0,
+    "completion_tokens": 256,
+    "elapsed_s": 273.172,
+    "finish_reason": "length",
+    "message_sha256": "6cf3195ef4e3f707d08f0632c70caecde56ac1052f4625da0e417e9c97e91f82",
+    "prompt_tokens": 131000
+  },
+  "max_tokens": 256,
+  "min_cached_tokens": 130992,
+  "min_completion_tokens": 256,
+  "second": {
+    "cached_tokens": 130992,
+    "completion_tokens": 256,
+    "elapsed_s": 56.339,
+    "finish_reason": "length",
+    "message_sha256": "6cf3195ef4e3f707d08f0632c70caecde56ac1052f4625da0e417e9c97e91f82",
+    "prompt_tokens": 131000
+  },
+  "target_prompt_tokens": 131000
+}

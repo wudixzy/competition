@@ -1,0 +1,94 @@
+{
+  "decision": {
+    "diagnostic_passed": true,
+    "qualified": false,
+    "reasons": [
+      "capability probe requires comparison with paged transfer evidence"
+    ]
+  },
+  "device": "cuda:0",
+  "device_name": "Iluvatar BI-V100",
+  "protocol": {
+    "copy": "Tensor.copy_(non_blocking=True) with device synchronize",
+    "layout": "single contiguous pinned CPU and GPU tensor",
+    "measured_cycles": 3,
+    "token_counts": [
+      65536,
+      131072
+    ],
+    "warmup_cycles": 1
+  },
+  "results": {
+    "131072": {
+      "bytes_per_direction": 1342177280,
+      "cpu_exact_after_d2h": true,
+      "d2h_gib_per_second": 20.39018561307833,
+      "d2h_median_ms": 61.3040030002594,
+      "exact": true,
+      "gpu_exact_after_h2d": true,
+      "h2d_gib_per_second": 26.021013050741875,
+      "h2d_median_ms": 48.03809896111488,
+      "probe_indices": [
+        0,
+        223696213,
+        335544320,
+        671088639
+      ],
+      "round_trip_median_ms": 109.34210196137428,
+      "token_count": 131072,
+      "trials": {
+        "d2h_ms": [
+          61.66259944438934,
+          61.3040030002594,
+          61.19292601943016
+        ],
+        "h2d_ms": [
+          48.03809896111488,
+          48.041269183158875,
+          48.02670702338219
+        ]
+      }
+    },
+    "65536": {
+      "bytes_per_direction": 671088640,
+      "cpu_exact_after_d2h": true,
+      "d2h_gib_per_second": 20.51720747488365,
+      "d2h_median_ms": 30.46223521232605,
+      "exact": true,
+      "gpu_exact_after_h2d": true,
+      "h2d_gib_per_second": 25.99061270256445,
+      "h2d_median_ms": 24.047143757343292,
+      "probe_indices": [
+        0,
+        111848106,
+        167772160,
+        335544319
+      ],
+      "round_trip_median_ms": 54.50937896966934,
+      "token_count": 65536,
+      "trials": {
+        "d2h_ms": [
+          30.46223521232605,
+          30.82329034805298,
+          30.443400144577026
+        ],
+        "h2d_ms": [
+          24.07311275601387,
+          24.03099834918976,
+          24.047143757343292
+        ]
+      }
+    }
+  },
+  "schema": "bi100-cpu-kv-contiguous-transfer-v1",
+  "shape": {
+    "block_size": 16,
+    "bytes_per_block_per_rank": 163840,
+    "dtype": "float16",
+    "head_size": 256,
+    "local_num_kv_heads": 1,
+    "num_attention_layers": 10
+  },
+  "torch_version": "2.1.0",
+  "version": 1
+}

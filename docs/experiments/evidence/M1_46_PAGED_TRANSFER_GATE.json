@@ -1,0 +1,169 @@
+{
+  "decision": {
+    "qualified": true,
+    "reasons": [],
+    "smoke_passed": null
+  },
+  "device": "cuda:0",
+  "device_name": "Iluvatar BI-V100",
+  "fixed_protocol": {
+    "gate_limits_ms": {
+      "65536": {
+        "d2h_median_max_ms": 2000.0,
+        "h2d_median_max_ms": 2000.0
+      },
+      "131072": {
+        "round_trip_median_max_ms": 5000.0
+      }
+    },
+    "mapping": "identity, CPU int64 [num_blocks, 2]",
+    "measured_cycles": 3,
+    "operation_order": "alternating D2H/H2D after one warmup cycle",
+    "token_counts": [
+      4096,
+      16384,
+      65536,
+      131072
+    ],
+    "warmup_cycles": 1
+  },
+  "mode": "gate",
+  "results": {
+    "131072": {
+      "bytes_per_direction": 1342177280,
+      "cpu_exact_after_d2h": true,
+      "d2h_gib_per_second": 1.3233385395652897,
+      "d2h_median_ms": 944.5806667208672,
+      "exact": true,
+      "gpu_exact_after_h2d": true,
+      "h2d_gib_per_second": 1.167036527804336,
+      "h2d_median_ms": 1071.0890106856823,
+      "num_blocks": 8192,
+      "probe_blocks": [
+        0,
+        2730,
+        4096,
+        8191
+      ],
+      "round_trip_median_ms": 2015.6696774065495,
+      "token_count": 131072,
+      "trials": {
+        "d2h_ms": [
+          944.5806667208672,
+          944.5601254701614,
+          1242.4862496554852
+        ],
+        "h2d_ms": [
+          1352.9804684221745,
+          1071.0890106856823,
+          1070.501919835806
+        ]
+      }
+    },
+    "16384": {
+      "bytes_per_direction": 167772160,
+      "cpu_exact_after_d2h": true,
+      "d2h_gib_per_second": 1.322114395017005,
+      "d2h_median_ms": 118.18190664052963,
+      "exact": true,
+      "gpu_exact_after_h2d": true,
+      "h2d_gib_per_second": 1.173342822342364,
+      "h2d_median_ms": 133.16653668880463,
+      "num_blocks": 1024,
+      "probe_blocks": [
+        0,
+        341,
+        512,
+        1023
+      ],
+      "round_trip_median_ms": 251.34844332933426,
+      "token_count": 16384,
+      "trials": {
+        "d2h_ms": [
+          118.18190664052963,
+          118.18144097924232,
+          118.18919330835342
+        ],
+        "h2d_ms": [
+          133.16653668880463,
+          133.74167308211327,
+          133.13298299908638
+        ]
+      }
+    },
+    "4096": {
+      "bytes_per_direction": 41943040,
+      "cpu_exact_after_d2h": true,
+      "d2h_gib_per_second": 1.3199537363627254,
+      "d2h_median_ms": 29.59384024143219,
+      "exact": true,
+      "gpu_exact_after_h2d": true,
+      "h2d_gib_per_second": 1.1987428802291724,
+      "h2d_median_ms": 32.586220651865005,
+      "num_blocks": 256,
+      "probe_blocks": [
+        0,
+        85,
+        128,
+        255
+      ],
+      "round_trip_median_ms": 62.180060893297195,
+      "token_count": 4096,
+      "trials": {
+        "d2h_ms": [
+          29.600318521261215,
+          29.59384024143219,
+          29.578976333141327
+        ],
+        "h2d_ms": [
+          32.580967992544174,
+          33.37473049759865,
+          32.586220651865005
+        ]
+      }
+    },
+    "65536": {
+      "bytes_per_direction": 671088640,
+      "cpu_exact_after_d2h": true,
+      "d2h_gib_per_second": 1.3231081374495524,
+      "d2h_median_ms": 472.3725765943527,
+      "exact": true,
+      "gpu_exact_after_h2d": true,
+      "h2d_gib_per_second": 1.1701517377886157,
+      "h2d_median_ms": 534.118764102459,
+      "num_blocks": 4096,
+      "probe_blocks": [
+        0,
+        1365,
+        2048,
+        4095
+      ],
+      "round_trip_median_ms": 1006.4913406968117,
+      "token_count": 65536,
+      "trials": {
+        "d2h_ms": [
+          472.31781482696533,
+          472.39113599061966,
+          472.3725765943527
+        ],
+        "h2d_ms": [
+          533.9820571243763,
+          534.9211990833282,
+          534.118764102459
+        ]
+      }
+    }
+  },
+  "schema": "bi100-cpu-kv-offload-capability-v1",
+  "shape": {
+    "block_size": 16,
+    "bytes_per_block_per_rank": 163840,
+    "dtype": "float16",
+    "head_size": 256,
+    "local_num_kv_heads": 1,
+    "num_attention_layers": 10
+  },
+  "torch_version": "2.1.0",
+  "vllm_path": "/usr/local/corex-3.2.3/lib64/python3/dist-packages/vllm/__init__.py",
+  "vllm_version": "0.6.3"
+}

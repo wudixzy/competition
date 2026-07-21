@@ -1,8 +1,9 @@
 # M1-45: Content-addressed CPU KV tier
 
-Status: allocator metadata, single-GPU data-plane, and TP4 eviction-pressure
-gates qualified; long-context and full performance gates pending; disabled in
-submission configuration.
+Status: allocator metadata, single-GPU data-plane, TP4 eviction-pressure,
+131K direct equality, and pooled fork/release gates qualified; multimodal,
+235K/262K, and full performance gates pending; disabled in submission
+configuration.
 
 ## Decision
 
@@ -239,3 +240,27 @@ same-run equality evidence. It does invalidate claims that model/adapter and
 multimodal namespace isolation were already exercised in the pooled runtime.
 The corrected runtime must pass the real CoreX fork/release gate plus same-image
 hit and different-image isolation before any evaluation candidate is published.
+
+Runtime commit `4621f0b` then passed the real installed-CoreX gate in both
+release orders. Source-first and fork-first each retained two identical chained
+hashes and identical namespaces, and all eight blocks returned to the free
+pool. The gate reported `qualified=true` with no traceback. Evidence:
+`evidence/M1_45_PREFIX_NAMESPACE_FORK_GATE.json`.
+
+This closes the pooled fork/release defect. The standalone API-level
+same-image-hit/different-image-isolation gate remains mandatory because the
+allocator test does not parse or hash real multimodal request content.
+
+## TP4 131K direct equality
+
+The fixed direct-mode run used a 131,000-token prompt and exactly 256 generated
+tokens. The cold request took 273.172 seconds with zero cached tokens. Its warm
+replay restored 130,992 tokens and took 56.339 seconds. Both responses ended by
+the length limit and had the same completion count and message SHA-256 digest
+`6cf3195ef4e3...`. Evidence:
+`evidence/M1_45_TP4_131K_DIRECT_EXACT.json`.
+
+The result qualifies the predeclared 131K/direct equality boundary. It does not
+replace the fresh 235K warm-repeat stability or 262K capacity gates, and it
+predates the pooled namespace correction. Its text-only `n=1` timing and digest
+remain valid for the reason documented in the namespace audit.
