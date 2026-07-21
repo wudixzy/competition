@@ -1,0 +1,89 @@
+{
+  "decision": {
+    "qualified": false,
+    "reasons": [
+      "corrected TP4 candidate service has not completed startup",
+      "GPU0 is stuck at 100% utilization with no container-visible process and requires instance-level reset"
+    ],
+    "status": "RUNTIME_BLOCKED_GPU0_INSTANCE_RESET_REQUIRED"
+  },
+  "implementation": {
+    "branch": "exp/M1-49-hybrid-kv-accounting-20260721",
+    "commits": [
+      "33c7573",
+      "dab3048"
+    ],
+    "default_mode": "legacy40",
+    "selector": "BI100_HYBRID_KV_ACCOUNTING",
+    "selector_values": [
+      "legacy40",
+      "full_attention"
+    ],
+    "submission_yaml_changed": false
+  },
+  "local_validation": {
+    "submission_preflight": "8/8 passed",
+    "unit_tests": {
+      "passed": 196,
+      "skipped": 13
+    }
+  },
+  "remote_install": {
+    "model_runner_sha256": "9544ecc5092214edc6ffad26279298025bdee5c57f6e4238e4c55c0b6febdee8",
+    "qwen3_5_moe_config_sha256": "3fa2f0f5b3d6e8402cfaa7826acbfda3a763ec8caef9d52bafb1d828fbf2eb18",
+    "qwen3_5_model_sha256": "4a5c7c19d5edae26ad35c4389e5f58e66c215bcef5e1e60f575aca0f897ec5f5",
+    "selector_smoke": {
+      "full_attention_attention_layers": 10,
+      "legacy40_attention_layers": 40
+    }
+  },
+  "runtime_events": [
+    {
+      "event": "preflight_before_unguarded_smoke",
+      "gpu_results": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "json_sha256": "21c20a9b123ab7617f9ca0db333d7a9ae4ceae343af8a2c1955d372ed7562f2"
+    },
+    {
+      "error": "RuntimeError: Qwen3.5 full-attention KV cache count mismatch: consumed 10, received 40",
+      "event": "unguarded_candidate_startup_rejected",
+      "phase": "vLLM synthetic memory profiling before CacheEngine allocation",
+      "root_cause": "model_runner created one empty profiling placeholder per hidden layer"
+    },
+    {
+      "event": "same_image_profile_contract_fix",
+      "fix": "model_runner profile now calls get_num_attention_layers",
+      "installed_source_line": 1352
+    },
+    {
+      "event": "preflight_after_profile_fix",
+      "gpu_results": [
+        false,
+        true,
+        true,
+        true
+      ],
+      "gpu0_failure": "timeout return code 124",
+      "json_sha256": "7687ef4c71b88a4c8dc11265dc40d2fcd07aa1035a52872a5fdbb3f8a6bd7b23"
+    },
+    {
+      "event": "gpu0_minimal_retry",
+      "json_sha256": "e7e4d421d474572a889a9eef77f0481375344aa3968a9c43ec448fd4ef60c081",
+      "matmul_size": 256,
+      "result": "timeout return code 124",
+      "timeout_seconds": 15
+    },
+    {
+      "event": "gpu0_reset_rejected",
+      "ixsmi_state": "257 MiB, 100% utilization, no listed compute process",
+      "reset_error": "GPU is in use by host PID 54048",
+      "visibility": "PID 54048 is absent from the container PID namespace and ixsmi compute-app query"
+    }
+  ],
+  "schema": "bi100-m1-49-runtime-status-v1",
+  "version": 1
+}
