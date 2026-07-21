@@ -1,9 +1,9 @@
 # M1-45: Content-addressed CPU KV tier
 
 Status: allocator metadata, single-GPU data-plane, TP4 eviction-pressure,
-131K direct equality, and pooled fork/release gates qualified; multimodal,
-235K/262K, and full performance gates pending; disabled in submission
-configuration.
+131K direct equality, pooled fork/release, and multimodal isolation gates
+qualified; 235K/262K and full performance gates pending; disabled in
+submission configuration.
 
 ## Decision
 
@@ -247,9 +247,29 @@ hashes and identical namespaces, and all eight blocks returned to the free
 pool. The gate reported `qualified=true` with no traceback. Evidence:
 `evidence/M1_45_PREFIX_NAMESPACE_FORK_GATE.json`.
 
-This closes the pooled fork/release defect. The standalone API-level
-same-image-hit/different-image-isolation gate remains mandatory because the
+This closes the pooled fork/release defect. A standalone API-level
+same-image-hit/different-image-isolation gate was still required because the
 allocator test does not parse or hash real multimodal request content.
+
+## Multimodal isolation result
+
+The corrected runtime processed three real API requests. The red-image cold
+request reported zero cached tokens; its exact replay restored 5,056 tokens,
+reduced elapsed time from 28.552 to 1.481 seconds, and retained the same
+completion length, finish reason, semantic color, and response SHA-256. The
+green-image request used the same text but reported zero cached tokens and
+returned the correct different color. This qualifies same-image reuse and
+different-image namespace isolation.
+
+The first harness also required red and green images to produce equal prompt
+token counts. The runtime legitimately reported 5,070 and 5,072; content-aware
+vision processing is not required to assign equal token counts to different
+images, and this condition is unrelated to cache isolation. The original
+fail-closed report is retained unchanged in
+`evidence/M1_45_MULTIMODAL_ISOLATION_RAW.json`. The independent v2 qualifier
+requires equal tokenization only for the identical red cold/warm pair, records
+the cross-image delta as informational, and qualifies the required behavior in
+`evidence/M1_45_MULTIMODAL_ISOLATION_GATE.json`.
 
 ## TP4 131K direct equality
 

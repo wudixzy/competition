@@ -1,0 +1,46 @@
+{
+  "checks": {
+    "cold_has_no_hit": true,
+    "different_image_isolated": true,
+    "prompt_tokens_match": false,
+    "red_cold_warm_exact": true,
+    "same_image_hits": true,
+    "semantic_colors_observed": true
+  },
+  "qualified": false,
+  "reasons": [
+    "prompt_tokens_match"
+  ],
+  "requests": {
+    "different_image": {
+      "cached_tokens": 0,
+      "completion_tokens": 2,
+      "elapsed_s": 10.514454398304224,
+      "expected_color_observed": true,
+      "finish_reason": "stop",
+      "prompt_tokens": 5072,
+      "response_sha256": "c3a4de86a1375515d77dba9b0472e0293ee9751eb9669ca64a2e8ed7aae7b7b3"
+    },
+    "same_image_cold": {
+      "cached_tokens": 0,
+      "completion_tokens": 2,
+      "elapsed_s": 28.552340507507324,
+      "expected_color_observed": true,
+      "finish_reason": "stop",
+      "prompt_tokens": 5070,
+      "response_sha256": "0bb9d09c1fa1e60ab854a440166ba6f4abd5a2b1d15b12726e7c80ae230b1308"
+    },
+    "same_image_warm": {
+      "cached_tokens": 5056,
+      "completion_tokens": 2,
+      "elapsed_s": 1.4808692671358585,
+      "expected_color_observed": true,
+      "finish_reason": "stop",
+      "prompt_tokens": 5070,
+      "response_sha256": "0bb9d09c1fa1e60ab854a440166ba6f4abd5a2b1d15b12726e7c80ae230b1308"
+    }
+  },
+  "run_id": "m1-45-mm-0f043ab",
+  "schema": "bi100-multimodal-prefix-isolation-v1",
+  "version": 1
+}

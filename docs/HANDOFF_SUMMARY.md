@@ -2,8 +2,8 @@
 
 ## 2026-07-21 M1-45 内容寻址 CPU KV 二级缓存
 
-- 私有分支：`exp/M1-45-content-cpu-kv-tier-20260721`；当前修正代码为
-  `4621f0b`，提交配置仍保持 `BI100_CPU_KV_OFFLOAD=0`。
+- 私有分支：`exp/M1-45-content-cpu-kv-tier-20260721`；本轮真实 API 运行时为
+  `0f043ab`，提交配置仍保持 `BI100_CPU_KV_OFFLOAD=0`。
 - 分配器、同槽 D2H/H2D 数据面和固定 TP4 压力 A/B 均已通过。对照组压力后只命中
   16 tokens，候选保留 65,520 tokens；对应请求耗时从 `93.696s` 降至
   `11.584s`，下降 `87.64%`，输出长度、结束原因和 SHA-256 摘要完全一致。
@@ -12,15 +12,20 @@
 - 131K/256 direct exact 已通过：冷请求 `273.172s`，命中 130,992 tokens 的暖
   请求 `56.339s`，两次 256-token 输出摘要一致。严格证据为
   `docs/experiments/evidence/M1_45_TP4_PRESSURE_AB.json` 和
-  `docs/experiments/evidence/M1_45_TP4_131K_DIRECT_EXACT.json`。之后还需多模态
-  隔离、235K 稳定性、262K 容量和完整 881 性能门禁；通过前不得写入 YAML 或
-  合并 main。
+  `docs/experiments/evidence/M1_45_TP4_131K_DIRECT_EXACT.json`。之后还需 235K
+  稳定性、262K 容量和完整 881 性能门禁；通过前不得写入 YAML 或合并 main。
 - 独立审计发现 fork 首块未继承 request namespace，可令 `n>1`/beam 分叉在释放
   缓存块时断言失败。首个修复在真实 CoreX 门禁中仍失败，由此确认对象池直接重置
   block、绕过 allocator factory；现改为在 pool 返回后且计算 hash 前显式恢复
   namespace，本地测试也复现该清空行为。修正后的真实 CoreX 门禁已在 source-first
   与 fork-first 两种释放顺序下通过，哈希/namespace 均一致且 8/8 blocks 回收。
-  现有 text-only、`n=1` 压力/长上下文计时仍有效；发布前还须通过真实多模态隔离。
+  现有 text-only、`n=1` 压力/长上下文计时仍有效，真实多模态隔离另行验证如下。
+- 真实多模态隔离现已通过：红图 cold/warm 为 `0/5056` cached tokens，耗时
+  `28.552s -> 1.481s` 且输出摘要一致；相同文本的绿图 cached tokens 为 `0`，
+  两种颜色语义均正确。初版额外要求不同图片 prompt token 数相等，但实测
+  `5070/5072`；该条件与隔离无关。原始 fail-closed JSON 和独立 v2 资格结果均已
+  保留，见 `M1_45_MULTIMODAL_ISOLATION_RAW.json` 与
+  `M1_45_MULTIMODAL_ISOLATION_GATE.json`。
 - M1-46 固定传输布局能力门禁已通过：相同字节量下，连续布局在 65K/131K 的 D2H
   为 `15.51x/15.41x`，H2D 为 `22.21x/22.30x`，全部 bit-exact，远超预声明
   `4x` 门槛。该结果只解锁独立私有分支上的 block-major pack/DMA/scatter 实现，

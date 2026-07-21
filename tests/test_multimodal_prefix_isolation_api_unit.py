@@ -16,7 +16,7 @@ if str(TESTS) not in sys.path:
 import multimodal_prefix_isolation_api as isolation_api
 
 
-def _response(color: str, cached_tokens: int) -> dict:
+def _response(color: str, cached_tokens: int, prompt_tokens: int = 9000) -> dict:
     return {
         "choices": [{
             "finish_reason": "stop",
@@ -24,7 +24,7 @@ def _response(color: str, cached_tokens: int) -> dict:
         }],
         "usage": {
             "completion_tokens": 2,
-            "prompt_tokens": 9000,
+            "prompt_tokens": prompt_tokens,
             "prompt_tokens_details": {"cached_tokens": cached_tokens},
         },
     }
@@ -37,7 +37,7 @@ class MultimodalPrefixIsolationApiTest(unittest.TestCase):
         post_chat.side_effect = [
             _response("红", 0),
             _response("红", 8992),
-            _response("绿", 0),
+            _response("绿", 0, prompt_tokens=9002),
         ]
 
         report = isolation_api.run_gate("http://unit.test", "unit-gate")

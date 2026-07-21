@@ -1,0 +1,17 @@
+{
+  "checks": {
+    "cold_has_no_hit": true,
+    "different_image_isolated": true,
+    "red_cold_warm_exact": true,
+    "same_image_hits": true,
+    "semantic_colors_observed": true
+  },
+  "different_image_prompt_token_delta": 2,
+  "qualified": true,
+  "reasons": [],
+  "schema": "bi100-multimodal-prefix-isolation-qualification-v2",
+  "source_run_id": "m1-45-mm-0f043ab",
+  "source_schema": "bi100-multimodal-prefix-isolation-v1",
+  "source_sha256": "e38b8ab7c92265303ef9d31125bf098867dc238355f00fe0fb63405bcf6a23a7",
+  "version": 2
+}

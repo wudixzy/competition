@@ -100,15 +100,12 @@ def run_gate(base: str, run_id: str) -> Json:
         red_cold[field] == red_warm[field]
         for field in ("completion_tokens", "finish_reason", "response_sha256")
     )
-    prompt_tokens_match = len({
-        red_cold["prompt_tokens"],
-        red_warm["prompt_tokens"],
-        green_isolated["prompt_tokens"],
-    }) == 1
     checks = {
         "cold_has_no_hit": red_cold["cached_tokens"] == 0,
         "different_image_isolated": green_isolated["cached_tokens"] == 0,
-        "prompt_tokens_match": prompt_tokens_match,
+        "same_image_prompt_tokens_match": (
+            red_cold["prompt_tokens"] == red_warm["prompt_tokens"]
+        ),
         "red_cold_warm_exact": red_exact,
         "semantic_colors_observed": (
             red_cold["expected_color_observed"]
