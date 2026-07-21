@@ -20,6 +20,8 @@ PREBUILT_COREX_DIR = Path(
 PREBUILT_COREX_SHA256 = {
     "corex_attn_head_rms_norm.so":
         "534019b3c2ad2d2c65492b01a975874ee440026eda2e8666bc3c1dc8a0a0a6f6",
+    "corex_block_major_kv_transfer.so":
+        "47c10acfbb3ec7d190c566d73b7616beea1fccc9ac89f336218144211f6fd1a5",
     "corex_gdn_beta_decay.so":
         "1856c86e3100415061aa698a48bdeff3fe785994b45b4e72a42cd9158552a7d8",
     "corex_gdn_causal_conv.so":

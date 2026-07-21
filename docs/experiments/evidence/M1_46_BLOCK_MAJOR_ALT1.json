@@ -1,0 +1,103 @@
+{
+  "decision": {
+    "diagnostic_passed": true,
+    "qualified": false,
+    "reasons": [
+      "production probe requires comparison with paged evidence"
+    ]
+  },
+  "device": "cuda:0",
+  "device_name": "Iluvatar BI-V100",
+  "protocol": {
+    "contiguous_cpu_bulk_copy": true,
+    "mapping": "CPU int64 [N, 2], identity timing plus reordered gate",
+    "measured_cycles": 3,
+    "staging_blocks": 512,
+    "staging_slots": 2,
+    "token_counts": [
+      65536,
+      131072
+    ],
+    "warmup_cycles": 1
+  },
+  "reordered_mapping_blocks": 513,
+  "reordered_mapping_exact": true,
+  "results": {
+    "131072": {
+      "bytes_per_direction": 1342177280,
+      "cpu_exact_after_d2h": true,
+      "d2h_gib_per_second": 7.506382826411819,
+      "d2h_median_ms": 166.5249466896057,
+      "exact": true,
+      "gpu_exact_after_h2d": true,
+      "h2d_gib_per_second": 8.350497997240195,
+      "h2d_median_ms": 149.69167113304138,
+      "num_blocks": 8192,
+      "probe_blocks": [
+        0,
+        2730,
+        4096,
+        8191
+      ],
+      "round_trip_median_ms": 316.2166178226471,
+      "token_count": 131072,
+      "trials": {
+        "d2h_ms": [
+          145.0532302260399,
+          166.5249466896057,
+          185.52834168076515
+        ],
+        "h2d_ms": [
+          165.07882624864578,
+          134.55741852521896,
+          149.69167113304138
+        ]
+      }
+    },
+    "65536": {
+      "bytes_per_direction": 671088640,
+      "cpu_exact_after_d2h": true,
+      "d2h_gib_per_second": 8.609852362716396,
+      "d2h_median_ms": 72.59125635027885,
+      "exact": true,
+      "gpu_exact_after_h2d": true,
+      "h2d_gib_per_second": 8.643333076085389,
+      "h2d_median_ms": 72.31006771326065,
+      "num_blocks": 4096,
+      "probe_blocks": [
+        0,
+        1365,
+        2048,
+        4095
+      ],
+      "round_trip_median_ms": 144.9013240635395,
+      "token_count": 65536,
+      "trials": {
+        "d2h_ms": [
+          72.59125635027885,
+          70.89680060744286,
+          92.7031934261322
+        ],
+        "h2d_ms": [
+          70.80129534006119,
+          72.31006771326065,
+          81.15172013640404
+        ]
+      }
+    }
+  },
+  "schema": "bi100-cpu-kv-block-major-transfer-v1",
+  "shape": {
+    "block_size": 16,
+    "bytes_per_block_per_rank": 163840,
+    "dtype": "float16",
+    "head_size": 256,
+    "local_num_kv_heads": 1,
+    "num_attention_layers": 10
+  },
+  "torch_version": "2.1.0",
+  "version": 1,
+  "vllm_path": "/usr/local/corex/lib64/python3/dist-packages/vllm/__init__.py",
+  "vllm_version": "0.6.3",
+  "worker_d2h_before_h2d": true
+}

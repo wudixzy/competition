@@ -1,8 +1,9 @@
 # M1-46: Block-major CPU KV transfer
 
-Status: fixed capability gate qualified and first implementation source ready;
-CoreX compilation, prebuilt bundling, transfer, and model gates pending; no
-submission configuration or `main` change.
+Status: fixed capability and alt1 CoreX transfer gates qualified; the
+hash-pinned extension is bundled on the private branch; pressure replay,
+model, capacity, dataset, and publication gates pending; no submission
+configuration or `main` change.
 
 The private A/B selector is
 `BI100_CPU_KV_TRANSFER_LAYOUT=paged|block_major`; it defaults to `paged`,
@@ -128,3 +129,27 @@ per-chunk H2D synchronization, while contiguous CPU-slot runs use one bulk CPU
 copy before the same DMA/scatter kernel. The 512-block chunk, kernel launch,
 mapping order, numerical gate, and benchmark cases remain unchanged. If this
 single alternative misses either direction's `4.0x` threshold, M1-46 stops.
+
+## Fixed alt1 result
+
+Commit `85c325e` compiled once on CoreX 3.2.3. The 196,328-byte extension has
+SHA-256
+`47c10acfbb3ec7d190c566d73b7616beea1fccc9ac89f336218144211f6fd1a5`.
+The 513-block reordered mapping, CPU and GPU byte equality, worker D2H-before-
+H2D order, and all fixed timing cases passed.
+
+| Tokens | D2H | D2H vs paged | H2D | H2D vs paged |
+| ---: | ---: | ---: | ---: | ---: |
+| 65,536 | 72.591 ms | 6.507x | 72.310 ms | 7.387x |
+| 131,072 | 166.525 ms | 5.672x | 149.692 ms | 7.155x |
+
+All four directions exceed the predeclared `4.0x` gate, so alt1 is the only
+admitted M1-46 data plane. The exact candidate and comparator reports are
+`evidence/M1_46_BLOCK_MAJOR_ALT1.json` and
+`evidence/M1_46_BLOCK_MAJOR_ALT1_COMPARISON.json`. The tested ELF is included
+in the hash-pinned CoreX bundle; Docker still defaults to `paged` because the
+selector remains absent from `computility-run.yaml`.
+
+This result unlocks the fixed M1-45 pressure replay and fresh 235K/262K model
+gates. It does not by itself prove a model-level TTFT benefit or authorize the
+881-request/publication path.

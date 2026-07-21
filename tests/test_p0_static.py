@@ -531,6 +531,7 @@ class P0StaticCoverageTest(unittest.TestCase):
             "qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/SHA256SUMS")
         artifacts = [
             "corex_attn_head_rms_norm.so",
+            "corex_block_major_kv_transfer.so",
             "corex_gdn_beta_decay.so",
             "corex_gdn_causal_conv.so",
             "corex_gdn_gated_norm.so",

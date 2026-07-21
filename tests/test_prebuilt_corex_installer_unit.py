@@ -36,7 +36,7 @@ class PrebuiltCorexInstallerTest(unittest.TestCase):
             for name in EXPECTED_NAMES:
                 mode = (vllm_root / name).stat().st_mode
                 self.assertTrue(mode & stat.S_IXUSR)
-            self.assertEqual(completed.stdout.count("[ok] installed"), 10)
+            self.assertEqual(completed.stdout.count("[ok] installed"), 11)
 
 
 if __name__ == "__main__":

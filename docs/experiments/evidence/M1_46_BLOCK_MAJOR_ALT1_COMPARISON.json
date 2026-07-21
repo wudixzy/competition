@@ -1,0 +1,47 @@
+{
+  "cases": [
+    {
+      "bytes_per_direction": 671088640,
+      "candidate": {
+        "d2h_median_ms": 72.59125635027885,
+        "h2d_median_ms": 72.31006771326065
+      },
+      "paged": {
+        "d2h_median_ms": 472.3725765943527,
+        "h2d_median_ms": 534.118764102459
+      },
+      "speedup": {
+        "d2h": 6.507293031477311,
+        "h2d": 7.386506208519413
+      },
+      "token_count": 65536
+    },
+    {
+      "bytes_per_direction": 1342177280,
+      "candidate": {
+        "d2h_median_ms": 166.5249466896057,
+        "h2d_median_ms": 149.69167113304138
+      },
+      "paged": {
+        "d2h_median_ms": 944.5806667208672,
+        "h2d_median_ms": 1071.0890106856823
+      },
+      "speedup": {
+        "d2h": 5.672307275867315,
+        "h2d": 7.155301310877418
+      },
+      "token_count": 131072
+    }
+  ],
+  "qualified": true,
+  "reasons": [],
+  "schema": "bi100-cpu-kv-block-major-comparison-v1",
+  "thresholds": {
+    "minimum_direction_speedup": 4.0,
+    "token_counts": [
+      65536,
+      131072
+    ]
+  },
+  "version": 1
+}

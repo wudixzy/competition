@@ -44,6 +44,8 @@ class M146StaticContractTest(unittest.TestCase):
     def test_corex_extension_exports_pack_and_scatter(self):
         source = read("qwen3_6_scripts/corex_block_major_kv_transfer.cu")
         build = read("qwen3_6_scripts/build_corex_block_major_kv_transfer.sh")
+        manifest = read(
+            "qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/SHA256SUMS")
         self.assertIn('module.def("pack"', source)
         self.assertIn('module.def("scatter"', source)
         self.assertIn('module.def("_pack_validated"', source)
@@ -52,6 +54,11 @@ class M146StaticContractTest(unittest.TestCase):
         self.assertIn("--cuda-gpu-arch=ivcore10", build)
         self.assertIn("block_ids.min().item<int64_t>()", source)
         self.assertIn("block_ids.max().item<int64_t>()", source)
+        self.assertIn(
+            "47c10acfbb3ec7d190c566d73b7616beea1fccc9ac89f336218144211f6fd1a5  "
+            "corex_block_major_kv_transfer.so",
+            manifest,
+        )
 
     def test_double_staging_is_event_guarded(self):
         source = read("vllm/worker/bi100_block_major_kv.py")
