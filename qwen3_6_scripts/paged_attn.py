@@ -38,13 +38,35 @@ _USE_COREX_PAGED_KV_GATHER = (
     and env_bool("BI100_ATTN_COREX_PAGED_GATHER", True))
 _ENABLE_COREX_FUSED_PAGED_PREFILL = env_bool(
     "BI100_ATTN_COREX_FUSED_PREFILL", False)
+_FUSED_PREFILL_DIAGNOSTICS = env_bool(
+    "BI100_ATTN_COREX_FUSED_PREFILL_DIAGNOSTICS", False)
 _USE_COREX_FUSED_PAGED_PREFILL = (
     _corex_fused_paged_prefill is not None
     and _ENABLE_COREX_FUSED_PAGED_PREFILL)
 _DECODE_LOG_INTERVAL = 8192 if _PAGED_ATTN_DIAGNOSTICS else 0
 _DECODE_DISPATCH_LOGGED = set()
 _PREFIX_DISPATCH_LOGGED = set()
+_FUSED_PREFILL_DIAGNOSTICS_LOGGED = set()
 _CACHE_WRITE_LOGGED = False
+
+
+def _log_corex_fused_prefill_diagnostic(stage: str, **fields) -> None:
+    """Emit one privacy-safe guard snapshot per stage and worker."""
+    if not _FUSED_PREFILL_DIAGNOSTICS:
+        return
+    key = (os.getpid(), stage)
+    if key in _FUSED_PREFILL_DIAGNOSTICS_LOGGED:
+        return
+    details = " ".join(f"{name}={value}" for name, value in fields.items())
+    print(
+        "[BI100 PAGED_ATTN] fused_prefill_guard "
+        f"pid={os.getpid()} rank={os.environ.get('RANK', '?')} "
+        f"local_rank={os.environ.get('LOCAL_RANK', '?')} stage={stage} "
+        f"{details}",
+        file=sys.stderr,
+        flush=True,
+    )
+    _FUSED_PREFILL_DIAGNOSTICS_LOGGED.add(key)
 
 
 def _validate_decode_layout(
@@ -692,6 +714,20 @@ class PagedAttention:
             _can_enable_corex_fused_paged_prefill_request(
                 kv_cache_dtype, max_query_len, query.shape[0], alibi_slopes,
                 sliding_window, k_scale, v_scale, is_causal_decoder))
+        _log_corex_fused_prefill_diagnostic(
+            "request",
+            eligible=fused_request_eligible,
+            use_native=_USE_COREX_FUSED_PAGED_PREFILL,
+            causal=is_causal_decoder,
+            kv_cache_dtype=kv_cache_dtype,
+            max_query_len=max_query_len,
+            total_query_len=query.shape[0],
+            tile_blocks=_PREFIX_BLOCKS_PER_TILE,
+            alibi_none=alibi_slopes is None,
+            sliding_window=sliding_window,
+            k_scale=k_scale,
+            v_scale=v_scale,
+        )
         return PagedAttention._forward_prefix_pytorch(
             query, key, value,
             key_cache, value_cache,
@@ -779,7 +815,7 @@ class PagedAttention:
                 context_len = (
                     int(context_lens[0].item())
                     if context_lens_count == 1 else -1)
-                fused_request_eligible = (
+                metadata_eligible = (
                     _is_single_sequence_fused_prefill_metadata(
                         batch_size=batch_size,
                         block_table_rows=block_tables.shape[0],
@@ -792,6 +828,21 @@ class PagedAttention:
                         context_len=context_len,
                         total_query_len=query.shape[0],
                     ))
+                _log_corex_fused_prefill_diagnostic(
+                    "metadata",
+                    eligible=metadata_eligible,
+                    batch_size=batch_size,
+                    block_table_rows=block_tables.shape[0],
+                    query_start_count=query_start_count,
+                    query_start_first=query_start_first,
+                    query_start_last=query_start_last,
+                    seq_lens_count=seq_lens_count,
+                    seq_len=seq_len,
+                    context_lens_count=context_lens_count,
+                    context_len=context_len,
+                    total_query_len=query.shape[0],
+                )
+                fused_request_eligible = metadata_eligible
 
             for i in range(batch_size):
                 ctx_len = int(context_lens[i].item())
@@ -859,12 +910,39 @@ class PagedAttention:
     ) -> torch.Tensor:
         """Run online-softmax attention for one strict-prefix query segment."""
         q_len = query.shape[0]
-        if (fused_request_eligible
-                and _can_use_corex_fused_paged_prefill(
+        segment_eligible = (
+            fused_request_eligible
+            and _can_use_corex_fused_paged_prefill(
                 query, key, value, prefix_key, prefix_value,
                 key_cache, value_cache, block_tables, seq_index,
                 block_context_len, num_q_heads, num_kv_heads, head_dim,
-                gqa_ratio, block_size)):
+                gqa_ratio, block_size))
+        _log_corex_fused_prefill_diagnostic(
+            "segment",
+            eligible=segment_eligible,
+            request_eligible=fused_request_eligible,
+            query_shape=tuple(query.shape),
+            key_shape=tuple(key.shape),
+            value_shape=tuple(value.shape),
+            prefix_key_shape=tuple(prefix_key.shape),
+            prefix_value_shape=tuple(prefix_value.shape),
+            key_cache_shape=tuple(key_cache.shape),
+            value_cache_shape=tuple(value_cache.shape),
+            block_table_shape=tuple(block_tables.shape),
+            context_len=block_context_len,
+            seq_index=seq_index,
+            q_dtype=query.dtype,
+            block_table_dtype=block_tables.dtype,
+            query_cuda=query.is_cuda,
+            query_contiguous=query.is_contiguous(),
+            key_contiguous=key.is_contiguous(),
+            value_contiguous=value.is_contiguous(),
+            block_table_contiguous=block_tables.is_contiguous(),
+            heads=f"{num_q_heads}/{num_kv_heads}/{head_dim}",
+            gqa_ratio=gqa_ratio,
+            block_size=block_size,
+        )
+        if segment_eligible:
             required_blocks = block_context_len // block_size
             active_block_table = block_tables[
                 seq_index, :required_blocks].contiguous()

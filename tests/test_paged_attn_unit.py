@@ -100,6 +100,8 @@ def _load_paged_attn(**env):
             BI100_FORCE_PAGED_ATTN_V2=env.get("force_v2"),
             BI100_PAGED_ATTN_DIAGNOSTICS=env.get("diagnostics"),
             BI100_ATTN_COREX_FUSED_PREFILL=env.get("fused_prefill"),
+            BI100_ATTN_COREX_FUSED_PREFILL_DIAGNOSTICS=(
+                env.get("fused_prefill_diagnostics")),
     ):
         old_modules = {
             name: sys.modules.get(name)
@@ -236,6 +238,7 @@ class PagedAttentionUnitTest(unittest.TestCase):
         self.assertFalse(module._PAGED_ATTN_DIAGNOSTICS)
         self.assertFalse(module._USE_COREX_FUSED_PAGED_PREFILL)
         self.assertFalse(module._ENABLE_COREX_FUSED_PAGED_PREFILL)
+        self.assertFalse(module._FUSED_PREFILL_DIAGNOSTICS)
         self.assertEqual(module._DECODE_LOG_INTERVAL, 0)
         self.assertTrue(module.PagedAttention._should_use_paged_attention_v1(
             max_seq_len=100000,
@@ -250,11 +253,13 @@ class PagedAttentionUnitTest(unittest.TestCase):
             tile="64",
             force_v2="1",
             diagnostics="1",
+            fused_prefill_diagnostics="1",
         )
         self.assertEqual(module.PagedAttention._PYTORCH_DECODE_THRESHOLD, 4096)
         self.assertEqual(module._PREFIX_BLOCKS_PER_TILE, 64)
         self.assertTrue(module.PagedAttention._FORCE_PAGED_ATTN_V2)
         self.assertTrue(module._PAGED_ATTN_DIAGNOSTICS)
+        self.assertTrue(module._FUSED_PREFILL_DIAGNOSTICS)
         self.assertEqual(module._DECODE_LOG_INTERVAL, 8192)
         self.assertFalse(module.PagedAttention._should_use_paged_attention_v1(
             max_seq_len=100000,
@@ -268,6 +273,22 @@ class PagedAttentionUnitTest(unittest.TestCase):
             _load_paged_attn(threshold="0")
         with self.assertRaises(RuntimeError):
             _load_paged_attn(fused_prefill="sometimes")
+        with self.assertRaises(RuntimeError):
+            _load_paged_attn(fused_prefill_diagnostics="sometimes")
+
+    def test_fused_prefill_diagnostic_is_opt_in_and_one_shot(self):
+        module = _load_paged_attn(fused_prefill_diagnostics="1")
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            module._log_corex_fused_prefill_diagnostic(
+                "request", eligible=False, total_query_len=8192)
+            module._log_corex_fused_prefill_diagnostic(
+                "request", eligible=True, total_query_len=16)
+        value = stderr.getvalue()
+        self.assertEqual(value.count("fused_prefill_guard"), 1)
+        self.assertIn("stage=request", value)
+        self.assertIn("eligible=False", value)
+        self.assertIn("total_query_len=8192", value)
 
     def test_fused_prefill_guard_accepts_only_qualified_shape(self):
         module = _load_paged_attn()
