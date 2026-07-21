@@ -108,10 +108,22 @@ export PYTHONPATH="$SITE_PACKAGES:$SYSTEM_PYTHONPATH:${BASE_PYTHONPATH}"
     bash ./patch_ops.sh
 )
 
+# Build the expected post-patch block manager from the authoritative source.
+# It is intentionally not byte-equal to the base override because patch_ops
+# adds the disabled-by-default privacy-safe cache trace afterward.
+EXPECTED_ROOT="$PATCH_STAGE/expected_runtime"
+mkdir -p "$EXPECTED_ROOT/vllm/core"
+touch "$EXPECTED_ROOT/vllm/__init__.py" "$EXPECTED_ROOT/vllm/core/__init__.py"
+install -m 0644 "$ROOT/vllm/core/block_manager_v2.py" \
+    "$EXPECTED_ROOT/vllm/core/block_manager_v2.py"
+PYTHONPATH="$PATCH_STAGE:$EXPECTED_ROOT" \
+    python3 "$PATCH_STAGE/patch_block_manager_cache_trace.py"
+
 REPORT_PATH="$RUNTIME_STAGE/install.json"
 (
 cd /tmp
-python3 - "$ROOT" "$SITE_PACKAGES" "$RUNTIME_ROOT" "$REPORT_PATH" <<'PY'
+python3 - "$ROOT" "$SITE_PACKAGES" "$RUNTIME_ROOT" "$REPORT_PATH" \
+    "$EXPECTED_ROOT/vllm/core/block_manager_v2.py" <<'PY'
 from __future__ import annotations
 
 import hashlib
@@ -126,6 +138,7 @@ root = Path(sys.argv[1]).resolve()
 site = Path(sys.argv[2]).resolve()
 runtime_root = Path(sys.argv[3])
 output = Path(sys.argv[4])
+expected_block_manager = Path(sys.argv[5]).resolve()
 
 
 def package_root(name: str) -> Path:
@@ -161,7 +174,7 @@ checks = {
         vllm_root / "core/scheduler.py",
     ),
     "block_manager": (
-        root / "vllm/core/block_manager_v2.py",
+        expected_block_manager,
         vllm_root / "core/block_manager_v2.py",
     ),
     "content_cache": (
@@ -209,6 +222,8 @@ report = {
     "system_site_packages_modified": False,
     "versions": versions,
     "files": files,
+    "block_manager_base_sha256": digest(
+        root / "vllm/core/block_manager_v2.py"),
     "model_runner_sha256": digest(model_runner),
     "profile_attention_layer_patch": profile_patch_present,
 }

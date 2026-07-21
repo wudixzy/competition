@@ -72,6 +72,8 @@ class HybridKvStartupGateTest(unittest.TestCase):
         self.assertIn("get_num_attention_layers", source)
         self.assertIn("SYSTEM_PYTHONPATH", source)
         self.assertIn("system_site_packages_modified", source)
+        self.assertIn("expected_runtime", source)
+        self.assertIn("block_manager_base_sha256", source)
         self.assertIn('mv "$RUNTIME_STAGE" "$RUNTIME_ROOT"', source)
         self.assertIn("resolved outside staged overlay", source)
 
