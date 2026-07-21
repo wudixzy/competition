@@ -150,7 +150,9 @@ A/B comparison succeeds.
 - remote atomic overlay `b25d0b3` qualified at
   `/root/competition-m1-49-runtime-2400f04-r5`: system site-packages were not
   modified, Transformers is 4.55.3, every expected file hash matches, and
-  both package roots resolve inside the overlay from `/tmp`;
+  both package roots resolve inside the overlay from `/tmp`; its CPU-only
+  AutoConfig smoke reports `legacy40=40`, `full_attention=10`, identical real
+  full-attention ordinals, and fail-fast rc 1 for an invalid selector;
 - first unguarded startup rejection was isolated to the 40-placeholder profile
   contract and did not reach benchmark requests.
 

@@ -61,7 +61,24 @@
       "system_site_packages_modified": false,
       "transformers_version": "4.55.3",
       "verified_file_hashes_match": true,
-      "verified_package_roots_inside_overlay": true
+      "verified_package_roots_inside_overlay": true,
+      "selector_smoke": {
+        "full_attention_attention_layers": 10,
+        "full_attention_ordinals": [
+          3,
+          7,
+          11,
+          15,
+          19,
+          23,
+          27,
+          31,
+          35,
+          39
+        ],
+        "invalid_selector_exit_code": 1,
+        "legacy40_attention_layers": 40
+      }
     }
   },
   "runtime_events": [
