@@ -53,7 +53,7 @@ class FusedPagedPrefillSourceTest(unittest.TestCase):
         self.assertNotIn("build_corex_fused_paged_prefill.sh", patch_ops)
         self.assertNotIn("build_corex_fused_paged_prefill_split4.sh", patch_ops)
         self.assertIn(
-            "e0ff112f965de7126c86a57ba2a64549743ee88c55b25a2396b5f808349ef591  "
+            "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009  "
             "corex_fused_paged_prefill.so",
             manifest,
         )
@@ -66,6 +66,7 @@ class FusedPagedPrefillSourceTest(unittest.TestCase):
 
     def test_split4_keeps_fixed_partitions_and_ordered_merge(self):
         source = SPLIT_SOURCE.read_text(encoding="utf-8")
+        self.assertIn("constexpr int kNumQueryHeads = 4;", source)
         self.assertIn("constexpr int kTileTokens = 512;", source)
         self.assertIn("constexpr int kSplitCount = 4;", source)
         self.assertIn("constexpr int kGroupTokens = kSplitCount * kTileTokens;",
@@ -97,6 +98,7 @@ class FusedPagedPrefillSourceTest(unittest.TestCase):
             ROOT / "qwen3_6_scripts" / "paged_attn.py").read_text(
                 encoding="utf-8")
         self.assertIn("_can_use_corex_fused_paged_prefill", paged_attention)
+        self.assertIn("4, 1, 256, 4, 16", paged_attention)
         self.assertIn("query_len <= 16 or query_len > 8192", paged_attention)
         self.assertIn("block_context_len % 16 != 0", paged_attention)
         self.assertIn("block_context_len + query_len > 262144", paged_attention)

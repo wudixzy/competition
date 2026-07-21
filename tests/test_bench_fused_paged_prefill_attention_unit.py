@@ -90,7 +90,7 @@ class FusedPagedPrefillGateTest(unittest.TestCase):
     def test_fixed_geometry(self):
         self.assertEqual(benchmark.BLOCK_SIZE, 16)
         self.assertEqual(benchmark.BLOCKS_PER_TILE, 32)
-        self.assertEqual(benchmark.NUM_Q_HEADS, 6)
+        self.assertEqual(benchmark.NUM_Q_HEADS, 4)
         self.assertEqual(benchmark.NUM_KV_HEADS, 1)
         self.assertEqual(benchmark.HEAD_DIM, 256)
         self.assertEqual(benchmark.WARMUP_TRIALS, 5)

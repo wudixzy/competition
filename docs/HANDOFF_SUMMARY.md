@@ -1,18 +1,19 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
-## 2026-07-21 M1-47 split4 核心门槛通过
+## 2026-07-21 M1-47 生产形状修正与核心门槛
 
-- 固定四路 split-reduction 备选通过 14/14 数值案例和非法物理块拒绝检查；最大
-  output relative L2 为 `6.123e-6`，无 NaN/Inf。
-- 74K/128K/235K 核心路径分别达到 `2.1801x/2.1851x/2.2059x`，超过预先
-  固定的 `1.5x` 门槛。二进制 SHA-256 为
-  `e0ff112f965de7126c86a57ba2a64549743ee88c55b25a2396b5f808349ef591`。
-- 当前状态仅为 `CORE_GATE_QUALIFIED; SERVICE_GATE_PENDING`。下一步以严格形状
-  守卫接入 prefill，并固定顺序比较 65K/235K 冷 TTFT、warm 回退、Output TPS
-  与 262K 容量；通过前不改 YAML、不合并 main。
-- 隔离运行时 dispatcher parity 已通过：二维 padded 非恒等 block table 被精确
-  裁为 256 个有效块，native 恰好调用一次，`relL2=4.040e-6`、最大误差
-  `3.052e-5`。该结果只解除服务 A/B 的接线风险，不替代服务门槛。
+- 首次 TP4 服务 A/B 发现旧 `6/1/256` 内核从未 dispatch。四 rank guard 证据
+  确认生产 query 为 `[8176,4,256]`；模型配置为全局 16 Q heads、2 KV
+  heads、TP4，因此真实 rank-local 形状是 `4/1/256`。旧 `e0ff...f591`
+  核心和 dispatcher 证据已标记为生产形状无效。
+- 只修正 head 数后，固定 split4 备选通过 14/14 案例，最大 relative L2
+  `7.357e-6`。74K/128K/235K 分别为 `2.5530x/2.5451x/2.5770x`。
+  新二进制 SHA-256 为
+  `f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009`。
+- 真实 dispatcher parity 也通过：query `[256,4,256]`，padded block table
+  `[1,263]` 精确裁为 256 块，native 调用一次，`relL2=6.842e-6`。
+- 当前状态仅为 `CORE_GATE_QUALIFIED; SERVICE_GATE_PENDING`。下一步重跑固定
+  65K/235K 冷暖 A/B；通过前不改 YAML、不合并 main。
 
 ## 2026-07-21 M1-47 融合 prefill 注意力设计门槛
 
@@ -22,7 +23,7 @@
   后续 chunk 走长 paged context 的 PyTorch online-softmax 循环；235K 不会形成单个
   235K dense query。现有 `corex_paged_kv_gather` 只覆盖长 decode，不能直接复用。
 - 新 ABI 必须同时接受当前 `k_new/v_new` 与可选 paged prefix，明确支持
-  `ctx_len=0`；只支持 TP4 rank-local `Hq/Hkv/D=6/1/256`、block16、单序列。
+  `ctx_len=0`；只支持 TP4 rank-local `Hq/Hkv/D=4/1/256`、block16、单序列。
 - 固定核心门槛仍为 74K/128K/235K 至少 `1.5x`，65K/235K cold TTFT 至少
   改善 20%，warm 回退不超过 2%，相对 L2 不超过 `1e-5`。融合和一次
   split-reduction 均失败后停止，不扫描参数。

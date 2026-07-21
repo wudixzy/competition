@@ -156,7 +156,7 @@ class PagedAttentionUnitTest(unittest.TestCase):
         half = module.torch.float16
         int32 = module.torch.int32
         return {
-            "query": FakeTensor((8176, 6, 256), half),
+            "query": FakeTensor((8176, 4, 256), half),
             "key": FakeTensor((8176, 1, 256), half),
             "value": FakeTensor((8176, 1, 256), half),
             "prefix_key": FakeTensor((0, 1, 256), half),
@@ -166,10 +166,10 @@ class PagedAttentionUnitTest(unittest.TestCase):
             "block_tables": FakeTensor((1, 16384), int32),
             "seq_index": 0,
             "block_context_len": 65520,
-            "num_q_heads": 6,
+            "num_q_heads": 4,
             "num_kv_heads": 1,
             "head_dim": 256,
-            "gqa_ratio": 6,
+            "gqa_ratio": 4,
             "block_size": 16,
         }
 
@@ -299,11 +299,11 @@ class PagedAttentionUnitTest(unittest.TestCase):
         inputs["prefix_key"].shape = (1, 1, 256)
         self.assertFalse(module._can_use_corex_fused_paged_prefill(**inputs))
         inputs["prefix_key"].shape = (0, 1, 256)
-        inputs["query"].shape = (16, 6, 256)
+        inputs["query"].shape = (16, 4, 256)
         inputs["key"].shape = (16, 1, 256)
         inputs["value"].shape = (16, 1, 256)
         self.assertFalse(module._can_use_corex_fused_paged_prefill(**inputs))
-        inputs["query"].shape = (8176, 6, 256)
+        inputs["query"].shape = (8176, 4, 256)
         inputs["key"].shape = (8176, 1, 256)
         inputs["value"].shape = (8176, 1, 256)
         inputs["block_context_len"] = 65521

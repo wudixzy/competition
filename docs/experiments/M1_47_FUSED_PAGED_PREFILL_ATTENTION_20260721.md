@@ -1,8 +1,9 @@
 # M1-47: Fused paged prefill attention
 
-Status: the first candidate passed all numerical cases but failed the fixed
-`1.5x` performance gate; the single split-reduction alternative is unlocked.
-Neither candidate is installed or bundled; no runtime, YAML, or `main` change.
+Status: the production-shape `4/1/256` split4 candidate passed the fixed core
+and dispatcher gates; the TP4 service gate is pending. Earlier `6/1/256` core
+and dispatcher results are invalidated because that shape is not emitted by
+the model. No YAML or `main` change.
 
 ## Corrected scope
 
@@ -11,14 +12,14 @@ would miss the main cold-TTFT path. On the installed Qwen3.6 TP4 runtime, one
 full-attention rank has:
 
 ```text
-Q: [T, 6, 256] FP16
+Q: [T, 4, 256] FP16
 K: [T, 1, 256] FP16
 V: [T, 1, 256] FP16
-GQA ratio: 6
+GQA ratio: 4
 ```
 
 For the first request chunk, the patched xFormers fallback processes fixed
-256-query tiles. Each tile materializes an FP32 score tensor `[6, 256, Q]`,
+256-query tiles. Each tile materializes an FP32 score tensor `[4, 256, Q]`,
 applies a causal mask and softmax, then performs PV. The fixed
 `max_num_batched_tokens=8192` command bounds this initial dense `Q` at 8192;
 the runtime does not submit one 235K dense query tensor.
@@ -47,15 +48,15 @@ The first candidate supports only one sequence and the immutable Qwen3.6 TP4
 shape:
 
 ```text
-q           [Q, 6, 256]       FP16
+q           [Q, 4, 256]       FP16
 k_new       [Q, 1, 256]       FP16
 v_new       [Q, 1, 256]       FP16
 k_cache     [N, 1, 32, 16, 8] FP16
 v_cache     [N, 1, 256, 16]   FP16
 block_table [ceil(ctx/16)]     INT32
 ctx_len, q_len, scale
-out         [Q, 6, 256]       FP16
-lse         [Q, 6]             FP32
+out         [Q, 4, 256]       FP16
+lse         [Q, 4]             FP32
 ```
 
 `ctx_len=0` and an empty block table are required supported cases for the first
@@ -155,7 +156,11 @@ point, and it did not install the binary into vLLM. Structured evidence is in
 This passes only the compile gate. The candidate remains unqualified until its
 GPU numerical cases and frozen three-point `1.5x` performance grid pass.
 
-## First candidate result
+## Historical first-candidate result
+
+This and the following two historical sections used an assumed rank-local
+`6/1/256` shape. They remain useful implementation history, but the production
+shape diagnostic below invalidates them as M1-47 qualification evidence.
 
 The hash-bound isolated benchmark completed on one Iluvatar BI-V100 without
 OOM, illegal access, traceback, or process failure. All 14 numerical cases were
@@ -184,7 +189,7 @@ statistics/output are merged in original partition order. This preserves the
 512-token reduction partition while amortizing the per-partition eager launch
 cost. Failure of this one alternative closes M1-47.
 
-## Fixed split4 alternative result
+## Invalidated six-head split4 result
 
 The single permitted alternative compiled for `ivcore10` and completed the
 same hash-bound 14-case benchmark. All outputs and LSE values were finite, the
@@ -198,20 +203,18 @@ invalid physical-block probe failed closed, maximum output relative L2 was
 | 128K | 123.058 ms | 56.317 ms | 2.1851x | pass |
 | 235K | 219.958 ms | 99.715 ms | 2.2059x | pass |
 
-This passes the frozen numerical and `1.5x` core-performance gates. The exact
+This passed the synthetic six-head numerical and `1.5x` core-performance
+gates. The exact
 252,208-byte binary has SHA-256
 `e0ff112f965de7126c86a57ba2a64549743ee88c55b25a2396b5f808349ef591`.
 The authoritative result is 6,819 bytes with SHA-256
 `a1fcd70f1a893911f60ade656362b271641e115ae0a3ddefa21ef291a7276b3f`;
 the structured summary is `evidence/M1_47_SPLIT4_GATE.json`.
 
-The status is `CORE_GATE_QUALIFIED; SERVICE_GATE_PENDING`. This result unlocks
-hash-pinned runtime integration with the previously frozen shape guards. It
-does not qualify the candidate for `main`, change the submission YAML, or
-replace the required 65K/235K cold-TTFT, warm-regression, Output TPS, 262K
-capacity, and full-workload gates.
+It is now `PRODUCTION_SHAPE_INVALIDATED`, not core-qualified. The artifact is
+not bundled and cannot authorize a service A/B.
 
-## Runtime dispatcher parity
+## Invalidated six-head dispatcher parity
 
 The hash-pinned binary was installed into an isolated copy of the patched
 CoreX vLLM package. A real Python-dispatch probe used a padded two-dimensional
@@ -224,8 +227,62 @@ error was `3.0517578125e-05`, and all output values were finite.
 The authoritative 840-byte remote result has SHA-256
 `7244470f7f06d56dd29eb8df182faa9f907da59492e566861e3d78891e134622`;
 the structured copy is `evidence/M1_47_DISPATCH_PARITY.json`. This qualifies
-the Python/native interface and block-table slicing, but service-level gates
-remain pending.
+only the synthetic six-head Python/native interface. It is invalidated by the
+production-shape diagnostic and does not authorize a service A/B.
+
+## Production-shape diagnostic
+
+The first TP4 candidate service completed three exact 65K requests but emitted
+zero `path=corex_split4` lines. A privacy-safe guard probe then recorded all
+four ranks. Request semantics and single-sequence metadata passed, while the
+segment guard rejected exactly one property: real query tensors were
+`[8176,4,256]`, not `[8176,6,256]`. K/V remained `[8176,1,256]`, cache layout
+remained block-16, and all tensors were contiguous FP16 CUDA tensors.
+
+The model configuration independently confirms 16 global Q heads, two global
+KV heads, head dimension 256, TP4, and one full-attention layer every four
+layers. The resulting rank-local shape is therefore `4/1/256`. The diagnostic
+service log is 57,090 bytes with SHA-256
+`f7546908785556f4e26534e85f7d1d2998e1743aa63655ad050892ac79e20c43`;
+the exact 65K probe is 1,782 bytes with SHA-256
+`0ee4088007bc0a2a951f3925447846e8ebeca141096f1eb2d37dbb1752c3ad94`.
+Structured evidence is in
+`evidence/M1_47_PRODUCTION_SHAPE_DIAGNOSTIC.json`.
+
+## Corrected four-head split4 gate
+
+The split4 implementation was corrected only for the observed production head
+count; tile size, split count, compiler flags, benchmark cases, seed, warmups,
+trials, tolerances, and thresholds were unchanged. All 14 cases were finite,
+the invalid physical block was rejected, maximum output relative L2 was
+`7.357045830609955e-06`, and maximum absolute error was
+`6.103515625e-05`.
+
+| Case | Reference | Candidate | Speedup | Decision |
+| --- | ---: | ---: | ---: | --- |
+| 74K | 56.879 ms | 22.279 ms | 2.5530x | pass |
+| 128K | 100.815 ms | 39.612 ms | 2.5451x | pass |
+| 235K | 180.155 ms | 69.908 ms | 2.5770x | pass |
+
+The corrected 252,208-byte artifact has SHA-256
+`f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009`.
+The authoritative 6,809-byte result has SHA-256
+`eb2c224dbe0641683826b81ac5099e2edd6e8436c74408868782840fae3ee169`;
+structured evidence is in `evidence/M1_47_CORRECTED4_GATE.json`.
+
+## Corrected dispatcher parity
+
+The real dispatcher invoked the corrected extension exactly once for query
+shape `[256,4,256]`, sliced a padded `[1,263]` block table to the 256 active
+non-identity physical blocks, and produced finite output. Maximum absolute
+error was `6.103515625e-05` and relative L2 was
+`6.842131411888715e-06`. The authoritative 839-byte result has SHA-256
+`33126b250f3af97a5b902cbe7b30af8c6a588e61e6a33b45e90b536acd7dd39c`;
+structured evidence is in
+`evidence/M1_47_CORRECTED4_DISPATCH_PARITY.json`.
+
+The current status is `CORE_GATE_QUALIFIED; SERVICE_GATE_PENDING`. This does
+not change the default environment, submission YAML, or `main`.
 
 ## Gates
 

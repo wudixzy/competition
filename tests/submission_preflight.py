@@ -21,7 +21,7 @@ PREBUILT_COREX_SHA256 = {
     "corex_attn_head_rms_norm.so":
         "534019b3c2ad2d2c65492b01a975874ee440026eda2e8666bc3c1dc8a0a0a6f6",
     "corex_fused_paged_prefill.so":
-        "e0ff112f965de7126c86a57ba2a64549743ee88c55b25a2396b5f808349ef591",
+        "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
     "corex_gdn_beta_decay.so":
         "1856c86e3100415061aa698a48bdeff3fe785994b45b4e72a42cd9158552a7d8",
     "corex_gdn_causal_conv.so":

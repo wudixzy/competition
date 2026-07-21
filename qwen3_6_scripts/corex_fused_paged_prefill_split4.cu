@@ -16,7 +16,7 @@ namespace {
 constexpr int kBlockSize = 16;
 constexpr int kHeadDim = 256;
 constexpr int kKeyPack = 8;
-constexpr int kNumQueryHeads = 6;
+constexpr int kNumQueryHeads = 4;
 constexpr int kNumKvHeads = 1;
 constexpr int kTileTokens = 512;
 constexpr int kSplitCount = 4;
@@ -268,7 +268,7 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
               "block_table must be one-dimensional");
   TORCH_CHECK(query.dim() == 3 && query.size(1) == kNumQueryHeads
                   && query.size(2) == kHeadDim,
-              "query must have shape (Q, 6, 256)");
+              "query must have shape (Q, 4, 256)");
   TORCH_CHECK(key_new.dim() == 3 && key_new.size(1) == kNumKvHeads
                   && key_new.size(2) == kHeadDim,
               "key_new must have shape (Q, 1, 256)");

@@ -1,0 +1,44 @@
+{
+  "authoritative_artifacts": {
+    "probe": {
+      "path": "/root/competition-m1-47-service-439bc42/bench_runs/m1_47/dispatch_guard_diag/probe.json",
+      "sha256": "0ee4088007bc0a2a951f3925447846e8ebeca141096f1eb2d37dbb1752c3ad94",
+      "size_bytes": 1782
+    },
+    "service_log": {
+      "path": "/root/competition-m1-47-service-439bc42/bench_runs/m1_47/dispatch_guard_diag/service.log",
+      "sha256": "f7546908785556f4e26534e85f7d1d2998e1743aa63655ad050892ac79e20c43",
+      "size_bytes": 57090
+    }
+  },
+  "decision": {
+    "corrected_rank_local_shape": [4, 1, 256],
+    "old_six_head_artifacts_invalidated": true,
+    "reason": "all four production ranks emitted four query heads"
+  },
+  "guard_observations": {
+    "metadata_eligible_workers": 4,
+    "request_eligible_workers": 4,
+    "segment_rejected_workers": 4,
+    "segment": {
+      "block_size": 16,
+      "key_shape": [8176, 1, 256],
+      "query_shape": [8176, 4, 256],
+      "value_shape": [8176, 1, 256]
+    }
+  },
+  "model_config": {
+    "full_attention_interval": 4,
+    "global_num_kv_heads": 2,
+    "global_num_query_heads": 16,
+    "head_dim": 256,
+    "num_hidden_layers": 40,
+    "tensor_parallel_size": 4
+  },
+  "runtime": {
+    "fatal_scan_empty": true,
+    "probe_qualified": true
+  },
+  "schema": "bi100-m1-47-production-shape-diagnostic-v1",
+  "version": 1
+}

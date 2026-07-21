@@ -1,0 +1,35 @@
+{
+  "authoritative_result": {
+    "path": "/root/competition-m1-47-service-439bc42/bench_runs/m1_47/dispatch_parity_corrected4/result.json",
+    "sha256": "33126b250f3af97a5b902cbe7b30af8c6a588e61e6a33b45e90b536acd7dd39c",
+    "size_bytes": 839
+  },
+  "case": {
+    "block_table_shape": [1, 263],
+    "context_len": 4096,
+    "finite": true,
+    "maximum_absolute_error": 0.00006103515625,
+    "non_identity_physical_blocks": true,
+    "output_relative_l2": 0.000006842131411888715,
+    "query_len": 256
+  },
+  "dispatch_calls": [
+    {
+      "active_blocks": 256,
+      "context_len": 4096,
+      "query_shape": [256, 4, 256],
+      "scale": 0.0625
+    }
+  ],
+  "extension": {
+    "sha256": "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
+    "size_bytes": 252208
+  },
+  "qualified": true,
+  "schema": "bi100-m1-47-corrected4-dispatch-parity-v1",
+  "thresholds": {
+    "maximum_absolute_error": 0.001,
+    "maximum_relative_l2": 0.00001
+  },
+  "version": 1
+}

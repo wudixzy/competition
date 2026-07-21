@@ -4,7 +4,7 @@
 | --- | --- | --- | --- | --- |
 | `BI100_ALLOW_PREFIX_GUARD_CAP` | `0` | boolean | Debug-only cap for undersized prefix block tables; default raises because truncation corrupts attention. | T3 |
 | `BI100_ATTN_COREX_PAGED_GATHER` | `1` | boolean | Enables the exact fused CoreX K/V gather in the long-context PyTorch decode fallback; set to `0` for native tensor indexing and layout copies. | E-ATTN-04 |
-| `BI100_ATTN_COREX_FUSED_PREFILL` | `0` pending service qualification | boolean | Explicitly opts into the hash-pinned M1-47 split4 prefill path only for the qualified causal decoder, single-sequence, FP16 TP4 rank-local `6/1/256`, block-16 shape. Unsupported segments use the existing PyTorch path. | M1-47 |
+| `BI100_ATTN_COREX_FUSED_PREFILL` | `0` pending service qualification | boolean | Explicitly opts into the hash-pinned M1-47 split4 prefill path only for the qualified causal decoder, single-sequence, FP16 TP4 rank-local `4/1/256`, block-16 shape. Unsupported segments use the existing PyTorch path. | M1-47 |
 | `BI100_ATTN_COREX_FUSED_PREFILL_DIAGNOSTICS` | `0` | boolean | Emits one privacy-safe request, metadata, and tensor-shape guard snapshot per worker while diagnosing M1-47 dispatch. Diagnostic only; invalid for performance runs. | M1-47 |
 | `BI100_ATTN_COREX_HEAD_RMS_NORM` | `1` | boolean | Enables the exact decode-only CoreX elementwise path for 256-wide full-attention q/k head RMSNorm while retaining PyTorch mean/rsqrt; set to `0` for GemmaRMSNorm. | E-NORM-02 |
 | `BI100_DNN_CHUNK` | `4096` | `64..65536` | Caps GatedDeltaNet prefill sub-sequence chunk size to balance memory and launch overhead. | T3 |

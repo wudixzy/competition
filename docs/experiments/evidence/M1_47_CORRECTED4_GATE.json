@@ -1,0 +1,63 @@
+{
+  "authoritative_result": {
+    "path": "/root/competition-m1-47-corrected4-v1/result.json",
+    "sha256": "eb2c224dbe0641683826b81ac5099e2edd6e8436c74408868782840fae3ee169",
+    "size_bytes": 6809
+  },
+  "decision": {
+    "core_gate_qualified": true,
+    "production_qualified": false,
+    "service_gate_pending": true
+  },
+  "device": {
+    "name": "Iluvatar BI-V100",
+    "torch_version": "2.1.0"
+  },
+  "extension": {
+    "benchmark_sha256": "3332f2c426478b9a30457685f7528e8114797d1bfa698a9978961885c41bdba3",
+    "build_script_sha256": "2090a36fcb9c13c4c413e5f8bb3250161c1b7375ece58d487ead4f6ad22ca47b",
+    "sha256": "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
+    "size_bytes": 252208,
+    "source_sha256": "8cf3dee28f8cb69d5a9ddb5afcecd4d4c4a786d020b2e7711e9bfc8363a60c4a"
+  },
+  "numerical": {
+    "all_14_cases_finite": true,
+    "invalid_physical_block_rejected": true,
+    "maximum_lse_relative_l2": 2.2197360801469112e-08,
+    "maximum_output_absolute_error": 0.00006103515625,
+    "maximum_output_relative_l2": 0.000007357045830609955
+  },
+  "performance": {
+    "perf_74k": {
+      "candidate_median_ms": 22.27928352355957,
+      "reference_median_ms": 56.878684997558594,
+      "speedup": 2.5529853748398756
+    },
+    "perf_128k": {
+      "candidate_median_ms": 39.611663818359375,
+      "reference_median_ms": 100.8154296875,
+      "speedup": 2.5450945496708384
+    },
+    "perf_235k": {
+      "candidate_median_ms": 69.9081039428711,
+      "reference_median_ms": 180.15452575683594,
+      "speedup": 2.5770191951430728
+    }
+  },
+  "protocol": {
+    "num_kv_heads": 1,
+    "num_query_heads": 4,
+    "unchanged_fixed_grid": true
+  },
+  "runtime": {
+    "fatal_scan_empty": true,
+    "result_completed": true
+  },
+  "schema": "bi100-m1-47-corrected4-gate-v1",
+  "thresholds": {
+    "maximum_absolute_error": 0.001,
+    "maximum_relative_l2": 0.00001,
+    "minimum_speedup": 1.5
+  },
+  "version": 1
+}

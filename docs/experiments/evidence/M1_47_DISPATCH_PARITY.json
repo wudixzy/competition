@@ -26,7 +26,12 @@
     "sha256": "e0ff112f965de7126c86a57ba2a64549743ee88c55b25a2396b5f808349ef591",
     "size_bytes": 252208
   },
-  "qualified": true,
+  "invalidation": {
+    "invalidated_by": "M1_47_PRODUCTION_SHAPE_DIAGNOSTIC.json",
+    "reason": "synthetic query shape used six heads; production emits four"
+  },
+  "qualified": false,
+  "synthetic_parity_passed": true,
   "schema": "bi100-m1-47-dispatch-parity-v1",
   "thresholds": {
     "maximum_absolute_error": 0.001,

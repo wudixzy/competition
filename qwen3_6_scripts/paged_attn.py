@@ -206,11 +206,11 @@ def _can_use_corex_fused_paged_prefill(
             or block_context_len + query_len > 262144):
         return False
     if (num_q_heads, num_kv_heads, head_dim, gqa_ratio, block_size) != (
-            6, 1, 256, 6, 16):
+            4, 1, 256, 4, 16):
         return False
     if prefix_key.shape[0] != 0 or prefix_value.shape[0] != 0:
         return False
-    if (tuple(query.shape) != (query_len, 6, 256)
+    if (tuple(query.shape) != (query_len, 4, 256)
             or tuple(key.shape) != (query_len, 1, 256)
             or tuple(value.shape) != (query_len, 1, 256)):
         return False
@@ -757,16 +757,16 @@ class PagedAttention:
         an otherwise equivalent request reuses that prefix.
 
         Algorithm: Flash Attention online softmax.
-        Q is reshaped once to [kv_h, gqa, q_len, d] (24 MB) and held for all
+        Q is reshaped once to [kv_h, gqa, q_len, d] (16 MB) and held for all
         K-tiles.  For each tile a running (m, l, o) accumulator is updated —
         the [q_len × kv_len] attention matrix is NEVER materialised in full.
 
-        Tile budget (kv_h=1, gqa=6, q_len=4096, tile=256 tokens):
-            q_seq   [1, 6, 4096, 256] fp32  24 MB  (held all tiles)
-            o_acc   same shape               24 MB  (held all tiles)
-            s       same shape               24 MB  (per tile, freed before exp_s)
-            exp_s   same shape               24 MB  (per tile, brief overlap with s)
-            Peak ≈ 96 MB  (s and exp_s briefly coexist during update).
+        Tile budget (kv_h=1, gqa=4, q_len=4096, tile=256 tokens):
+            q_seq   [1, 4, 4096, 256] fp32  16 MB  (held all tiles)
+            o_acc   same shape               16 MB  (held all tiles)
+            s       same shape               16 MB  (per tile, freed before exp_s)
+            exp_s   same shape               16 MB  (per tile, brief overlap with s)
+            Peak ≈ 64 MB  (s and exp_s briefly coexist during update).
 
         Shapes
         ------
@@ -784,7 +784,7 @@ class PagedAttention:
             profile_name = "paged_attn.prefix_pytorch"
             # Paged-block tiles for context phase.
             # tile_sz = _BLOCKS_PER_TILE × block_size  (e.g. 16×16 = 256 tokens).
-            # Score tensor [kv_h, gqa, q_len, tile_sz] fp32 = 24 MB per tile.
+            # Score tensor [kv_h, gqa, q_len, tile_sz] fp32 = 16 MB per tile.
             # Same tile size reused for the current-chunk phase.
             _BLOCKS_PER_TILE = _PREFIX_BLOCKS_PER_TILE
 

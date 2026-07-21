@@ -5,9 +5,11 @@
     "size_bytes": 6819
   },
   "decision": {
-    "core_gate_qualified": true,
+    "core_gate_qualified": false,
+    "invalidated_by": "M1_47_PRODUCTION_SHAPE_DIAGNOSTIC.json",
     "production_qualified": false,
-    "service_gate_pending": true
+    "reason": "synthetic rank-local query heads were 6; production emits 4",
+    "service_gate_pending": false
   },
   "device": {
     "name": "Iluvatar BI-V100",
