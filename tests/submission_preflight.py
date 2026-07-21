@@ -20,6 +20,8 @@ PREBUILT_COREX_DIR = Path(
 PREBUILT_COREX_SHA256 = {
     "corex_attn_head_rms_norm.so":
         "534019b3c2ad2d2c65492b01a975874ee440026eda2e8666bc3c1dc8a0a0a6f6",
+    "corex_fused_paged_prefill.so":
+        "e0ff112f965de7126c86a57ba2a64549743ee88c55b25a2396b5f808349ef591",
     "corex_gdn_beta_decay.so":
         "1856c86e3100415061aa698a48bdeff3fe785994b45b4e72a42cd9158552a7d8",
     "corex_gdn_causal_conv.so":
@@ -81,6 +83,7 @@ DIAGNOSTIC_ENV = {
     "BI100_PROFILE",
     "BI100_PROFILE_INCLUDE_STARTUP",
     "BI100_PAGED_ATTN_DIAGNOSTICS",
+    "BI100_ATTN_COREX_FUSED_PREFILL",
     "BI100_GDN_ALLOW_NAN_ZERO",
     "NUM_GPU_BLOCKS_OVERRIDE",
     "BI100_MOE_COREX_THREE_BUCKET",

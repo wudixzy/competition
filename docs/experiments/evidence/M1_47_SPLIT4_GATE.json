@@ -1,0 +1,65 @@
+{
+  "authoritative_result": {
+    "path": "/root/competition-m1-47-runtime-06963b1/bench_runs/m1_47/split4/result.json",
+    "sha256": "a1fcd70f1a893911f60ade656362b271641e115ae0a3ddefa21ef291a7276b3f",
+    "size_bytes": 6819
+  },
+  "decision": {
+    "core_gate_qualified": true,
+    "production_qualified": false,
+    "service_gate_pending": true
+  },
+  "device": {
+    "name": "Iluvatar BI-V100",
+    "torch_version": "2.1.0"
+  },
+  "extension": {
+    "build_script_sha256": "2090a36fcb9c13c4c413e5f8bb3250161c1b7375ece58d487ead4f6ad22ca47b",
+    "sha256": "e0ff112f965de7126c86a57ba2a64549743ee88c55b25a2396b5f808349ef591",
+    "size_bytes": 252208,
+    "source_sha256": "8bfabef7d2947ea0d71d16a861cf7ef9475da46e4fefead1aa58ac50ce3742d8"
+  },
+  "numerical": {
+    "all_14_cases_finite": true,
+    "invalid_physical_block_rejected": true,
+    "maximum_lse_relative_l2": 2.4289896690907764e-08,
+    "maximum_output_absolute_error": 0.00006103515625,
+    "maximum_output_relative_l2": 0.00000612289422136783
+  },
+  "performance": {
+    "perf_128k": {
+      "candidate_median_ms": 56.317230224609375,
+      "candidate_trials_ms": [56.07649230957031, 56.386592864990234, 56.296791076660156, 56.394615173339844, 56.317230224609375, 56.430171966552734, 56.29150390625],
+      "reference_median_ms": 123.0578384399414,
+      "reference_trials_ms": [122.95173645019531, 123.0578384399414, 123.10275268554688, 123.24246978759766, 122.229736328125, 123.181884765625, 122.83535766601562],
+      "speedup": 2.1850832853311717
+    },
+    "perf_235k": {
+      "candidate_median_ms": 99.7145004272461,
+      "candidate_trials_ms": [99.80621337890625, 99.7145004272461, 99.94181060791016, 99.24658203125, 99.63304138183594, 99.86803436279297, 99.60874938964844],
+      "reference_median_ms": 219.95797729492188,
+      "reference_trials_ms": [220.55921936035156, 220.59474182128906, 220.3320770263672, 219.46885681152344, 219.56834411621094, 219.95797729492188, 219.5137481689453],
+      "speedup": 2.2058775439125635
+    },
+    "perf_74k": {
+      "candidate_median_ms": 31.86705780029297,
+      "candidate_trials_ms": [31.882915496826172, 31.878704071044922, 31.86705780029297, 31.92621421813965, 31.8314208984375, 31.62741470336914, 31.86407470703125],
+      "reference_median_ms": 69.47207641601562,
+      "reference_trials_ms": [69.23017883300781, 69.50242614746094, 69.47207641601562, 69.4627685546875, 69.47480010986328, 69.51641845703125, 69.4456787109375],
+      "speedup": 2.1800593218046296
+    }
+  },
+  "runtime": {
+    "fatal_scan_empty": true,
+    "rc": 0,
+    "status": "passed",
+    "timed_out": false
+  },
+  "schema": "bi100-m1-47-split4-gate-v1",
+  "thresholds": {
+    "maximum_absolute_error": 0.001,
+    "maximum_relative_l2": 0.00001,
+    "minimum_speedup": 1.5
+  },
+  "version": 1
+}

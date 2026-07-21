@@ -184,6 +184,33 @@ statistics/output are merged in original partition order. This preserves the
 512-token reduction partition while amortizing the per-partition eager launch
 cost. Failure of this one alternative closes M1-47.
 
+## Fixed split4 alternative result
+
+The single permitted alternative compiled for `ivcore10` and completed the
+same hash-bound 14-case benchmark. All outputs and LSE values were finite, the
+invalid physical-block probe failed closed, maximum output relative L2 was
+`6.12289422136783e-06`, and maximum absolute output error was
+`6.103515625e-05`.
+
+| Case | Reference | Candidate | Speedup | Decision |
+| --- | ---: | ---: | ---: | --- |
+| 74K | 69.472 ms | 31.867 ms | 2.1801x | pass |
+| 128K | 123.058 ms | 56.317 ms | 2.1851x | pass |
+| 235K | 219.958 ms | 99.715 ms | 2.2059x | pass |
+
+This passes the frozen numerical and `1.5x` core-performance gates. The exact
+252,208-byte binary has SHA-256
+`e0ff112f965de7126c86a57ba2a64549743ee88c55b25a2396b5f808349ef591`.
+The authoritative result is 6,819 bytes with SHA-256
+`a1fcd70f1a893911f60ade656362b271641e115ae0a3ddefa21ef291a7276b3f`;
+the structured summary is `evidence/M1_47_SPLIT4_GATE.json`.
+
+The status is `CORE_GATE_QUALIFIED; SERVICE_GATE_PENDING`. This result unlocks
+hash-pinned runtime integration with the previously frozen shape guards. It
+does not qualify the candidate for `main`, change the submission YAML, or
+replace the required 65K/235K cold-TTFT, warm-regression, Output TPS, 262K
+capacity, and full-workload gates.
+
 ## Gates
 
 - Numerical: no NaN/Inf; output relative L2 at most `1e-5`; LSE relative L2 at

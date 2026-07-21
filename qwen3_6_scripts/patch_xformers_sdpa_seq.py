@@ -304,6 +304,47 @@ NEW_XFORMER_BLOCK = """\
 
 INJECT_ANCHOR = "    def _run_memory_efficient_xformers_forward("
 
+_PREFIX_CALL_OLD_BLOCK = """\
+                out = PagedAttention.forward_prefix(
+                    query,
+                    key,
+                    value,
+                    self.kv_cache_dtype,
+                    key_cache,
+                    value_cache,
+                    prefill_meta.block_tables,
+                    prefill_meta.query_start_loc,
+                    prefill_meta.seq_lens_tensor,
+                    prefill_meta.context_lens_tensor,
+                    prefill_meta.max_query_len,
+                    self.alibi_slopes,
+                    self.sliding_window,
+                    k_scale,
+                    v_scale,
+                )\
+"""
+
+_PREFIX_CALL_NEW_BLOCK = """\
+                out = PagedAttention.forward_prefix(
+                    query,
+                    key,
+                    value,
+                    self.kv_cache_dtype,
+                    key_cache,
+                    value_cache,
+                    prefill_meta.block_tables,
+                    prefill_meta.query_start_loc,
+                    prefill_meta.seq_lens_tensor,
+                    prefill_meta.context_lens_tensor,
+                    prefill_meta.max_query_len,
+                    self.alibi_slopes,
+                    self.sliding_window,
+                    k_scale,
+                    v_scale,
+                    is_causal_decoder=(attn_type == AttentionType.DECODER),
+                )\
+"""
+
 
 def patch_file(path):
     replace_once(
@@ -318,6 +359,13 @@ def patch_file(path):
         NEW_XFORMER_BLOCK,
         required=True,
         already_contains="out = self._run_sdpa_fallback(query, key, value, attn_metadata)")
+    replace_once(
+        path,
+        _PREFIX_CALL_OLD_BLOCK,
+        _PREFIX_CALL_NEW_BLOCK,
+        required=True,
+        already_contains=(
+            "is_causal_decoder=(attn_type == AttentionType.DECODER)"))
 
 
 def patch_arg_utils(path):

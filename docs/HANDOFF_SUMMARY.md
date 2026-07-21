@@ -1,5 +1,16 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-47 split4 核心门槛通过
+
+- 固定四路 split-reduction 备选通过 14/14 数值案例和非法物理块拒绝检查；最大
+  output relative L2 为 `6.123e-6`，无 NaN/Inf。
+- 74K/128K/235K 核心路径分别达到 `2.1801x/2.1851x/2.2059x`，超过预先
+  固定的 `1.5x` 门槛。二进制 SHA-256 为
+  `e0ff112f965de7126c86a57ba2a64549743ee88c55b25a2396b5f808349ef591`。
+- 当前状态仅为 `CORE_GATE_QUALIFIED; SERVICE_GATE_PENDING`。下一步以严格形状
+  守卫接入 prefill，并固定顺序比较 65K/235K 冷 TTFT、warm 回退、Output TPS
+  与 262K 容量；通过前不改 YAML、不合并 main。
+
 ## 2026-07-21 M1-47 融合 prefill 注意力设计门槛
 
 - 私有分支：`exp/M1-47-fused-paged-prefill-design-20260721`，仅冻结设计与门槛，

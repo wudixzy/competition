@@ -13,6 +13,11 @@ try:
 except ImportError:
     _corex_paged_kv_gather = None
 
+try:
+    from vllm import corex_fused_paged_prefill as _corex_fused_paged_prefill
+except ImportError:
+    _corex_fused_paged_prefill = None
+
 # from vllm.attention.ops.prefix_prefill import context_attention_fwd
 # NOTE: context_attention_fwd (Triton kernel from prefix_prefill.py) is NOT
 # imported here.  On Iluvatar BI-V100 that kernel hangs the GPU card
@@ -31,8 +36,14 @@ _PAGED_ATTN_DIAGNOSTICS = env_bool(
 _USE_COREX_PAGED_KV_GATHER = (
     _corex_paged_kv_gather is not None
     and env_bool("BI100_ATTN_COREX_PAGED_GATHER", True))
+_ENABLE_COREX_FUSED_PAGED_PREFILL = env_bool(
+    "BI100_ATTN_COREX_FUSED_PREFILL", False)
+_USE_COREX_FUSED_PAGED_PREFILL = (
+    _corex_fused_paged_prefill is not None
+    and _ENABLE_COREX_FUSED_PAGED_PREFILL)
 _DECODE_LOG_INTERVAL = 8192 if _PAGED_ATTN_DIAGNOSTICS else 0
 _DECODE_DISPATCH_LOGGED = set()
+_PREFIX_DISPATCH_LOGGED = set()
 _CACHE_WRITE_LOGGED = False
 
 
@@ -93,6 +104,120 @@ def _strict_prefix_query_segments(
         return [(0, split, context_len),
                 (split, query_len, strict_prefix_len)]
     return [(0, query_len, context_len)]
+
+
+def _can_enable_corex_fused_paged_prefill_request(
+    kv_cache_dtype: str,
+    max_query_len: int,
+    total_query_len: int,
+    alibi_slopes: Optional[torch.Tensor],
+    sliding_window: Optional[int],
+    k_scale: float,
+    v_scale: float,
+    is_causal_decoder: bool,
+) -> bool:
+    """Check request-wide properties that are outside the native ABI."""
+    return bool(
+        _USE_COREX_FUSED_PAGED_PREFILL
+        and is_causal_decoder
+        and _PREFIX_BLOCKS_PER_TILE == 32
+        and kv_cache_dtype == "auto"
+        and max_query_len == total_query_len
+        and alibi_slopes is None
+        and sliding_window is None
+        and k_scale == 1.0
+        and v_scale == 1.0
+    )
+
+
+def _is_single_sequence_fused_prefill_metadata(
+    batch_size: int,
+    block_table_rows: int,
+    query_start_count: int,
+    query_start_first: int,
+    query_start_last: int,
+    seq_lens_count: int,
+    seq_len: int,
+    context_lens_count: int,
+    context_len: int,
+    total_query_len: int,
+) -> bool:
+    """Validate the exact single-sequence metadata used by qualification."""
+    return bool(
+        batch_size == 1
+        and block_table_rows == 1
+        and query_start_count == 2
+        and query_start_first == 0
+        and query_start_last == total_query_len
+        and seq_lens_count == 1
+        and context_lens_count == 1
+        and context_len >= 0
+        and seq_len == context_len + total_query_len
+        and seq_len <= 262144
+    )
+
+
+def _can_use_corex_fused_paged_prefill(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    prefix_key: torch.Tensor,
+    prefix_value: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    block_tables: torch.Tensor,
+    seq_index: int,
+    block_context_len: int,
+    num_q_heads: int,
+    num_kv_heads: int,
+    head_dim: int,
+    gqa_ratio: int,
+    block_size: int,
+) -> bool:
+    """Accept only the fixed M1-47 shape covered by the CoreX gate."""
+    if not _USE_COREX_FUSED_PAGED_PREFILL:
+        return False
+    query_len = query.shape[0]
+    if (query_len <= 16 or query_len > 8192
+            or block_context_len < 0
+            or block_context_len % 16 != 0
+            or block_context_len + query_len > 262144):
+        return False
+    if (num_q_heads, num_kv_heads, head_dim, gqa_ratio, block_size) != (
+            6, 1, 256, 6, 16):
+        return False
+    if prefix_key.shape[0] != 0 or prefix_value.shape[0] != 0:
+        return False
+    if (tuple(query.shape) != (query_len, 6, 256)
+            or tuple(key.shape) != (query_len, 1, 256)
+            or tuple(value.shape) != (query_len, 1, 256)):
+        return False
+    if (len(key_cache.shape) != 5
+            or tuple(key_cache.shape[1:]) != (1, 32, 16, 8)
+            or len(value_cache.shape) != 4
+            or tuple(value_cache.shape[1:]) != (1, 256, 16)
+            or key_cache.shape[0] != value_cache.shape[0]):
+        return False
+    if (len(block_tables.shape) != 2
+            or block_tables.shape[0] != 1
+            or seq_index < 0
+            or seq_index >= block_tables.shape[0]
+            or block_tables.shape[1] < block_context_len // block_size):
+        return False
+
+    half_tensors = (query, key, value, key_cache, value_cache)
+    if any(tensor.dtype != torch.float16 for tensor in half_tensors):
+        return False
+    if block_tables.dtype != torch.int32:
+        return False
+    tensors = half_tensors + (block_tables,)
+    if any(not tensor.is_cuda for tensor in tensors):
+        return False
+    if any(tensor.device != query.device for tensor in tensors):
+        return False
+    if any(not tensor.is_contiguous() for tensor in tensors):
+        return False
+    return True
 
 
 def _prefix_context_tile_spans(
@@ -558,15 +683,21 @@ class PagedAttention:
         sliding_window: Optional[int],
         k_scale: float,
         v_scale: float,
+        is_causal_decoder: bool = False,
     ) -> torch.Tensor:
         # NOTE: The Triton context_attention_fwd kernel hangs on Iluvatar
         # BI-V100 hardware (same class of issue as cudnnFlashAttnForward).
         # Use a pure-PyTorch fallback that reads the paged KV cache directly.
+        fused_request_eligible = (
+            _can_enable_corex_fused_paged_prefill_request(
+                kv_cache_dtype, max_query_len, query.shape[0], alibi_slopes,
+                sliding_window, k_scale, v_scale, is_causal_decoder))
         return PagedAttention._forward_prefix_pytorch(
             query, key, value,
             key_cache, value_cache,
             block_tables, query_start_loc,
             seq_lens_tensor, context_lens,
+            fused_request_eligible=fused_request_eligible,
         )
 
     @staticmethod
@@ -580,6 +711,7 @@ class PagedAttention:
         query_start_loc: torch.Tensor,
         seq_lens_tensor: torch.Tensor,
         context_lens: torch.Tensor,
+        fused_request_eligible: bool = False,
     ) -> torch.Tensor:
         """Pure-PyTorch prefix-attention with K-tiling (Flash-Attention online softmax).
 
@@ -631,6 +763,36 @@ class PagedAttention:
             orig_dtype   = query.dtype
             output       = torch.empty_like(query)
 
+            if fused_request_eligible:
+                query_start_count = query_start_loc.numel()
+                seq_lens_count = seq_lens_tensor.numel()
+                context_lens_count = context_lens.numel()
+                query_start_first = (
+                    int(query_start_loc[0].item())
+                    if query_start_count == 2 else -1)
+                query_start_last = (
+                    int(query_start_loc[1].item())
+                    if query_start_count == 2 else -1)
+                seq_len = (
+                    int(seq_lens_tensor[0].item())
+                    if seq_lens_count == 1 else -1)
+                context_len = (
+                    int(context_lens[0].item())
+                    if context_lens_count == 1 else -1)
+                fused_request_eligible = (
+                    _is_single_sequence_fused_prefill_metadata(
+                        batch_size=batch_size,
+                        block_table_rows=block_tables.shape[0],
+                        query_start_count=query_start_count,
+                        query_start_first=query_start_first,
+                        query_start_last=query_start_last,
+                        seq_lens_count=seq_lens_count,
+                        seq_len=seq_len,
+                        context_lens_count=context_lens_count,
+                        context_len=context_len,
+                        total_query_len=query.shape[0],
+                    ))
+
             for i in range(batch_size):
                 ctx_len = int(context_lens[i].item())
                 q_start = int(query_start_loc[i].item())
@@ -663,6 +825,7 @@ class PagedAttention:
                                 tile_sz,
                                 scale,
                                 orig_dtype,
+                                fused_request_eligible,
                             ))
 
         except Exception as e:
@@ -692,9 +855,45 @@ class PagedAttention:
         tile_sz: int,
         scale: float,
         orig_dtype,
+        fused_request_eligible: bool = False,
     ) -> torch.Tensor:
         """Run online-softmax attention for one strict-prefix query segment."""
         q_len = query.shape[0]
+        if (fused_request_eligible
+                and _can_use_corex_fused_paged_prefill(
+                query, key, value, prefix_key, prefix_value,
+                key_cache, value_cache, block_tables, seq_index,
+                block_context_len, num_q_heads, num_kv_heads, head_dim,
+                gqa_ratio, block_size)):
+            required_blocks = block_context_len // block_size
+            active_block_table = block_tables[
+                seq_index, :required_blocks].contiguous()
+            fused_result = _corex_fused_paged_prefill.forward(
+                query, key, value, key_cache, value_cache,
+                active_block_table, block_context_len, scale)
+            if not isinstance(fused_result, (list, tuple)) or len(fused_result) != 2:
+                raise RuntimeError(
+                    "corex fused paged-prefill returned an invalid result")
+            fused_output = fused_result[0]
+            if (tuple(fused_output.shape) != tuple(query.shape)
+                    or fused_output.dtype != query.dtype
+                    or fused_output.device != query.device):
+                raise RuntimeError(
+                    "corex fused paged-prefill returned an invalid output")
+            log_key = "corex_split4"
+            if log_key not in _PREFIX_DISPATCH_LOGGED:
+                print(
+                    "[BI100 PAGED_ATTN] prefix_dispatch "
+                    f"pid={os.getpid()} rank={os.environ.get('RANK', '?')} "
+                    f"local_rank={os.environ.get('LOCAL_RANK', '?')} "
+                    f"path={log_key} context_len={block_context_len} "
+                    f"query_len={q_len} required_blocks={required_blocks}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                _PREFIX_DISPATCH_LOGGED.add(log_key)
+            return fused_output
+
         dev = query.device
         q_seq = (query.permute(1, 0, 2)
                       .float()
