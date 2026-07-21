@@ -216,6 +216,12 @@
         "total_memory_bytes": 34057748480
       },
       "preflight_exit_code": 1,
+      "repeat_confirmation": {
+        "json_path": "/tmp/bi100_preflight_m148_retry.json",
+        "json_sha256": "d859365d083fab740fc6ea0cceb0df26ccdd9f69c415f9fa40fcc803dbff73e3",
+        "preflight_exit_code": 1,
+        "result": "byte-identical four-GPU result after M1-48 local qualification"
+      },
       "service_started": false,
       "timeout_seconds_per_gpu": 25
     }

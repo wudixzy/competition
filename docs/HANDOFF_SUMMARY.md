@@ -61,7 +61,8 @@
 - SSH 连接修复后再次执行完整四卡预检，结果仍为 `[false,true,true,true]`；
   GPU0 最后阶段仍是 `mem_get_info`，GPU1-3 完成 1024 方阵校验。原始远端 JSON
   SHA-256 为 `d859365d083fab740fc6ea0cceb0df26ccdd9f69c415f9fa40fcc803dbff73e3`，
-  本轮没有启动 vLLM 或 TP4 服务。
+  M1-48 本地资格完成后的有界复测生成了 byte-identical JSON，结论未变化。本轮没有
+  启动 vLLM 或 TP4 服务。
 - 本地全量测试为 `399 passed, 25 skipped`，submission preflight `8/8`；
   `computility-run.yaml`、`Dockerfile` 和 `main` 均未修改。
 
