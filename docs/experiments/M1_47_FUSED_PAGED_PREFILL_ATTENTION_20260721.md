@@ -101,8 +101,22 @@ passed.
 one compiled streaming pipeline. It gathers each physical KV tile directly
 into fixed FP32 workspaces, runs six-head strided-batched SGEMMs for QK and PV,
 and updates FP32 online max, sum, output, and LSE without allocating complete
-sequence logits. Context and current causal K/V retain separate 512-token
-reduction phases to match the installed reference partitioning.
+sequence logits. The reduction uses the installed ATen FP32 max/exp/sum path;
+it does not reuse M1-37's numerically rejected persistent reduction. Context
+and current causal K/V retain separate 512-token phases to match the installed
+reference partitioning. A fixed `65K context + 8192 query` numerical case
+guards the real chunk row count in addition to the small boundary cases. Every
+paged case uses a deterministic non-identity physical block permutation, and
+the native entry point rejects out-of-range block IDs before launching a
+paged read.
+
+The first ABI represents only KV already resident in the physical cache plus
+the current segment's K/V. It cannot represent the `prefix_key` carried into a
+second strict-prefix segment. Eventual runtime dispatch is therefore limited
+to segments with empty `prefix_key` and `q_len > 16`; mixed-prefix segments and
+the 16-token cold/warm boundary stay on the installed PyTorch path. This guard
+is part of the production gate and is not enabled before the core candidate
+qualifies.
 
 This source is intentionally absent from `patch_ops.sh` and the prebuilt
 manifest. It must first compile once on CoreX 3.2.3 and pass every numerical

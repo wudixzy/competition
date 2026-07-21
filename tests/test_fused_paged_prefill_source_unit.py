@@ -18,12 +18,27 @@ class FusedPagedPrefillSourceTest(unittest.TestCase):
         self.assertIn("constexpr int kNumQueryHeads = 6;", source)
         self.assertIn("constexpr int kTileTokens = 512;", source)
         self.assertIn("gather_kv_tile_kernel", source)
-        self.assertIn("online_softmax_kernel", source)
+        self.assertIn("mask_causal_scores_kernel", source)
         self.assertIn("cublasSgemmStridedBatched", source)
+        self.assertIn("at::max(active_scores", source)
+        self.assertIn("at::sum(active_scores", source)
+        self.assertNotIn("online_softmax_kernel", source)
+        self.assertIn("active_blocks.min().item<int>()", source)
+        self.assertIn("active_blocks.max().item<int>()", source)
+        self.assertIn("out-of-range physical block ID", source)
         self.assertIn("tile_start < context_len", source)
         self.assertIn("key_start < query_len", source)
-        self.assertIn("column0 >= valid_tokens", source)
         self.assertNotIn("torch::matmul", source)
+
+    def test_benchmark_uses_permuted_physical_blocks(self):
+        benchmark = (ROOT / "tests" /
+                     "bench_fused_paged_prefill_attention.py").read_text(
+                         encoding="utf-8")
+        self.assertIn("torch.roll(torch.arange", benchmark)
+        self.assertIn("key_cache[physical_ids] = logical_key_cache", benchmark)
+        self.assertIn(
+            "value_cache[physical_ids] = logical_value_cache", benchmark)
+        self.assertIn("invalid physical block", benchmark)
 
     def test_candidate_is_not_installed_before_qualification(self):
         patch_ops = (ROOT / "qwen3_6_scripts" / "patch_ops.sh").read_text(

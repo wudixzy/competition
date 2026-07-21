@@ -30,6 +30,7 @@ CASES = (
     ("dense_boundary", 240, 16, False),
     ("paged_65520_q16", 65_520, 16, False),
     ("paged_234992_q8", 234_992, 8, False),
+    ("service_65k_q8192", 65_536, 8_192, False),
     ("perf_74k", 73_728, 256, True),
     ("perf_128k", 130_816, 256, True),
     ("perf_235k", 234_736, 256, True),
@@ -67,6 +68,10 @@ def evaluate(cases: Any) -> dict[str, Any]:
                     or case[field] != expected):
                 reasons.append(
                     f"case {name} {field} must equal {expected}")
+        if ctx_len > BLOCK_SIZE and case.get(
+                "physical_block_permutation") is not True:
+            reasons.append(
+                f"case {name} did not use a non-identity block table")
         if case.get("finite") is not True:
             reasons.append(f"case {name} is not finite")
         for field, limit in (
@@ -196,14 +201,21 @@ def _reference(q: Any, k_new: Any, v_new: Any, key_cache: Any,
         _update_online(
             torch.matmul(query, key_matrix), value_matrix, m, l, output)
 
-    key_matrix = k_new.permute(1, 0, 2).unsqueeze(1).transpose(-1, -2).float()
-    value_matrix = v_new.permute(1, 0, 2).unsqueeze(1).float()
-    scores = torch.matmul(query, key_matrix)
-    key_positions = torch.arange(q_len, device=q.device)
-    query_positions = torch.arange(q_len, device=q.device)
-    mask = key_positions.unsqueeze(0) > query_positions.unsqueeze(1)
-    scores.masked_fill_(mask.unsqueeze(0).unsqueeze(0), float("-inf"))
-    _update_online(scores, value_matrix, m, l, output)
+    for key_start in range(0, q_len, tile_tokens):
+        key_end = min(key_start + tile_tokens, q_len)
+        key_matrix = (
+            k_new[key_start:key_end]
+            .permute(1, 0, 2).unsqueeze(1).transpose(-1, -2).float()
+        )
+        value_matrix = (
+            v_new[key_start:key_end].permute(1, 0, 2).unsqueeze(1).float()
+        )
+        scores = torch.matmul(query, key_matrix)
+        key_positions = torch.arange(key_start, key_end, device=q.device)
+        query_positions = torch.arange(q_len, device=q.device)
+        mask = key_positions.unsqueeze(0) > query_positions.unsqueeze(1)
+        scores.masked_fill_(mask.unsqueeze(0).unsqueeze(0), float("-inf"))
+        _update_online(scores, value_matrix, m, l, output)
 
     normalized = output.div(l.unsqueeze(-1))
     lse = m + torch.log(l)
@@ -251,19 +263,24 @@ def _make_case(torch: Any, device: Any, ctx_len: int, q_len: int,
             device=device,
             generator=generator,
         )
-        key_cache = (
+        logical_key_cache = (
             k_context.view(num_blocks, BLOCK_SIZE, NUM_KV_HEADS,
                            HEAD_DIM // 8, 8)
             .permute(0, 2, 3, 1, 4)
             .contiguous()
         )
-        value_cache = (
+        logical_value_cache = (
             v_context.view(num_blocks, BLOCK_SIZE, NUM_KV_HEADS, HEAD_DIM)
             .permute(0, 2, 3, 1)
             .contiguous()
         )
-        block_table = torch.arange(
-            num_blocks, dtype=torch.int32, device=device)
+        physical_ids = torch.roll(torch.arange(
+            num_blocks, dtype=torch.int64, device=device), shifts=1)
+        key_cache = torch.empty_like(logical_key_cache)
+        value_cache = torch.empty_like(logical_value_cache)
+        key_cache[physical_ids] = logical_key_cache
+        value_cache[physical_ids] = logical_value_cache
+        block_table = physical_ids.to(torch.int32)
     else:
         key_cache = torch.empty(
             (0, NUM_KV_HEADS, HEAD_DIM // 8, BLOCK_SIZE, 8),
@@ -325,6 +342,20 @@ def main() -> int:
         raise RuntimeError("fused paged prefill extension has no forward")
     scale = HEAD_DIM**-0.5
 
+    safety_inputs = list(_make_case(torch, device, BLOCK_SIZE, 1, 20260720))
+    invalid_block_table = safety_inputs[-1].clone()
+    invalid_block_table[0] = safety_inputs[3].shape[0]
+    safety_inputs[-1] = invalid_block_table
+    invalid_block_rejected = False
+    try:
+        forward(*safety_inputs, BLOCK_SIZE, scale)
+        torch.cuda.synchronize(device)
+    except RuntimeError:
+        invalid_block_rejected = True
+    if not invalid_block_rejected:
+        raise RuntimeError("fused extension accepted an invalid physical block")
+    del safety_inputs, invalid_block_table
+
     case_reports = {}
     for case_index, (name, ctx_len, q_len, performance_case) in enumerate(CASES):
         inputs = _make_case(torch, device, ctx_len, q_len, 20260721 + case_index)
@@ -351,6 +382,12 @@ def main() -> int:
             "output_max_abs": output_difference.abs().max().item(),
             "output_relative_l2": _relative_l2(
                 actual_output, expected_output),
+            "physical_block_permutation": (
+                ctx_len <= BLOCK_SIZE or not torch.equal(
+                    block_table,
+                    torch.arange(
+                        block_table.numel(), dtype=torch.int32,
+                        device=device))),
             "q_len": q_len,
             "total_kv_len": ctx_len + q_len,
         }
@@ -396,11 +433,15 @@ def main() -> int:
         "protocol": {
             "block_size": BLOCK_SIZE,
             "blocks_per_tile": BLOCKS_PER_TILE,
+            "block_table": "deterministic one-block physical rotation",
             "head_dim": HEAD_DIM,
             "measured_trials": MEASURED_TRIALS,
             "num_kv_heads": NUM_KV_HEADS,
             "num_q_heads": NUM_Q_HEADS,
             "warmup_trials": WARMUP_TRIALS,
+        },
+        "safety": {
+            "invalid_physical_block_rejected": invalid_block_rejected,
         },
         "schema": "bi100-fused-paged-prefill-gate-v1",
         "thresholds": {

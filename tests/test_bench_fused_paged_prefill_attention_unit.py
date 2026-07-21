@@ -22,6 +22,7 @@ def _cases(speedup: float = 1.6) -> dict:
             "lse_relative_l2": 5e-6,
             "output_max_abs": 5e-4,
             "output_relative_l2": 5e-6,
+            "physical_block_permutation": True,
             "q_len": q_len,
             "total_kv_len": ctx_len + q_len,
         }
@@ -49,6 +50,8 @@ class FusedPagedPrefillGateTest(unittest.TestCase):
         self.assertEqual(benchmark.HEAD_DIM, 256)
         self.assertEqual(benchmark.WARMUP_TRIALS, 5)
         self.assertEqual(benchmark.MEASURED_TRIALS, 7)
+        self.assertIn(
+            ("service_65k_q8192", 65_536, 8_192, False), benchmark.CASES)
 
     def test_qualified_report(self):
         report = benchmark.evaluate(_cases())
@@ -69,6 +72,14 @@ class FusedPagedPrefillGateTest(unittest.TestCase):
         report = benchmark.evaluate(cases)
         self.assertFalse(report["qualified"], report)
         self.assertTrue(any("ctx_len must equal 234736" in reason
+                            for reason in report["reasons"]))
+
+    def test_identity_physical_layout_is_rejected(self):
+        cases = _cases()
+        cases["paged_65520_q16"]["physical_block_permutation"] = False
+        report = benchmark.evaluate(cases)
+        self.assertFalse(report["qualified"], report)
+        self.assertTrue(any("non-identity block table" in reason
                             for reason in report["reasons"]))
 
     def test_performance_failure_is_closed(self):

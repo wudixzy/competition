@@ -1,3 +1,4 @@
+#include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAException.h>
 #include <cublas_v2.h>
@@ -21,7 +22,6 @@ constexpr int kTileTokens = 512;
 constexpr int kThreads = 256;
 constexpr int kMaxQueryTokens = 8192;
 constexpr int kMaxSequenceTokens = 262144;
-constexpr int kMaxPersistentBlocks = 4096;
 
 void check_half_cuda_contiguous(const torch::Tensor& tensor,
                                 const char* name) {
@@ -91,59 +91,22 @@ __global__ void gather_kv_tile_kernel(
   }
 }
 
-__global__ void online_softmax_kernel(
-    float* scores, float* running_max, float* running_sum,
-    float* correction, int query_len, int context_len,
+__global__ void mask_causal_scores_kernel(
+    float* scores, int query_len, int context_len,
     int tile_start, int valid_tokens, int rows) {
-  __shared__ float reduction[kThreads];
-  const int tid = threadIdx.x;
-  for (int row = blockIdx.x; row < rows; row += gridDim.x) {
+  const int64_t elements =
+      static_cast<int64_t>(rows) * valid_tokens;
+  for (int64_t index =
+           static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < elements;
+       index += static_cast<int64_t>(blockDim.x) * gridDim.x) {
+    const int column = index % valid_tokens;
+    const int row = index / valid_tokens;
     const int query_index = row % query_len;
-    float* row_scores =
-        scores + static_cast<int64_t>(row) * kTileTokens;
-    const int column0 = tid;
-    const int column1 = tid + kThreads;
-    const int key0 = tile_start + column0;
-    const int key1 = tile_start + column1;
-    const int last_visible_key = context_len + query_index;
-    float score0 = row_scores[column0];
-    float score1 = row_scores[column1];
-    if (column0 >= valid_tokens || key0 > last_visible_key) {
-      score0 = -std::numeric_limits<float>::infinity();
+    if (tile_start + column > context_len + query_index) {
+      scores[static_cast<int64_t>(row) * kTileTokens + column] =
+          -std::numeric_limits<float>::infinity();
     }
-    if (column1 >= valid_tokens || key1 > last_visible_key) {
-      score1 = -std::numeric_limits<float>::infinity();
-    }
-    reduction[tid] = fmaxf(score0, score1);
-    __syncthreads();
-    for (int stride = kThreads / 2; stride > 0; stride /= 2) {
-      if (tid < stride) {
-        reduction[tid] = fmaxf(reduction[tid], reduction[tid + stride]);
-      }
-      __syncthreads();
-    }
-
-    const float old_max = running_max[row];
-    const float new_max = fmaxf(old_max, reduction[0]);
-    const float exp0 = expf(score0 - new_max);
-    const float exp1 = expf(score1 - new_max);
-    row_scores[column0] = exp0;
-    row_scores[column1] = exp1;
-    reduction[tid] = exp0 + exp1;
-    __syncthreads();
-    for (int stride = kThreads / 2; stride > 0; stride /= 2) {
-      if (tid < stride) {
-        reduction[tid] += reduction[tid + stride];
-      }
-      __syncthreads();
-    }
-    if (tid == 0) {
-      const float old_scale = expf(old_max - new_max);
-      correction[row] = old_scale;
-      running_max[row] = new_max;
-      running_sum[row] = running_sum[row] * old_scale + reduction[0];
-    }
-    __syncthreads();
   }
 }
 
@@ -155,34 +118,9 @@ __global__ void accumulate_output_kernel(
        index < elements;
        index += static_cast<int64_t>(blockDim.x) * gridDim.x) {
     const int row = index / kHeadDim;
-    running_output[index] =
-        running_output[index] * correction[row] + tile_output[index];
-  }
-}
-
-__global__ void finalize_kernel(
-    const float* running_output, const float* running_max,
-    const float* running_sum, __half* output, float* lse,
-    int query_len, int64_t elements) {
-  for (int64_t index =
-           static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-       index < elements;
-       index += static_cast<int64_t>(blockDim.x) * gridDim.x) {
-    const int dim = index % kHeadDim;
-    const int query_index =
-        (index / kHeadDim) % query_len;
-    const int head =
-        index / (static_cast<int64_t>(kHeadDim) * query_len);
-    const int row = head * query_len + query_index;
-    const int64_t destination =
-        (static_cast<int64_t>(query_index) * kNumQueryHeads + head)
-        * kHeadDim + dim;
-    output[destination] = __float2half_rn(
-        running_output[index] / running_sum[row]);
-    if (dim == 0) {
-      lse[static_cast<int64_t>(query_index) * kNumQueryHeads + head] =
-          running_max[row] + logf(running_sum[row]);
-    }
+    const float scaled =
+        __fmul_rn(running_output[index], correction[row]);
+    running_output[index] = __fadd_rn(scaled, tile_output[index]);
   }
 }
 
@@ -291,6 +229,14 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
       (context_len + kBlockSize - 1) / kBlockSize;
   TORCH_CHECK(block_table.numel() >= required_blocks,
               "block_table is too short for context_len");
+  if (required_blocks > 0) {
+    auto active_blocks = block_table.narrow(0, 0, required_blocks);
+    const int minimum_block = active_blocks.min().item<int>();
+    const int maximum_block = active_blocks.max().item<int>();
+    TORCH_CHECK(minimum_block >= 0
+                    && maximum_block < key_cache.size(0),
+                "block_table contains an out-of-range physical block ID");
+  }
   TORCH_CHECK(std::isfinite(scale_arg) && scale_arg > 0.0,
               "scale must be finite and positive");
   TORCH_CHECK(query_len <= std::numeric_limits<int>::max() / kNumQueryHeads,
@@ -315,11 +261,6 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
       {kNumQueryHeads, query_len}, float_options);
   auto running_output = torch::zeros(
       {kNumQueryHeads, query_len, kHeadDim}, float_options);
-  auto correction = torch::empty(
-      {kNumQueryHeads, query_len}, float_options);
-  auto output = torch::empty_like(query);
-  auto lse = torch::empty(
-      {query_len, kNumQueryHeads}, float_options);
 
   auto stream = at::cuda::getCurrentCUDAStream();
   convert_query_kernel<<<launch_blocks(output_elements), kThreads, 0, stream>>>(
@@ -346,12 +287,22 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
         handle, key_tile.data_ptr<float>(),
         converted_query.data_ptr<float>(), scores.data_ptr<float>(),
         query_len), "paged prefill QK");
-    const int softmax_blocks = std::min(rows, kMaxPersistentBlocks);
-    online_softmax_kernel<<<softmax_blocks, kThreads, 0, stream>>>(
-        scores.data_ptr<float>(), running_max.data_ptr<float>(),
-        running_sum.data_ptr<float>(), correction.data_ptr<float>(),
-        query_len, context_len, tile_start, valid_tokens, rows);
+    const int64_t active_score_elements =
+        static_cast<int64_t>(rows) * valid_tokens;
+    mask_causal_scores_kernel<<<
+        launch_blocks(active_score_elements), kThreads, 0, stream>>>(
+        scores.data_ptr<float>(), query_len, context_len, tile_start,
+        valid_tokens, rows);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+    auto active_scores = scores.narrow(2, 0, valid_tokens);
+    auto block_max = std::get<0>(at::max(active_scores, -1, false));
+    auto new_max = at::maximum(running_max, block_max);
+    active_scores.sub_(new_max.unsqueeze(-1)).exp_();
+    auto correction = at::exp(running_max - new_max);
+    running_max.copy_(new_max);
+    running_sum.mul_(correction).add_(
+        at::sum(active_scores, {-1}, false));
 
     check_cublas(pv_batched(
         handle, value_tile.data_ptr<float>(), scores.data_ptr<float>(),
@@ -372,16 +323,15 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
              std::min(kTileTokens, query_len - key_start));
   }
 
-  finalize_kernel<<<launch_blocks(output_elements), kThreads, 0, stream>>>(
-      running_output.data_ptr<float>(), running_max.data_ptr<float>(),
-      running_sum.data_ptr<float>(),
-      reinterpret_cast<__half*>(output.data_ptr<at::Half>()),
-      lse.data_ptr<float>(), query_len, output_elements);
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  running_output.div_(running_sum.unsqueeze(-1));
+  auto output = running_output.permute({1, 0, 2})
+                    .to(query.scalar_type()).contiguous();
+  auto lse = (running_max + at::log(running_sum))
+                 .transpose(0, 1).contiguous();
   return {output, lse};
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def("forward", &fused_paged_prefill_forward,
-             "Fixed-shape FP32 fused paged-prefill attention pipeline");
+             "Fixed-shape FP32 paged-prefill pipeline for cache-only context");
 }
