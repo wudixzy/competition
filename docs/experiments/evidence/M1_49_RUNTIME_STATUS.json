@@ -14,7 +14,9 @@
       "dab3048",
       "a96ca3a",
       "67f96b3",
-      "b45e4b7"
+      "b45e4b7",
+      "185c2d6",
+      "b25d0b3"
     ],
     "default_mode": "legacy40",
     "selector": "BI100_HYBRID_KV_ACCOUNTING",
@@ -47,6 +49,19 @@
     "selector_smoke": {
       "full_attention_attention_layers": 10,
       "legacy40_attention_layers": 40
+    },
+    "atomic_overlay": {
+      "block_manager_base_sha256": "15b280e3f5c38d463bfbab34d74bdda40cb9d3f72b229e7671b111906163566e",
+      "commit": "b25d0b37fb1460e568277391161af03c20f4b681",
+      "install_json": "/root/competition-m1-49-install-2400f04-r5.json",
+      "profile_attention_layer_patch": true,
+      "qualified": true,
+      "runtime_root": "/root/competition-m1-49-runtime-2400f04-r5",
+      "site_packages": "/root/competition-m1-49-runtime-2400f04-r5/site-packages",
+      "system_site_packages_modified": false,
+      "transformers_version": "4.55.3",
+      "verified_file_hashes_match": true,
+      "verified_package_roots_inside_overlay": true
     }
   },
   "runtime_events": [

@@ -2,7 +2,7 @@
 
 ## 2026-07-21 M1-49 混合层 KV 计数修正
 
-- 私有分支：`exp/M1-49-hybrid-kv-accounting-20260721`，当前实现 `b45e4b7`；
+- 私有分支：`exp/M1-49-hybrid-kv-accounting-20260721`，当前实现 `b25d0b3`；
   `computility-run.yaml` 和 `main` 均未修改。
 - 根因是旧版 vLLM 只读取顶层 `layers_block_type`，而 Qwen 适配器仅在嵌套
   `text_config.layer_types` 声明 `10 full_attention + 30 linear_attention`，
@@ -33,6 +33,10 @@
   单测通过。清理失败会覆盖此前成功 rc，三次 GPU preflight 还会比较设备与确定性
   结果。
   A/B 通过前不解锁长上下文。
+- `b25d0b3` 的远端原子 overlay 已真实安装通过：runtime 为
+  `/root/competition-m1-49-runtime-2400f04-r5`，安装 JSON qualified，系统
+  site-packages 未修改，4.55.3 与全部预期文件哈希一致；从 `/tmp` 解析的 vLLM
+  和 Transformers 根均位于该 overlay。GPU0 未恢复前只保留该 CPU 侧准备结果。
 - 高层审计记录在
   `docs/research/POST_M1_49_OPTIMIZATION_REVIEW_20260721.md`：当前缓存已是内容
   SHA 与 KV/GDN 交集，不再重做旧物理键方案；M1-47 按 20% 服务门槛关闭，A/B

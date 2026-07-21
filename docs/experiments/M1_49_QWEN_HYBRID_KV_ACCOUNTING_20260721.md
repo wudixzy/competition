@@ -147,6 +147,10 @@ A/B comparison succeeds.
   candidate contracts;
 - atomic bare-host overlay installer, fixed A/B startup/pressure gate, safe
   comparators, and 28 focused unit tests pass locally;
+- remote atomic overlay `b25d0b3` qualified at
+  `/root/competition-m1-49-runtime-2400f04-r5`: system site-packages were not
+  modified, Transformers is 4.55.3, every expected file hash matches, and
+  both package roots resolve inside the overlay from `/tmp`;
 - first unguarded startup rejection was isolated to the 40-placeholder profile
   contract and did not reach benchmark requests.
 
