@@ -11,7 +11,8 @@
     "branch": "exp/M1-49-hybrid-kv-accounting-20260721",
     "commits": [
       "33c7573",
-      "dab3048"
+      "dab3048",
+      "a96ca3a"
     ],
     "default_mode": "legacy40",
     "selector": "BI100_HYBRID_KV_ACCOUNTING",
@@ -24,14 +25,23 @@
   "local_validation": {
     "submission_preflight": "8/8 passed",
     "unit_tests": {
-      "passed": 196,
+      "passed": 197,
       "skipped": 13
     }
   },
   "remote_install": {
+    "commit": "a96ca3a451311a018baa49db865efa897b243653",
+    "config_roundtrip": {
+      "conflicting_legacy_environment_exit_code": 1,
+      "conflicting_legacy_environment_result": "fail-fast",
+      "reloaded_attention_layers_without_environment": 10,
+      "reloaded_mode_without_environment": "full_attention",
+      "saved_config_sha256": "0c096f67b0b98b1b328fd812ee7681b2e65a369d6c42490be8dcb951038f6407"
+    },
+    "legacy_and_candidate_model_cache_contract": "passed",
     "model_runner_sha256": "9544ecc5092214edc6ffad26279298025bdee5c57f6e4238e4c55c0b6febdee8",
-    "qwen3_5_moe_config_sha256": "3fa2f0f5b3d6e8402cfaa7826acbfda3a763ec8caef9d52bafb1d828fbf2eb18",
-    "qwen3_5_model_sha256": "4a5c7c19d5edae26ad35c4389e5f58e66c215bcef5e1e60f575aca0f897ec5f5",
+    "qwen3_5_moe_config_sha256": "05653d043a9d880abb9b438c69c518c7a8667efcef1984c409611b995254d19f",
+    "qwen3_5_model_sha256": "b926f4ee15f0762d0297b750530ea21c1d722e4c52a4cc688a0046aecc8cfa52",
     "selector_smoke": {
       "full_attention_attention_layers": 10,
       "legacy40_attention_layers": 40

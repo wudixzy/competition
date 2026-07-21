@@ -34,6 +34,12 @@ It defaults to `legacy40`, rejects every other value, and remains absent from
 `computility-run.yaml`. Both modes run the same code and immutable evaluator
 command.
 
+The selected mode is serialized as `bi100_hybrid_kv_accounting_mode` together
+with the derived `layers_block_type`. Reload without an environment override
+preserves the serialized mode; a conflicting environment override or stale
+serialized layer list fails closed. This prevents worker/config reloads from
+silently changing an A/B arm.
+
 In `full_attention` mode the adapter maps nested `full_attention` entries to
 top-level `attention`, while preserving `linear_attention` entries. The vLLM
 profiling dummy cache list is also changed from total hidden layers to
@@ -45,7 +51,9 @@ The first unguarded smoke exposed the profiling mismatch before this second
 fix: vLLM passed 40 empty profiling placeholders and the new exact-count
 invariant rejected them after consuming ten. No request ran and no OOM or GPU
 fault occurred. The corrected profiler now creates ten placeholders in
-candidate mode and 40 in legacy mode.
+candidate mode and 40 in legacy mode. The model separately validates the
+configured allocation count, so the legal legacy list of 40 caches is accepted
+even though only its first ten dense full-attention ordinals are consumed.
 
 ## Fixed gates
 
@@ -76,10 +84,14 @@ scanning request counts.
 
 ## Validation so far
 
-- local unit discovery: 196 passed, 13 skipped;
+- local unit discovery: 197 passed, 13 skipped;
 - submission preflight: 8/8 passed;
 - remote selector smoke: `legacy40=40`, `full_attention=10`;
 - remote patched profiler source uses `get_num_attention_layers`;
+- real Transformers save/reload preserves `full_attention/10` without the
+  environment, while a conflicting `legacy40` override fails with exit 1;
+- installed model helper accepts both configured 40-cache legacy and 10-cache
+  candidate contracts;
 - first unguarded startup rejection was isolated to the 40-placeholder profile
   contract and did not reach benchmark requests.
 

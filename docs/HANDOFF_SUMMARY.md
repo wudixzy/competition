@@ -2,16 +2,19 @@
 
 ## 2026-07-21 M1-49 混合层 KV 计数修正
 
-- 私有分支：`exp/M1-49-hybrid-kv-accounting-20260721`，当前实现 `dab3048`；
+- 私有分支：`exp/M1-49-hybrid-kv-accounting-20260721`，当前实现 `a96ca3a`；
   `computility-run.yaml` 和 `main` 均未修改。
 - 根因是旧版 vLLM 只读取顶层 `layers_block_type`，而 Qwen 适配器仅在嵌套
   `text_config.layer_types` 声明 `10 full_attention + 30 linear_attention`，
   导致 CacheEngine 错分配 40 份 KV。模型实际只消费前 10 个压缩序号 cache。
 - 新增同镜像开关 `BI100_HYBRID_KV_ACCOUNTING=legacy40|full_attention`，默认旧值，
-  非法值启动失败；候选同时把显存 profiling 占位 cache 从 40 改为 10。
+  非法值启动失败；候选同时把显存 profiling 占位 cache 从 40 改为 10。模式与
+  层映射会序列化，重载保持原模式，环境冲突或陈旧层映射 fail-fast；模型分别接受
+  合法的 legacy 40-cache 与 candidate 10-cache 分配合同。
 - 首个未修 profiling 的远端 smoke 因 `consumed 10, received 40` 在请求前退出；
-  这是占位列表契约错误，不是 OOM 或 GPU 故障。修正后本地 196 项通过、13 项
-  跳过，submission preflight 8/8，远端 selector smoke 为 `40/10`。
+  这是占位列表契约错误，不是 OOM 或 GPU 故障。修正后本地 197 项通过、13 项
+  跳过，submission preflight 8/8，远端 selector smoke 为 `40/10`，真实
+  Transformers 保存/重载与冲突拒绝测试也已通过。
 - profiler 修正部署后，GPU1-3 preflight 通过，但 GPU0 在 256 方阵、15 秒最小
   重试仍超时；`ixsmi` 为 `257 MiB / 100% / 无可见进程`。容器内 reset 被不可见
   的宿主 PID 54048 拒绝，必须重启实例后再从四卡门禁继续，不得直接启动 TP4。
