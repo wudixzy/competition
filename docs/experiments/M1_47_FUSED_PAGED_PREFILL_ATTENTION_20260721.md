@@ -87,6 +87,13 @@ Microbenchmarks use one fixed seed, five warmups, seven CUDA-event trials, and
 the installed patched runtime as the reference. Reports persist only shapes,
 timings, finite checks, and output/LSE error statistics.
 
+`tests/bench_fused_paged_prefill_attention.py` encodes the frozen numerical
+and core microbenchmark subset and fails closed until a
+`vllm.corex_fused_paged_prefill.forward` implementation exists. Service TTFT,
+warm-path, decode, and capacity gates remain separate runtime qualifications.
+The script is qualification infrastructure, not evidence that a candidate has
+passed.
+
 ## Gates
 
 - Numerical: no NaN/Inf; output relative L2 at most `1e-5`; LSE relative L2 at
