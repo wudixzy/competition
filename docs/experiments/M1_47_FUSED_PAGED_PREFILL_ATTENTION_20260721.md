@@ -211,6 +211,22 @@ does not qualify the candidate for `main`, change the submission YAML, or
 replace the required 65K/235K cold-TTFT, warm-regression, Output TPS, 262K
 capacity, and full-workload gates.
 
+## Runtime dispatcher parity
+
+The hash-pinned binary was installed into an isolated copy of the patched
+CoreX vLLM package. A real Python-dispatch probe used a padded two-dimensional
+block table with 263 columns and a non-identity physical-block permutation.
+The dispatcher invoked the native extension exactly once and passed only the
+256 active blocks required by the 4,096-token context. Against the installed
+PyTorch path, output relative L2 was `4.039600743553589e-06`, maximum absolute
+error was `3.0517578125e-05`, and all output values were finite.
+
+The authoritative 840-byte remote result has SHA-256
+`7244470f7f06d56dd29eb8df182faa9f907da59492e566861e3d78891e134622`;
+the structured copy is `evidence/M1_47_DISPATCH_PARITY.json`. This qualifies
+the Python/native interface and block-table slicing, but service-level gates
+remain pending.
+
 ## Gates
 
 - Numerical: no NaN/Inf; output relative L2 at most `1e-5`; LSE relative L2 at

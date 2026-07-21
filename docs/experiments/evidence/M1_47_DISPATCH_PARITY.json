@@ -1,0 +1,35 @@
+{
+  "authoritative_result": {
+    "path": "/root/competition-m1-47-service-439bc42/bench_runs/m1_47/dispatch_parity/result.json",
+    "sha256": "7244470f7f06d56dd29eb8df182faa9f907da59492e566861e3d78891e134622",
+    "size_bytes": 840
+  },
+  "case": {
+    "block_table_shape": [1, 263],
+    "context_len": 4096,
+    "finite": true,
+    "maximum_absolute_error": 0.000030517578125,
+    "non_identity_physical_blocks": true,
+    "output_relative_l2": 0.000004039600743553589,
+    "query_len": 256
+  },
+  "dispatch_calls": [
+    {
+      "active_blocks": 256,
+      "context_len": 4096,
+      "query_shape": [256, 6, 256],
+      "scale": 0.0625
+    }
+  ],
+  "extension": {
+    "path": "/root/competition-m1-47-service-439bc42/vllm/corex_fused_paged_prefill.so",
+    "sha256": "e0ff112f965de7126c86a57ba2a64549743ee88c55b25a2396b5f808349ef591",
+    "size_bytes": 252208
+  },
+  "qualified": true,
+  "schema": "bi100-m1-47-dispatch-parity-v1",
+  "thresholds": {
+    "maximum_absolute_error": 0.001,
+    "maximum_relative_l2": 0.00001
+  }
+}

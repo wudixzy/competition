@@ -10,6 +10,9 @@
 - 当前状态仅为 `CORE_GATE_QUALIFIED; SERVICE_GATE_PENDING`。下一步以严格形状
   守卫接入 prefill，并固定顺序比较 65K/235K 冷 TTFT、warm 回退、Output TPS
   与 262K 容量；通过前不改 YAML、不合并 main。
+- 隔离运行时 dispatcher parity 已通过：二维 padded 非恒等 block table 被精确
+  裁为 256 个有效块，native 恰好调用一次，`relL2=4.040e-6`、最大误差
+  `3.052e-5`。该结果只解除服务 A/B 的接线风险，不替代服务门槛。
 
 ## 2026-07-21 M1-47 融合 prefill 注意力设计门槛
 
