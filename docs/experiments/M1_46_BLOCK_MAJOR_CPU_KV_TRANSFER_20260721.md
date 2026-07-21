@@ -153,3 +153,26 @@ selector remains absent from `computility-run.yaml`.
 This result unlocks the fixed M1-45 pressure replay and fresh 235K/262K model
 gates. It does not by itself prove a model-level TTFT benefit or authorize the
 881-request/publication path.
+
+## Rejected model A/B protocol
+
+The first model-level paged run used `fine32/direct`, a 65,536-token target,
+and two distinct 135,040-token pressure requests. All six requests completed
+with stable response digests, but the target after pressure had zero effective
+cached tokens and the run exited 1. The exact report is
+`evidence/M1_46_FINE32_PAGED_PRESSURE_REJECTED.json`.
+
+This does not identify a paged-transfer failure. The service reported 16,878
+GPU blocks and 6,553 CPU blocks per rank, enough CPU capacity for the target's
+4,096 blocks. The confound is the `fine32` policy: it captures one recurrent
+state per 8,192-token prefill chunk. The target and two pressure requests
+create more than 32 capture points, so the target's GDN state can be evicted
+even when its KV blocks survive in the CPU tier. Because effective
+`cached_tokens` is intentionally the intersection of live KV and restorable
+GDN state, this protocol cannot isolate KV transfer layout.
+
+The block-major half was stopped before its pressure requests. The corrected
+A/B uses `admission64/direct` on both sides and changes only
+`BI100_CPU_KV_TRANSFER_LAYOUT`; this sparse policy admits final request states
+without the per-chunk capacity confound. YAML and production defaults remain
+unchanged until the complete gate qualifies.
