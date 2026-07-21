@@ -18,6 +18,14 @@ def layer_type_validation(layer_types, num_hidden_layers=None, attention=True):
             f"num_hidden_layers ({num_hidden_layers}) != len(layer_types) ({len(layer_types)})"
         )
 
+
+def _vllm_layers_block_type(layer_types):
+    """Expose hybrid-layer ownership in the form vLLM 0.6.3 consumes."""
+    return [
+        "attention" if layer_type == "full_attention" else layer_type
+        for layer_type in layer_types
+    ]
+
 try:
     from typing import TypedDict
 except ImportError:
@@ -194,6 +202,8 @@ class Qwen3_5MoeConfig(PreTrainedConfig):
         self.vision_end_token_id = vision_end_token_id
         self.tie_word_embeddings = tie_word_embeddings
         super().__init__(**kwargs)
+        self.layers_block_type = _vllm_layers_block_type(
+            self.text_config.layer_types)
 
 
 __all__ = ["Qwen3_5MoeConfig", "Qwen3_5MoeTextConfig"]
