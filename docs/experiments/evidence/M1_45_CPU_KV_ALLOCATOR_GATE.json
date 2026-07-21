@@ -1,0 +1,48 @@
+{
+  "assertions": {
+    "cpu_hit_h2d_recorded": true,
+    "d2h_precedes_h2d_same_gpu_slot": true,
+    "initial_maps_empty": true,
+    "lazy_d2h_recorded": true,
+    "restored_blocks_marked_computed": true,
+    "restored_prefix_computed": true,
+    "victim_d2h_recorded": true
+  },
+  "computed_ids": [
+    0,
+    1
+  ],
+  "initial_maps": [
+    [],
+    []
+  ],
+  "preserved_maps": [
+    [],
+    [
+      [
+        1,
+        0
+      ]
+    ]
+  ],
+  "qualified": true,
+  "restored_ids": [
+    0,
+    1
+  ],
+  "restored_maps": [
+    [
+      [
+        0,
+        1
+      ]
+    ],
+    [
+      [
+        1,
+        1
+      ]
+    ]
+  ],
+  "version": 1
+}

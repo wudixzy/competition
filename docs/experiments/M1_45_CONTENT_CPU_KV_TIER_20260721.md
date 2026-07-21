@@ -1,6 +1,7 @@
 # M1-45: Content-addressed CPU KV tier
 
-Status: implementation in progress; disabled in submission configuration.
+Status: allocator metadata and single-GPU data-plane gates qualified; TP4 model
+gates pending; disabled in submission configuration.
 
 ## Decision
 
@@ -57,3 +58,34 @@ from `computility-run.yaml` until all qualification gates pass.
 
 Failure of a gate keeps the selector out of YAML and `main`; it does not trigger
 capacity, threshold, or launch-parameter scanning.
+
+## Allocator gate result
+
+Commit `3e2be3f` was installed into the real CoreX vLLM package on the a163
+instance. The fixed allocator lifecycle ran once and qualified:
+
+- initial allocation emitted no transfers;
+- eviction emitted D2H `(GPU 1 -> CPU 0)`;
+- the next content hit emitted H2D `(CPU 0 -> GPU 1)` while preserving its new
+  victim with D2H `(GPU 1 -> CPU 1)`;
+- both restored block objects and the allocator's contiguous prefix were
+  computed `[0, 1]`;
+- `BI100_CPU_KV_OFFLOAD=0` returned empty maps and an invalid value failed at
+  allocator construction.
+
+Evidence: `evidence/M1_45_CPU_KV_ALLOCATOR_GATE.json`. This gate validates
+metadata and mapping ownership only. It does not qualify CoreX transfer order,
+model output, performance, TP4 behavior, or the submission selector.
+
+## Same-slot data-plane result
+
+Commit `1582eb9` ran the fixed same-slot operation once on physical GPU 0 after
+all four BI-V100 devices passed independent bounded CUDA smoke tests. The test
+preserved GPU victim slot 1 into CPU slot 1, then restored different requested
+content from CPU slot 0 into that same GPU slot 1. The preserved victim,
+restored request, and inclusive CPU source were all bit-exact. Evidence:
+`evidence/M1_45_CPU_KV_SAME_SLOT_ORDER.json`.
+
+This closes the ordering and CoreX data-movement gate. It still does not prove
+GDN/KV intersection correctness in the full model, model-output equivalence,
+TTFT improvement, 881-request gain, or TP4 stability.

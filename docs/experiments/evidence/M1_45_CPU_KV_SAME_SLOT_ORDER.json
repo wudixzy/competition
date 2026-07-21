@@ -1,0 +1,27 @@
+{
+  "d2h": [
+    [
+      1,
+      1
+    ]
+  ],
+  "device": "cuda:0",
+  "device_name": "Iluvatar BI-V100",
+  "h2d": [
+    [
+      0,
+      1
+    ]
+  ],
+  "inclusive_cpu_source_unchanged": true,
+  "qualified": true,
+  "requested_restored": true,
+  "same_gpu_slot_reused": true,
+  "schema": "bi100-cpu-kv-same-slot-order-v1",
+  "shape": [
+    2,
+    2,
+    4096
+  ],
+  "victim_preserved": true
+}
