@@ -23,9 +23,11 @@ from `computility-run.yaml` until all qualification gates pass.
    CPU copy. A CPU hit stages `CPU -> GPU` while retaining the CPU copy.
 4. A CPU slot used as an H2D source or D2H destination is pinned for the whole
    scheduler step. Pending D2H content cannot be read until the next step.
-   Once a step claims any H2D source, D2H may consume free CPU slots but cannot
-   replace resident CPU content. This preserves later, not-yet-claimed blocks
-   of the same sequentially allocated prefix when the CPU tier is saturated.
+   D2H may consume free CPU slots immediately, but full-capacity replacement is
+   deferred until drain. If the step contains any H2D claim, those deferred
+   stores are dropped instead of replacing resident CPU content. This remains
+   safe even when D2H scheduling precedes later H2D lookup and preserves all
+   not-yet-claimed blocks of a saturated sequential prefix.
 5. A reused GPU slot may be a D2H source and then an H2D destination in the same
    step. Every worker must execute all D2H transfers before any H2D transfer.
 6. Mappings have unique sources and destinations and are produced only by the

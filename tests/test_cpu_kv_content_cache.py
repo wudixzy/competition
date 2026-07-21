@@ -86,7 +86,7 @@ class CpuKvContentCacheTest(unittest.TestCase):
 
         first_slot = cache.claim_load(keys[0])
         self.assertEqual(first_slot, 0)
-        self.assertFalse(cache.stage_store(keys[4], gpu_block=9))
+        self.assertTrue(cache.stage_store(keys[4], gpu_block=9))
         cache.stage_load(keys[0], first_slot, gpu_block=9)
 
         # Sequential block allocation has not claimed these entries yet, but
@@ -95,6 +95,25 @@ class CpuKvContentCacheTest(unittest.TestCase):
             [cache.resident_slot(key) for key in keys[1:4]], [1, 2, 3])
         self.assertEqual(cache.drain_step(), ([(0, 9)], []))
         self.assertEqual(cache.skipped_stores, 1)
+
+    def test_store_before_promotion_cannot_evict_later_prefix_source(self):
+        cache = CpuKvContentCache(2)
+        first, later, replacement = digest(10), digest(11), digest(12)
+        self.assertTrue(cache.stage_store(first, gpu_block=0))
+        self.assertTrue(cache.stage_store(later, gpu_block=1))
+        cache.drain_step()
+        cache.begin_step()
+
+        # The full-cache store is intentionally deferred. A later lookup in
+        # this same step must still observe the original resident entry.
+        self.assertTrue(cache.stage_store(replacement, gpu_block=7))
+        later_slot = cache.claim_load(later)
+        self.assertEqual(later_slot, 1)
+        cache.stage_load(later, later_slot, gpu_block=7)
+        self.assertEqual(cache.drain_step(), ([(1, 7)], []))
+        self.assertEqual(cache.resident_slot(first), 0)
+        self.assertEqual(cache.resident_slot(later), 1)
+        self.assertIsNone(cache.resident_slot(replacement))
 
     def test_pure_store_step_still_replaces_multiple_lru_entries(self):
         cache = CpuKvContentCache(2)
@@ -122,11 +141,11 @@ class CpuKvContentCacheTest(unittest.TestCase):
 
         slots = [cache.claim_load(key) for key in keys[:2]]
         self.assertEqual(slots, [0, 1])
-        self.assertFalse(cache.stage_store(keys[2], gpu_block=5))
-        self.assertEqual(cache.skipped_stores, 1)
+        self.assertTrue(cache.stage_store(keys[2], gpu_block=5))
         for gpu_block, (key, slot) in enumerate(zip(keys[:2], slots), 20):
             cache.stage_load(key, slot, gpu_block)
         self.assertEqual(cache.drain_step(), ([(0, 20), (1, 21)], []))
+        self.assertEqual(cache.skipped_stores, 1)
 
     def test_inclusive_copy_deduplicates_store_after_load(self):
         cache = CpuKvContentCache(1)

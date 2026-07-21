@@ -52,6 +52,8 @@ class CpuKvContentCache:
         self._step_load_slots: Set[int] = set()
         self._step_h2d: Dict[int, int] = {}
         self._step_d2h: Dict[int, int] = {}
+        self._deferred_d2h: Dict[int, ContentHash] = {}
+        self._deferred_hashes: Set[ContentHash] = set()
         self._pending_ready_slots: Set[int] = set()
 
         self.hits = 0
@@ -80,21 +82,40 @@ class CpuKvContentCache:
     def _select_store_slot(self) -> Optional[int]:
         if self._free_slots:
             return heapq.heappop(self._free_slots)
-        # A block table is allocated sequentially. Once this step starts
-        # promoting a CPU prefix, an unclaimed resident entry may be a later
-        # block from that same prefix. Replacing it here would silently turn a
-        # complete lower-tier hit into a partial one. Keep resident CPU content
-        # stable for mixed H2D/D2H steps; pure D2H steps still use normal LRU.
-        if self._step_load_slots:
-            return None
         for slot in self._lru:
             if slot not in self._step_slots_in_use:
                 return slot
         return None
 
+    def _commit_store(self, content_hash: ContentHash,
+                      gpu_block: int, slot: int) -> None:
+        old_hash = self._slot_to_hash.get(slot)
+        if old_hash is not None:
+            if slot in self._step_slots_in_use:
+                raise RuntimeError("selected an in-use CPU KV slot for eviction")
+            del self._hash_to_slot[old_hash]
+            self._ready_slots.discard(slot)
+            self.evictions += 1
+
+        if slot in self._step_h2d:
+            raise RuntimeError(
+                "a CPU KV slot cannot be an H2D source and D2H destination "
+                "in one scheduler step")
+        if slot in self._step_d2h.values():
+            raise RuntimeError(f"duplicate D2H destination CPU slot {slot}")
+
+        self._hash_to_slot[content_hash] = slot
+        self._slot_to_hash[slot] = content_hash
+        self._ready_slots.discard(slot)
+        self._step_slots_in_use.add(slot)
+        self._step_d2h[gpu_block] = slot
+        self._touch(slot)
+        self.stores += 1
+
     def begin_step(self) -> None:
         """Publish D2H stores returned by the preceding synchronous step."""
-        if (self._step_slots_in_use or self._step_h2d or self._step_d2h):
+        if (self._step_slots_in_use or self._step_h2d or self._step_d2h
+                or self._deferred_d2h or self._deferred_hashes):
             raise RuntimeError("cannot begin a CPU KV step before draining it")
         self._ready_slots.update(self._pending_ready_slots)
         self._pending_ready_slots.clear()
@@ -162,44 +183,43 @@ class CpuKvContentCache:
         self._validate_hash(content_hash)
         self._validate_block_id("gpu_block", gpu_block)
         self._require_step_started()
-        if content_hash in self._hash_to_slot:
-            self._touch(self._hash_to_slot[content_hash])
+        if (content_hash in self._hash_to_slot
+                or content_hash in self._deferred_hashes):
+            slot = self._hash_to_slot.get(content_hash)
+            if slot is not None:
+                self._touch(slot)
             self.deduplicated_stores += 1
             return False
-        if gpu_block in self._step_d2h:
+        if gpu_block in self._step_d2h or gpu_block in self._deferred_d2h:
             raise RuntimeError(f"duplicate D2H source GPU block {gpu_block}")
 
-        slot = self._select_store_slot()
-        if slot is None:
-            self.skipped_stores += 1
-            return False
+        if self._free_slots:
+            self._commit_store(
+                content_hash, gpu_block, heapq.heappop(self._free_slots))
+            return True
 
-        old_hash = self._slot_to_hash.get(slot)
-        if old_hash is not None:
-            if slot in self._step_slots_in_use:
-                raise RuntimeError("selected an in-use CPU KV slot for eviction")
-            del self._hash_to_slot[old_hash]
-            self._ready_slots.discard(slot)
-            self.evictions += 1
-
-        if slot in self._step_h2d:
-            raise RuntimeError(
-                "a CPU KV slot cannot be an H2D source and D2H destination "
-                "in one scheduler step")
-        if slot in self._step_d2h.values():
-            raise RuntimeError(f"duplicate D2H destination CPU slot {slot}")
-
-        self._hash_to_slot[content_hash] = slot
-        self._slot_to_hash[slot] = content_hash
-        self._ready_slots.discard(slot)
-        self._step_slots_in_use.add(slot)
-        self._step_d2h[gpu_block] = slot
-        self._touch(slot)
-        self.stores += 1
+        # Do not replace resident content until every lookup in this scheduler
+        # step is known. A later H2D claim can refer to any current LRU entry.
+        self._deferred_d2h[gpu_block] = content_hash
+        self._deferred_hashes.add(content_hash)
         return True
+
+    def _resolve_deferred_stores(self) -> None:
+        if self._step_load_slots:
+            self.skipped_stores += len(self._deferred_d2h)
+        else:
+            for gpu_block, content_hash in self._deferred_d2h.items():
+                slot = self._select_store_slot()
+                if slot is None:
+                    self.skipped_stores += 1
+                    continue
+                self._commit_store(content_hash, gpu_block, slot)
+        self._deferred_d2h.clear()
+        self._deferred_hashes.clear()
 
     def drain_step(self) -> Tuple[SwapMapping, SwapMapping]:
         """Finalize this synchronous step and return (H2D, D2H) maps."""
+        self._resolve_deferred_stores()
         transfer_slots = (
             set(self._step_h2d) | set(self._step_d2h.values()))
         if transfer_slots != self._step_slots_in_use:
