@@ -1,5 +1,18 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-47 生产服务 A/B 结论
+
+- 修正后的 `4/1/256` split4 二进制在 TP4 服务中由四个进程真实 dispatch；六个
+  请求全部完成，warm 缓存 token 精确、输出确定，fatal 扫描为空。
+- 65K 冷 TTFT 从 `89.033s` 降至 `85.555s`，仅改善 `3.906%`；235K 从
+  `546.644s` 降至 `498.362s`，仅改善 `8.832%`，均低于固定 `20%` 门槛。
+- warm 回退门槛通过：65K 为 `+0.439%`，235K 为 `-3.450%`。长上下文 Output
+  TPS P10 从 `4.7062` 到 `4.7174`，没有 decode 回退。
+- 最终状态为 `CORE_GATE_QUALIFIED; SERVICE_GATE_FAILED; DIRECTION_CLOSED`。
+  按停止规则不运行 262K/长输出/881 解锁门禁，不扫描 tile、split、grid、容差或
+  YAML；默认开关保持 `0`，不合并 main。证据见
+  `docs/experiments/evidence/M1_47_SERVICE_AB.json`。
+
 ## 2026-07-21 M1-47 生产形状修正与核心门槛
 
 - 首次 TP4 服务 A/B 发现旧 `6/1/256` 内核从未 dispatch。四 rank guard 证据
@@ -12,8 +25,8 @@
   `f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009`。
 - 真实 dispatcher parity 也通过：query `[256,4,256]`，padded block table
   `[1,263]` 精确裁为 256 块，native 调用一次，`relL2=6.842e-6`。
-- 当前状态仅为 `CORE_GATE_QUALIFIED; SERVICE_GATE_PENDING`。下一步重跑固定
-  65K/235K 冷暖 A/B；通过前不改 YAML、不合并 main。
+- 该节记录的是核心门槛时点；后续固定 65K/235K 冷暖 A/B 已完成并失败，最终
+  状态见上一节。YAML 和 main 均未修改。
 
 ## 2026-07-21 M1-47 融合 prefill 注意力设计门槛
 

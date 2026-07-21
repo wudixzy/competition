@@ -1,0 +1,110 @@
+{
+  "schema": "bi100-m1-47-service-ab-evidence-v1",
+  "version": 1,
+  "run_id": "m1-47-service-ab-v1",
+  "runtime": {
+    "root": "/root/competition-m1-47-service-439bc42",
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 1,
+    "gdn_cache_policy": "admission64",
+    "gdn_restore_mode": "direct"
+  },
+  "extension": {
+    "sha256": "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
+    "size_bytes": 252208,
+    "control_enabled": false,
+    "candidate_enabled": true
+  },
+  "artifacts": {
+    "control_measurement": {
+      "path": "/root/competition-m1-47-service-439bc42/bench_runs/m1_47/service_ab_corrected4/control/measurement.json",
+      "sha256": "1ce714e2d7a713bd60e5b8f0fd33798b72d0db01a305fa2d9fa7857ef7829655",
+      "size_bytes": 3310
+    },
+    "candidate_measurement": {
+      "path": "/root/competition-m1-47-service-439bc42/bench_runs/m1_47/service_ab_corrected4/candidate/measurement.json",
+      "sha256": "68e84e8a87f73ca77d323030790801a7af00b11c60cd26c4bc2534dbac50dc5d",
+      "size_bytes": 3307
+    },
+    "comparison": {
+      "path": "/root/competition-m1-47-service-439bc42/bench_runs/m1_47/service_ab_corrected4/comparison.json",
+      "sha256": "c8d171620ccfde879d9771f20d80658f2e7e05bd9665eea20f25b3dafa366c0d",
+      "size_bytes": 1340
+    },
+    "control_service_log": {
+      "sha256": "eba7536f528e23524a4ead7ed59b08bd65559a9db03121880fd07e23cdcd5bc8",
+      "size_bytes": 81699
+    },
+    "candidate_service_log": {
+      "sha256": "cb397fe95cdd68204bdfb5ae3d9d8caf74da68415606737dfa6674d398522c15",
+      "size_bytes": 60862
+    }
+  },
+  "thresholds": {
+    "minimum_cold_ttft_improvement": 0.2,
+    "maximum_warm_ttft_regression": 0.02,
+    "maximum_output_tps_regression": 0.02,
+    "full_replay_minimum_output_tps_p10": 20.0
+  },
+  "measurements": [
+    {
+      "target_prompt_tokens": 65536,
+      "control_cold_ttft_s": 89.03267544135451,
+      "candidate_cold_ttft_s": 85.55506015568972,
+      "cold_improvement": 0.03905998857639059,
+      "control_warm_ttft_median_s": 2.2330450396984816,
+      "candidate_warm_ttft_median_s": 2.2428390569984913,
+      "warm_regression": 0.004385947048041627,
+      "candidate_warm_cached_tokens": 65520
+    },
+    {
+      "target_prompt_tokens": 235000,
+      "control_cold_ttft_s": 546.6439359597862,
+      "candidate_cold_ttft_s": 498.36242067441344,
+      "cold_improvement": 0.08832351757566115,
+      "control_warm_ttft_median_s": 4.003793552517891,
+      "candidate_warm_ttft_median_s": 3.8656659610569477,
+      "warm_regression": -0.0344991792531556,
+      "candidate_warm_cached_tokens": 234992
+    }
+  ],
+  "output_tps": {
+    "control_p10": 4.706181204167808,
+    "candidate_p10": 4.717360635287619,
+    "regression": -0.002375478256109398,
+    "absolute_20_tps_gate": "deferred_to_full_881_replay"
+  },
+  "dispatch": {
+    "path": "corex_split4",
+    "line_count": 4,
+    "process_ids": [
+      19017,
+      19358,
+      19359,
+      19360
+    ],
+    "all_four_processes_observed": true
+  },
+  "correctness": {
+    "control_measurement_qualified": true,
+    "candidate_measurement_qualified": true,
+    "cold_cached_tokens_zero": true,
+    "warm_outputs_deterministic": true,
+    "fatal_scan_empty": true,
+    "graceful_shutdown": true
+  },
+  "decision": {
+    "core_gate_qualified": true,
+    "service_gate_qualified": false,
+    "production_qualified": false,
+    "capacity_stability_gate_run": false,
+    "full_881_replay_run": false,
+    "direction_closed": true,
+    "reasons": [
+      "65536-token cold TTFT improvement 3.906% is below 20%",
+      "235000-token cold TTFT improvement 8.832% is below 20%"
+    ]
+  }
+}

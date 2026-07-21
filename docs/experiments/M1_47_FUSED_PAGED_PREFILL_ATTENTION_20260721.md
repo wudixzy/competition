@@ -281,8 +281,31 @@ error was `6.103515625e-05` and relative L2 was
 structured evidence is in
 `evidence/M1_47_CORRECTED4_DISPATCH_PARITY.json`.
 
-The current status is `CORE_GATE_QUALIFIED; SERVICE_GATE_PENDING`. This does
-not change the default environment, submission YAML, or `main`.
+## Production service A/B result
+
+The corrected artifact was then tested in a fixed-order TP4 service A/B. Both
+sides used the same runtime, model, request order, 262,144-token capacity,
+8,192-token chunks, `admission64/direct` GDN policy, and one active sequence;
+the only service difference was `BI100_ATTN_COREX_FUSED_PREFILL=0` versus `1`.
+The candidate dispatched `corex_split4` in all four processes, all six requests
+were finite and deterministic, warm cache counts were exact, and the fatal
+scan was empty.
+
+| Target | Control cold TTFT | Candidate cold TTFT | Improvement | Warm regression |
+| --- | ---: | ---: | ---: | ---: |
+| 65,536 | 89.033 s | 85.555 s | 3.906% | +0.439% |
+| 235,000 | 546.644 s | 498.362 s | 8.832% | -3.450% |
+
+Output TPS P10 changed from `4.7062` to `4.7174`, a `0.238%` improvement, so
+the decode-relative gate passed. Both cold TTFT improvements were below the
+predeclared 20% service threshold. The fixed comparator therefore returned
+`qualified=false`; structured evidence and artifact hashes are in
+`evidence/M1_47_SERVICE_AB.json`.
+
+The final status is `CORE_GATE_QUALIFIED; SERVICE_GATE_FAILED;
+DIRECTION_CLOSED`. Per the stopping rule, the 262K capacity/stability probe and
+full 881-request replay were not unlocked. The default remains off, and this
+result does not change the submission YAML or `main`.
 
 ## Gates
 
@@ -307,3 +330,7 @@ whose order is explicitly validated against the fixed FP32 streaming
 reference. If the fused implementation and the single split-reduction
 alternative cannot satisfy both numerical and `1.5x` gates, this direction
 stops without launch or tolerance scanning.
+
+The corrected split-reduction passed that isolated core gate but failed the
+subsequent production service gate. M1-47 is therefore closed without further
+tile, split, launch-grid, tolerance, or YAML scans.
