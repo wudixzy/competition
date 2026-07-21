@@ -1790,15 +1790,35 @@ class Qwen3_5DecoderLayer(nn.Module):
 # Full transformer model
 # ---------------------------------------------------------------------------
 
+def _validate_qwen_kv_cache_count(configured_count, kv_caches):
+    if len(kv_caches) != configured_count:
+        raise RuntimeError(
+            "Qwen3.5 allocated KV cache count mismatch: "
+            f"configured {configured_count}, received {len(kv_caches)}")
+
+
 class Qwen3_5Model(nn.Module):
     def __init__(
         self,
         text_cfg,
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
+        kv_cache_count: Optional[int] = None,
     ) -> None:
         super().__init__()
         self.text_cfg = text_cfg
+        full_attention_count = sum(
+            layer_type == "full_attention"
+            for layer_type in text_cfg.layer_types)
+        if kv_cache_count is None:
+            kv_cache_count = full_attention_count
+        if (not isinstance(kv_cache_count, int) or isinstance(kv_cache_count, bool)
+                or kv_cache_count < full_attention_count):
+            raise RuntimeError(
+                "Qwen3.5 configured KV cache count must cover every "
+                f"full-attention layer: configured {kv_cache_count}, "
+                f"required {full_attention_count}")
+        self.kv_cache_count = kv_cache_count
         self.embed_tokens = VocabParallelEmbedding(
             text_cfg.vocab_size, text_cfg.hidden_size)
         self.layers = nn.ModuleList([
@@ -1820,6 +1840,7 @@ class Qwen3_5Model(nn.Module):
         inputs_embeds: Optional[torch.Tensor] = None,
         gdn_capture_offsets: Optional[Iterable[int]] = None,
     ) -> torch.Tensor:
+        _validate_qwen_kv_cache_count(self.kv_cache_count, kv_caches)
         hidden_states = (self.embed_tokens(input_ids)
                          if inputs_embeds is None else inputs_embeds)
         residual = None
@@ -1859,11 +1880,6 @@ class Qwen3_5Model(nn.Module):
                     residual=residual,
                 )
                 attn_idx += 1
-
-        if attn_idx != len(kv_caches):
-            raise RuntimeError(
-                "Qwen3.5 full-attention KV cache count mismatch: "
-                f"consumed {attn_idx}, received {len(kv_caches)}")
 
         hidden_states, _ = self.norm(hidden_states, residual)
         self.captured_conv_states = {
@@ -1931,6 +1947,16 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
             1 for lt in text_cfg.layer_types if lt == "linear_attention")
         self.num_attn_layers = sum(
             1 for lt in text_cfg.layer_types if lt == "full_attention")
+        layers_block_type = getattr(
+            config, "layers_block_type",
+            ["attention"] * text_cfg.num_hidden_layers)
+        self.num_kv_cache_layers = sum(
+            layer_type == "attention" for layer_type in layers_block_type)
+        if self.num_kv_cache_layers < self.num_attn_layers:
+            raise RuntimeError(
+                "Qwen3.5 KV accounting provides fewer caches than "
+                f"full-attention layers: {self.num_kv_cache_layers} < "
+                f"{self.num_attn_layers}")
 
         # DeltaNet state dimensions (per layer, per sequence, TP-sharded)
         tp_size = get_tensor_model_parallel_world_size()
@@ -1945,6 +1971,7 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
             text_cfg,
             cache_config=cache_config,
             quant_config=quant_config,
+            kv_cache_count=self.num_kv_cache_layers,
         )
 
         self.visual = Qwen3_5VisionTransformer(

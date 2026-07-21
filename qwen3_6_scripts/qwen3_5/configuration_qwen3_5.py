@@ -21,21 +21,38 @@ def layer_type_validation(layer_types, num_hidden_layers=None, attention=True):
 
 
 HYBRID_KV_ACCOUNTING_ENV = "BI100_HYBRID_KV_ACCOUNTING"
+HYBRID_KV_ACCOUNTING_CONFIG = "bi100_hybrid_kv_accounting_mode"
 LEGACY_KV_ACCOUNTING = "legacy40"
 FULL_ATTENTION_KV_ACCOUNTING = "full_attention"
 
 
-def _vllm_layers_block_type(layer_types, environ=None):
-    """Expose hybrid-layer ownership in the form vLLM 0.6.3 consumes."""
+def _hybrid_kv_accounting_mode(environ=None, serialized_mode=None):
     source = os.environ if environ is None else environ
-    mode = source.get(HYBRID_KV_ACCOUNTING_ENV, LEGACY_KV_ACCOUNTING)
-    if mode == LEGACY_KV_ACCOUNTING:
-        return ["attention"] * len(layer_types)
-    if mode != FULL_ATTENTION_KV_ACCOUNTING:
+    environment_mode = source.get(HYBRID_KV_ACCOUNTING_ENV)
+    if (environment_mode is not None and serialized_mode is not None
+            and environment_mode != serialized_mode):
+        raise RuntimeError(
+            f"{HYBRID_KV_ACCOUNTING_ENV}={environment_mode!r} conflicts "
+            f"with serialized {HYBRID_KV_ACCOUNTING_CONFIG}="
+            f"{serialized_mode!r}")
+    mode = environment_mode or serialized_mode or LEGACY_KV_ACCOUNTING
+    if mode not in (LEGACY_KV_ACCOUNTING, FULL_ATTENTION_KV_ACCOUNTING):
         raise RuntimeError(
             f"{HYBRID_KV_ACCOUNTING_ENV} must be "
             f"'{LEGACY_KV_ACCOUNTING}' or "
             f"'{FULL_ATTENTION_KV_ACCOUNTING}', got {mode!r}")
+    return mode
+
+
+def _vllm_layers_block_type(
+    layer_types,
+    environ=None,
+    serialized_mode=None,
+):
+    """Expose hybrid-layer ownership in the form vLLM 0.6.3 consumes."""
+    mode = _hybrid_kv_accounting_mode(environ, serialized_mode)
+    if mode == LEGACY_KV_ACCOUNTING:
+        return ["attention"] * len(layer_types)
     return [
         "attention" if layer_type == "full_attention" else layer_type
         for layer_type in layer_types
@@ -187,6 +204,8 @@ class Qwen3_5Config(PreTrainedConfig):
         tie_word_embeddings=False,
         **kwargs,
     ):
+        serialized_mode = kwargs.pop(HYBRID_KV_ACCOUNTING_CONFIG, None)
+        serialized_layers = kwargs.pop("layers_block_type", None)
         if isinstance(text_config, dict):
             self.text_config = Qwen3_5TextConfig(**text_config)
         elif text_config is None:
@@ -207,8 +226,17 @@ class Qwen3_5Config(PreTrainedConfig):
         self.vision_end_token_id = vision_end_token_id
         self.tie_word_embeddings = tie_word_embeddings
         super().__init__(**kwargs)
-        self.layers_block_type = _vllm_layers_block_type(
-            self.text_config.layer_types)
+        mode = _hybrid_kv_accounting_mode(
+            serialized_mode=serialized_mode)
+        layers_block_type = _vllm_layers_block_type(
+            self.text_config.layer_types, serialized_mode=mode)
+        if (serialized_layers is not None
+                and list(serialized_layers) != layers_block_type):
+            raise RuntimeError(
+                "serialized layers_block_type conflicts with "
+                f"{HYBRID_KV_ACCOUNTING_CONFIG}={mode!r}")
+        setattr(self, HYBRID_KV_ACCOUNTING_CONFIG, mode)
+        self.layers_block_type = layers_block_type
 
 
 __all__ = ["Qwen3_5Config", "Qwen3_5TextConfig", "Qwen3_5VisionConfig"]
