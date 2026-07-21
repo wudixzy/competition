@@ -1,7 +1,8 @@
 # M1-45: Content-addressed CPU KV tier
 
-Status: allocator metadata and single-GPU data-plane gates qualified; TP4 model
-gates pending; disabled in submission configuration.
+Status: allocator metadata, single-GPU data-plane, and TP4 eviction-pressure
+gates qualified; long-context and full performance gates pending; disabled in
+submission configuration.
 
 ## Decision
 
@@ -181,4 +182,35 @@ and fixed run ID `m145-fixed-ab-20260721-16878`:
 The control gate qualified, proving that the frozen pressure geometry evicts
 the target from GPU KV while preserving deterministic model output. Health
 remained HTTP 200 and the fatal/OOM/traceback/worker-loss scan was empty.
-Evidence: `evidence/M1_45_TP4_CONTROL_PRESSURE.json`. Candidate B is pending.
+Evidence: `evidence/M1_45_TP4_CONTROL_PRESSURE.json`.
+
+Candidate B used the same runtime, isolated launch directory, server command,
+run ID, request sequence, and cache geometry. The only experimental change was
+`BI100_CPU_KV_OFFLOAD=1`:
+
+| Request | Cached tokens | Elapsed | Response digest |
+| --- | ---: | ---: | --- |
+| target cold | 0 | 88.890 s | `74ac9290bd6f...` |
+| target immediate warm | 65,520 | 3.199 s | `74ac9290bd6f...` |
+| pressure 0 | 0 | 233.088 s | `d06d9c20276b...` |
+| pressure 1 | 16 | 237.039 s | `d06d9c20276b...` |
+| target after pressure | 65,520 | 11.584 s | `74ac9290bd6f...` |
+| target refreshed | 65,520 | 3.267 s | `74ac9290bd6f...` |
+
+The strict A/B comparator qualified. After pressure, the candidate retained
+65,504 more cached tokens and reduced elapsed time by 82.112 seconds, from
+93.696 to 11.584 seconds (`0.1236x`, or 87.64% lower). Every corresponding
+completion length, finish reason, and response digest matched. Immediate warm
+latency changed from 3.146 to 3.199 seconds (`+1.69%`), inside the fixed 2%
+regression limit; the other four comparable requests were faster. Both runs
+remained healthy and had empty fatal/OOM/traceback/worker-loss scans.
+
+Evidence:
+
+- `evidence/M1_45_TP4_CANDIDATE_PRESSURE.json`;
+- `evidence/M1_45_TP4_PRESSURE_AB.json`.
+
+This qualifies the fixed eviction-pressure correctness gate, not the 881-request
+performance gate. The selector remains absent from `computility-run.yaml` and
+must still pass 131K direct equality, 235K stability, 256K capacity, and the
+predeclared score/TTFT/throughput thresholds before promotion.

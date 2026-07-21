@@ -1,0 +1,119 @@
+{
+  "schema": "bi100-cpu-kv-offload-pressure-api-v1",
+  "version": 1,
+  "params": {
+    "base": "http://127.0.0.1:8000",
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "target_prompt_tokens": 65536,
+    "pressure_prompt_tokens": 135040,
+    "pressure_count": 2,
+    "max_tokens": 8,
+    "timeout_s": 900.0,
+    "run_id": "m145-fixed-ab-20260721-16878",
+    "mode": "candidate",
+    "block_size": 16,
+    "min_candidate_cached": 65504,
+    "max_control_cached": 16,
+    "json_out": "/root/competition-m1-45-runtime-3e2be3f/bench_runs/m1_45/tp4_candidate_eef4e1c_r2/pressure.json"
+  },
+  "requests": [
+    {
+      "name": "target_cold",
+      "status": "ok",
+      "expected_prompt_tokens": 65536,
+      "summary": {
+        "prompt_tokens": 65536,
+        "cached_tokens": 0,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "message_sha256": "74ac9290bd6fb4fcf65655d51978df7207bd7398c465cc8d19905a1b5d2188bd",
+        "elapsed_s": 88.88970024511218
+      }
+    },
+    {
+      "name": "target_immediate_warm",
+      "status": "ok",
+      "expected_prompt_tokens": 65536,
+      "summary": {
+        "prompt_tokens": 65536,
+        "cached_tokens": 65520,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "message_sha256": "74ac9290bd6fb4fcf65655d51978df7207bd7398c465cc8d19905a1b5d2188bd",
+        "elapsed_s": 3.1992595866322517
+      }
+    },
+    {
+      "name": "pressure_cold_0000",
+      "status": "ok",
+      "expected_prompt_tokens": 135040,
+      "summary": {
+        "prompt_tokens": 135040,
+        "cached_tokens": 0,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "message_sha256": "d06d9c20276ba8248a1492e919e182c22493e914d9dee30e5e6604427b9264d1",
+        "elapsed_s": 233.0879691131413
+      }
+    },
+    {
+      "name": "pressure_cold_0001",
+      "status": "ok",
+      "expected_prompt_tokens": 135040,
+      "summary": {
+        "prompt_tokens": 135040,
+        "cached_tokens": 16,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "message_sha256": "d06d9c20276ba8248a1492e919e182c22493e914d9dee30e5e6604427b9264d1",
+        "elapsed_s": 237.03872648999095
+      }
+    },
+    {
+      "name": "target_after_pressure",
+      "status": "ok",
+      "expected_prompt_tokens": 65536,
+      "summary": {
+        "prompt_tokens": 65536,
+        "cached_tokens": 65520,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "message_sha256": "74ac9290bd6fb4fcf65655d51978df7207bd7398c465cc8d19905a1b5d2188bd",
+        "elapsed_s": 11.583764739334583
+      }
+    },
+    {
+      "name": "target_refreshed",
+      "status": "ok",
+      "expected_prompt_tokens": 65536,
+      "summary": {
+        "prompt_tokens": 65536,
+        "cached_tokens": 65520,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "message_sha256": "74ac9290bd6fb4fcf65655d51978df7207bd7398c465cc8d19905a1b5d2188bd",
+        "elapsed_s": 3.2674462981522083
+      }
+    }
+  ],
+  "validation": {
+    "schema": "bi100-cpu-kv-offload-pressure-api-v1",
+    "version": 1,
+    "checks": {
+      "target_prompt_exact": true,
+      "target_cold_cached_tokens": 0,
+      "immediate_warm_threshold": 65504,
+      "refreshed_threshold": 65504,
+      "mode": "candidate",
+      "target_completion": 8,
+      "target_finish_reason": "length",
+      "target_message_sha256": "74ac9290bd6fb4fcf65655d51978df7207bd7398c465cc8d19905a1b5d2188bd",
+      "pressure_count_expected": 2,
+      "request_count": 6,
+      "target_requests_seen": 4
+    },
+    "qualified": true,
+    "reasons": []
+  },
+  "qualified": true
+}

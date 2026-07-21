@@ -1,5 +1,19 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-45 内容寻址 CPU KV 二级缓存
+
+- 私有分支：`exp/M1-45-content-cpu-kv-tier-20260721`；运行时代码固定在
+  `eef4e1c`，提交配置仍保持 `BI100_CPU_KV_OFFLOAD=0`。
+- 分配器、同槽 D2H/H2D 数据面和固定 TP4 压力 A/B 均已通过。对照组压力后只命中
+  16 tokens，候选保留 65,520 tokens；对应请求耗时从 `93.696s` 降至
+  `11.584s`，下降 `87.64%`，输出长度、结束原因和 SHA-256 摘要完全一致。
+- 普通 immediate-warm 耗时从 `3.146s` 到 `3.199s`，回退 `1.69%`，仍在固定
+  2% 门槛内；两组健康检查均为 200，fatal/OOM/traceback/worker-loss 扫描为空。
+- 严格比较证据为
+  `docs/experiments/evidence/M1_45_TP4_PRESSURE_AB.json`。当前正在复用同一候选服务
+  执行 131K/256 direct exact；之后还需 235K 稳定性、256K 容量和完整 881
+  性能门禁。通过前不得写入 YAML 或合并 main。
+
 ## 2026-07-21 M1-41 内容频率 KV 淘汰门禁
 
 - 私有分支：`exp/M1-41-frequency-aware-content-evictor-20260721`。

@@ -23,7 +23,7 @@
 | `BI100_MOE_FUSED_ACTIVATION` | `1` | boolean | Reuses vLLM's bit-exact `SiluAndMul` for the T=1 routed-expert activation; set to `0` for the native `F.silu(gate) * up` path. | E-MOE-11 |
 | `BI100_PAGED_ATTN_DIAGNOSTICS` | `0` | boolean | Enables physical slot/block-ID checks, device synchronization after `reshape_and_cache`, and sparse 8,192-token decode snapshots. Diagnostic only; invalid for performance runs. | E-CTX-01 |
 | `BI100_CACHE_TRACE` | `0` | boolean | Emits privacy-redacted version-4 allocator lifecycle records with chained SHA-256 block hashes for offline KV/GDN policy simulation. Diagnostic only; never enable for scored latency runs. | M1-31 |
-| `BI100_CPU_KV_OFFLOAD` | `0` | exactly `0` or `1` | Enables the private M1-45 scheduler-owned, content-addressed inclusive CPU KV tier. It reuses the existing CPU swap allocation, disables request-level swap, and must remain absent from submission YAML until TP4 trace qualification. | M1-45 |
+| `BI100_CPU_KV_OFFLOAD` | `0` | exactly `0` or `1` | Enables the private M1-45 scheduler-owned, content-addressed inclusive CPU KV tier. It reuses the existing CPU swap allocation, disables request-level swap, and must remain absent from submission YAML until all TP4 long-context and 881-request performance gates qualify. | M1-45 |
 | `BI100_PREFIX_BLOCKS_PER_TILE` | `32` | `1..1024` | Prefix attention K/V block tile count for the PyTorch online-softmax fallback. | T3 |
 | `BI100_PROFILE` | `0` | boolean | Enables lightweight CUDA-synchronized timers for BI100 hotspot profiling. | T4 |
 | `BI100_GDN_COREX_CAUSAL_CONV` | `1` | boolean | Enables the fused CoreX decode causal-convolution/state-update kernel when the extension is installed; set to `0` for the PyTorch reference path. | E-GDN-03 |
