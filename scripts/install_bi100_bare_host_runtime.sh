@@ -8,6 +8,8 @@ PATCH_STAGE=""
 RUNTIME_STAGE=""
 
 BASE_PYTHONPATH=${PYTHONPATH:-}
+SYSTEM_PYTHONPATH="/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages"
+export PYTHONPATH="$SYSTEM_PYTHONPATH:${BASE_PYTHONPATH}"
 export LD_LIBRARY_PATH="/usr/local/corex/lib:/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib:${LD_LIBRARY_PATH:-}"
 
 if [[ $(id -u) -ne 0 ]]; then
@@ -100,7 +102,7 @@ python3 -m pip install --no-index --no-deps \
 
 # Every patch operation resolves vLLM and Transformers inside the staging
 # overlay. System site-packages remain untouched if any later command fails.
-export PYTHONPATH="$SITE_PACKAGES:/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages:${BASE_PYTHONPATH}"
+export PYTHONPATH="$SITE_PACKAGES:$SYSTEM_PYTHONPATH:${BASE_PYTHONPATH}"
 (
     cd "$PATCH_STAGE"
     bash ./patch_ops.sh

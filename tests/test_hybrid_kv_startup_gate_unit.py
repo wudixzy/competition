@@ -70,6 +70,7 @@ class HybridKvStartupGateTest(unittest.TestCase):
         self.assertIn('cd /tmp', source)
         self.assertIn('versions["transformers"] == "4.55.3"', source)
         self.assertIn("get_num_attention_layers", source)
+        self.assertIn("SYSTEM_PYTHONPATH", source)
         self.assertIn("system_site_packages_modified", source)
         self.assertIn('mv "$RUNTIME_STAGE" "$RUNTIME_ROOT"', source)
         self.assertIn("resolved outside staged overlay", source)
