@@ -1,7 +1,15 @@
 # M1-46: Block-major CPU KV transfer
 
-Status: fixed capability gate qualified; production implementation and model
-gates pending; no runtime, submission configuration, or `main` change.
+Status: fixed capability gate qualified and first implementation source ready;
+CoreX compilation, prebuilt bundling, transfer, and model gates pending; no
+submission configuration or `main` change.
+
+The private A/B selector is
+`BI100_CPU_KV_TRANSFER_LAYOUT=paged|block_major`; it defaults to `paged`,
+rejects every other value, and remains forbidden in submission YAML.
+The selector is not runnable from a built image until the new extension has
+compiled on BI100, passed the data-plane gate, and been added to the hash-pinned
+prebuilt bundle. Until then the default `paged` image path remains intact.
 
 ## Decision
 
@@ -47,9 +55,11 @@ pack/scatter cost and scheduler synchronization are included.
    block-major pinned representation. It must consume the same configured
    4-GiB swap budget; a second full CPU copy is forbidden.
 3. Add BI100-only GPU pack/scatter operations between the existing layer-major
-   GPU cache and a contiguous staging tensor. Unsupported dtype, block size,
-   head size, layer count, device, or extension load must fall back to the
-   existing exact paged path.
+   GPU cache and a contiguous staging tensor. With the default selector the
+   existing exact paged path is unchanged. An explicitly selected
+   `block_major` path must fail fast on unsupported dtype, block size, head
+   size, layer count, device, or missing extension so an A/B cannot silently
+   measure the control implementation.
 4. Derive the fixed staging chunk from the immutable command geometry:
    `8192 max_num_batched_tokens / 16 block_size = 512 blocks`. Process larger
    promotions in deterministic 512-block chunks; do not expose a YAML or

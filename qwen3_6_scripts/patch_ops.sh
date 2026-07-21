@@ -126,6 +126,12 @@ install_patch_file \
 install_patch_file \
     "${VLLM_OVERRIDE_ROOT}/core/block_manager_v2.py" \
     "${VLLM_ROOT}/core/block_manager_v2.py"
+install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/worker/bi100_block_major_kv.py" \
+    "${VLLM_ROOT}/worker/bi100_block_major_kv.py"
+install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/worker/cache_engine.py" \
+    "${VLLM_ROOT}/worker/cache_engine.py"
 
 build_stage "installing hash-pinned CoreX 3.2.3 extensions"
 bash ./install_prebuilt_corex.sh "${VLLM_ROOT}"

@@ -1,5 +1,6 @@
 """CacheEngine class for managing the KV cache."""
-from typing import List
+import os
+from typing import Any, List, Optional
 
 import torch
 
@@ -8,6 +9,9 @@ from vllm.config import CacheConfig, DeviceConfig, ModelConfig, ParallelConfig
 from vllm.logger import init_logger
 from vllm.utils import (STR_DTYPE_TO_TORCH_DTYPE, get_dtype_size,
                         is_pin_memory_available)
+from vllm.worker.bi100_block_major_kv import (
+    BLOCK_MAJOR_LAYOUT, Bi100BlockMajorKvTransfer,
+    transfer_layout_from_env)
 
 logger = init_logger(__name__)
 
@@ -62,7 +66,30 @@ class CacheEngine:
         # Initialize the cache.
         self.gpu_cache = self._allocate_kv_cache(
             self.num_gpu_blocks, self.device_config.device_type)
-        self.cpu_cache = self._allocate_kv_cache(self.num_cpu_blocks, "cpu")
+        self._bi100_block_major_transfer: Optional[
+            Bi100BlockMajorKvTransfer] = None
+        transfer_layout = transfer_layout_from_env()
+        if transfer_layout == BLOCK_MAJOR_LAYOUT:
+            if self.num_cpu_blocks <= 0:
+                raise RuntimeError(
+                    "block-major CPU KV transfer requires CPU cache blocks")
+            if os.environ.get("BI100_CPU_KV_OFFLOAD", "0") != "1":
+                raise RuntimeError(
+                    "block-major CPU KV transfer requires "
+                    "BI100_CPU_KV_OFFLOAD=1")
+            self._bi100_block_major_transfer = Bi100BlockMajorKvTransfer(
+                self.gpu_cache, self.num_cpu_blocks)
+            self.cpu_cache: Any = (
+                self._bi100_block_major_transfer.cpu_cache)
+            logger.info(
+                "Enabled BI100 block-major CPU KV transfer with %d CPU "
+                "blocks and %d-block staging",
+                self.num_cpu_blocks,
+                self._bi100_block_major_transfer.chunk_blocks,
+            )
+        else:
+            self.cpu_cache = self._allocate_kv_cache(
+                self.num_cpu_blocks, "cpu")
 
     def _allocate_kv_cache(
         self,
@@ -86,11 +113,17 @@ class CacheEngine:
         return kv_cache
 
     def swap_in(self, src_to_dst: torch.Tensor) -> None:
+        if self._bi100_block_major_transfer is not None:
+            self._bi100_block_major_transfer.swap_in(src_to_dst)
+            return
         for i in range(self.num_attention_layers):
             self.attn_backend.swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
                                           src_to_dst)
 
     def swap_out(self, src_to_dst: torch.Tensor) -> None:
+        if self._bi100_block_major_transfer is not None:
+            self._bi100_block_major_transfer.swap_out(src_to_dst)
+            return
         for i in range(self.num_attention_layers):
             self.attn_backend.swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
                                           src_to_dst)
