@@ -13,6 +13,10 @@
   `docs/experiments/evidence/M1_45_TP4_PRESSURE_AB.json`。当前正在复用同一候选服务
   执行 131K/256 direct exact；之后还需 235K 稳定性、256K 容量和完整 881
   性能门禁。通过前不得写入 YAML 或合并 main。
+- 独立审计发现 fork 首块未继承 request namespace，可令 `n>1`/beam 分叉在释放
+  缓存块时断言失败；现已改为通过 namespace-aware 初始化器重建，并增加两块 SHA
+  链回归测试。现有压力与长上下文证据均为 `n=1`，不受影响；发布前仍需在 CoreX
+  运行一次真实 `n=2` fork/release 门禁。
 
 ## 2026-07-21 M1-41 内容频率 KV 淘汰门禁
 

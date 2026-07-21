@@ -214,3 +214,19 @@ This qualifies the fixed eviction-pressure correctness gate, not the 881-request
 performance gate. The selector remains absent from `computility-run.yaml` and
 must still pass 131K direct equality, 235K stability, 256K capacity, and the
 predeclared score/TTFT/throughput thresholds before promotion.
+
+## Post-gate namespace audit
+
+An independent review found that `PrefixCachingBlockAllocator.fork()` rebuilt
+the first forked block through the raw block pool. That path did not carry the
+request cache namespace, so `n > 1` or beam-style sequence forks could derive a
+different first-block hash and later fail the cached-block release assertion.
+The allocator now rebuilds every forked block through its namespace-aware
+initializer and explicitly copies `block.cache_namespace`. A behavioral unit
+test verifies that a two-block fork retains both namespaces and the complete
+SHA-256 chain.
+
+The formal pressure and long-context requests use `n=1`, so this defect does not
+invalidate their timing or equality evidence. The patched runtime must still
+pass a real CoreX `n=2` fork/release regression before any evaluation candidate
+is published.

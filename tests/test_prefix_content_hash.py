@@ -66,6 +66,69 @@ NamespaceHash = _class_with_methods(
     }, "NamespaceHash")
 
 
+def _all_fake_blocks(last_block):
+    blocks = []
+    while last_block is not None:
+        blocks.append(last_block)
+        last_block = last_block.prev_block
+    return list(reversed(blocks))
+
+
+def _load_allocator_fork():
+    tree = ast.parse(PREFIX_BLOCK.read_text(), filename=str(PREFIX_BLOCK))
+    source = next(node for node in tree.body
+                  if isinstance(node, ast.ClassDef)
+                  and node.name == "PrefixCachingBlockAllocator")
+    function = next(node for node in source.body
+                    if isinstance(node, ast.FunctionDef)
+                    and node.name == "fork")
+    namespace = {
+        "Block": Any,
+        "List": List,
+        "get_all_blocks_recursively": _all_fake_blocks,
+    }
+    module = ast.fix_missing_locations(ast.Module(
+        body=[function], type_ignores=[]))
+    exec(compile(module, str(PREFIX_BLOCK), "exec"), namespace)
+    return namespace["fork"]
+
+
+class _FakeRefCounter:
+
+    def incr(self, block_id):
+        return 2
+
+
+class _FakeForkBlock:
+
+    def __init__(self, prev_block, token_ids, block_id, cache_namespace):
+        self.prev_block = prev_block
+        self.token_ids = token_ids
+        self.block_id = block_id
+        self.cache_namespace = cache_namespace
+        self.content_hash = PrefixHash.hash_block_tokens(
+            prev_block is None,
+            None if prev_block is None else prev_block.content_hash,
+            token_ids,
+            cache_namespace,
+        )
+
+
+class _FakeForkAllocator:
+    fork = _load_allocator_fork()
+
+    def __init__(self):
+        self._block_size = 2
+        self._refcounter = _FakeRefCounter()
+
+    def _init_block(self, prev_block, token_ids, block_size, *,
+                    physical_block_id=None, cache_namespace=None):
+        if block_size != self._block_size:
+            raise AssertionError("fork changed the block size")
+        return _FakeForkBlock(prev_block, token_ids, physical_block_id,
+                              cache_namespace)
+
+
 class PrefixContentHashTest(unittest.TestCase):
 
     def test_sha256_chain_is_stable_and_parent_sensitive(self):
@@ -183,6 +246,18 @@ class PrefixContentHashTest(unittest.TestCase):
         self.assertIn("def _allocate_mutable_block", source)
         self.assertIn("allocate_mutable_block_with_cache_namespace", source)
         self.assertIn("block = self._allocate_mutable_block", source)
+
+    def test_fork_preserves_first_block_namespace_and_hash_chain(self):
+        namespace = b"request-namespace"
+        first = _FakeForkBlock(None, [1, 2], 7, namespace)
+        second = _FakeForkBlock(first, [3, 4], 8, namespace)
+
+        forked = _FakeForkAllocator().fork(second)
+
+        self.assertEqual([block.cache_namespace for block in forked],
+                         [namespace, namespace])
+        self.assertEqual([block.content_hash for block in forked],
+                         [first.content_hash, second.content_hash])
 
 
 if __name__ == "__main__":

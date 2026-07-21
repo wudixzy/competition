@@ -543,11 +543,12 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             assert refcount != 1, "can't fork free'd block_id = {}".format(
                 block_id)
 
-            forked_block = self._block_pool.init_block(
+            forked_block = self._init_block(
                 prev_block=prev_block,
                 token_ids=block.token_ids,
                 block_size=self._block_size,
-                physical_block_id=block_id)
+                physical_block_id=block_id,
+                cache_namespace=block.cache_namespace)
 
             forked_blocks.append(forked_block)
             prev_block = forked_blocks[-1]
