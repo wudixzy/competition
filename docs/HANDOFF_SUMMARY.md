@@ -12,6 +12,8 @@
 - 状态：`IMPLEMENTATION_GATES_PASSED; TRACE_QUALIFICATION_PENDING`。没有单 session
   v4 `1..881` trace 前不得启用、不得改 YAML、不得合并 main；代理命中不能替代
   有效 KV 与 GDN 交集的真实收益门槛。
+- 已盘点远端 `bench_runs`、M1-32 目录和本地 `result`，没有任何 v4 trace 数据；
+  marker 命中均来自源码/文档。该缺口不能从公开长度桶聚合反推。
 
 ## 2026-07-21 M1-40 masked-Neumann GDN 门禁
 

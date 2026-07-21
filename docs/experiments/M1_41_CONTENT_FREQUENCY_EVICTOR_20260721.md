@@ -101,3 +101,11 @@ Production `main`, submission YAML, and the running service remain unchanged.
 The missing decision input is a complete single-session v4 trace with ordinals
 `1..881` and same-run metrics. The current instance is also ineligible for TP4
 because GPU3 still times out.
+
+A bounded inventory checked the remote `bench_runs`, prior M1-32 directories,
+and local `result` tree. It found no v4 trace records and no single-session
+ordinal sequence; the only marker matches were source and design documents.
+Generating the missing trace requires the evaluator workload or an equivalent
+881-request replay and cannot be reconstructed from published bucket
+aggregates. M1-41 therefore remains default-off rather than inferring a score
+from its synthetic proxy.
