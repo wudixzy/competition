@@ -49,6 +49,7 @@ class CpuKvContentCache:
         heapq.heapify(self._free_slots)
 
         self._step_slots_in_use: Set[int] = set()
+        self._step_load_slots: Set[int] = set()
         self._step_h2d: Dict[int, int] = {}
         self._step_d2h: Dict[int, int] = {}
         self._pending_ready_slots: Set[int] = set()
@@ -79,6 +80,13 @@ class CpuKvContentCache:
     def _select_store_slot(self) -> Optional[int]:
         if self._free_slots:
             return heapq.heappop(self._free_slots)
+        # A block table is allocated sequentially. Once this step starts
+        # promoting a CPU prefix, an unclaimed resident entry may be a later
+        # block from that same prefix. Replacing it here would silently turn a
+        # complete lower-tier hit into a partial one. Keep resident CPU content
+        # stable for mixed H2D/D2H steps; pure D2H steps still use normal LRU.
+        if self._step_load_slots:
+            return None
         for slot in self._lru:
             if slot not in self._step_slots_in_use:
                 return slot
@@ -108,6 +116,7 @@ class CpuKvContentCache:
             raise RuntimeError(
                 f"CPU KV slot {slot} was claimed twice in one scheduler step")
         self._step_slots_in_use.add(slot)
+        self._step_load_slots.add(slot)
         self._touch(slot)
         self.hits += 1
         return slot
@@ -123,6 +132,7 @@ class CpuKvContentCache:
         if cpu_slot not in self._step_slots_in_use:
             raise RuntimeError("cannot cancel an unclaimed CPU KV load")
         self._step_slots_in_use.remove(cpu_slot)
+        self._step_load_slots.remove(cpu_slot)
 
     def stage_load(self, content_hash: ContentHash, cpu_slot: int,
                    gpu_block: int) -> None:
@@ -198,6 +208,9 @@ class CpuKvContentCache:
         if set(self._step_h2d) & set(self._step_d2h.values()):
             raise RuntimeError(
                 "CPU KV scheduler step reuses a CPU slot across directions")
+        if set(self._step_h2d) != self._step_load_slots:
+            raise RuntimeError(
+                "CPU KV scheduler step contains an unstaged load claim")
 
         swap_in = sorted(self._step_h2d.items())
         swap_out = sorted(self._step_d2h.items())
@@ -205,6 +218,7 @@ class CpuKvContentCache:
         self._step_h2d.clear()
         self._step_d2h.clear()
         self._step_slots_in_use.clear()
+        self._step_load_slots.clear()
         return swap_in, swap_out
 
     def resident_slot(self, content_hash: ContentHash) -> Optional[int]:

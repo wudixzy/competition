@@ -23,6 +23,9 @@ from `computility-run.yaml` until all qualification gates pass.
    CPU copy. A CPU hit stages `CPU -> GPU` while retaining the CPU copy.
 4. A CPU slot used as an H2D source or D2H destination is pinned for the whole
    scheduler step. Pending D2H content cannot be read until the next step.
+   Once a step claims any H2D source, D2H may consume free CPU slots but cannot
+   replace resident CPU content. This preserves later, not-yet-claimed blocks
+   of the same sequentially allocated prefix when the CPU tier is saturated.
 5. A reused GPU slot may be a D2H source and then an H2D destination in the same
    step. Every worker must execute all D2H transfers before any H2D transfer.
 6. Mappings have unique sources and destinations and are produced only by the
@@ -113,3 +116,22 @@ count and block size; it is not a tuning parameter. The same count, token
 lengths, run identifier, model command, and request order must be used for the
 clean-start control and candidate runs. Candidate evidence is admissible only
 when the control proves that pressure actually evicted the target from GPU KV.
+
+## TP4 capacity diagnostic
+
+The diagnostic candidate at runtime commit `132718b` reached healthy status on
+all four workers with the fixed 262,144-token command. `/health` and
+`/v1/models` returned HTTP 200, and a one-token smoke request completed with
+`finish_reason=length`. Startup reported 16,878 GPU blocks and 6,553 CPU blocks
+at block size 16, corresponding to 270,048 and 104,848 token slots.
+
+Harness commit `f4aa85c` constructed the fixed prompts with the remote local
+tokenizer before any pressure run:
+
+- target: exactly 65,536 tokens, 376,731 UTF-8 bytes, 2.082 seconds;
+- pressure: exactly 135,040 tokens, 776,331 UTF-8 bytes, 7.589 seconds.
+
+Two pressure prompts occupy 16,880 blocks, exceeding measured GPU capacity by
+exactly two blocks. This is the frozen pressure geometry for both clean-start
+runs. The diagnostic is not qualification evidence because it was candidate
+first, enabled cache tracing, and predates the saturated-promotion protection.

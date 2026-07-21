@@ -53,7 +53,7 @@ class CpuKvContentCacheTest(unittest.TestCase):
         self.assertTrue(cache.is_ready(key))
 
     def test_same_gpu_slot_can_store_victim_then_load_requested_content(self):
-        cache = CpuKvContentCache(2)
+        cache = CpuKvContentCache(3)
         first, victim, replacement = digest(1), digest(2), digest(3)
         cache.stage_store(first, gpu_block=10)
         cache.drain_step()
@@ -69,12 +69,48 @@ class CpuKvContentCacheTest(unittest.TestCase):
         swap_in, swap_out = cache.drain_step()
 
         self.assertEqual(swap_in, [(0, 7)])
-        self.assertEqual(swap_out, [(7, 1)])
-        self.assertIsNone(cache.resident_slot(victim))
-        self.assertEqual(cache.resident_slot(replacement), 1)
+        self.assertEqual(swap_out, [(7, 2)])
+        self.assertEqual(cache.resident_slot(victim), 1)
+        self.assertEqual(cache.resident_slot(replacement), 2)
         self.assertFalse(cache.is_ready(replacement))
         cache.begin_step()
         self.assertTrue(cache.is_ready(replacement))
+
+    def test_saturated_promotion_does_not_evict_later_prefix_sources(self):
+        cache = CpuKvContentCache(4)
+        keys = [digest(index) for index in range(5)]
+        for gpu_block, key in enumerate(keys[:4]):
+            self.assertTrue(cache.stage_store(key, gpu_block))
+        cache.drain_step()
+        cache.begin_step()
+
+        first_slot = cache.claim_load(keys[0])
+        self.assertEqual(first_slot, 0)
+        self.assertFalse(cache.stage_store(keys[4], gpu_block=9))
+        cache.stage_load(keys[0], first_slot, gpu_block=9)
+
+        # Sequential block allocation has not claimed these entries yet, but
+        # they belong to the same restorable prefix and must remain available.
+        self.assertEqual(
+            [cache.resident_slot(key) for key in keys[1:4]], [1, 2, 3])
+        self.assertEqual(cache.drain_step(), ([(0, 9)], []))
+        self.assertEqual(cache.skipped_stores, 1)
+
+    def test_pure_store_step_still_replaces_multiple_lru_entries(self):
+        cache = CpuKvContentCache(2)
+        keys = [digest(index) for index in range(4)]
+        self.assertTrue(cache.stage_store(keys[0], gpu_block=0))
+        self.assertTrue(cache.stage_store(keys[1], gpu_block=1))
+        cache.drain_step()
+        cache.begin_step()
+
+        self.assertTrue(cache.stage_store(keys[2], gpu_block=2))
+        self.assertTrue(cache.stage_store(keys[3], gpu_block=3))
+        self.assertEqual(cache.drain_step(), ([], [(2, 0), (3, 1)]))
+        self.assertIsNone(cache.resident_slot(keys[0]))
+        self.assertIsNone(cache.resident_slot(keys[1]))
+        self.assertEqual(cache.resident_slot(keys[2]), 0)
+        self.assertEqual(cache.resident_slot(keys[3]), 1)
 
     def test_claimed_slots_are_not_overwritten(self):
         cache = CpuKvContentCache(2)

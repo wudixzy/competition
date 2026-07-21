@@ -1,0 +1,37 @@
+{
+  "schema": "bi100-m1-45-tp4-capacity-prompt-gate-v1",
+  "runtime_commit": "132718b",
+  "harness_commit": "f4aa85c",
+  "server": {
+    "health_http_status": 200,
+    "models_http_status": 200,
+    "served_model": "llm",
+    "worker_count": 4,
+    "smoke_completion_tokens": 1,
+    "smoke_finish_reason": "length",
+    "smoke_elapsed_ms": 3604
+  },
+  "cache": {
+    "block_size": 16,
+    "gpu_blocks": 16878,
+    "cpu_blocks": 6553,
+    "gpu_token_capacity": 270048,
+    "cpu_token_capacity": 104848
+  },
+  "prompts": {
+    "target": {
+      "tokens": 65536,
+      "utf8_bytes": 376731,
+      "build_elapsed_ms": 2082
+    },
+    "pressure": {
+      "tokens": 135040,
+      "utf8_bytes": 776331,
+      "build_elapsed_ms": 7589,
+      "count": 2,
+      "total_blocks": 16880
+    }
+  },
+  "qualified": false,
+  "qualification_note": "Capacity and exact-token construction only; fixed-order clean-start A/B remains pending."
+}
