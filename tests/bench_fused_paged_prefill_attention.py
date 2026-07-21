@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import importlib.util
 import json
 import math
 import os
@@ -22,6 +23,7 @@ MEASURED_TRIALS = 7
 MAX_ABS_LIMIT = 1e-3
 RELATIVE_L2_LIMIT = 1e-5
 MIN_SPEEDUP = 1.5
+EXTENSION_MODULE_NAME = "corex_fused_paged_prefill"
 
 CASES = (
     ("dense_q1", 0, 1, False),
@@ -323,9 +325,28 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
         raise
 
 
+def _load_extension(extension_path: Path | None) -> Any:
+    if extension_path is None:
+        return importlib.import_module(
+            f"vllm.{EXTENSION_MODULE_NAME}")
+
+    resolved_path = extension_path.expanduser().resolve(strict=True)
+    spec = importlib.util.spec_from_file_location(
+        EXTENSION_MODULE_NAME, resolved_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(
+            f"cannot load fused extension from {resolved_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--extension", type=Path,
+        help="load an isolated corex_fused_paged_prefill shared object")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -336,7 +357,7 @@ def main() -> int:
     device = torch.device(args.device)
     torch.cuda.set_device(device)
     torch.set_grad_enabled(False)
-    extension = importlib.import_module("vllm.corex_fused_paged_prefill")
+    extension = _load_extension(args.extension)
     forward = getattr(extension, "forward", None)
     if not callable(forward):
         raise RuntimeError("fused paged prefill extension has no forward")

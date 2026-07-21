@@ -95,6 +95,11 @@ warm-path, decode, and capacity gates remain separate runtime qualifications.
 The script is qualification infrastructure, not evidence that a candidate has
 passed.
 
+The benchmark accepts `--extension PATH` to load a compiled candidate from an
+isolated build directory under the exact native module name. This keeps the
+qualification run independent of the installed vLLM package and prevents an
+unqualified binary from changing the production runtime.
+
 ## First candidate
 
 `qwen3_6_scripts/corex_fused_paged_prefill.cu` implements the frozen shape as

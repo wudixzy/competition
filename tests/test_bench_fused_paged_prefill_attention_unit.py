@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pathlib
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -41,6 +43,33 @@ def _cases(speedup: float = 1.6) -> dict:
 
 
 class FusedPagedPrefillGateTest(unittest.TestCase):
+
+    def test_default_extension_loads_from_vllm(self):
+        sentinel = object()
+        with mock.patch.object(
+                benchmark.importlib, "import_module",
+                return_value=sentinel) as import_module:
+            self.assertIs(benchmark._load_extension(None), sentinel)
+        import_module.assert_called_once_with(
+            "vllm.corex_fused_paged_prefill")
+
+    def test_isolated_extension_uses_compiled_module_name(self):
+        sentinel = object()
+        loader = mock.Mock()
+        spec = mock.Mock(loader=loader)
+        with tempfile.TemporaryDirectory() as directory:
+            extension_path = pathlib.Path(directory) / "candidate.so"
+            extension_path.touch()
+            with mock.patch.object(
+                    benchmark.importlib.util, "spec_from_file_location",
+                    return_value=spec) as make_spec, mock.patch.object(
+                        benchmark.importlib.util, "module_from_spec",
+                        return_value=sentinel):
+                self.assertIs(
+                    benchmark._load_extension(extension_path), sentinel)
+        make_spec.assert_called_once_with(
+            "corex_fused_paged_prefill", extension_path.resolve())
+        loader.exec_module.assert_called_once_with(sentinel)
 
     def test_fixed_geometry(self):
         self.assertEqual(benchmark.BLOCK_SIZE, 16)
