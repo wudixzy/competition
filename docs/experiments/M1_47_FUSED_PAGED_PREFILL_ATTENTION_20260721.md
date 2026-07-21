@@ -80,7 +80,9 @@ alternative use the same cases:
 | Small dense golden | `(ctx,Q)=(0,1),(0,8),(0,256),(240,16)` |
 | Paged boundary | `(ctx,Q)=(65520,16),(234992,8)` |
 | Core query tile | `Q=256`, paged contexts `74K`, `128K`, `235K` |
-| Service chunk geometry | `(ctx,Q)=(0,8192),(65536,8192),(122880,8192),(229376,5624)` |
+| ABI maximum-query stress | `(ctx,Q)=(0,8192)` |
+| Fused service segments | `(ctx,Q)=(0,8176),(65536,8176),(122880,8176),(229376,5616)` |
+| Existing-path fallback tails | `Q=16` for full chunks and `Q=8` at 235K |
 | Capacity edge | `ctx+Q+max_tokens <= 262144` |
 | Service cold | exact 65K and 235K prompts |
 | Service warm | same 65K and 235K requests after prefix restoration |
@@ -126,6 +128,13 @@ to segments with empty `prefix_key` and `q_len > 16`; mixed-prefix segments and
 the 16-token cold/warm boundary stay on the installed PyTorch path. This guard
 is part of the production gate and is not enabled before the core candidate
 qualifies.
+
+With block size 16, the installed `_strict_prefix_query_segments` turns each
+full 8,192-token scheduler chunk into a fused-eligible 8,176-token segment and
+a 16-token mixed-prefix fallback. The 235,000-token tail becomes 5,616 fused
+tokens plus an 8-token fallback. The 8,192-token case remains an ABI-limit
+numerical stress because the native entry point accepts it, but service-shape
+qualification uses the actual 8,176/5,616 dispatch lengths.
 
 This source is intentionally absent from `patch_ops.sh` and the prebuilt
 manifest. It must first compile once on CoreX 3.2.3 and pass every numerical

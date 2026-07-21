@@ -96,10 +96,11 @@ class FusedPagedPrefillGateTest(unittest.TestCase):
         self.assertEqual(benchmark.WARMUP_TRIALS, 5)
         self.assertEqual(benchmark.MEASURED_TRIALS, 7)
         self.assertTrue({
-            ("service_dense_q8192", 0, 8_192, False),
-            ("service_65k_q8192", 65_536, 8_192, False),
-            ("service_128k_q8192", 122_880, 8_192, False),
-            ("service_235k_tail_q5624", 229_376, 5_624, False),
+            ("max_query_q8192", 0, 8_192, False),
+            ("service_dense_q8176", 0, 8_176, False),
+            ("service_65k_q8176", 65_536, 8_176, False),
+            ("service_128k_q8176", 122_880, 8_176, False),
+            ("service_235k_tail_q5616", 229_376, 5_616, False),
         }.issubset(set(benchmark.CASES)))
 
     def test_qualified_report(self):
