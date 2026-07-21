@@ -50,6 +50,14 @@ from `computility-run.yaml` until all qualification gates pass.
 - TP4 correctness: direct mode retains the existing 131K/256-token equality
   boundary; aligned mode passes 235K/1000-token full equality; 256K capacity is
   unchanged.
+- TP4 eviction pressure: run the same fixed request sequence after separate
+  clean server starts. The sequence is a 65,536-token cold target, its immediate
+  warm replay, the minimum number of fixed-length unique pressure requests
+  required to exceed the log-reported GPU KV capacity, then two target replays.
+  The `control` run must report at most one cached block after pressure; the
+  `candidate` run must restore all but at most two target blocks. Every target
+  response must have the same completion length, finish reason, and message
+  digest. Raw prompts and responses are never persisted.
 - Performance: fixed-order A/B, same image and command, cache cleared between
   groups. Admission requires at least +5 percentage points effective hit and
   +5% weighted proxy, Output TPS P10 at least 20 and no more than 2% relative
@@ -89,3 +97,19 @@ restored request, and inclusive CPU source were all bit-exact. Evidence:
 This closes the ordering and CoreX data-movement gate. It still does not prove
 GDN/KV intersection correctness in the full model, model-output equivalence,
 TTFT improvement, 881-request gain, or TP4 stability.
+
+## TP4 pressure harness
+
+`tests/cpu_kv_offload_pressure_api.py` implements the predeclared pressure
+sequence through the OpenAI-compatible API. It constructs prompts with exact
+token counts using the local model tokenizer, persists progress atomically after
+every request, and records only token counts, timings, finish reasons, and
+SHA-256 response digests. A failed request, non-finite timing, imprecise prompt,
+zero-token completion, changed target response, or missed cache threshold makes
+the gate fail closed.
+
+The pressure request count is derived once from the startup log's GPU block
+count and block size; it is not a tuning parameter. The same count, token
+lengths, run identifier, model command, and request order must be used for the
+clean-start control and candidate runs. Candidate evidence is admissible only
+when the control proves that pressure actually evicted the target from GPU KV.
