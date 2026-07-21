@@ -2,7 +2,7 @@
 
 ## 2026-07-21 M1-49 混合层 KV 计数修正
 
-- 私有分支：`exp/M1-49-hybrid-kv-accounting-20260721`，当前实现 `b25d0b3`；
+- 私有分支：`exp/M1-49-hybrid-kv-accounting-20260721`，当前实现 `43dd8e8`；
   `computility-run.yaml` 和 `main` 均未修改。
 - 根因是旧版 vLLM 只读取顶层 `layers_block_type`，而 Qwen 适配器仅在嵌套
   `text_config.layer_types` 声明 `10 full_attention + 30 linear_attention`，
@@ -41,6 +41,25 @@
   `docs/research/POST_M1_49_OPTIMIZATION_REVIEW_20260721.md`：当前缓存已是内容
   SHA 与 KV/GDN 交集，不再重做旧物理键方案；M1-47 按 20% 服务门槛关闭，A/B
   后只运行一次 M1-48 归因，再由最大独占热点决定下一候选。
+
+## 2026-07-22 M1-49 后置门禁与 GPU 阶段诊断
+
+- 私有实验分支新增提交 `43dd8e8`，加入
+  `scripts/run_m1_49_long_context_gates.sh`。它只在固定 A/B 通过后运行，
+  串行验证 quick smoke、多模态内容隔离、131K exact、235K/1,000-token
+  warm-repeat 和 262K exact，并在服务前后做四卡预检。
+- 最终证据汇总器会重新验证每个嵌套报告的字段、哈希、缓存阈值和等价关系；
+  服务退出后的单卡可用显存下降不得超过固定 1 GiB。该门禁只证明 M1-49
+  容量与正确性，不冒充 M1-48 的 20% cold-TTFT 性能门槛。
+- `tests/bi100_preflight.py` 现在在 CoreX 导入、设备选择、显存查询、分配、
+  matmul、同步和 checksum 前分别刷新阶段心跳。四卡通过条件没有改变，
+  但 GPU 超时现在能定位最后到达的运行时阶段。
+- 2026-07-22 远端增强预检确认 GPU0 在 `torch.cuda.mem_get_info()` 内超时；
+  CoreX 导入、`set_device` 和设备信息读取均已完成，同脚本 GPU1 正常通过。
+  `ixsmi` 同时显示 GPU0 仅占 `257 MiB` 却保持 `100%/P0`，且没有可见
+  compute PID，GPU1-3 利用率均为 0%。这发生在模型和 vLLM 启动之前。
+- 本地全量测试为 `360 passed, 25 skipped`，submission preflight `8/8`；
+  `computility-run.yaml`、`Dockerfile` 和 `main` 均未修改。
 
 ## 2026-07-21 M1-45 内容寻址 CPU KV 二级缓存
 

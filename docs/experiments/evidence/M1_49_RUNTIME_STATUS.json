@@ -3,7 +3,7 @@
     "qualified": false,
     "reasons": [
       "corrected TP4 candidate service has not completed startup",
-      "post-reconnect 1024-square preflight still times out on GPU0 while GPU1-3 pass"
+      "post-reconnect GPU0 stalls inside torch.cuda.mem_get_info while the same staged probe passes on GPU1"
     ],
     "status": "RUNTIME_BLOCKED_GPU0_UNHEALTHY_AFTER_RECONNECT"
   },
@@ -16,7 +16,8 @@
       "67f96b3",
       "b45e4b7",
       "185c2d6",
-      "b25d0b3"
+      "b25d0b3",
+      "43dd8e8"
     ],
     "default_mode": "legacy40",
     "selector": "BI100_HYBRID_KV_ACCOUNTING",
@@ -29,8 +30,8 @@
   "local_validation": {
     "submission_preflight": "8/8 passed",
     "unit_tests": {
-      "passed": 219,
-      "skipped": 13
+      "passed": 360,
+      "skipped": 25
     }
   },
   "remote_install": {
@@ -146,6 +147,43 @@
         "total_memory_bytes": 34057748480
       },
       "preflight_exit_code": 1
+    },
+    {
+      "event": "staged_gpu0_preflight_20260722",
+      "source_commit": "43dd8e8",
+      "gpu0": {
+        "exit_code": 124,
+        "json_path": "/root/m1-49-gpu0-staged-preflight-20260722.json",
+        "json_sha256": "c76cb3812771ca7f6e4471c935961116f83d2a9309bf86c266b138745c54b714",
+        "last_progress_stage": "mem_get_info",
+        "progress": [
+          "import_torch",
+          "set_device",
+          "device_info",
+          "mem_get_info"
+        ],
+        "result": "timeout"
+      },
+      "gpu1_control": {
+        "capability": [
+          7,
+          0
+        ],
+        "checksum": 1073741824.0,
+        "exit_code": 0,
+        "json_path": "/root/m1-49-gpu1-staged-preflight-20260722.json",
+        "json_sha256": "05794a4e890c93ded859cfe68a320641f72da4884c1ca1b49d4f3f7959e324d7",
+        "result": "done"
+      },
+      "platform_state": {
+        "compute_processes": "none listed",
+        "gpu0_memory": "257 MiB / 32768 MiB",
+        "gpu0_performance_state": "P0",
+        "gpu0_utilization": "100%",
+        "other_gpu_utilization": "0%",
+        "path": "/root/m1-49-gpu0-platform-state-20260722.txt",
+        "sha256": "3cf1c9c2e485d407074250d11f75289beec13c48005c04be296aa395d3c8e6c9"
+      }
     }
   ],
   "schema": "bi100-m1-49-runtime-status-v1",

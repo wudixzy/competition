@@ -135,9 +135,34 @@ It does not qualify M1-45 CPU transfer, Output TPS, the complete workload, or
 the final score. Fresh 235K/262K and multimodal gates remain locked until the
 A/B comparison succeeds.
 
+## Fixed post-A/B qualification
+
+`scripts/run_m1_49_long_context_gates.sh` is the only post-A/B continuation.
+It refuses to start unless the fixed A/B, cleanup, comparison, and final GPU
+preflight all returned zero and the A/B report itself is qualified. It then
+starts one fresh `full_attention` service with the same atomic overlay and
+fixed evaluator contract. CPU KV offload, cache tracing, and fused prefill
+remain disabled, while `admission64/direct` remains fixed.
+
+The service must pass the quick API suite, same-image multimodal reuse plus
+different-image isolation, 131K/256-token cold-warm exactness, 235K/1,000-token
+finite completion with two deterministic warm repeats, and 262K/16-token
+capacity/exactness. Every long-context raw summary is independently reduced to
+a privacy-safe report and the final qualifier revalidates every request field,
+cache threshold, digest relation, and source hash instead of trusting a nested
+`qualified` flag. The service process group must be empty afterward; all four
+GPU probes must still pass, and per-GPU free memory may fall by no more than a
+fixed 1 GiB from the pre-service probe.
+
+This gate intentionally proves hybrid-KV capacity and correctness, not the
+phase-three prefill speed target. The 20% cold-TTFT improvement and 1.5x kernel
+speed gates apply only to the later paired M1-48/fused-attention experiment;
+claiming them from a single M1-49 service would be an invalid comparison.
+
 ## Validation so far
 
-- local unit discovery: 219 passed, 13 skipped;
+- local unit discovery after the post-A/B gate was added: 360 passed, 25
+  skipped;
 - submission preflight: 8/8 passed;
 - remote selector smoke: `legacy40=40`, `full_attention=10`;
 - remote patched profiler source uses `get_num_attention_layers`;
@@ -160,6 +185,13 @@ The latest post-reconnect 1,024-square preflight still returns timeout rc 124
 on GPU0; GPU1-3 report `Iluvatar BI-V100`, capability `7.0`, total memory
 `34,057,748,480`, and checksum `1,073,741,824.0`. This confirms SSH recovery
 did not recover GPU0. No TP4 service may start until all four probes pass.
+The staged 2026-07-22 probe narrows the hang to
+`torch.cuda.mem_get_info()`: GPU0 completes the CoreX import, device selection,
+and device-information query before timing out, while GPU1 completes the same
+script. At the same time `ixsmi` reports GPU0 at `100%` utilization and `P0`
+with only `257 MiB` allocated and no visible compute process; GPUs 1-3 are at
+`0%`. This is driver/device-context evidence before model or vLLM code runs,
+not an M1-49 model failure.
 Historical reset diagnostics and the latest event are in
 `evidence/M1_49_RUNTIME_STATUS.json`.
 
