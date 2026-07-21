@@ -221,12 +221,21 @@ An independent review found that `PrefixCachingBlockAllocator.fork()` rebuilt
 the first forked block through the raw block pool. That path did not carry the
 request cache namespace, so `n > 1` or beam-style sequence forks could derive a
 different first-block hash and later fail the cached-block release assertion.
-The allocator now rebuilds every forked block through its namespace-aware
-initializer and explicitly copies `block.cache_namespace`. A behavioral unit
-test verifies that a two-block fork retains both namespaces and the complete
+
+The first fix routed forks through the namespace-aware initializer, but the
+real CoreX gate correctly failed both release orders: hashes happened to match
+while fork namespaces remained empty. This exposed a deeper object-pool issue.
+`BlockPool.init_block()` reinitializes a pre-created block directly and bypasses
+the allocator factory, so temporarily setting the allocator namespace did not
+affect normal pooled objects. The corrected initializer now restores the
+resolved namespace on the returned pooled block, before any content hash can be
+observed. The behavioral unit test models that namespace-clearing pool reuse,
+then verifies that a two-block fork retains both namespaces and the complete
 SHA-256 chain.
 
-The formal pressure and long-context requests use `n=1`, so this defect does not
-invalidate their timing or equality evidence. The patched runtime must still
-pass a real CoreX `n=2` fork/release regression before any evaluation candidate
-is published.
+The formal pressure and long-context requests are text-only and use one fixed
+model with `n=1`, so the empty namespace does not invalidate their timing or
+same-run equality evidence. It does invalidate claims that model/adapter and
+multimodal namespace isolation were already exercised in the pooled runtime.
+The corrected runtime must pass the real CoreX fork/release gate plus same-image
+hit and different-image isolation before any evaluation candidate is published.

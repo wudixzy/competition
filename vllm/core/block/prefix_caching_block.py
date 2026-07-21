@@ -190,11 +190,22 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         prev_namespace = self._cache_namespace
         self._cache_namespace = cache_namespace
         try:
-            return self._block_pool.init_block(
+            block = self._block_pool.init_block(
                 prev_block=prev_block,
                 token_ids=token_ids,
                 block_size=block_size,
                 physical_block_id=physical_block_id)
+            # BlockPool reinitializes a pre-created block object directly, so
+            # the allocator factory above is bypassed on normal pool reuse.
+            # Restore the namespace before content_hash can be observed.
+            resolved_namespace = cache_namespace or b""
+            if prev_block is not None and not resolved_namespace:
+                resolved_namespace = prev_block.cache_namespace
+            if block._cached_content_hash is not None:  # type: ignore[attr-defined]
+                raise RuntimeError(
+                    "pooled prefix block retained a content hash during init")
+            block._cache_namespace = resolved_namespace  # type: ignore[attr-defined]
+            return block
         finally:
             self._cache_namespace = prev_namespace
 

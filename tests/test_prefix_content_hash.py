@@ -93,6 +93,21 @@ def _load_allocator_fork():
     return namespace["fork"]
 
 
+def _load_allocator_init_block():
+    tree = ast.parse(PREFIX_BLOCK.read_text(), filename=str(PREFIX_BLOCK))
+    source = next(node for node in tree.body
+                  if isinstance(node, ast.ClassDef)
+                  and node.name == "PrefixCachingBlockAllocator")
+    function = next(node for node in source.body
+                    if isinstance(node, ast.FunctionDef)
+                    and node.name == "_init_block")
+    namespace = {"Block": Any, "List": List, "Optional": Optional}
+    module = ast.fix_missing_locations(ast.Module(
+        body=[function], type_ignores=[]))
+    exec(compile(module, str(PREFIX_BLOCK), "exec"), namespace)
+    return namespace["_init_block"]
+
+
 class _FakeRefCounter:
 
     def incr(self, block_id):
@@ -105,28 +120,41 @@ class _FakeForkBlock:
         self.prev_block = prev_block
         self.token_ids = token_ids
         self.block_id = block_id
-        self.cache_namespace = cache_namespace
-        self.content_hash = PrefixHash.hash_block_tokens(
-            prev_block is None,
-            None if prev_block is None else prev_block.content_hash,
-            token_ids,
-            cache_namespace,
-        )
+        self._cache_namespace = cache_namespace
+        self._cached_content_hash = None
+
+    @property
+    def cache_namespace(self):
+        return self._cache_namespace
+
+    @property
+    def content_hash(self):
+        if self._cached_content_hash is None:
+            self._cached_content_hash = PrefixHash.hash_block_tokens(
+                self.prev_block is None,
+                None if self.prev_block is None else self.prev_block.content_hash,
+                self.token_ids,
+                self._cache_namespace,
+            )
+        return self._cached_content_hash
+
+
+class _NamespaceResettingBlockPool:
+
+    def init_block(self, prev_block, token_ids, block_size,
+                   physical_block_id=None):
+        return _FakeForkBlock(prev_block, token_ids, physical_block_id, b"")
 
 
 class _FakeForkAllocator:
     fork = _load_allocator_fork()
+    _init_block = _load_allocator_init_block()
 
     def __init__(self):
         self._block_size = 2
         self._refcounter = _FakeRefCounter()
-
-    def _init_block(self, prev_block, token_ids, block_size, *,
-                    physical_block_id=None, cache_namespace=None):
-        if block_size != self._block_size:
-            raise AssertionError("fork changed the block size")
-        return _FakeForkBlock(prev_block, token_ids, physical_block_id,
-                              cache_namespace)
+        self._cache_namespace = None
+        self._block_pool = _NamespaceResettingBlockPool()
 
 
 class PrefixContentHashTest(unittest.TestCase):
