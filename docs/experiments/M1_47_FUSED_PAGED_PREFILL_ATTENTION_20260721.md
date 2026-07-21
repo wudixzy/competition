@@ -1,7 +1,8 @@
 # M1-47: Fused paged prefill attention
 
-Status: runtime path and fixed ABI audited; implementation pending M1-45
-long-context and M1-46 transfer decisions; no runtime, YAML, or `main` change.
+Status: runtime path and fixed ABI audited; first compiled-pipeline source is
+ready for CoreX qualification but is not installed or bundled; no runtime,
+YAML, or `main` change.
 
 ## Corrected scope
 
@@ -93,6 +94,21 @@ and core microbenchmark subset and fails closed until a
 warm-path, decode, and capacity gates remain separate runtime qualifications.
 The script is qualification infrastructure, not evidence that a candidate has
 passed.
+
+## First candidate
+
+`qwen3_6_scripts/corex_fused_paged_prefill.cu` implements the frozen shape as
+one compiled streaming pipeline. It gathers each physical KV tile directly
+into fixed FP32 workspaces, runs six-head strided-batched SGEMMs for QK and PV,
+and updates FP32 online max, sum, output, and LSE without allocating complete
+sequence logits. Context and current causal K/V retain separate 512-token
+reduction phases to match the installed reference partitioning.
+
+This source is intentionally absent from `patch_ops.sh` and the prebuilt
+manifest. It must first compile once on CoreX 3.2.3 and pass every numerical
+case plus the three fixed `1.5x` core cases. Failure proceeds only to the one
+predeclared split-reduction alternative; no tile, cuBLAS algorithm, tolerance,
+or launch scan is permitted.
 
 ## Gates
 
