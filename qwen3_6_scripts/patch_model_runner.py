@@ -294,6 +294,13 @@ MODEL_CALL_REPLACEMENT = """\
                 **seqlen_agnostic_kwargs,
                 **gdn_prefix_kwargs)"""
 
+PROFILE_KV_LAYERS_ANCHOR = """\
+        num_layers = self.model_config.get_num_layers(self.parallel_config)"""
+
+PROFILE_KV_LAYERS_REPLACEMENT = """\
+        num_layers = self.model_config.get_num_attention_layers(
+            self.parallel_config)"""
+
 
 def patch_model_runner(model_runner: pathlib.Path) -> None:
     replace_once(
@@ -378,6 +385,13 @@ def patch_model_runner(model_runner: pathlib.Path) -> None:
         MODEL_CALL_ANCHOR,
         MODEL_CALL_REPLACEMENT,
         already_contains="**gdn_prefix_kwargs)",
+    )
+    replace_once(
+        model_runner,
+        PROFILE_KV_LAYERS_ANCHOR,
+        PROFILE_KV_LAYERS_REPLACEMENT,
+        required=True,
+        already_contains=PROFILE_KV_LAYERS_REPLACEMENT,
     )
 
 

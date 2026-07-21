@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import pathlib
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -41,26 +43,18 @@ def _load_config(relative_path: str) -> dict[str, object]:
 
 class QwenHybridKvAccountingTest(unittest.TestCase):
 
-    def test_default_configs_expose_only_full_attention_caches(self):
+    def test_default_configs_preserve_legacy_accounting(self):
         for relative_path, class_name in CONFIGS:
             with self.subTest(config=class_name):
                 namespace = _load_config(relative_path)
                 config = namespace[class_name]()
                 layer_count = config.text_config.num_hidden_layers
-                expected = [
-                    "attention" if (index + 1) % 4 == 0
-                    else "linear_attention"
-                    for index in range(layer_count)
-                ]
-                self.assertEqual(config.layers_block_type, expected)
                 self.assertEqual(
-                    config.layers_block_type.count("attention"),
-                    layer_count // 4,
-                )
+                    config.layers_block_type, ["attention"] * layer_count)
                 self.assertEqual(
                     len(config.text_config.layer_types), layer_count)
 
-    def test_custom_layer_order_preserves_full_attention_ordinals(self):
+    def test_candidate_preserves_full_attention_ordinals(self):
         layer_types = [
             "full_attention",
             "linear_attention",
@@ -81,14 +75,41 @@ class QwenHybridKvAccountingTest(unittest.TestCase):
                     num_hidden_layers=4,
                     layer_types=layer_types,
                 )
-                config = namespace[class_name](text_config=text_config)
+                accounting_env = namespace["HYBRID_KV_ACCOUNTING_ENV"]
+                candidate = namespace["FULL_ATTENTION_KV_ACCOUNTING"]
+                with mock.patch.dict(
+                        os.environ, {accounting_env: candidate}, clear=False):
+                    config = namespace[class_name](text_config=text_config)
                 self.assertEqual(config.layers_block_type, expected)
+
+    def test_candidate_default_moe_config_exposes_10_attention_caches(self):
+        relative_path, class_name = CONFIGS[1]
+        namespace = _load_config(relative_path)
+        accounting_env = namespace["HYBRID_KV_ACCOUNTING_ENV"]
+        candidate = namespace["FULL_ATTENTION_KV_ACCOUNTING"]
+        layer_types = namespace[class_name]().text_config.layer_types
+        mapped = namespace["_vllm_layers_block_type"](
+            layer_types, {accounting_env: candidate})
+        self.assertEqual(len(mapped), 40)
+        self.assertEqual(mapped.count("attention"), 10)
+
+    def test_invalid_accounting_mode_fails_closed(self):
+        for relative_path, _ in CONFIGS:
+            namespace = _load_config(relative_path)
+            accounting_env = namespace["HYBRID_KV_ACCOUNTING_ENV"]
+            with self.assertRaisesRegex(RuntimeError, accounting_env):
+                namespace["_vllm_layers_block_type"](
+                    ["full_attention"], {accounting_env: "auto"})
 
     def test_model_forward_fails_closed_on_surplus_kv_caches(self):
         source = (ROOT / "qwen3_6_scripts/qwen3_5.py").read_text(
             encoding="utf-8")
         self.assertIn("if attn_idx != len(kv_caches):", source)
         self.assertIn("consumed {attn_idx}, received {len(kv_caches)}", source)
+
+    def test_private_selector_is_absent_from_submission_yaml(self):
+        yaml = (ROOT / "computility-run.yaml").read_text(encoding="utf-8")
+        self.assertNotIn("BI100_HYBRID_KV_ACCOUNTING", yaml)
 
 
 if __name__ == "__main__":

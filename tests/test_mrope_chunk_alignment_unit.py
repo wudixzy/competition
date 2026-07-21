@@ -92,6 +92,13 @@ class MropeChunkAlignmentTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "length mismatch"):
             helper([list(range(10)) for _ in range(3)], 3, 8, 6)
 
+    def test_profile_uses_attention_cache_count(self):
+        source = self.apply_patch()
+        self.assertIn(
+            "num_layers = self.model_config.get_num_attention_layers(",
+            source,
+        )
+
     def test_api_probe_png_has_valid_chunks_and_payload(self):
         data = _load_api_probe_module()._TEST_PNG
         self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")

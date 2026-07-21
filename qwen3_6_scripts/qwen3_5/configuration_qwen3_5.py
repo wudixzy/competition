@@ -1,6 +1,7 @@
 # Adapted from transformers 5.2.0 for compatibility with transformers 4.55.3 + torch 2.1.0
 # Stubs layer_type_validation and RopeParameters which do not exist in 4.55.3
 
+import os
 from typing import Optional, List
 
 from ...configuration_utils import PretrainedConfig as PreTrainedConfig
@@ -19,8 +20,22 @@ def layer_type_validation(layer_types, num_hidden_layers=None, attention=True):
         )
 
 
-def _vllm_layers_block_type(layer_types):
+HYBRID_KV_ACCOUNTING_ENV = "BI100_HYBRID_KV_ACCOUNTING"
+LEGACY_KV_ACCOUNTING = "legacy40"
+FULL_ATTENTION_KV_ACCOUNTING = "full_attention"
+
+
+def _vllm_layers_block_type(layer_types, environ=None):
     """Expose hybrid-layer ownership in the form vLLM 0.6.3 consumes."""
+    source = os.environ if environ is None else environ
+    mode = source.get(HYBRID_KV_ACCOUNTING_ENV, LEGACY_KV_ACCOUNTING)
+    if mode == LEGACY_KV_ACCOUNTING:
+        return ["attention"] * len(layer_types)
+    if mode != FULL_ATTENTION_KV_ACCOUNTING:
+        raise RuntimeError(
+            f"{HYBRID_KV_ACCOUNTING_ENV} must be "
+            f"'{LEGACY_KV_ACCOUNTING}' or "
+            f"'{FULL_ATTENTION_KV_ACCOUNTING}', got {mode!r}")
     return [
         "attention" if layer_type == "full_attention" else layer_type
         for layer_type in layer_types

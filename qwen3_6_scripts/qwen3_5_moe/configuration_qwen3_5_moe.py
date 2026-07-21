@@ -4,6 +4,7 @@
 # Removes ignore_keys_at_rope_validation / base_model_tp_plan / base_model_pp_plan
 # which are 5.x-only and irrelevant for vLLM inference.
 
+import os
 from typing import Optional
 
 from ...configuration_utils import PretrainedConfig as PreTrainedConfig
@@ -19,8 +20,22 @@ def layer_type_validation(layer_types, num_hidden_layers=None, attention=True):
         )
 
 
-def _vllm_layers_block_type(layer_types):
+HYBRID_KV_ACCOUNTING_ENV = "BI100_HYBRID_KV_ACCOUNTING"
+LEGACY_KV_ACCOUNTING = "legacy40"
+FULL_ATTENTION_KV_ACCOUNTING = "full_attention"
+
+
+def _vllm_layers_block_type(layer_types, environ=None):
     """Expose hybrid-layer ownership in the form vLLM 0.6.3 consumes."""
+    source = os.environ if environ is None else environ
+    mode = source.get(HYBRID_KV_ACCOUNTING_ENV, LEGACY_KV_ACCOUNTING)
+    if mode == LEGACY_KV_ACCOUNTING:
+        return ["attention"] * len(layer_types)
+    if mode != FULL_ATTENTION_KV_ACCOUNTING:
+        raise RuntimeError(
+            f"{HYBRID_KV_ACCOUNTING_ENV} must be "
+            f"'{LEGACY_KV_ACCOUNTING}' or "
+            f"'{FULL_ATTENTION_KV_ACCOUNTING}', got {mode!r}")
     return [
         "attention" if layer_type == "full_attention" else layer_type
         for layer_type in layer_types
