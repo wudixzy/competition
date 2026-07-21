@@ -129,6 +129,20 @@ case plus the three fixed `1.5x` core cases. Failure proceeds only to the one
 predeclared split-reduction alternative; no tile, cuBLAS algorithm, tolerance,
 or launch scan is permitted.
 
+## Isolated compile gate
+
+The first candidate compiled successfully for `ivcore10` in the isolated
+remote runtime at source commit `06963b1`. The resulting shared object is
+239,728 bytes with SHA-256
+`bd2b0e7283718c503e3c2573851abc9fba3755223c78e6207e88af851993dff5`;
+dynamic-link and symbol checks returned zero, and an import-only probe found a
+callable `forward`. The probe did not create a CUDA tensor or invoke the entry
+point, and it did not install the binary into vLLM. Structured evidence is in
+`docs/experiments/evidence/M1_47_COMPILE_GATE.json`.
+
+This passes only the compile gate. The candidate remains unqualified until its
+GPU numerical cases and frozen three-point `1.5x` performance grid pass.
+
 ## Gates
 
 - Numerical: no NaN/Inf; output relative L2 at most `1e-5`; LSE relative L2 at

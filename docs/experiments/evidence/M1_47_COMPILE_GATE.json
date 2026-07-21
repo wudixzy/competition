@@ -1,0 +1,33 @@
+{
+  "artifact": {
+    "ldd_rc": 0,
+    "nm_rc": 0,
+    "sha256": "bd2b0e7283718c503e3c2573851abc9fba3755223c78e6207e88af851993dff5",
+    "size_bytes": 239728
+  },
+  "build": {
+    "rc": 0,
+    "target": "ivcore10"
+  },
+  "decision": {
+    "compile_gate_passed": true,
+    "qualified": false,
+    "reasons": [
+      "GPU numerical and fixed-grid performance gates have not run"
+    ]
+  },
+  "isolation": {
+    "forward_called": false,
+    "installed_vllm_modified": false,
+    "module_loaded": true,
+    "forward_callable": true
+  },
+  "remote_runtime": "/root/competition-m1-47-runtime-06963b1",
+  "schema": "bi100-m1-47-compile-gate-v1",
+  "source": {
+    "build_script_sha256": "37e5876cf429d5dae195a8a1b87405b41c4ef181c62ed4a96ba3bce53b5ef3bb",
+    "commit": "06963b1",
+    "cuda_source_sha256": "6b9ef499f0ef0afefeb4a0e2b9fcefb40be3d9aa4ac41eccf7432cf2098789a8"
+  },
+  "version": 1
+}
