@@ -104,13 +104,18 @@ int64_t validate_inputs(const std::vector<torch::Tensor>& gpu_cache,
                   "cache layer block counts differ");
     }
   }
-  if (block_ids.numel() > 0) {
-    const int64_t minimum = block_ids.min().item<int64_t>();
-    const int64_t maximum = block_ids.max().item<int64_t>();
-    TORCH_CHECK(minimum >= 0 && maximum < block_count,
-                "block_ids must be within [0, ", block_count, ")");
-  }
   return block_count;
+}
+
+void validate_block_id_bounds(const torch::Tensor& block_ids,
+                              int64_t block_count) {
+  if (block_ids.numel() == 0) {
+    return;
+  }
+  const int64_t minimum = block_ids.min().item<int64_t>();
+  const int64_t maximum = block_ids.max().item<int64_t>();
+  TORCH_CHECK(minimum >= 0 && maximum < block_count,
+              "block_ids must be within [0, ", block_count, ")");
 }
 
 int launch_blocks(int64_t total) {
@@ -118,12 +123,9 @@ int launch_blocks(int64_t total) {
       (total + kThreads - 1) / kThreads, kMaxGridBlocks));
 }
 
-}  // namespace
-
-void pack_block_major(const std::vector<torch::Tensor>& gpu_cache,
-                      const torch::Tensor& block_ids,
-                      const torch::Tensor& staging) {
-  const int64_t block_count = validate_inputs(gpu_cache, block_ids, staging);
+void launch_pack(const std::vector<torch::Tensor>& gpu_cache,
+                 const torch::Tensor& block_ids,
+                 const torch::Tensor& staging, int64_t block_count) {
   if (block_ids.numel() == 0) {
     return;
   }
@@ -143,10 +145,9 @@ void pack_block_major(const std::vector<torch::Tensor>& gpu_cache,
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
-void scatter_block_major(const torch::Tensor& staging,
-                         const std::vector<torch::Tensor>& gpu_cache,
-                         const torch::Tensor& block_ids) {
-  const int64_t block_count = validate_inputs(gpu_cache, block_ids, staging);
+void launch_scatter(const torch::Tensor& staging,
+                    const std::vector<torch::Tensor>& gpu_cache,
+                    const torch::Tensor& block_ids, int64_t block_count) {
   if (block_ids.numel() == 0) {
     return;
   }
@@ -166,9 +167,46 @@ void scatter_block_major(const torch::Tensor& staging,
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
+}  // namespace
+
+void pack_block_major(const std::vector<torch::Tensor>& gpu_cache,
+                      const torch::Tensor& block_ids,
+                      const torch::Tensor& staging) {
+  const int64_t block_count = validate_inputs(gpu_cache, block_ids, staging);
+  validate_block_id_bounds(block_ids, block_count);
+  launch_pack(gpu_cache, block_ids, staging, block_count);
+}
+
+void pack_block_major_validated(
+    const std::vector<torch::Tensor>& gpu_cache,
+    const torch::Tensor& block_ids, const torch::Tensor& staging) {
+  const int64_t block_count = validate_inputs(gpu_cache, block_ids, staging);
+  launch_pack(gpu_cache, block_ids, staging, block_count);
+}
+
+void scatter_block_major(const torch::Tensor& staging,
+                         const std::vector<torch::Tensor>& gpu_cache,
+                         const torch::Tensor& block_ids) {
+  const int64_t block_count = validate_inputs(gpu_cache, block_ids, staging);
+  validate_block_id_bounds(block_ids, block_count);
+  launch_scatter(staging, gpu_cache, block_ids, block_count);
+}
+
+void scatter_block_major_validated(
+    const torch::Tensor& staging,
+    const std::vector<torch::Tensor>& gpu_cache,
+    const torch::Tensor& block_ids) {
+  const int64_t block_count = validate_inputs(gpu_cache, block_ids, staging);
+  launch_scatter(staging, gpu_cache, block_ids, block_count);
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def("pack", &pack_block_major,
              "Pack layer-major FP16 KV blocks into block-major staging");
   module.def("scatter", &scatter_block_major,
              "Scatter block-major FP16 staging into layer-major KV blocks");
+  module.def("_pack_validated", &pack_block_major_validated,
+             "Pack scheduler-validated block IDs without a device sync");
+  module.def("_scatter_validated", &scatter_block_major_validated,
+             "Scatter scheduler-validated block IDs without a device sync");
 }

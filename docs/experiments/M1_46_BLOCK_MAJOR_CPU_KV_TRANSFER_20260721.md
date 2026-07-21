@@ -102,3 +102,29 @@ transfer mechanism to CoreX vLLM 0.6.3; it does not upgrade the runtime.
 
 Until every applicable gate qualifies, M1-46 stays on a private experiment
 branch and remains absent from `computility-run.yaml` and `main`.
+
+## Primary implementation result
+
+Commit `03e453a` compiled once on CoreX 3.2.3. The resulting extension was
+191,752 bytes with SHA-256 `e6bbfee496d7...`; it was not added to the prebuilt
+bundle because the fixed performance gate failed. All four GPUs passed the
+bounded CUDA smoke and the production diagnostic passed full-byte equality,
+the 513-block reordered mapping, and installed worker transfer order.
+
+| Tokens | D2H | D2H vs paged | H2D | H2D vs paged |
+| ---: | ---: | ---: | ---: | ---: |
+| 65,536 | 97.514 ms | 4.844x | 173.628 ms | 3.076x |
+| 131,072 | 182.115 ms | 5.187x | 327.411 ms | 3.271x |
+
+D2H passed, but both H2D cases missed the fixed `4.0x` threshold. The primary
+candidate is therefore `PERFORMANCE_REJECTED`, despite being bit-exact.
+Evidence:
+
+- `evidence/M1_46_BLOCK_MAJOR_PRIMARY.json`;
+- `evidence/M1_46_BLOCK_MAJOR_PRIMARY_COMPARISON.json`.
+
+The only permitted alternative is now fixed: two staging slots remove the
+per-chunk H2D synchronization, while contiguous CPU-slot runs use one bulk CPU
+copy before the same DMA/scatter kernel. The 512-block chunk, kernel launch,
+mapping order, numerical gate, and benchmark cases remain unchanged. If this
+single alternative misses either direction's `4.0x` threshold, M1-46 stops.

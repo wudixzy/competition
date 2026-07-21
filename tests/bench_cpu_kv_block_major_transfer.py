@@ -84,7 +84,7 @@ def main() -> int:
     import vllm
     from vllm.attention.ops.paged_attn import PagedAttention
     from vllm.worker.bi100_block_major_kv import (
-        Bi100BlockMajorKvTransfer, STAGING_BLOCKS)
+        Bi100BlockMajorKvTransfer, STAGING_BLOCKS, STAGING_SLOTS)
     from vllm.worker.worker import Worker
 
     if not args.device.startswith("cuda:"):
@@ -222,6 +222,8 @@ def main() -> int:
             "mapping": "CPU int64 [N, 2], identity timing plus reordered gate",
             "measured_cycles": MEASURED_CYCLES,
             "staging_blocks": STAGING_BLOCKS,
+            "staging_slots": STAGING_SLOTS,
+            "contiguous_cpu_bulk_copy": True,
             "token_counts": list(TOKEN_COUNTS),
             "warmup_cycles": WARMUP_CYCLES,
         },

@@ -46,17 +46,19 @@ class M146StaticContractTest(unittest.TestCase):
         build = read("qwen3_6_scripts/build_corex_block_major_kv_transfer.sh")
         self.assertIn('module.def("pack"', source)
         self.assertIn('module.def("scatter"', source)
+        self.assertIn('module.def("_pack_validated"', source)
+        self.assertIn('module.def("_scatter_validated"', source)
         self.assertIn("corex_block_major_kv_transfer.so", build)
         self.assertIn("--cuda-gpu-arch=ivcore10", build)
         self.assertIn("block_ids.min().item<int64_t>()", source)
         self.assertIn("block_ids.max().item<int64_t>()", source)
 
-    def test_single_staging_buffer_is_not_reused_asynchronously(self):
+    def test_double_staging_is_event_guarded(self):
         source = read("vllm/worker/bi100_block_major_kv.py")
-        scatter = source.index("self._extension.scatter")
-        synchronize = source.index(
-            "torch.cuda.current_stream(self.device).synchronize()", scatter)
-        self.assertGreater(synchronize, scatter)
+        self.assertIn("STAGING_SLOTS = 2", source)
+        self.assertIn("self._h2d_events[slot].synchronize()", source)
+        self.assertIn("self._h2d_events[slot].record(stream)", source)
+        self.assertIn("stream.synchronize()", source)
 
 
 if __name__ == "__main__":

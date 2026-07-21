@@ -13,6 +13,7 @@ BLOCK_MAJOR_LAYOUT = "block_major"
 STAGING_BLOCKS = 512
 EXPECTED_LAYERS = 10
 EXPECTED_BLOCK_PAYLOAD_ELEMENTS = 16 * 1 * 256
+STAGING_SLOTS = 2
 
 
 def transfer_layout_from_env(
@@ -38,6 +39,20 @@ def chunk_ranges(count: int, chunk_size: int = STAGING_BLOCKS
         (start, min(start + chunk_size, count))
         for start in range(0, count, chunk_size)
     )
+
+
+def contiguous_start(values: Sequence[int]) -> int | None:
+    if not values:
+        return None
+    start = values[0]
+    if not isinstance(start, int) or isinstance(start, bool):
+        raise TypeError("contiguous values must be integers")
+    for offset, value in enumerate(values):
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise TypeError("contiguous values must be integers")
+        if value != start + offset:
+            return None
+    return start
 
 
 def validate_mapping_pairs(
@@ -118,6 +133,12 @@ class Bi100BlockMajorKvTransfer:
             raise RuntimeError("block-major extension has no pack function")
         if not callable(getattr(extension, "scatter", None)):
             raise RuntimeError("block-major extension has no scatter function")
+        if not callable(getattr(extension, "_pack_validated", None)):
+            raise RuntimeError(
+                "block-major extension has no validated pack function")
+        if not callable(getattr(extension, "_scatter_validated", None)):
+            raise RuntimeError(
+                "block-major extension has no validated scatter function")
 
         self._torch = torch
         self._extension = extension
@@ -130,6 +151,7 @@ class Bi100BlockMajorKvTransfer:
         self.chunk_blocks = min(STAGING_BLOCKS, num_cpu_blocks,
                                 num_gpu_blocks)
         stage_shape = (
+            STAGING_SLOTS,
             self.chunk_blocks,
             self.num_layers,
             2,
@@ -152,8 +174,22 @@ class Bi100BlockMajorKvTransfer:
             dtype=first.dtype,
             device=device,
         )
+        self.cpu_block_ids = torch.empty(
+            (STAGING_SLOTS, self.chunk_blocks),
+            dtype=torch.int64,
+            device="cpu",
+            pin_memory=True,
+        )
+        self.gpu_block_ids = torch.empty(
+            (STAGING_SLOTS, self.chunk_blocks),
+            dtype=torch.int64,
+            device=device,
+        )
+        self._h2d_events = [torch.cuda.Event() for _ in range(STAGING_SLOTS)]
         if not self.cpu_cache.is_pinned() or not self.cpu_staging.is_pinned():
             raise RuntimeError("block-major CPU KV tensors must be pinned")
+        if not self.cpu_block_ids.is_pinned():
+            raise RuntimeError("block-major mapping staging must be pinned")
 
     def _mapping_pairs(self, mapping: Any, *, swap_in: bool
                        ) -> Tuple[Tuple[int, int], ...]:
@@ -178,34 +214,63 @@ class Bi100BlockMajorKvTransfer:
         for start, end in chunk_ranges(len(pairs), self.chunk_blocks):
             count = end - start
             chunk = pairs[start:end]
-            gpu_ids_cpu = torch.tensor(
-                [pair[0] for pair in chunk], dtype=torch.int64)
+            gpu_id_values = [pair[0] for pair in chunk]
+            cpu_id_values = [pair[1] for pair in chunk]
+            gpu_ids_cpu = torch.tensor(gpu_id_values, dtype=torch.int64)
             cpu_ids = torch.tensor(
-                [pair[1] for pair in chunk], dtype=torch.int64)
-            gpu_ids = gpu_ids_cpu.to(self.device)
-            gpu_stage = self.gpu_staging[:count]
-            cpu_stage = self.cpu_staging[:count]
-            self._extension.pack(self.gpu_cache, gpu_ids, gpu_stage)
+                cpu_id_values, dtype=torch.int64)
+            cpu_id_stage = self.cpu_block_ids[0, :count]
+            gpu_id_stage = self.gpu_block_ids[0, :count]
+            cpu_id_stage.copy_(gpu_ids_cpu)
+            gpu_id_stage.copy_(cpu_id_stage, non_blocking=True)
+            gpu_stage = self.gpu_staging[0, :count]
+            cpu_stage = self.cpu_staging[0, :count]
+            self._extension._pack_validated(
+                self.gpu_cache, gpu_id_stage, gpu_stage)
             cpu_stage.copy_(gpu_stage, non_blocking=True)
             torch.cuda.current_stream(self.device).synchronize()
-            self.cpu_cache.index_copy_(0, cpu_ids, cpu_stage)
+            destination_start = contiguous_start(cpu_id_values)
+            if destination_start is None:
+                self.cpu_cache.index_copy_(0, cpu_ids, cpu_stage)
+            else:
+                self.cpu_cache[
+                    destination_start:destination_start + count].copy_(
+                        cpu_stage)
 
     def swap_in(self, mapping: Any) -> None:
         pairs = self._mapping_pairs(mapping, swap_in=True)
         torch = self._torch
-        for start, end in chunk_ranges(len(pairs), self.chunk_blocks):
+        stream = torch.cuda.current_stream(self.device)
+        pending = [False] * STAGING_SLOTS
+        for chunk_index, (start, end) in enumerate(
+                chunk_ranges(len(pairs), self.chunk_blocks)):
             count = end - start
             chunk = pairs[start:end]
+            slot = chunk_index % STAGING_SLOTS
+            if pending[slot]:
+                self._h2d_events[slot].synchronize()
+                pending[slot] = False
+            cpu_id_values = [pair[0] for pair in chunk]
+            gpu_id_values = [pair[1] for pair in chunk]
             cpu_ids = torch.tensor(
-                [pair[0] for pair in chunk], dtype=torch.int64)
+                cpu_id_values, dtype=torch.int64)
             gpu_ids_cpu = torch.tensor(
-                [pair[1] for pair in chunk], dtype=torch.int64)
-            cpu_stage = self.cpu_staging[:count]
-            gpu_stage = self.gpu_staging[:count]
-            torch.index_select(self.cpu_cache, 0, cpu_ids, out=cpu_stage)
+                gpu_id_values, dtype=torch.int64)
+            cpu_stage = self.cpu_staging[slot, :count]
+            gpu_stage = self.gpu_staging[slot, :count]
+            source_start = contiguous_start(cpu_id_values)
+            if source_start is None:
+                torch.index_select(self.cpu_cache, 0, cpu_ids, out=cpu_stage)
+            else:
+                cpu_stage.copy_(
+                    self.cpu_cache[source_start:source_start + count])
+            cpu_id_stage = self.cpu_block_ids[slot, :count]
+            gpu_id_stage = self.gpu_block_ids[slot, :count]
+            cpu_id_stage.copy_(gpu_ids_cpu)
             gpu_stage.copy_(cpu_stage, non_blocking=True)
-            gpu_ids = gpu_ids_cpu.to(self.device)
-            self._extension.scatter(gpu_stage, self.gpu_cache, gpu_ids)
-            # One staging buffer is reused across deterministic chunks. Wait
-            # until this chunk no longer reads it before the next CPU gather.
-            torch.cuda.current_stream(self.device).synchronize()
+            gpu_id_stage.copy_(cpu_id_stage, non_blocking=True)
+            self._extension._scatter_validated(
+                gpu_stage, self.gpu_cache, gpu_id_stage)
+            self._h2d_events[slot].record(stream)
+            pending[slot] = True
+        stream.synchronize()

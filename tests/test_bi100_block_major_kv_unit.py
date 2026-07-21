@@ -39,6 +39,14 @@ class BlockMajorKvHelpersTest(unittest.TestCase):
             ((0, 512), (512, 1024), (1024, 1025)),
         )
 
+    def test_contiguous_run_detection(self):
+        self.assertIsNone(block_major.contiguous_start(()))
+        self.assertEqual(block_major.contiguous_start((7,)), 7)
+        self.assertEqual(block_major.contiguous_start((7, 8, 9)), 7)
+        self.assertIsNone(block_major.contiguous_start((7, 9)))
+        with self.assertRaises(TypeError):
+            block_major.contiguous_start((7, True))
+
     def test_mapping_accepts_reordered_unique_pairs(self):
         self.assertEqual(
             block_major.validate_mapping_pairs(
