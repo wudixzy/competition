@@ -2,7 +2,8 @@
 import hashlib
 import struct
 from os.path import commonprefix
-from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
+from typing import (Callable, Dict, FrozenSet, Iterable, List, Optional, Set,
+                    Tuple)
 
 from vllm.core.block.common import (CacheMetricData, CopyOnWriteTracker,
                                     get_all_blocks_recursively)
@@ -120,6 +121,39 @@ class PrefixCachingBlockAllocator(BlockAllocator):
 
         self.metric_data = CacheMetricData()
 
+        self._external_cache_claim: Optional[
+            Callable[[PrefixHash], Optional[int]]] = None
+        self._external_cache_load: Optional[
+            Callable[[PrefixHash, int, BlockId], None]] = None
+        self._external_cache_cancel: Optional[
+            Callable[[PrefixHash, int], None]] = None
+        self._external_cache_store: Optional[
+            Callable[[PrefixHash, BlockId], bool]] = None
+
+    def set_external_cache_callbacks(
+        self,
+        claim: Callable[[PrefixHash], Optional[int]],
+        load: Callable[[PrefixHash, int, BlockId], None],
+        cancel: Callable[[PrefixHash, int], None],
+        store: Callable[[PrefixHash, BlockId], bool],
+    ) -> None:
+        """Attach one scheduler-owned lower cache tier.
+
+        Prefix caching is single-threaded in the scheduler. Keeping these
+        callbacks here lets the allocator reserve the CPU source before a GPU
+        victim is selected, which is required when that victim's physical slot
+        is immediately reused as the H2D destination.
+        """
+        if self._external_cache_claim is not None:
+            raise RuntimeError("external prefix cache is already configured")
+        if not all(callable(callback)
+                   for callback in (claim, load, cancel, store)):
+            raise TypeError("external prefix cache callbacks must be callable")
+        self._external_cache_claim = claim
+        self._external_cache_load = load
+        self._external_cache_cancel = cancel
+        self._external_cache_store = store
+
     # Implements Block.Factory.
     def _create_block(
         self,
@@ -188,6 +222,10 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             block.block_id = cached_block_id
             self._incr_refcount_cached_block(block)
             return block
+
+        if self._maybe_restore_external_cached_block(block):
+            self.metric_data.query(hit=True)
+            return block
         self.metric_data.query(hit=False)
         self._block_pool.free_block(block)
 
@@ -197,6 +235,42 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             device=device)
         block.append_token_ids(token_ids)
         return block
+
+    def _maybe_restore_external_cached_block(self, block: Block) -> bool:
+        """Promote an immutable lower-tier hit into a computed GPU block."""
+        if self._external_cache_claim is None:
+            return False
+        assert self._external_cache_load is not None
+        assert self._external_cache_cancel is not None
+        assert block.content_hash is not None
+        assert block.block_id is None
+
+        cpu_slot = self._external_cache_claim(block.content_hash)
+        if cpu_slot is None:
+            return False
+
+        try:
+            block_id = self._allocate_block_id()
+        except Exception:
+            self._external_cache_cancel(block.content_hash, cpu_slot)
+            raise
+
+        block.block_id = block_id
+        try:
+            self._external_cache_load(block.content_hash, cpu_slot, block_id)
+        except Exception:
+            self._decr_refcount_hashless_block(block)
+            self._external_cache_cancel(block.content_hash, cpu_slot)
+            self._block_pool.free_block(block)
+            raise
+
+        if block.content_hash in self._cached_blocks:
+            raise RuntimeError(
+                "external prefix promotion raced with a GPU cache insert")
+        self._cached_blocks[block.content_hash] = block_id
+        block.computed = True
+        self._block_tracker[block_id].computed = True
+        return True
 
     def allocate_immutable_blocks_with_cache_namespace(
             self,
@@ -403,6 +477,9 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         _block_id = self._cached_blocks[content_hash_to_evict]
         assert self._refcounter.get(_block_id) == 0
         assert _block_id == block_id
+
+        if self._external_cache_store is not None:
+            self._external_cache_store(content_hash_to_evict, block_id)
 
         self._cached_blocks.pop(content_hash_to_evict)
 
@@ -643,8 +720,9 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         ret = prev_computed_block_ids
         for i in range(prev_prefix_size, cur_size):
             block_id = block_ids[i]
-            if self.block_is_computed(block_id):
-                ret.append(block_id)
+            if not self.block_is_computed(block_id):
+                break
+            ret.append(block_id)
         return ret
 
     def get_common_computed_block_ids(

@@ -112,6 +112,12 @@ install_patch_file \
     "${VLLM_OVERRIDE_ROOT}/core/evictor_v2.py" \
     "${VLLM_ROOT}/core/evictor_v2.py"
 install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/core/block/cpu_kv_content_cache.py" \
+    "${VLLM_ROOT}/core/block/cpu_kv_content_cache.py"
+install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/core/block/cpu_gpu_block_allocator.py" \
+    "${VLLM_ROOT}/core/block/cpu_gpu_block_allocator.py"
+install_patch_file \
     "${VLLM_OVERRIDE_ROOT}/core/block/prefix_caching_block.py" \
     "${VLLM_ROOT}/core/block/prefix_caching_block.py"
 install_patch_file \
@@ -131,6 +137,7 @@ cp ./gdn_prefix.py "${VLLM_ROOT}/gdn_prefix.py"
 
 build_stage "installing CoreX paged-KV swap compatibility"
 python3 ./patch_corex_swap_blocks.py
+python3 ./patch_worker_cache_transfer_order.py
 
 # --- paged_attn.py: replace forward_prefix with pure-PyTorch fallback -------
 # The Triton context_attention_fwd kernel hangs BI-V100 GPUs permanently

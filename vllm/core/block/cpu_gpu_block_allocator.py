@@ -1,5 +1,7 @@
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
+from vllm.core.block.cpu_kv_content_cache import (CpuKvContentCache,
+                                                   cpu_kv_offload_enabled)
 from vllm.core.block.interfaces import (Block, BlockAllocator, BlockId,
                                         DeviceAwareBlockAllocator)
 from vllm.core.block.naive_block import NaiveBlock, NaiveBlockAllocator
@@ -52,6 +54,14 @@ class CpuGpuBlockAllocator(DeviceAwareBlockAllocator):
             - The block IDs are assigned contiguously, with GPU block IDs coming
                 before CPU block IDs.
         """
+        content_offload = cpu_kv_offload_enabled()
+        if content_offload and allocator_type != "prefix_caching":
+            raise RuntimeError(
+                "BI100_CPU_KV_OFFLOAD=1 requires prefix caching")
+        if content_offload and num_cpu_blocks <= 0:
+            raise RuntimeError(
+                "BI100_CPU_KV_OFFLOAD=1 requires at least one CPU KV block")
+
         block_ids = list(range(num_gpu_blocks + num_cpu_blocks))
         gpu_block_ids = block_ids[:num_gpu_blocks]
         cpu_block_ids = block_ids[num_gpu_blocks:]
@@ -88,10 +98,13 @@ class CpuGpuBlockAllocator(DeviceAwareBlockAllocator):
         return CpuGpuBlockAllocator(
             cpu_block_allocator=cpu_allocator,
             gpu_block_allocator=gpu_allocator,
+            cpu_content_cache=(CpuKvContentCache(num_cpu_blocks)
+                               if content_offload else None),
         )
 
     def __init__(self, cpu_block_allocator: BlockAllocator,
-                 gpu_block_allocator: BlockAllocator):
+                 gpu_block_allocator: BlockAllocator,
+                 cpu_content_cache: Optional[CpuKvContentCache] = None):
         assert not (
             cpu_block_allocator.all_block_ids
             & gpu_block_allocator.all_block_ids
@@ -104,11 +117,53 @@ class CpuGpuBlockAllocator(DeviceAwareBlockAllocator):
 
         self._swap_mapping: Dict[int, int] = {}
         self._null_block: Optional[Block] = None
+        self._cpu_content_cache = cpu_content_cache
 
         self._block_ids_to_allocator: Dict[int, BlockAllocator] = {}
         for _, allocator in self._allocators.items():
             for block_id in allocator.all_block_ids:
                 self._block_ids_to_allocator[block_id] = allocator
+
+        if self._cpu_content_cache is not None:
+            if not isinstance(gpu_block_allocator,
+                              PrefixCachingBlockAllocator):
+                raise RuntimeError(
+                    "CPU KV content tier requires PrefixCachingBlockAllocator")
+            if (self._cpu_content_cache.capacity !=
+                    cpu_block_allocator.get_num_total_blocks()):
+                raise RuntimeError(
+                    "CPU KV content capacity must cover the complete CPU cache")
+            gpu_block_allocator.set_external_cache_callbacks(
+                claim=self._claim_cpu_content,
+                load=self._stage_cpu_to_gpu,
+                cancel=self._cancel_cpu_claim,
+                store=self._stage_gpu_to_cpu,
+            )
+
+    @property
+    def content_offload_enabled(self) -> bool:
+        return self._cpu_content_cache is not None
+
+    def _claim_cpu_content(self, content_hash: bytes) -> Optional[int]:
+        assert self._cpu_content_cache is not None
+        return self._cpu_content_cache.claim_load(content_hash)
+
+    def _cancel_cpu_claim(self, content_hash: bytes, cpu_slot: int) -> None:
+        assert self._cpu_content_cache is not None
+        self._cpu_content_cache.cancel_load(content_hash, cpu_slot)
+
+    def _stage_cpu_to_gpu(self, content_hash: bytes, cpu_slot: int,
+                          gpu_block_id: BlockId) -> None:
+        assert self._cpu_content_cache is not None
+        gpu_slot = self.get_physical_block_id(Device.GPU, gpu_block_id)
+        self._cpu_content_cache.stage_load(
+            content_hash, cpu_slot, gpu_slot)
+
+    def _stage_gpu_to_cpu(self, content_hash: bytes,
+                          gpu_block_id: BlockId) -> bool:
+        assert self._cpu_content_cache is not None
+        gpu_slot = self.get_physical_block_id(Device.GPU, gpu_block_id)
+        return self._cpu_content_cache.stage_store(content_hash, gpu_slot)
 
     def allocate_or_get_null_block(self) -> Block:
         if self._null_block is None:
@@ -247,6 +302,11 @@ class CpuGpuBlockAllocator(DeviceAwareBlockAllocator):
             Dict[int, int]: Swap mapping from source_device
                 on to dest_device.
         """
+        if self.content_offload_enabled:
+            raise RuntimeError(
+                "request-level preemption swap cannot share CPU slots with "
+                "BI100_CPU_KV_OFFLOAD")
+
         src_block_ids = [block.block_id for block in blocks]
         self._allocators[src_device].swap_out(blocks)
         self._allocators[dst_device].swap_in(blocks)
@@ -336,6 +396,17 @@ class CpuGpuBlockAllocator(DeviceAwareBlockAllocator):
         mapping = self._swap_mapping.copy()
         self._swap_mapping.clear()
         return list(mapping.items())
+
+    def get_and_reset_prefix_swaps(
+            self) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
+        """Return scheduler-owned (CPU->GPU, GPU->CPU) content maps."""
+        if self._cpu_content_cache is None:
+            return [], []
+        return self._cpu_content_cache.drain_step()
+
+    def begin_prefix_cache_step(self) -> None:
+        if self._cpu_content_cache is not None:
+            self._cpu_content_cache.begin_step()
 
 
 class NullBlock(Block):

@@ -195,7 +195,8 @@ class SchedulerOutputs:
     preempted: int
 
     def __post_init__(self):
-        # Swap in and swap out should never happen at the same time.
+        # Request-level preemption cannot swap both ways in one step. The
+        # content-addressed CPU tier appends its ordered maps after creation.
         assert not (self.blocks_to_swap_in and self.blocks_to_swap_out)
 
         self.num_loras: int = len(self.lora_requests)
@@ -1357,7 +1358,25 @@ class Scheduler:
         # such as self.running, self.swapped, and self.waiting.
         scheduler_start_time = time.perf_counter()
 
+        begin_prefix_cache_step = getattr(
+            self.block_manager, "begin_prefix_cache_step", None)
+        if callable(begin_prefix_cache_step):
+            begin_prefix_cache_step()
         scheduler_outputs: SchedulerOutputs = self._schedule()
+        drain_prefix_swaps = getattr(
+            self.block_manager, "get_and_reset_prefix_swaps", None)
+        if callable(drain_prefix_swaps):
+            prefix_swap_in, prefix_swap_out = drain_prefix_swaps()
+            if prefix_swap_in or prefix_swap_out:
+                if (scheduler_outputs.blocks_to_swap_in
+                        or scheduler_outputs.blocks_to_swap_out):
+                    raise RuntimeError(
+                        "content-addressed CPU KV transfers cannot share a "
+                        "scheduler step with request-level preemption swap")
+                # Both directions are valid for this tier: a GPU victim is
+                # preserved before that same physical slot is reused by H2D.
+                scheduler_outputs.blocks_to_swap_in.extend(prefix_swap_in)
+                scheduler_outputs.blocks_to_swap_out.extend(prefix_swap_out)
         now = time.time()
 
         if not self.cache_config.enable_prefix_caching:

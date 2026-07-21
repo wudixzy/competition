@@ -391,6 +391,14 @@ class BlockSpaceManagerV2(BlockSpaceManager):
     def get_content_hashes(self, seq: Sequence) -> List[bytes]:
         return self.block_tables[seq.seq_id].get_content_hashes()
 
+    def get_and_reset_prefix_swaps(
+            self) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
+        """Return scheduler-owned (CPU->GPU, GPU->CPU) content transfers."""
+        return self.block_allocator.get_and_reset_prefix_swaps()
+
+    def begin_prefix_cache_step(self) -> None:
+        self.block_allocator.begin_prefix_cache_step()
+
     def _build_runtime_cache_namespace(self) -> bytes:
         """Bind first-block hashes to the fixed model runtime identity."""
         model = os.getenv("BI100_PREFIX_MODEL_FINGERPRINT",
@@ -569,6 +577,8 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         Returns:
             AllocStatus: The AllocStatus for the given sequence group.
         """
+        if self.block_allocator.content_offload_enabled:
+            return AllocStatus.NEVER
         return self._can_swap(seq_group, Device.GPU, SequenceStatus.SWAPPED,
                               num_lookahead_slots)
 
@@ -621,6 +631,8 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         Returns:
             bool: Whether it's possible to swap out current sequence group.
         """
+        if self.block_allocator.content_offload_enabled:
+            return False
         alloc_status = self._can_swap(seq_group, Device.CPU,
                                       SequenceStatus.RUNNING)
         return alloc_status == AllocStatus.OK

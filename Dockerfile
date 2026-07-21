@@ -10,6 +10,8 @@ RUN mkdir /workspace
 WORKDIR /workspace/
 COPY ./qwen3_6_scripts /workspace/qwen3_6_scripts
 COPY ./vllm/core/evictor_v2.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/evictor_v2.py
+COPY ./vllm/core/block/cpu_kv_content_cache.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block/cpu_kv_content_cache.py
+COPY ./vllm/core/block/cpu_gpu_block_allocator.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block/cpu_gpu_block_allocator.py
 COPY ./vllm/core/block/prefix_caching_block.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block/prefix_caching_block.py
 COPY ./vllm/core/block/block_table.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block/block_table.py
 COPY ./vllm/core/block_manager_v2.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block_manager_v2.py
