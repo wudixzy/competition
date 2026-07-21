@@ -43,6 +43,9 @@ from `computility-run.yaml` until all qualification gates pass.
 - Single GPU: cold/warm branching-prefix replay is finite and deterministic;
   the warm result matches the no-offload reference and logs at least one H2D
   promotion and one lazy D2H preservation without timeout or OOM.
+- Single-GPU transfer order: one fixed paged-KV case preserves a victim with
+  D2H and restores different requested content with H2D through that same GPU
+  slot; the victim, requested value, and inclusive CPU source are bit-exact.
 - TP4 correctness: direct mode retains the existing 131K/256-token equality
   boundary; aligned mode passes 235K/1000-token full equality; 256K capacity is
   unchanged.
