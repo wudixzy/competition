@@ -4,6 +4,15 @@ set -euo pipefail
 export PYTHONPATH=/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages:${PYTHONPATH:-}
 export LD_LIBRARY_PATH=/usr/local/corex/lib:/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib:${LD_LIBRARY_PATH:-}
 export PATH=/usr/local/corex/bin:/usr/local/corex-3.2.3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/corex/lib64/python3/dist-packages/bin:/usr/local/openmpi/bin:${PATH:-}
+if [[ -n "${BI100_RUNTIME_SITE_PACKAGES:-}" ]]; then
+    if [[ ! -d "$BI100_RUNTIME_SITE_PACKAGES/vllm" \
+            || ! -d "$BI100_RUNTIME_SITE_PACKAGES/transformers" ]]; then
+        echo "invalid BI100 runtime overlay: $BI100_RUNTIME_SITE_PACKAGES" >&2
+        exit 2
+    fi
+    export PYTHONPATH="$BI100_RUNTIME_SITE_PACKAGES:$PYTHONPATH"
+    echo "[BI100] runtime overlay active: $BI100_RUNTIME_SITE_PACKAGES"
+fi
 export ENABLE_CUSTOM_IPC=${ENABLE_CUSTOM_IPC:-1}
 # The evaluator injects these fixed YAML values. Bare-host qualification must
 # use the same defaults so its absolute throughput is comparable.
@@ -73,6 +82,8 @@ CMD_ARGS=(
 echo "[BI100] fixed evaluator contract; model=${MODEL_PATH_VAL} host=${HOST_VAL} port=${PORT_VAL}"
 echo "[BI100] fixed kernels; moe_direct=${BI100_MOE_COREX_DIRECT_ROUTED} gdn_packed=${BI100_GDN_COREX_PACKED_DECODE}"
 echo "[BI100] GDN cache; policy=${BI100_GDN_CACHE_POLICY:-fine32} restore=${BI100_GDN_RESTORE_MODE:-direct}"
+printf '%s\n' \
+    "[BI100] M1-49 runtime contract; accounting=${BI100_HYBRID_KV_ACCOUNTING:-legacy40} host=${HOST_VAL} port=${PORT_VAL} model_path=${MODEL_PATH_VAL} runtime_site_packages=${BI100_RUNTIME_SITE_PACKAGES:-system} served_model_name=${DEFAULT_SERVED_MODEL_NAME} max_model_len=${DEFAULT_MAX_MODEL_LEN} tensor_parallel_size=${DEFAULT_TENSOR_PARALLEL_SIZE} gpu_memory_utilization=${DEFAULT_GPU_MEMORY_UTILIZATION} max_num_seqs=${DEFAULT_MAX_NUM_SEQS} max_num_batched_tokens=${DEFAULT_MAX_NUM_BATCHED_TOKENS} max_seq_len_to_capture=${DEFAULT_MAX_SEQ_LEN_TO_CAPTURE} chunked_prefill=1 prefix_caching=1 trust_remote_code=1 disable_log_requests=1 disable_frontend_multiprocessing=1 auto_tool_choice=1 tool_call_parser=${DEFAULT_TOOL_CALL_PARSER} reasoning_parser=${DEFAULT_REASONING_PARSER} enable_custom_ipc=${ENABLE_CUSTOM_IPC} moe_direct=${BI100_MOE_COREX_DIRECT_ROUTED} gdn_packed=${BI100_GDN_COREX_PACKED_DECODE} cpu_kv_offload=${BI100_CPU_KV_OFFLOAD:-0} gdn_cache_policy=${BI100_GDN_CACHE_POLICY:-fine32} gdn_restore_mode=${BI100_GDN_RESTORE_MODE:-direct} cache_trace=${BI100_CACHE_TRACE:-0} fused_prefill=${BI100_ATTN_COREX_FUSED_PREFILL:-0} kv_eviction_policy=${BI100_KV_EVICTION_POLICY:-lru}"
 printf ' %q' python3 -m vllm.entrypoints.openai.api_server "${CMD_ARGS[@]}"
 printf '\n'
 

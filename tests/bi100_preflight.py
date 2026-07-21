@@ -60,6 +60,9 @@ def probe_gpu(index: int, timeout_s: float, matmul_size: int) -> dict[str, Any]:
         matmul_size = int(sys.argv[2])
         result = {"gpu": index, "ok": False, "stage": "start"}
         torch.cuda.set_device(index)
+        result["device_name"] = torch.cuda.get_device_name(index)
+        result["device_capability"] = list(
+            torch.cuda.get_device_capability(index))
         result["stage"] = "mem_get_info"
         free, total = torch.cuda.mem_get_info()
         result["free"] = int(free)
@@ -147,6 +150,11 @@ def main() -> int:
         print(f"[{status}] gpu={result.get('gpu')} {detail}", flush=True)
 
     summary = {
+        "schema": "bi100-gpu-preflight-v1",
+        "version": 1,
+        "gpus": args.gpus,
+        "matmul_size": args.matmul_size,
+        "timeout_s": args.timeout_s,
         "ok": all(result.get("ok") for result in results),
         "results": results,
     }

@@ -1957,6 +1957,25 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
                 "Qwen3.5 KV accounting provides fewer caches than "
                 f"full-attention layers: {self.num_kv_cache_layers} < "
                 f"{self.num_attn_layers}")
+        accounting_mode = getattr(
+            config, "bi100_hybrid_kv_accounting_mode", "legacy40")
+        accounting_env = os.getenv("BI100_HYBRID_KV_ACCOUNTING", "<unset>")
+        tp_rank = get_tensor_model_parallel_rank()
+        full_attention_ordinals = ",".join(
+            str(index) for index, layer_type in enumerate(text_cfg.layer_types)
+            if layer_type == "full_attention")
+        logger.info(
+            "[BI100] Qwen hybrid KV accounting; tp_rank=%d "
+            "env_mode=%s config_mode=%s "
+            "configured_kv_layers=%d full_attention_layers=%d "
+            "full_attention_ordinals=%s",
+            tp_rank,
+            accounting_env,
+            accounting_mode,
+            self.num_kv_cache_layers,
+            self.num_attn_layers,
+            full_attention_ordinals,
+        )
 
         # DeltaNet state dimensions (per layer, per sequence, TP-sharded)
         tp_size = get_tensor_model_parallel_world_size()
