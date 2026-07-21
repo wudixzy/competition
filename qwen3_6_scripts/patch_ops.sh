@@ -109,6 +109,9 @@ VLLM_OVERRIDE_ROOT="./vendor_overrides/vllm"
 
 build_stage "installing authoritative vLLM core block overrides"
 install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/core/evictor_v2.py" \
+    "${VLLM_ROOT}/core/evictor_v2.py"
+install_patch_file \
     "${VLLM_OVERRIDE_ROOT}/core/block/prefix_caching_block.py" \
     "${VLLM_ROOT}/core/block/prefix_caching_block.py"
 install_patch_file \

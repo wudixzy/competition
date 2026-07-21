@@ -9,7 +9,8 @@ from vllm.core.block.common import (CacheMetricData, CopyOnWriteTracker,
 from vllm.core.block.interfaces import Block, BlockAllocator, BlockId, Device
 from vllm.core.block.naive_block import (BlockPool, NaiveBlock,
                                          NaiveBlockAllocator)
-from vllm.core.evictor_v2 import EvictionPolicy, Evictor, make_evictor
+from vllm.core.evictor_v2 import (EvictionPolicy, Evictor,
+                                  eviction_policy_from_env, make_evictor)
 
 PrefixHash = bytes
 
@@ -63,7 +64,7 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         num_blocks: int,
         block_size: int,
         block_ids: Optional[Iterable[int]] = None,
-        eviction_policy: EvictionPolicy = EvictionPolicy.LRU,
+        eviction_policy: Optional[EvictionPolicy] = None,
     ):
         if block_ids is None:
             block_ids = range(num_blocks)
@@ -100,6 +101,10 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             block_ids=block_ids,
             block_pool=self._block_pool,  # Share block pool here
         )
+
+        if eviction_policy is None:
+            eviction_policy = eviction_policy_from_env()
+        self.eviction_policy = eviction_policy
 
         # Evitor used to maintain how we want to handle those computed blocks
         # if we find memory pressure is high.

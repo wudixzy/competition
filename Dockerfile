@@ -9,6 +9,7 @@ ENV BI100_PREFIX_MODEL_FINGERPRINT=Qwen3.6-35B-A3B BI100_PREFIX_DTYPE=float16 BI
 RUN mkdir /workspace
 WORKDIR /workspace/
 COPY ./qwen3_6_scripts /workspace/qwen3_6_scripts
+COPY ./vllm/core/evictor_v2.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/evictor_v2.py
 COPY ./vllm/core/block/prefix_caching_block.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block/prefix_caching_block.py
 COPY ./vllm/core/block/block_table.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block/block_table.py
 COPY ./vllm/core/block_manager_v2.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block_manager_v2.py
