@@ -76,6 +76,29 @@ class CompareBi100PreflightsTest(unittest.TestCase):
         self.assertIn(
             "preflight stage labels must be unique", report["reasons"])
 
+    def test_fixed_free_memory_drop_gate_detects_service_leak(self):
+        report = MODULE.compare([
+            ("before_long", _preflight()),
+            ("after_long", _preflight(free_delta=-2 * 1024 ** 3)),
+        ], max_free_memory_drop_bytes=1024 ** 3)
+        self.assertFalse(report["qualified"])
+        self.assertTrue(any(
+            "free-memory drop exceeds" in reason
+            for reason in report["reasons"]
+        ))
+        self.assertFalse(report["stages"][1]["qualified"])
+
+    def test_fixed_free_memory_drop_gate_allows_bounded_noise(self):
+        report = MODULE.compare([
+            ("before_long", _preflight()),
+            ("after_long", _preflight(free_delta=-512 * 1024 ** 2)),
+        ], max_free_memory_drop_bytes=1024 ** 3)
+        self.assertTrue(report["qualified"], report)
+        self.assertEqual(
+            report["stages"][1]["free_memory_drop_from_first_bytes"]["0"],
+            512 * 1024 ** 2,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

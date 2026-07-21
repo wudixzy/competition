@@ -2,6 +2,7 @@ import argparse
 import os
 import pathlib
 import socket
+import subprocess
 import sys
 import unittest
 from unittest.mock import patch
@@ -28,6 +29,35 @@ class Bi100PreflightUnitTest(unittest.TestCase):
             bi100_preflight._clean_stream(b"bad:\xff\n"),
             "bad:\ufffd",
         )
+
+    def test_last_progress_stage_ignores_non_json_lines(self):
+        output = "\n".join((
+            "warning: initializing runtime",
+            '{"gpu": 0, "stage": "set_device"}',
+            "not-json",
+            '{"gpu": 0, "stage": "synchronize"}',
+        ))
+        self.assertEqual(
+            bi100_preflight._last_progress_stage(output), "synchronize")
+
+    def test_cuda_timeout_reports_last_flushed_progress_stage(self):
+        timeout = subprocess.TimeoutExpired(
+            cmd=["python3"],
+            timeout=25,
+            output=(
+                b'{"gpu": 0, "stage": "import_torch"}\n'
+                b'{"gpu": 0, "stage": "matmul"}\n'
+            ),
+            stderr=b"runtime warning\n",
+        )
+        with patch.object(
+                bi100_preflight.subprocess, "run", side_effect=timeout):
+            result = bi100_preflight.probe_gpu(0, 25, 1024)
+
+        self.assertEqual(result["stage"], "timeout")
+        self.assertEqual(result["last_progress_stage"], "matmul")
+        self.assertEqual(result["returncode"], 124)
+        self.assertEqual(result["stderr"], "runtime warning")
 
     def test_cuda_corex_env_prepends_paths_without_mutating_os_environ(self):
         with patch.dict(os.environ, {

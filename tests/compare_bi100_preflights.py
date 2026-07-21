@@ -122,8 +122,18 @@ def _validate_stage(
     return signatures, safe_summary
 
 
-def compare(stages: list[tuple[str, Any]]) -> dict[str, Any]:
+def compare(
+    stages: list[tuple[str, Any]],
+    *,
+    max_free_memory_drop_bytes: int | None = None,
+) -> dict[str, Any]:
     reasons: list[str] = []
+    if (max_free_memory_drop_bytes is not None
+            and (not isinstance(max_free_memory_drop_bytes, int)
+                 or isinstance(max_free_memory_drop_bytes, bool)
+                 or max_free_memory_drop_bytes < 0)):
+        reasons.append("max_free_memory_drop_bytes must be non-negative")
+        max_free_memory_drop_bytes = None
     if len(stages) < 2:
         reasons.append("at least two preflight stages are required")
     labels = [label for label, _ in stages]
@@ -131,21 +141,50 @@ def compare(stages: list[tuple[str, Any]]) -> dict[str, Any]:
         reasons.append("preflight stage labels must be unique")
 
     baseline: dict[int, tuple[Any, ...]] | None = None
+    baseline_free: dict[int, int] | None = None
     summaries = []
     for label, value in stages:
         signatures, summary = _validate_stage(label, value, reasons)
         summaries.append(summary)
+        current_free = {
+            result["gpu"]: result["free"]
+            for result in summary.get("results", [])
+            if isinstance(result, dict)
+            and isinstance(result.get("gpu"), int)
+            and _positive_int(result.get("free"))
+        }
         if baseline is None:
             baseline = signatures
+            baseline_free = current_free
         elif signatures != baseline:
             reasons.append(
                 f"{label} GPU topology or deterministic result differs "
                 "from the first preflight")
+        if (baseline_free is not None
+                and max_free_memory_drop_bytes is not None
+                and current_free):
+            drops = {
+                gpu: max(0, baseline_free[gpu] - current_free[gpu])
+                for gpu in sorted(set(baseline_free) & set(current_free))
+            }
+            summary["free_memory_drop_from_first_bytes"] = {
+                str(gpu): drop for gpu, drop in drops.items()
+            }
+            leaked = {
+                gpu: drop for gpu, drop in drops.items()
+                if drop > max_free_memory_drop_bytes
+            }
+            if leaked:
+                reasons.append(
+                    f"{label} free-memory drop exceeds "
+                    f"{max_free_memory_drop_bytes} bytes: {leaked}")
+                summary["qualified"] = False
     return {
         "schema": SCHEMA,
         "version": VERSION,
         "qualified": not reasons,
         "reasons": reasons,
+        "max_free_memory_drop_bytes": max_free_memory_drop_bytes,
         "stages": summaries,
     }
 
@@ -185,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--preflight", action="append", type=_parse_stage, required=True)
+    parser.add_argument("--max-free-memory-drop-bytes", type=int)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
@@ -192,7 +232,10 @@ def main(argv: list[str] | None = None) -> int:
             (label, json.loads(path.read_text(encoding="utf-8")))
             for label, path in args.preflight
         ]
-        report = compare(stages)
+        report = compare(
+            stages,
+            max_free_memory_drop_bytes=args.max_free_memory_drop_bytes,
+        )
     except Exception as error:
         report = {
             "schema": SCHEMA,

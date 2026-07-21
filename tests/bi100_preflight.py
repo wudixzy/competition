@@ -50,31 +50,59 @@ def _clean_stream(value: str | bytes | None) -> str:
     return value.strip()
 
 
+def _last_progress_stage(value: str) -> str | None:
+    for line in reversed(value.splitlines()):
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        stage = record.get("stage") if isinstance(record, dict) else None
+        if isinstance(stage, str) and stage:
+            return stage
+    return None
+
+
 def probe_gpu(index: int, timeout_s: float, matmul_size: int) -> dict[str, Any]:
     child = textwrap.dedent("""
         import json
         import sys
-        import torch
 
         index = int(sys.argv[1])
         matmul_size = int(sys.argv[2])
+
+        def progress(stage):
+            print(json.dumps({"gpu": index, "stage": stage}), flush=True)
+
+        progress("import_torch")
+        import torch
+
         result = {"gpu": index, "ok": False, "stage": "start"}
+        progress("set_device")
         torch.cuda.set_device(index)
+        progress("device_info")
         result["device_name"] = torch.cuda.get_device_name(index)
         result["device_capability"] = list(
             torch.cuda.get_device_capability(index))
+        progress("mem_get_info")
         result["stage"] = "mem_get_info"
         free, total = torch.cuda.mem_get_info()
         result["free"] = int(free)
         result["total"] = int(total)
-        result["stage"] = "matmul"
+        progress("allocate")
+        result["stage"] = "allocate"
         a = torch.ones((matmul_size, matmul_size), device=f"cuda:{index}")
+        progress("matmul")
+        result["stage"] = "matmul"
         b = a @ a
+        progress("synchronize")
+        result["stage"] = "synchronize"
         torch.cuda.synchronize()
+        progress("checksum")
+        result["stage"] = "checksum"
         result["checksum"] = float(b.sum().item())
         result["stage"] = "done"
         result["ok"] = True
-        print(json.dumps(result, sort_keys=True))
+        print(json.dumps(result, sort_keys=True), flush=True)
     """).strip()
     try:
         completed = subprocess.run(
@@ -87,12 +115,14 @@ def probe_gpu(index: int, timeout_s: float, matmul_size: int) -> dict[str, Any]:
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
+        stdout = _clean_stream(exc.stdout)
         return {
             "gpu": index,
             "ok": False,
             "stage": "timeout",
+            "last_progress_stage": _last_progress_stage(stdout),
             "returncode": 124,
-            "stdout": _clean_stream(exc.stdout),
+            "stdout": stdout,
             "stderr": _clean_stream(exc.stderr),
         }
 
