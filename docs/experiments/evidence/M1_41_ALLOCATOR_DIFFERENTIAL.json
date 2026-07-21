@@ -1,0 +1,41 @@
+{
+  "experiment": "M1-41-real-allocator-differential",
+  "content_key": "sha256-bytes",
+  "cases": [
+    {
+      "seed": 20260721,
+      "requests": 200,
+      "capacity_blocks": 12,
+      "block_size": 4,
+      "hit_blocks": 185,
+      "final_cached_blocks": 11,
+      "frequency_entries": 253,
+      "final_heap_entries": 11,
+      "ok": true
+    },
+    {
+      "seed": 7,
+      "requests": 200,
+      "capacity_blocks": 7,
+      "block_size": 4,
+      "hit_blocks": 149,
+      "final_cached_blocks": 6,
+      "frequency_entries": 256,
+      "final_heap_entries": 8,
+      "ok": true
+    },
+    {
+      "seed": 99,
+      "requests": 200,
+      "capacity_blocks": 16,
+      "block_size": 8,
+      "hit_blocks": 124,
+      "final_cached_blocks": 15,
+      "frequency_entries": 113,
+      "final_heap_entries": 18,
+      "ok": true
+    }
+  ],
+  "requests": 600,
+  "ok": true
+}

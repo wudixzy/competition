@@ -1,5 +1,18 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-21 M1-41 内容频率 KV 淘汰门禁
+
+- 私有分支：`exp/M1-41-frequency-aware-content-evictor-20260721`。
+- 固定频率策略已适配当前 32 字节 SHA 内容键；默认 `lru`，内部
+  `BI100_KV_EVICTION_POLICY=frequency` 仅用于实验，提交预检禁止它进入 YAML。
+- 881 请求代理三次运行完全确定；中位每请求 `3.500 ms`、P90 `10.615 ms`、
+  峰值 RSS `169.125 MiB`、heap `21,056/34,780`，全部实现门禁通过。
+- 安装版 CoreX vLLM 的 600 请求 allocator differential 逐请求与全扫描 oracle
+  一致，证明物理块复用不会破坏逻辑内容频率。
+- 状态：`IMPLEMENTATION_GATES_PASSED; TRACE_QUALIFICATION_PENDING`。没有单 session
+  v4 `1..881` trace 前不得启用、不得改 YAML、不得合并 main；代理命中不能替代
+  有效 KV 与 GDN 交集的真实收益门槛。
+
 ## 2026-07-21 M1-40 masked-Neumann GDN 门禁
 
 - 私有分支：`exp/M1-40-masked-neumann-gdn-20260721`。
