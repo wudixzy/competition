@@ -155,3 +155,30 @@ is structurally complete at exactly 881 requests and the operator explicitly
 passes `--qualification-trace`. No complete real 881-request v4 trace is
 currently present in the repository, so synthetic replay cannot qualify this
 candidate.
+
+## Formal TP4 A/B
+
+The fixed-order control ran from an isolated experiment directory against the
+CoreX-installed package at runtime commit `eef4e1c`. The `/usr/local/corex`
+import path and the patch log's resolved `/usr/local/corex-3.2.3` path were
+verified with `samefile`, and the installed content-cache source matched the
+candidate SHA-256. Launching a manual test from the repository root is invalid
+because the checkout's `vllm` package shadows the Docker-equivalent CoreX
+installation.
+
+Control A used `BI100_CPU_KV_OFFLOAD=0`, `admission64/direct`, trace disabled,
+and fixed run ID `m145-fixed-ab-20260721-16878`:
+
+| Request | Cached tokens | Elapsed | Response digest |
+| --- | ---: | ---: | --- |
+| target cold | 0 | 92.835 s | `74ac9290bd6f...` |
+| target immediate warm | 65,520 | 3.146 s | `74ac9290bd6f...` |
+| pressure 0 | 0 | 242.387 s | `d06d9c20276b...` |
+| pressure 1 | 16 | 242.660 s | `d06d9c20276b...` |
+| target after pressure | 16 | 93.696 s | `74ac9290bd6f...` |
+| target refreshed | 65,520 | 3.289 s | `74ac9290bd6f...` |
+
+The control gate qualified, proving that the frozen pressure geometry evicts
+the target from GPU KV while preserving deterministic model output. Health
+remained HTTP 200 and the fatal/OOM/traceback/worker-loss scan was empty.
+Evidence: `evidence/M1_45_TP4_CONTROL_PRESSURE.json`. Candidate B is pending.
