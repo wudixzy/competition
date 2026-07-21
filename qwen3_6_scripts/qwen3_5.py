@@ -1860,6 +1860,11 @@ class Qwen3_5Model(nn.Module):
                 )
                 attn_idx += 1
 
+        if attn_idx != len(kv_caches):
+            raise RuntimeError(
+                "Qwen3.5 full-attention KV cache count mismatch: "
+                f"consumed {attn_idx}, received {len(kv_caches)}")
+
         hidden_states, _ = self.norm(hidden_states, residual)
         self.captured_conv_states = {
             offset: torch.stack(states)
