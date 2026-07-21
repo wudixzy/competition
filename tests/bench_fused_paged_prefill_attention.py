@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import importlib.util
 import json
@@ -341,14 +342,56 @@ def _load_extension(extension_path: Path | None) -> Any:
     return module
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _extension_identity(extension: Any,
+                        extension_path: Path | None) -> dict[str, Any]:
+    module_path = extension_path
+    load_mode = "isolated" if module_path is not None else "installed"
+    if module_path is None:
+        module_file = getattr(extension, "__file__", None)
+        if not isinstance(module_file, str) or not module_file:
+            raise RuntimeError("fused extension has no filesystem identity")
+        module_path = Path(module_file)
+    resolved_path = module_path.expanduser().resolve(strict=True)
+    return {
+        "load_mode": load_mode,
+        "path": str(resolved_path),
+        "sha256": _sha256_file(resolved_path),
+        "size_bytes": resolved_path.stat().st_size,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--extension", type=Path,
         help="load an isolated corex_fused_paged_prefill shared object")
+    parser.add_argument(
+        "--expected-extension-sha256",
+        help="required SHA-256 identity for an isolated extension")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
+
+    if ((args.extension is None)
+            != (args.expected_extension_sha256 is None)):
+        parser.error(
+            "--extension and --expected-extension-sha256 must be used together")
+    if args.expected_extension_sha256 is not None:
+        expected_sha256 = args.expected_extension_sha256.lower()
+        if (len(expected_sha256) != 64
+                or any(character not in "0123456789abcdef"
+                       for character in expected_sha256)):
+            parser.error("--expected-extension-sha256 must be 64 hex digits")
+    else:
+        expected_sha256 = None
 
     import torch
 
@@ -358,6 +401,13 @@ def main() -> int:
     torch.cuda.set_device(device)
     torch.set_grad_enabled(False)
     extension = _load_extension(args.extension)
+    extension_identity = _extension_identity(extension, args.extension)
+    if (expected_sha256 is not None
+            and extension_identity["sha256"] != expected_sha256):
+        raise RuntimeError(
+            "isolated extension SHA-256 mismatch: "
+            f"expected={expected_sha256} "
+            f"actual={extension_identity['sha256']}")
     forward = getattr(extension, "forward", None)
     if not callable(forward):
         raise RuntimeError("fused paged prefill extension has no forward")
@@ -451,6 +501,7 @@ def main() -> int:
         "decision": decision,
         "device": args.device,
         "device_name": torch.cuda.get_device_name(device),
+        "extension": extension_identity,
         "protocol": {
             "block_size": BLOCK_SIZE,
             "blocks_per_tile": BLOCKS_PER_TILE,

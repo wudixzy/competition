@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+from types import SimpleNamespace
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -70,6 +71,21 @@ class FusedPagedPrefillGateTest(unittest.TestCase):
         make_spec.assert_called_once_with(
             "corex_fused_paged_prefill", extension_path.resolve())
         loader.exec_module.assert_called_once_with(sentinel)
+
+    def test_extension_identity_records_exact_artifact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            extension_path = pathlib.Path(directory) / "candidate.so"
+            extension_path.write_bytes(b"m1-47-candidate")
+            identity = benchmark._extension_identity(
+                SimpleNamespace(__file__="ignored.so"), extension_path)
+        self.assertEqual(identity, {
+            "load_mode": "isolated",
+            "path": str(extension_path.resolve()),
+            "sha256": (
+                "d04ef9d42e105d7ffcf5184064c24e136"
+                "a75d4f56e6e908a30ea68b127c81324"),
+            "size_bytes": 15,
+        })
 
     def test_fixed_geometry(self):
         self.assertEqual(benchmark.BLOCK_SIZE, 16)

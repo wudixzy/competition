@@ -95,10 +95,13 @@ warm-path, decode, and capacity gates remain separate runtime qualifications.
 The script is qualification infrastructure, not evidence that a candidate has
 passed.
 
-The benchmark accepts `--extension PATH` to load a compiled candidate from an
-isolated build directory under the exact native module name. This keeps the
-qualification run independent of the installed vLLM package and prevents an
-unqualified binary from changing the production runtime.
+The benchmark accepts `--extension PATH` and the paired
+`--expected-extension-sha256 DIGEST` to load a compiled candidate from an
+isolated build directory under the exact native module name. It rejects an
+artifact identity mismatch before invoking `forward` and records the resolved
+path, size, and digest in the result. This keeps the qualification run
+independent of the installed vLLM package and prevents an unqualified binary
+from changing the production runtime.
 
 ## First candidate
 
