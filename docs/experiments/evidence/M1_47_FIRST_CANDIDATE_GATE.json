@@ -1,0 +1,116 @@
+{
+  "authoritative_result": {
+    "path": "/root/competition-m1-47-runtime-06963b1/bench_runs/m1_47/first_candidate/result.json",
+    "sha256": "8856f4c9df84482155d1fe98a1453cd7bcb67167ede042e5b02ba4433780317e",
+    "size_bytes": 6780
+  },
+  "decision": {
+    "numerical_gate_passed": true,
+    "performance_gate_passed": false,
+    "qualified": false,
+    "reasons": [
+      "perf_74k speedup 1.3060604768519555 is below 1.5x",
+      "perf_128k speedup 1.3062660514638968 is below 1.5x",
+      "perf_235k speedup 1.3121922157244976 is below 1.5x"
+    ]
+  },
+  "device": {
+    "name": "Iluvatar BI-V100",
+    "torch_version": "2.1.0"
+  },
+  "extension": {
+    "sha256": "bd2b0e7283718c503e3c2573851abc9fba3755223c78e6207e88af851993dff5",
+    "size_bytes": 239728
+  },
+  "numerical": {
+    "all_14_cases_finite": true,
+    "invalid_physical_block_rejected": true,
+    "maximum_lse_relative_l2": 0.0,
+    "maximum_output_absolute_error": 0.00006103515625,
+    "maximum_output_relative_l2": 0.000005207140025153913
+  },
+  "performance": {
+    "perf_128k": {
+      "candidate_median_ms": 93.97142791748047,
+      "candidate_trials_ms": [
+        93.91512298583984,
+        94.11119842529297,
+        93.97142791748047,
+        94.11630249023438,
+        93.89674377441406,
+        94.12965393066406,
+        93.5699462890625
+      ],
+      "reference_median_ms": 122.7516860961914,
+      "reference_trials_ms": [
+        123.274658203125,
+        123.03348541259766,
+        123.05743408203125,
+        122.7516860961914,
+        122.63811492919922,
+        122.61793518066406,
+        122.64969635009766
+      ],
+      "speedup": 1.3062660514638968
+    },
+    "perf_235k": {
+      "candidate_median_ms": 168.54994201660156,
+      "candidate_trials_ms": [
+        169.0393829345703,
+        168.4977264404297,
+        168.70797729492188,
+        168.54994201660156,
+        168.4857635498047,
+        168.11671447753906,
+        168.739990234375
+      ],
+      "reference_median_ms": 221.169921875,
+      "reference_trials_ms": [
+        220.8899688720703,
+        221.17233276367188,
+        221.169921875,
+        221.19728088378906,
+        220.59564208984375,
+        221.1146697998047,
+        221.53536987304688
+      ],
+      "speedup": 1.3121922157244976
+    },
+    "perf_74k": {
+      "candidate_median_ms": 53.052913665771484,
+      "candidate_trials_ms": [
+        53.1149787902832,
+        53.052913665771484,
+        52.96376037597656,
+        53.1246337890625,
+        53.02705383300781,
+        52.962562561035156,
+        53.21803665161133
+      ],
+      "reference_median_ms": 69.29031372070312,
+      "reference_trials_ms": [
+        69.11457824707031,
+        69.37649536132812,
+        69.19711303710938,
+        68.32367706298828,
+        69.29031372070312,
+        69.37940216064453,
+        69.52107238769531
+      ],
+      "speedup": 1.3060604768519555
+    }
+  },
+  "runtime": {
+    "fatal_scan_empty": true,
+    "rc": 1,
+    "status": "failed",
+    "timed_out": false
+  },
+  "schema": "bi100-m1-47-first-candidate-gate-v1",
+  "thresholds": {
+    "maximum_absolute_error": 0.001,
+    "maximum_relative_l2": 0.00001,
+    "minimum_speedup": 1.5
+  },
+  "version": 1
+}

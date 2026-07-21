@@ -1,9 +1,8 @@
 # M1-47: Fused paged prefill attention
 
-Status: runtime path and fixed ABI audited; the first candidate has passed its
-isolated CoreX compile/link/import gate and is ready for GPU numerical and
-performance qualification, but is not installed or bundled; no runtime, YAML,
-or `main` change.
+Status: the first candidate passed all numerical cases but failed the fixed
+`1.5x` performance gate; the single split-reduction alternative is unlocked.
+Neither candidate is installed or bundled; no runtime, YAML, or `main` change.
 
 ## Corrected scope
 
@@ -155,6 +154,35 @@ point, and it did not install the binary into vLLM. Structured evidence is in
 
 This passes only the compile gate. The candidate remains unqualified until its
 GPU numerical cases and frozen three-point `1.5x` performance grid pass.
+
+## First candidate result
+
+The hash-bound isolated benchmark completed on one Iluvatar BI-V100 without
+OOM, illegal access, traceback, or process failure. All 14 numerical cases were
+finite. Maximum output absolute error was `6.103515625e-05`, maximum output
+relative L2 was `5.207140025e-06`, and every LSE relative L2 was zero. The
+invalid physical-block probe was rejected as required.
+
+| Case | Reference | Candidate | Speedup | Decision |
+| --- | ---: | ---: | ---: | --- |
+| 74K | 69.290 ms | 53.053 ms | 1.3061x | fail |
+| 128K | 122.752 ms | 93.971 ms | 1.3063x | fail |
+| 235K | 221.170 ms | 168.550 ms | 1.3122x | fail |
+
+The first candidate is `PERFORMANCE_REJECTED`: it is numerically sound but
+misses all three predeclared `1.5x` gates. The authoritative remote JSON is
+6,780 bytes with SHA-256
+`8856f4c9df84482155d1fe98a1453cd7bcb67167ede042e5b02ba4433780317e`;
+the safe structured summary is
+`evidence/M1_47_FIRST_CANDIDATE_GATE.json`.
+
+No tile, threshold, tolerance, compiler flag, or cuBLAS algorithm will be
+scanned. The only remaining implementation is a fixed four-way split over the
+existing 512-token partitions: QK/PV remain partition-local, the authoritative
+ATen FP32 max/exp/sum operations are batched across four splits, and split
+statistics/output are merged in original partition order. This preserves the
+512-token reduction partition while amortizing the per-partition eager launch
+cost. Failure of this one alternative closes M1-47.
 
 ## Gates
 
