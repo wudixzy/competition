@@ -6,7 +6,7 @@ import torch
 import traceback
 from vllm import _custom_ops as ops
 from vllm.bi100_env import env_bool, env_int
-from vllm.bi100_profile import bi100_timer
+from vllm.bi100_profile import bi100_profile_count, bi100_timer
 
 try:
     from vllm import corex_paged_kv_gather as _corex_paged_kv_gather
@@ -637,11 +637,22 @@ class PagedAttention:
                 q_end   = int(query_start_loc[i + 1].item())
                 q_len   = q_end - q_start
 
-                for seg_start, seg_end, _seg_ctx_len in (
+                for seg_start, seg_end, seg_ctx_len in (
                         _strict_prefix_query_segments(
                             ctx_len, q_len, block_size)):
                     absolute_start = q_start + seg_start
                     absolute_end = q_start + seg_end
+                    bi100_profile_count(
+                        "paged_attn.prefix_dispatch",
+                        path="pytorch",
+                        query_len=seg_end - seg_start,
+                        request_query_len=q_len,
+                        context_len=seg_ctx_len,
+                        block_size=block_size,
+                        query_heads=num_q_heads,
+                        kv_heads=num_kv_heads,
+                        head_dim=head_dim,
+                    )
                     with bi100_timer(profile_name):
                         output[absolute_start:absolute_end] = (
                             PagedAttention._forward_prefix_segment_pytorch(
