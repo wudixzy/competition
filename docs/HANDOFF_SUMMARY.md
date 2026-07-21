@@ -2,7 +2,7 @@
 
 ## 2026-07-21 M1-49 混合层 KV 计数修正
 
-- 私有分支：`exp/M1-49-hybrid-kv-accounting-20260721`，当前实现 `a96ca3a`；
+- 私有分支：`exp/M1-49-hybrid-kv-accounting-20260721`，当前实现 `b45e4b7`；
   `computility-run.yaml` 和 `main` 均未修改。
 - 根因是旧版 vLLM 只读取顶层 `layers_block_type`，而 Qwen 适配器仅在嵌套
   `text_config.layer_types` 声明 `10 full_attention + 30 linear_attention`，
@@ -12,16 +12,31 @@
   层映射会序列化，重载保持原模式，环境冲突或陈旧层映射 fail-fast；模型分别接受
   合法的 legacy 40-cache 与 candidate 10-cache 分配合同。
 - 首个未修 profiling 的远端 smoke 因 `consumed 10, received 40` 在请求前退出；
-  这是占位列表契约错误，不是 OOM 或 GPU 故障。修正后本地 197 项通过、13 项
+  这是占位列表契约错误，不是 OOM 或 GPU 故障。修正后本地 219 项通过、13 项
   跳过，submission preflight 8/8，远端 selector smoke 为 `40/10`，真实
   Transformers 保存/重载与冲突拒绝测试也已通过。
-- profiler 修正部署后，GPU1-3 preflight 通过，但 GPU0 在 256 方阵、15 秒最小
-  重试仍超时；`ixsmi` 为 `257 MiB / 100% / 无可见进程`。容器内 reset 被不可见
-  的宿主 PID 54048 拒绝，必须重启实例后再从四卡门禁继续，不得直接启动 TP4。
+- 最新 SSH 恢复后的 1024 方阵 preflight 中，GPU0 仍以 rc 124 超时；GPU1-3
+  均返回 `Iluvatar BI-V100`、capability 7.0、34,057,748,480 bytes 和正确
+  checksum。连接恢复不等于 GPU0 恢复，不得直接启动 TP4。
 - 旧固定压力序列共 20,976 blocks，而候选容量预计约 67,512 blocks，因此不会
   触发 CPU offload。M1-46 不再扩大压力或继续布局调参；先完成 M1-49 的真实
   TP4、235K、262K 与后续 881 门禁。详见
   `docs/experiments/M1_49_QWEN_HYBRID_KV_ACCOUNTING_20260721.md`。
+- 已新增 `scripts/run_m1_49_hybrid_kv_ab.sh`：四卡预检通过后，固定顺序运行
+  `legacy40/full_attention`，明确关闭 CPU KV tier 和融合 prefill，只切换层计数；
+  自动验证 TP rank 集合严格为 0-3、每 rank 的 40/10 层、完整注意力序号、
+  rank-local bytes/block、GPU/CPU block
+  至少 `3.5x`、固定压力输出摘要以及 2% warm 回退。两臂使用独立进程组，整组
+  清理后检查端口并重跑四卡预检。另有
+  `scripts/install_bi100_bare_host_runtime.sh` 在独立 site-packages staging 中组装
+  Docker 同等 overrides，核对路径与哈希后原子发布，不改系统包；相关 28 项聚焦
+  单测通过。清理失败会覆盖此前成功 rc，三次 GPU preflight 还会比较设备与确定性
+  结果。
+  A/B 通过前不解锁长上下文。
+- 高层审计记录在
+  `docs/research/POST_M1_49_OPTIMIZATION_REVIEW_20260721.md`：当前缓存已是内容
+  SHA 与 KV/GDN 交集，不再重做旧物理键方案；M1-47 按 20% 服务门槛关闭，A/B
+  后只运行一次 M1-48 归因，再由最大独占热点决定下一候选。
 
 ## 2026-07-21 M1-45 内容寻址 CPU KV 二级缓存
 

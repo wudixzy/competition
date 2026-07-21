@@ -3,16 +3,18 @@
     "qualified": false,
     "reasons": [
       "corrected TP4 candidate service has not completed startup",
-      "GPU0 is stuck at 100% utilization with no container-visible process and requires instance-level reset"
+      "post-reconnect 1024-square preflight still times out on GPU0 while GPU1-3 pass"
     ],
-    "status": "RUNTIME_BLOCKED_GPU0_INSTANCE_RESET_REQUIRED"
+    "status": "RUNTIME_BLOCKED_GPU0_UNHEALTHY_AFTER_RECONNECT"
   },
   "implementation": {
     "branch": "exp/M1-49-hybrid-kv-accounting-20260721",
     "commits": [
       "33c7573",
       "dab3048",
-      "a96ca3a"
+      "a96ca3a",
+      "67f96b3",
+      "b45e4b7"
     ],
     "default_mode": "legacy40",
     "selector": "BI100_HYBRID_KV_ACCOUNTING",
@@ -25,7 +27,7 @@
   "local_validation": {
     "submission_preflight": "8/8 passed",
     "unit_tests": {
-      "passed": 197,
+      "passed": 219,
       "skipped": 13
     }
   },
@@ -92,6 +94,26 @@
       "ixsmi_state": "257 MiB, 100% utilization, no listed compute process",
       "reset_error": "GPU is in use by host PID 54048",
       "visibility": "PID 54048 is absent from the container PID namespace and ixsmi compute-app query"
+    },
+    {
+      "event": "preflight_after_ssh_reconnect_20260721",
+      "gpu_results": [
+        false,
+        true,
+        true,
+        true
+      ],
+      "gpu0_failure": "timeout return code 124 at 25 seconds",
+      "passing_gpu_contract": {
+        "checksum": 1073741824.0,
+        "device_capability": [
+          7,
+          0
+        ],
+        "device_name": "Iluvatar BI-V100",
+        "total_memory_bytes": 34057748480
+      },
+      "preflight_exit_code": 1
     }
   ],
   "schema": "bi100-m1-49-runtime-status-v1",

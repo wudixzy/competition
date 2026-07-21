@@ -1,8 +1,8 @@
 # M1-49: Qwen hybrid KV layer accounting
 
 Status: implementation and local gates passed; fixed TP4 legacy/candidate
-service qualification pending an instance-level GPU0 reset; private branch
-only; no YAML or `main` change.
+service qualification is blocked because GPU0 still times out after the SSH
+instance reconnect; private branch only; no YAML or `main` change.
 
 ## Root cause
 
@@ -82,9 +82,62 @@ sequence cannot trigger CPU offload, so continuing its layout A/B would measure
 an unexecuted path. M1-46 stops rather than changing the pressure protocol or
 scanning request counts.
 
+## Fixed executable A/B
+
+`scripts/install_bi100_bare_host_runtime.sh` first copies the vendor vLLM and
+offline Transformers wheel into an isolated site-packages staging directory.
+It applies the Docker-equivalent Transformers/CoreX/vLLM patch stack only to
+that overlay, verifies package roots and source hashes, then publishes the
+runtime with one same-filesystem rename. A failed install deletes staging and
+cannot leave system site-packages half-patched. This is required after an
+instance restart because `/root` experiment directories are ephemeral even
+though the public-storage model persists.
+
+`scripts/run_m1_49_hybrid_kv_ab.sh` encodes the first GPU qualification as a
+single fail-closed run. It first requires independent 1,024-square CUDA
+matmuls on GPUs 0-3, then starts two fresh TP4 service lifetimes in the fixed
+order `legacy40` followed by `full_attention`. Both arms use the same source,
+model, evaluator command, `admission64/direct` GDN policy, request salt, and
+pressure sequence. The content CPU KV tier, cache tracing, and M1-47 fused
+prefill candidate are explicitly disabled. The only service-side difference
+is `BI100_HYBRID_KV_ACCOUNTING`.
+
+Each startup is independently checked against the model's real
+`AutoConfig`: the legacy arm must expose 40 attention cache layers and the
+candidate ten. Every TP worker must also emit its exact rank, environment and
+serialized modes, configured KV-layer count, and the ten full-attention layer
+ordinals. The rank set must be exactly `0,1,2,3`, with one report per rank.
+The safe startup record includes rank-local KV geometry, expected bytes per block, the
+final GPU/CPU block counts, logical context length, canonical launch-contract
+digests with and without the accounting field, and service-log SHA-256, but no
+prompt or model output. The comparator directly requires every startup/runtime
+invariant to match after replacing only that accounting field and
+recomputes all capacity identities and requires both GPU and CPU block counts
+to increase by at least `3.5x`; this is a gate around the expected `4x`
+result, not permission to tune memory utilization.
+
+Both arms then run the frozen 65,536-token target plus two 135,040-token
+pressure requests with CPU offload disabled. Legacy must retain at most one
+16-token target block after pressure, while candidate must retain at least
+65,504 tokens. All corresponding response lengths, finish reasons, and
+SHA-256 message digests must match. Candidate immediate-warm latency may
+regress by at most 2%. Each service runs in an isolated process group; cleanup
+kills the whole group, verifies it is empty, waits for port 8000 to be free,
+and reruns all four independent GPU probes between arms. Device order, model,
+capability, total memory, timeout, matmul size, and deterministic checksum must
+match across all three preflights; free memory may change. Cleanup failure
+overrides any prior success return code. The harness persists
+preflight, startup, per-request, fatal-scan, comparison, and return-code files
+to diagnose an interrupted run.
+
+This pressure A/B qualifies layer accounting and resident GPU capacity only.
+It does not qualify M1-45 CPU transfer, Output TPS, the complete workload, or
+the final score. Fresh 235K/262K and multimodal gates remain locked until the
+A/B comparison succeeds.
+
 ## Validation so far
 
-- local unit discovery: 197 passed, 13 skipped;
+- local unit discovery: 219 passed, 13 skipped;
 - submission preflight: 8/8 passed;
 - remote selector smoke: `legacy40=40`, `full_attention=10`;
 - remote patched profiler source uses `get_num_attention_layers`;
@@ -92,16 +145,17 @@ scanning request counts.
   environment, while a conflicting `legacy40` override fails with exit 1;
 - installed model helper accepts both configured 40-cache legacy and 10-cache
   candidate contracts;
+- atomic bare-host overlay installer, fixed A/B startup/pressure gate, safe
+  comparators, and 28 focused unit tests pass locally;
 - first unguarded startup rejection was isolated to the 40-placeholder profile
   contract and did not reach benchmark requests.
 
-After installing the profiler fix, GPU0 failed the independent preflight while
-GPU1-3 passed. A 256-square GPU0 retry also timed out after 15 seconds. `ixsmi`
-reported 257 MiB, 100% utilization, and no compute process. A device reset was
-rejected because host PID 54048 owns the device, but that PID is absent from the
-container PID namespace and the `ixsmi` compute-app query. No further TP4
-service may start until the instance is reset and all four preflights pass.
-Hash-pinned details are in `evidence/M1_49_RUNTIME_STATUS.json`.
+The latest post-reconnect 1,024-square preflight still returns timeout rc 124
+on GPU0; GPU1-3 report `Iluvatar BI-V100`, capability `7.0`, total memory
+`34,057,748,480`, and checksum `1,073,741,824.0`. This confirms SSH recovery
+did not recover GPU0. No TP4 service may start until all four probes pass.
+Historical reset diagnostics and the latest event are in
+`evidence/M1_49_RUNTIME_STATUS.json`.
 
 The branch remains private and unqualified until the TP4 service gates above
 produce hash-pinned evidence.
