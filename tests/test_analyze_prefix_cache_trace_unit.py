@@ -149,6 +149,26 @@ class AnalyzerTest(unittest.TestCase):
         self.assertEqual(admission["usable_gdn_state_avoided_tokens"], 0)
         self.assertEqual(fine["combined_hit_tokens"], 0)
 
+    def test_fine32_does_not_capture_a_boundary_with_one_replay_token(self):
+        records = [
+            decoded([1], capacity=4, ordinal=1,
+                    prompt_tokens=17, total_tokens=17),
+            decoded([1], capacity=4, ordinal=2,
+                    prompt_tokens=17, total_tokens=17),
+        ]
+
+        result = sim.simulate(records, 4, policy="fine32")
+
+        self.assertEqual(
+            result["request_results"][1]["raw_kv_contiguous_hit_tokens"],
+            16,
+        )
+        self.assertEqual(
+            result["request_results"][1]["effective_hit_tokens"],
+            0,
+        )
+        self.assertEqual(result["usable_gdn_state_avoided_tokens"], 0)
+
     def test_chunk64_mode_uses_only_native_recurrence_boundaries(self):
         records = [
             decoded(list(range(1, 9)), capacity=16, ordinal=1,

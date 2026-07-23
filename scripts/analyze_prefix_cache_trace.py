@@ -40,6 +40,7 @@ def _percentile(values: Sequence[float], percent: float) -> float | None:
 
 try:
     from qwen3_6_scripts.gdn_prefix import (  # type: ignore
+        GDN_DIRECT_MIN_REPLAY_TOKENS,
         GdnPrefixStatePolicy,
         capture_points_for_step,
         final_capture_key,
@@ -52,6 +53,7 @@ except (ModuleNotFoundError, ImportError, OSError):
     # Fallback implementations for environments where the script is imported
     # directly and qwen3_6_scripts is unavailable.
     GdnPrefixKey = Tuple[int, bytes]
+    GDN_DIRECT_MIN_REPLAY_TOKENS = 2
 
     def strict_prefix_block_count(token_count: int, block_size: int) -> int:
         if block_size <= 0:
@@ -72,8 +74,17 @@ except (ModuleNotFoundError, ImportError, OSError):
                          block_size: int, restore_mode: str,
                          replay_alignment: int) -> GdnPrefixKey | None:
         if restore_mode == "direct":
-            return key_at_strict_boundary(
-                block_hashes, prompt_tokens, block_size)
+            block_count = min(
+                len(block_hashes),
+                strict_prefix_block_count(prompt_tokens, block_size),
+            )
+            if (block_count > 0
+                    and prompt_tokens - block_count * block_size
+                    < GDN_DIRECT_MIN_REPLAY_TOKENS):
+                block_count -= 1
+            if block_count <= 0:
+                return None
+            return (block_count, block_hashes[block_count - 1])
         if restore_mode not in {"chunk64", "aligned"}:
             raise ValueError(f"unknown GDN restore mode: {restore_mode}")
         if (replay_alignment <= 0 or replay_alignment % block_size != 0
@@ -585,8 +596,9 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
             logical_end = min(prompt_tokens,
                               restore_tokens + gdn_chunk_tokens)
             while logical_end > restore_tokens:
-                step_key = key_at_strict_boundary(
-                    hashes, logical_end, block_size)
+                step_key = final_capture_key(
+                    hashes, logical_end, block_size, restore_mode,
+                    restore_alignment)
                 if step_key is not None:
                     capture_targets.append(step_key)
                 if logical_end >= prompt_tokens:
