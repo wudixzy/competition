@@ -31,6 +31,7 @@ class PatchXFormersProfileTest(unittest.TestCase):
             second = path.read_text(encoding="utf-8")
 
         self.assertEqual(first, second)
+        self.assertTrue(first.endswith("\n"))
         for expected in (IMPORT_NEW, KV_WRITE_NEW, DENSE_NEW, PAGED_NEW):
             self.assertIn(expected, first)
         for removed in (KV_WRITE_OLD, DENSE_OLD, PAGED_OLD):
@@ -39,7 +40,17 @@ class PatchXFormersProfileTest(unittest.TestCase):
     def test_patch_reconstructs_the_canonical_runtime_file(self):
         canonical_path = (Path(__file__).resolve().parents[1] / "vllm" /
                           "attention" / "backends" / "xformers.py")
+        canonical_bytes = canonical_path.read_bytes()
         canonical = canonical_path.read_text(encoding="utf-8")
+        self.assertNotIn(b"\r\n", canonical_bytes)
+        self.assertTrue(canonical.endswith("\n"))
+        self.assertTrue(all(
+            line == line.rstrip(" \t") for line in canonical.splitlines()))
+        self.assertIn("def _run_sdpa_fallback(", canonical)
+        self.assertIn(
+            "out = self._run_sdpa_fallback(query, key, value, attn_metadata)",
+            canonical,
+        )
         base = canonical
         for new, old in (
             (IMPORT_NEW, IMPORT_OLD),

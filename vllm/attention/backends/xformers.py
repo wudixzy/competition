@@ -336,10 +336,10 @@ def _get_seq_len_block_table_args(
     on the type of attention operation.
 
     Decoder attn -> select entirely decoder self-attention-related fields
-    Encoder/decoder cross-attn -> select encoder sequence lengths & 
+    Encoder/decoder cross-attn -> select encoder sequence lengths &
                                   cross-attn block-tables fields
     Encoder attn -> select encoder sequence lengths fields & no block tables
-    
+
     Arguments:
 
     * attn_metadata: Attention metadata structure associated with attention op
@@ -385,11 +385,11 @@ class XFormersMetadataBuilder(CommonMetadataBuilder[XFormersMetadata]):
 class XFormersImpl(AttentionImpl[XFormersMetadata]):
     """
     If the input tensors contain prompt tokens, the layout is as follows:
-    |<--------------- num_prefill_tokens ----------------->|	
+    |<--------------- num_prefill_tokens ----------------->|
     |<--prefill_0-->|<--prefill_1-->|...|<--prefill_N-1--->|
 
-    Otherwise, the layout is as follows:	
-    |<----------------- num_decode_tokens ------------------>|	
+    Otherwise, the layout is as follows:
+    |<----------------- num_decode_tokens ------------------>|
     |<--decode_0-->|..........|<--decode_M-1-->|<--padding-->|
 
     Generation tokens can contain padding when cuda-graph is used.
@@ -447,7 +447,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
         self.head_mapping = torch.repeat_interleave(
             torch.arange(self.num_kv_heads, dtype=torch.int32),
             self.num_queries_per_kv)
-        
+
     def forward(
         self,
         query: torch.Tensor,
@@ -475,10 +475,10 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
               (1) key and value tensors were cached during prefill, and
               (2) cross-attention key and value tensors do not grow during
                   decode
-        
+
         A note on how the attn_type (attention type enum) argument impacts
         attention forward() behavior:
-    
+
             * DECODER: normal decoder-only behavior;
                 use decoder self-attention block table
             * ENCODER: no KV caching; pass encoder sequence
@@ -491,7 +491,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                 will match encoder sequence lengths, pass encoder sequence
                 attributes to kernel (encoder_seq_lens/encoder_seq_lens_tensor/
                 max_encoder_seq_len)
-    
+
         Args:
             query: shape = [num_tokens, num_heads * head_size]
             key: shape = [num_tokens, num_kv_heads * head_size]
@@ -668,6 +668,100 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
         # Reshape the output tensor.
         return output.view(-1, self.num_heads * self.head_size)
 
+
+    def _run_sdpa_fallback(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attn_metadata: "XFormersMetadata",
+    ) -> torch.Tensor:
+        """纯数学 causal attention fallback，带 Q-tiling 内存优化。
+
+        调用时机：kv_cache.numel()==0（profiling 阶段）。
+        此路径无 KV 缓存前缀，KV 长度 == query 长度。
+
+        内存优化（Q-tiling，与 Flash Attention 同思路）：
+          将 Q 分成 _Q_CHUNK 大小的子块逐块计算，每块峰值内存
+          O(_Q_CHUNK × q_len) 而非 O(q_len²)。
+          profiling 阶段序列可能达到 max_model_len（如 20K tokens），
+          不加 Q-tiling 会产生 9.6 GB 矩阵直接 OOM。
+
+        softmax 在 float32 下计算以防止 float16 溢出，结果转回原始 dtype。
+
+        Args:
+            query : [1, total_query_tokens, num_heads,    head_dim]
+            key   : [1, total_query_tokens, num_kv_heads, head_dim]
+            value : [1, total_query_tokens, num_kv_heads, head_dim]
+        Returns:
+            [1, total_query_tokens, num_heads, head_dim]
+        """
+        _Q_CHUNK = 256  # 与 _forward_prefix_pytorch 的 _ATTN_Q_CHUNK 保持一致
+
+        assert attn_metadata.seq_lens is not None
+        orig_dtype = query.dtype
+        num_seqs = len(attn_metadata.seq_lens)
+
+        # 推导每条序列的实际 query 长度。
+        # 正常 prefill 时 q_len == seq_len；如果将来遇到 chunked 场景，
+        # query_start_loc 记录的是真实 query token 数（非全序列长度）。
+        if (attn_metadata.query_start_loc is not None
+                and len(attn_metadata.query_start_loc) == num_seqs + 1):
+            q_lens = [
+                int(attn_metadata.query_start_loc[i + 1].item()) -
+                int(attn_metadata.query_start_loc[i].item())
+                for i in range(num_seqs)
+            ]
+        else:
+            q_lens = list(attn_metadata.seq_lens)
+
+        q_flat = query.squeeze(0)   # [T, H,   D]
+        k_flat = key.squeeze(0)     # [T, Hkv, D]
+        v_flat = value.squeeze(0)
+
+        output = torch.empty_like(q_flat)
+        seq_start = 0
+        for q_len in q_lens:
+            seq_end = seq_start + q_len
+
+            # 当前序列的完整 K/V（此路径无前缀，KV == Q）
+            k_s = k_flat[seq_start:seq_end].permute(1, 0, 2).float()  # [Hkv, q_len, D]
+            v_s = v_flat[seq_start:seq_end].permute(1, 0, 2).float()  # [Hkv, q_len, D]
+
+            # GQA：展开 KV heads 至与 query heads 一致
+            if k_s.shape[0] != self.num_heads:
+                n = self.num_heads // k_s.shape[0]
+                k_s = k_s.repeat_interleave(n, dim=0).contiguous()
+                v_s = v_s.repeat_interleave(n, dim=0).contiguous()
+
+            # k_pos 用于因果掩码
+            k_pos = torch.arange(q_len, device=query.device)
+
+            # Q-tiling：分块处理 query，峰值内存 O(_Q_CHUNK × q_len)
+            for qc_start in range(0, q_len, _Q_CHUNK):
+                qc_end = min(qc_start + _Q_CHUNK, q_len)
+
+                # [H, qc, D]
+                q_c = q_flat[seq_start + qc_start:seq_start + qc_end]                       .permute(1, 0, 2).float()
+
+                # [H, qc, q_len]
+                attn_w = torch.matmul(q_c, k_s.transpose(-2, -1)) * self.scale
+
+                # 因果掩码：q_c 里位置 j 只能看 k_pos <= j（相对位置）
+                qc_q_pos = torch.arange(qc_start, qc_end, device=query.device)
+                mask = k_pos.unsqueeze(0) > qc_q_pos.unsqueeze(1)
+                attn_w = attn_w.masked_fill(mask.unsqueeze(0), float("-inf"))
+
+                attn_w = torch.softmax(attn_w, dim=-1)
+                out_c = torch.matmul(attn_w, v_s).to(orig_dtype)  # [H, qc, D]
+
+                output[seq_start + qc_start:seq_start + qc_end] = (
+                    out_c.permute(1, 0, 2))
+
+            seq_start = seq_end
+
+        return output.unsqueeze(0)  # [1, T, H, D]
+
     def _run_memory_efficient_xformers_forward(
         self,
         query: torch.Tensor,
@@ -755,14 +849,17 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
             query = query.unsqueeze(0)
             key = key.unsqueeze(0)
             value = value.unsqueeze(0)
-            out = xops.memory_efficient_attention_forward(
-                query,
-                key,
-                value,
-                attn_bias=attn_bias[0],
-                p=0.0,
-                scale=self.scale,
-                op = self.attn_op
+            if self.head_size > 128:
+                out = self._run_sdpa_fallback(query, key, value, attn_metadata)
+            else:
+                out = xops.memory_efficient_attention_forward(
+                    query,
+                    key,
+                    value,
+                    attn_bias=attn_bias[0],
+                    p=0.0,
+                    scale=self.scale,
+                    op=self.attn_op,
                 )
             return out.view_as(original_query)
 

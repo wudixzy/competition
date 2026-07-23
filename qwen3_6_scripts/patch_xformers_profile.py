@@ -100,6 +100,12 @@ def patch_file(path: Path) -> None:
         PAGED_NEW,
         already_contains='bi100_timer("xformers.paged_prefill")',
     )
+    text = path.read_text(encoding="utf-8")
+    canonical = "\n".join(line.rstrip(" \t") for line in text.split("\n"))
+    if not canonical.endswith("\n"):
+        canonical += "\n"
+    if canonical != text:
+        path.write_text(canonical, encoding="utf-8")
 
 
 def main() -> None:
