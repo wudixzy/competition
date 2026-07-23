@@ -1,0 +1,86 @@
+{
+  "diagnostic": {
+    "candidate_frequency_extra_hit_blocks": 195498,
+    "candidate_frequency_fewer_evictions": 195498,
+    "candidate_frequency_hit_gain_over_lru_percentage_points": 13.606761272325235,
+    "candidate_lru_capacity_hit_gain_percentage_points": 10.244430044871452,
+    "capacity_pressure_remains": true,
+    "frequency_direction_remains_plausible": true
+  },
+  "limitations": [
+    "capacity is an estimate until the M1-49 TP4 startup gate runs",
+    "proxy block identities are synthetic bucket-shaped content",
+    "GDN state availability is not modeled",
+    "no TTFT, throughput, score, or promotion claim is permitted",
+    "the complete same-session privacy-safe 881 trace remains required"
+  ],
+  "promotion_authorized": false,
+  "proxy": {
+    "block_size": 16,
+    "candidate_capacity_blocks_estimate": 67512,
+    "candidate_capacity_is_measured": false,
+    "legacy_capacity_blocks": 16878,
+    "prompt_tokens": 22601174,
+    "requests": 881
+  },
+  "qualification_trace": false,
+  "reports": {
+    "16878": {
+      "frequency": {
+        "evictions": 1392410,
+        "final_blocks": 16878,
+        "final_cache_sha256": "dd3b392049a3a0e545250429997e40b6b16be846725fc49c8be60ec4985c0f15",
+        "final_heap_entries": 16878,
+        "frequency_entries": 794428,
+        "hit_rate": 0.019128309243435452,
+        "hits": 27483,
+        "peak_heap_entries": 21056,
+        "total_accesses": 1436771
+      },
+      "frequency_hit_gain_percentage_points": 1.8133717899372965,
+      "lru": {
+        "evictions": 1418464,
+        "final_blocks": 16878,
+        "final_cache_sha256": "346e322f6f0dea85db576e3eac7fea5750787a2574e36215f5968e48b1bb5f71",
+        "final_heap_entries": 16878,
+        "frequency_entries": 0,
+        "hit_rate": 0.0009945913440624846,
+        "hits": 1429,
+        "peak_heap_entries": 17809,
+        "total_accesses": 1436771
+      }
+    },
+    "67512": {
+      "frequency": {
+        "evictions": 1025143,
+        "final_blocks": 67512,
+        "final_cache_sha256": "8864199966fd254857d8482f437302e41b9d6604602880c0d103d498d4a52177",
+        "final_heap_entries": 68928,
+        "frequency_entries": 794428,
+        "hit_rate": 0.23950650451602934,
+        "hits": 344116,
+        "peak_heap_entries": 134037,
+        "total_accesses": 1436771
+      },
+      "frequency_hit_gain_percentage_points": 13.606761272325235,
+      "lru": {
+        "evictions": 1220641,
+        "final_blocks": 67512,
+        "final_cache_sha256": "ae12c744f4288b7b2bdfc30952eac8ec492ba510655286a90edba48ee989b599",
+        "final_heap_entries": 67512,
+        "frequency_entries": 0,
+        "hit_rate": 0.103438891792777,
+        "hits": 148618,
+        "peak_heap_entries": 115547,
+        "total_accesses": 1436771
+      }
+    }
+  },
+  "schema": "bi100-m1-49-capacity-policy-proxy-v1",
+  "scope": "synthetic-capacity-direction-only",
+  "validation": {
+    "legacy_lru_counts_match_frozen_evidence": true,
+    "policy_access_counts_match": true
+  },
+  "version": 1
+}
