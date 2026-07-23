@@ -1,0 +1,127 @@
+{
+  "capacity": {
+    "fixed_gpu_memory_utilization": 0.9,
+    "model_weight_bytes": 71903776776,
+    "tp2_usable_bytes": 61303947264,
+    "weight_only_deficit_bytes": 10599829512,
+    "weight_only_deficit_gib": 9.871861
+  },
+  "conclusion": {
+    "full_model_service_started": false,
+    "m1_48_unlocked": false,
+    "m1_49_tp4_qualified": false,
+    "promotion_authorized": false,
+    "reason": "TP2 cannot hold the model weights at the fixed 0.9 memory utilization and cannot reproduce the TP4 service contract"
+  },
+  "local_validation": {
+    "submission_preflight": "8/8 passed",
+    "unit_tests": {
+      "passed": 403,
+      "skipped": 25
+    }
+  },
+  "machine": {
+    "boot_id": "1517ad11-5eff-4262-a413-9432d382d163",
+    "gpu_count": 2,
+    "gpus": [
+      {
+        "free_bytes": 34057748480,
+        "id": 0,
+        "name": "Iluvatar BI-V100",
+        "total_bytes": 34057748480
+      },
+      {
+        "free_bytes": 34057748480,
+        "id": 1,
+        "name": "Iluvatar BI-V100",
+        "total_bytes": 34057748480
+      }
+    ],
+    "hostname": "cc-92d14d83-d2c2-40ee-b9d6-141074dc8b31-0",
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "model_total_bytes": 71926901469,
+    "model_weight_files": 26,
+    "torch_version": "2.1.0"
+  },
+  "policy_proxy": {
+    "evidence": "docs/experiments/evidence/M1_49_CAPACITY_POLICY_PROXY.json",
+    "frequency_gain_over_lru_percentage_points_at_estimated_capacity": 13.606761272325235,
+    "m1_49_capacity_lru_gain_percentage_points": 10.244430044871452,
+    "promotion_authorized": false,
+    "qualification_trace": false
+  },
+  "remote_validation": {
+    "event_profiler": {
+      "gpu0": {
+        "counter_total": 2,
+        "event_count": 2,
+        "finite_positive_regions": true,
+        "flush_succeeded": true,
+        "qualified": true
+      },
+      "gpu1": {
+        "counter_total": 2,
+        "event_count": 2,
+        "finite_positive_regions": true,
+        "flush_succeeded": true,
+        "qualified": true
+      }
+    },
+    "nccl": {
+      "expected_sum": 3.0,
+      "qualified": true,
+      "ranks": [
+        {
+          "gpu": 0,
+          "rank": 0,
+          "value": 3.0
+        },
+        {
+          "gpu": 1,
+          "rank": 1,
+          "value": 3.0
+        }
+      ],
+      "timed_out_ranks": []
+    },
+    "result_root": "/root/competition-m1-48-tp2-f2c4b6e/bench_runs/tp2_staging_f2c4b6e",
+    "runtime_identity": {
+      "qualified": true,
+      "reasons": [],
+      "source_revision": "f2c4b6ef5c2f9ff612eaaf4541f949bbfd686ad7"
+    },
+    "runtime_install": {
+      "qualified": true,
+      "runtime_root": "/root/competition-m1-48-tp2-runtime-f2c4b6e",
+      "system_site_packages_modified": false,
+      "transformers_version": "4.55.3",
+      "vllm_version": "0.6.3+corex.3.2.3",
+      "xformers_sha256": "2f35a9a1f4af7b4d1473a3b81737b0abe0a04c9a5e00fc2f5374873b6d07bddb"
+    },
+    "selector": {
+      "full_attention_layers": 10,
+      "full_attention_ordinals": [
+        3,
+        7,
+        11,
+        15,
+        19,
+        23,
+        27,
+        31,
+        35,
+        39
+      ],
+      "legacy_attention_layers": 40,
+      "qualified": true
+    },
+    "submission_preflight": "8/8 passed"
+  },
+  "schema": "bi100-tp2-staging-validation-v1",
+  "scope": "non-qualifying-runtime-and-direction-staging",
+  "source": {
+    "branch": "prep/M1-48-on-M1-49-20260722",
+    "commit": "f2c4b6ef5c2f9ff612eaaf4541f949bbfd686ad7"
+  },
+  "version": 1
+}

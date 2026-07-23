@@ -1,5 +1,31 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-24 双卡 staging 与运行时身份修复
+
+- 当前私有准备分支为 `prep/M1-48-on-M1-49-20260722@f2c4b6e`；
+  `main`、`computility-run.yaml` 和仓库可见性均未修改。
+- `ssh-92d14d83` 的两张 Iluvatar BI-V100 均通过独立 CUDA 检查，TP2 NCCL
+  all-reduce 两个 rank 均得到 `3.0`。但模型权重为 71,903,776,776 bytes，
+  固定 0.9 显存利用率下双卡最多提供 61,303,947,264 bytes，权重本身已短缺
+  9.872 GiB，因此没有启动完整 35B 服务，也不能给出 TP4 性能结论。
+- 首轮 bare-host overlay 因 XFormers SHA 不一致正确 fail-closed。根因是仓库
+  canonical 文件只含 profile 补丁，而实际 runtime 同时包含必需的 SDPA 回退。
+  `8bef3f4` 补全最终 artifact 并固定文本输出；新 overlay 安装及二次 identity
+  gate 均 `qualified=true`，XFormers 精确 SHA 为
+  `2f35a9a1f4af7b4d1473a3b81737b0abe0a04c9a5e00fc2f5374873b6d07bddb`，
+  system site-packages 未修改。
+- 双卡上 M1-49 selector smoke 仍为 `legacy40=40`、
+  `full_attention=10`，十层序号严格为
+  `3,7,11,15,19,23,27,31,35,39`；GPU0/1 event profiler 各产生 2 个
+  event 与 2 个 counter，计时有限且为正，flush 成功。
+- 修正后的固定 881 合成代理显示：M1-49 估算容量单独令 LRU 命中率提升
+  10.244 个百分点；同容量下 frequency 又比 LRU 高 13.607 个百分点。
+  该结果仅说明频率策略仍值得用真实 trace 验证，不能替代 GDN/KV 有效命中、
+  TTFT 或得分门禁。
+- 本地完整回归为 403 passed、25 skipped，submission preflight 8/8。
+  详细记录见 `docs/experiments/TP2_STAGING_VALIDATION_20260724.md` 和
+  `docs/experiments/evidence/TP2_STAGING_VALIDATION_20260724.json`。
+
 ## 2026-07-21 M1-49 混合层 KV 计数修正
 
 - 私有分支：`exp/M1-49-hybrid-kv-accounting-20260721`，当前实现 `43dd8e8`；

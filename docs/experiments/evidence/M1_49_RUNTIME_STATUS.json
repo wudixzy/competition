@@ -3,9 +3,9 @@
     "qualified": false,
     "reasons": [
       "corrected TP4 candidate service has not completed startup",
-      "post-reconnect GPU0 stalls inside torch.cuda.mem_get_info while the same staged probe passes on GPU1"
+      "the current staging host has only two GPUs and cannot fit the model weights at the fixed 0.9 memory utilization"
     ],
-    "status": "RUNTIME_BLOCKED_GPU0_UNHEALTHY_AFTER_RECONNECT"
+    "status": "RUNTIME_PREPARED_TP4_QUALIFICATION_PENDING"
   },
   "implementation": {
     "branch": "exp/M1-49-hybrid-kv-accounting-20260721",
@@ -20,6 +20,8 @@
       "43dd8e8"
     ],
     "default_mode": "legacy40",
+    "staging_branch": "prep/M1-48-on-M1-49-20260722",
+    "staging_commit": "f2c4b6ef5c2f9ff612eaaf4541f949bbfd686ad7",
     "selector": "BI100_HYBRID_KV_ACCOUNTING",
     "selector_values": [
       "legacy40",
@@ -30,7 +32,7 @@
   "local_validation": {
     "submission_preflight": "8/8 passed",
     "unit_tests": {
-      "passed": 360,
+      "passed": 403,
       "skipped": 25
     }
   },
@@ -80,6 +82,35 @@
         "invalid_selector_exit_code": 1,
         "legacy40_attention_layers": 40
       }
+    },
+    "tp2_staging_overlay": {
+      "commit": "f2c4b6ef5c2f9ff612eaaf4541f949bbfd686ad7",
+      "identity_qualified": true,
+      "profile_event_smoke_gpus": [
+        0,
+        1
+      ],
+      "qualified": true,
+      "runtime_root": "/root/competition-m1-48-tp2-runtime-f2c4b6e",
+      "selector_smoke": {
+        "full_attention_attention_layers": 10,
+        "full_attention_ordinals": [
+          3,
+          7,
+          11,
+          15,
+          19,
+          23,
+          27,
+          31,
+          35,
+          39
+        ],
+        "legacy40_attention_layers": 40
+      },
+      "system_site_packages_modified": false,
+      "tp2_nccl_sum": 3.0,
+      "xformers_sha256": "2f35a9a1f4af7b4d1473a3b81737b0abe0a04c9a5e00fc2f5374873b6d07bddb"
     }
   },
   "runtime_events": [
@@ -224,6 +255,17 @@
       },
       "service_started": false,
       "timeout_seconds_per_gpu": 25
+    },
+    {
+      "event": "two_gpu_staging_validation_20260724",
+      "full_model_service_started": false,
+      "model_weight_bytes": 71903776776,
+      "reason": "weight-only TP2 deficit is 10599829512 bytes at fixed 0.9 utilization",
+      "result_path": "/root/competition-m1-48-tp2-f2c4b6e/bench_runs/tp2_staging_f2c4b6e",
+      "runtime_identity_qualified": true,
+      "source_commit": "f2c4b6ef5c2f9ff612eaaf4541f949bbfd686ad7",
+      "tp2_nccl_qualified": true,
+      "tp4_qualification": false
     }
   ],
   "schema": "bi100-m1-49-runtime-status-v1",
