@@ -78,6 +78,12 @@ if [[ -z "${BI100_RUNTIME_SITE_PACKAGES:-}" \
     exit 3
 fi
 export BI100_RUNTIME_SITE_PACKAGES
+RUNTIME_ROOT=$(dirname "$BI100_RUNTIME_SITE_PACKAGES")
+RUNTIME_INSTALL_REPORT=${BI100_RUNTIME_INSTALL_REPORT:-$RUNTIME_ROOT/install.json}
+if [[ ! -f "$RUNTIME_INSTALL_REPORT" ]]; then
+    echo "selected replay runtime install report is missing" >&2
+    exit 3
+fi
 export PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages:${PYTHONPATH:-}"
 
 if [[ ! -d "$MODEL_PATH" ]]; then
@@ -237,6 +243,13 @@ fatal_scan() {
     printf '%s\n' 0 > "$RUN_ROOT/fatal_scan.rc"
 }
 
+run_offline_gate runtime_identity 60 \
+    python3 "$ROOT/tests/verify_bare_host_runtime_identity.py" \
+    --source-root "$ROOT" \
+    --runtime-site-packages "$BI100_RUNTIME_SITE_PACKAGES" \
+    --runtime-install "$RUNTIME_INSTALL_REPORT" \
+    --out "$RUN_ROOT/runtime_identity.json"
+
 run_preflight before_selected
 wait_for_port_free
 setsid "$ROOT/launch_service" > "$RUN_ROOT/server.log" 2>&1 < /dev/null &
@@ -303,29 +316,26 @@ if (current.get("qualified") is not True
         or current.get("observed_attention_layers")
         != expected.get("attention_layers")):
     raise SystemExit("selected replay startup differs from M1-49 qualification")
-if trace_mode == "0":
-    if (current.get("runtime_contract_sha256")
-            != expected.get("runtime_contract_sha256")):
-        raise SystemExit(
-            "selected replay runtime contract differs from M1-49 qualification")
-else:
-    prior_contract = copy.deepcopy(prior.get("runtime_contract"))
-    current_contract = copy.deepcopy(current.get("runtime_contract"))
-    if not isinstance(prior_contract, dict) or not isinstance(
-            current_contract, dict):
-        raise SystemExit("selected trace runtime contracts are missing")
-    prior_service = prior_contract.get("service")
-    current_service = current_contract.get("service")
-    if (not isinstance(prior_service, dict)
-            or not isinstance(current_service, dict)
-            or prior_service.get("cache_trace") != "0"
-            or current_service.get("cache_trace") != "1"):
-        raise SystemExit("selected trace mode is not isolated to cache_trace=1")
+prior_contract = copy.deepcopy(prior.get("runtime_contract"))
+current_contract = copy.deepcopy(current.get("runtime_contract"))
+if not isinstance(prior_contract, dict) or not isinstance(
+        current_contract, dict):
+    raise SystemExit("selected replay runtime contracts are missing")
+prior_service = prior_contract.get("service")
+current_service = current_contract.get("service")
+if (not isinstance(prior_service, dict)
+        or not isinstance(current_service, dict)
+        or prior_service.get("cache_trace") != "0"
+        or current_service.get("cache_trace") != trace_mode):
+    raise SystemExit("selected replay cache-trace contract is invalid")
+prior_service["runtime_site_packages"] = "<attested-overlay>"
+current_service["runtime_site_packages"] = "<attested-overlay>"
+if trace_mode == "1":
     prior_service["cache_trace"] = "<diagnostic>"
     current_service["cache_trace"] = "<diagnostic>"
-    if prior_contract != current_contract:
-        raise SystemExit(
-            "selected trace runtime differs beyond the diagnostic trace flag")
+if prior_contract != current_contract:
+    raise SystemExit(
+        "selected replay runtime differs beyond attested path and trace mode")
 PY
 printf '%s\n' 0 > "$RUN_ROOT/startup_match.rc"
 

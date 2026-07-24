@@ -6,6 +6,7 @@ RUNTIME_ROOT=${BI100_BARE_HOST_RUNTIME_ROOT:-$ROOT/bench_runs/m1_49/runtime_over
 JSON_OUT=${1:-}
 PATCH_STAGE=""
 RUNTIME_STAGE=""
+SOURCE_REVISION=""
 
 BASE_PYTHONPATH=${PYTHONPATH:-}
 SYSTEM_PYTHONPATH="/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages"
@@ -24,6 +25,12 @@ if [[ -e "$RUNTIME_ROOT" || -L "$RUNTIME_ROOT" ]]; then
     echo "runtime destination already exists: $RUNTIME_ROOT" >&2
     exit 2
 fi
+if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all -- \
+        . ':(exclude)bench_runs/**')" ]]; then
+    echo "bare-host runtime installation refuses a dirty source tree" >&2
+    exit 2
+fi
+SOURCE_REVISION=$(git -C "$ROOT" rev-parse HEAD)
 
 required=(
     vllm/core/evictor_v2.py
@@ -127,7 +134,7 @@ REPORT_PATH="$RUNTIME_STAGE/install.json"
 cd /tmp
 python3 - "$ROOT" "$SITE_PACKAGES" "$RUNTIME_ROOT" "$REPORT_PATH" \
     "$EXPECTED_ROOT/vllm/core/block_manager_v2.py" \
-    "$EXPECTED_ROOT/vllm/outputs.py" <<'PY'
+    "$EXPECTED_ROOT/vllm/outputs.py" "$SOURCE_REVISION" <<'PY'
 from __future__ import annotations
 
 import hashlib
@@ -144,6 +151,7 @@ runtime_root = Path(sys.argv[3])
 output = Path(sys.argv[4])
 expected_block_manager = Path(sys.argv[5]).resolve()
 expected_outputs = Path(sys.argv[6]).resolve()
+source_revision = sys.argv[7]
 
 
 def package_root(name: str) -> Path:
@@ -248,10 +256,16 @@ report = {
     "runtime_root": str(runtime_root),
     "site_packages": str(runtime_root / "site-packages"),
     "system_site_packages_modified": False,
+    "source_revision": source_revision,
+    "source_tree_clean": True,
     "versions": versions,
     "files": files,
     "block_manager_base_sha256": digest(
         root / "vllm/core/block_manager_v2.py"),
+    "cache_trace_patcher_sha256": digest(
+        root / "qwen3_6_scripts/patch_block_manager_cache_trace.py"),
+    "installer_sha256": digest(
+        root / "scripts/install_bi100_bare_host_runtime.sh"),
     "model_runner_sha256": digest(model_runner),
     "worker_sha256": digest(worker),
     "profile_attention_layer_patch": profile_patch_present,

@@ -79,6 +79,11 @@ class M149SelectedDatasetHarnessTest(unittest.TestCase):
         self.assertIn('--expected-cache-trace "$TRACE_MODE"', self.source)
         self.assertIn(
             'prior_service["cache_trace"] = "<diagnostic>"', self.source)
+        self.assertIn("verify_bare_host_runtime_identity.py", self.source)
+        self.assertIn(
+            'prior_service["runtime_site_packages"] = "<attested-overlay>"',
+            self.source,
+        )
 
 
 if __name__ == "__main__":
