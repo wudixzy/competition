@@ -8,12 +8,14 @@ ROOT = Path(__file__).resolve().parents[1]
 HARNESS = ROOT / "scripts" / "run_m1_48_prefill_profile.sh"
 INSTALLER = ROOT / "scripts" / "install_bi100_bare_host_runtime.sh"
 PATCH_OPS = ROOT / "qwen3_6_scripts" / "patch_ops.sh"
+CLEANUP = ROOT / "scripts" / "lib" / "process_group.sh"
 
 
 class M148ProfileHarnessTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = HARNESS.read_text(encoding="utf-8")
+        cls.cleanup = CLEANUP.read_text(encoding="utf-8")
 
     def test_m1_49_qualification_is_a_hard_precondition(self):
         prerequisite = self.source.index(
@@ -40,8 +42,14 @@ class M148ProfileHarnessTest(unittest.TestCase):
 
     def test_process_cleanup_and_gpu_leak_gates_are_mandatory(self):
         self.assertIn('setsid "$ROOT/launch_service"', self.source)
-        self.assertIn('kill -TERM -- "-$ACTIVE_PGID"', self.source)
-        self.assertIn('kill -KILL -- "-$ACTIVE_PGID"', self.source)
+        self.assertIn(
+            'source "$ROOT/scripts/lib/process_group.sh"', self.source)
+        self.assertIn(
+            'bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID"',
+            self.source,
+        )
+        self.assertIn('kill -TERM -- "-$pgid"', self.cleanup)
+        self.assertIn('kill -KILL -- "-$pgid"', self.cleanup)
         for stage in ("before_control", "after_control", "after_profile"):
             self.assertIn(f"run_preflight {stage}", self.source)
         self.assertIn("--max-free-memory-drop-bytes 1073741824", self.source)

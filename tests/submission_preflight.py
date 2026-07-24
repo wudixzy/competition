@@ -158,7 +158,7 @@ def _critical_text_files(root: Path) -> list[Path]:
         root / "computility-run.yaml",
         root / "launch_service",
         *sorted((root / "qwen3_6_scripts").glob("*.sh")),
-        *sorted((root / "scripts").glob("*.sh")),
+        *sorted((root / "scripts").rglob("*.sh")),
     ]
 
 
@@ -278,7 +278,7 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
     def shell_syntax() -> str:
         scripts = [root / "launch_service",
                    *sorted((root / "qwen3_6_scripts").glob("*.sh")),
-                   *sorted((root / "scripts").glob("*.sh"))]
+                   *sorted((root / "scripts").rglob("*.sh"))]
         for path in scripts:
             subprocess.run(
                 ["bash", "-n", str(path)], check=True,

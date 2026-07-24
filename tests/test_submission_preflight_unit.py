@@ -17,6 +17,10 @@ class SubmissionPreflightTest(unittest.TestCase):
         failures = [item for item in results if not item["ok"]]
         self.assertEqual(failures, [])
 
+    def test_nested_shell_helpers_are_critical_files(self):
+        files = submission_preflight._critical_text_files(ROOT)
+        self.assertIn(ROOT / "scripts/lib/process_group.sh", files)
+
     def test_run_config_parser_preserves_exact_command_order(self):
         text = (ROOT / "computility-run.yaml").read_text(encoding="utf-8")
         concurrency, command, environment = \

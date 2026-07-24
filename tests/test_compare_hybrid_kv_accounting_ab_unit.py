@@ -159,7 +159,12 @@ class CompareHybridKvAccountingAbTest(unittest.TestCase):
         self.assertIn("export PORT=8000", source)
         self.assertIn("BI100_RUNTIME_SITE_PACKAGES", source)
         self.assertIn('setsid "$ROOT/launch_service"', source)
-        self.assertIn('kill -TERM -- "-$ACTIVE_PGID"', source)
+        self.assertIn(
+            'source "$ROOT/scripts/lib/process_group.sh"', source)
+        self.assertIn(
+            'bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID"',
+            source,
+        )
         self.assertIn('printf \'%s\\n\' "$cleanup_rc"', source)
         self.assertIn("run_preflight after_legacy", source)
         self.assertIn("run_preflight after_candidate", source)

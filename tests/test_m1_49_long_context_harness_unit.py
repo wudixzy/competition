@@ -6,6 +6,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "run_m1_49_long_context_gates.sh"
+CLEANUP = ROOT / "scripts" / "lib" / "process_group.sh"
 
 
 class M149LongContextHarnessTest(unittest.TestCase):
@@ -13,6 +14,7 @@ class M149LongContextHarnessTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = SCRIPT.read_text(encoding="utf-8")
+        cls.cleanup = CLEANUP.read_text(encoding="utf-8")
 
     def test_requires_qualified_fixed_ab_before_service_start(self):
         self.assertIn('require_zero_rc "$AB_DIR/overall.rc"', self.source)
@@ -60,8 +62,15 @@ class M149LongContextHarnessTest(unittest.TestCase):
         self.assertIn(
             "--max-free-memory-drop-bytes 1073741824", self.source)
         self.assertIn('setsid "$ROOT/launch_service"', self.source)
-        self.assertIn('kill -TERM -- "-$ACTIVE_PGID"', self.source)
-        self.assertIn('pgrep -g "$ACTIVE_PGID"', self.source)
+        self.assertIn(
+            'source "$ROOT/scripts/lib/process_group.sh"', self.source)
+        self.assertIn(
+            'bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID"',
+            self.source,
+        )
+        self.assertIn('kill -TERM -- "-$pgid"', self.cleanup)
+        self.assertIn('kill -KILL -- "-$pgid"', self.cleanup)
+        self.assertIn('substr($2, 1, 1) == "Z"', self.cleanup)
         self.assertIn('printf \'%s\\n\' "$cleanup_rc"', self.source)
 
 

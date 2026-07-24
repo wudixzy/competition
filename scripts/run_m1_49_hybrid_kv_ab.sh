@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+source "$ROOT/scripts/lib/process_group.sh"
 RUN_ROOT=${M1_49_RUN_ROOT:-$ROOT/bench_runs/m1_49/hybrid_kv_ab}
 MODEL_PATH=${MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
 RUN_ID=${M1_49_RUN_ID:-m149-hybrid-kv-fixed-20260721}
@@ -78,26 +79,10 @@ wait_for_port_free() {
 }
 
 stop_service() {
-    if [[ -n "$ACTIVE_PGID" ]] && kill -0 -- "-$ACTIVE_PGID" 2>/dev/null; then
-        kill -TERM -- "-$ACTIVE_PGID" 2>/dev/null || true
-        for _ in $(seq 1 120); do
-            kill -0 -- "-$ACTIVE_PGID" 2>/dev/null || break
-            sleep 1
-        done
-        if kill -0 -- "-$ACTIVE_PGID" 2>/dev/null; then
-            kill -KILL -- "-$ACTIVE_PGID" 2>/dev/null || true
-            for _ in $(seq 1 20); do
-                pgrep -g "$ACTIVE_PGID" >/dev/null 2>&1 || break
-                sleep 1
-            done
-        fi
-    fi
-    if [[ -n "$ACTIVE_PID" ]]; then
+    if [[ -n "$ACTIVE_PGID" ]]; then
+        bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" || return $?
+    elif [[ -n "$ACTIVE_PID" ]]; then
         wait "$ACTIVE_PID" 2>/dev/null || true
-    fi
-    if [[ -n "$ACTIVE_PGID" ]] && pgrep -g "$ACTIVE_PGID" >/dev/null 2>&1; then
-        echo "service process group $ACTIVE_PGID survived cleanup" >&2
-        return 1
     fi
     ACTIVE_PID=""
     ACTIVE_PGID=""
