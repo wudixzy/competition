@@ -79,7 +79,7 @@ TRUE_FACTS = {
         "reasoning_content_nonempty", "content_nonempty",
     ),
     "max_tokens_unset": ("natural_stop",),
-    "max_tokens_1": ("natural_stop",),
+    "max_tokens_1": ("completion_within_limit", "finish_reason_valid"),
     "max_tokens_64": ("natural_stop",),
     "max_tokens_64k": ("natural_stop",),
     "max_tokens_near_context": ("natural_stop",),
@@ -485,10 +485,18 @@ def _validate_case_contract(case: Json, report: Json, label: str) -> list[str]:
                 or facts.get("exact_completion_tokens") != 32768):
             reasons.append(f"{label}: exact truncation evidence differs")
     if case_id in (
-            "max_tokens_unset", "max_tokens_1", "max_tokens_64",
+            "max_tokens_unset", "max_tokens_64",
             "max_tokens_64k", "max_tokens_near_context",
     ) and finish != ["stop"]:
         reasons.append(f"{label}: accepted max_tokens did not finish by stop")
+    if case_id == "max_tokens_1":
+        if (finish not in (["stop"], ["length"])
+                or len(completion) != 1
+                or not isinstance(completion[0], int)
+                or isinstance(completion[0], bool)
+                or not 0 <= completion[0] <= 1):
+            reasons.append(
+                f"{label}: max_tokens=1 enforcement evidence differs")
     if case_id in ("streaming_usage", "streaming_sse_usage"):
         if (finish != ["stop"] or facts.get("done") != 1
                 or facts.get("usage_blocks") != 1

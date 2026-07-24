@@ -40,6 +40,31 @@ class StreamingClient:
         }
 
 
+class ResponseClient:
+
+    def __init__(self, finish_reason="length", completion_tokens=1):
+        self.finish_reason = finish_reason
+        self.completion_tokens = completion_tokens
+
+    def post(self, payload, timeout=None):
+        return 200, {
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "llm",
+            "choices": [{
+                "index": 0,
+                "finish_reason": self.finish_reason,
+                "message": {"role": "assistant", "content": "A"},
+            }],
+            "usage": {
+                "prompt_tokens": 3,
+                "completion_tokens": self.completion_tokens,
+                "total_tokens": 3 + self.completion_tokens,
+            },
+        }
+
+
 class QualityGateApiTest(unittest.TestCase):
 
     @classmethod
@@ -164,6 +189,16 @@ class QualityGateApiTest(unittest.TestCase):
         }
         with self.assertRaisesRegex(MODULE.CaseFailure, "inconsistent"):
             MODULE._validate_response_schema(response)
+
+    def test_max_tokens_one_accepts_length_and_enforces_usage_cap(self):
+        observation = MODULE._max_tokens_case(
+            ResponseClient(), object(), 1)
+        self.assertEqual(observation["finish_reasons"], ["length"])
+        self.assertTrue(observation["facts"]["completion_within_limit"])
+
+        with self.assertRaisesRegex(MODULE.CaseFailure, "usage is invalid"):
+            MODULE._max_tokens_case(
+                ResponseClient(completion_tokens=2), object(), 1)
 
     def test_manifest_file_hash_is_frozen(self):
         value = json.loads((

@@ -51,6 +51,9 @@ def make_report(label: str) -> dict:
                 status_codes == [200] if accepted is None else accepted)
         if case_id in MODULE.MAX_TOKEN_FACTS:
             facts["requested_max_tokens"] = MODULE.MAX_TOKEN_FACTS[case_id]
+        if case_id == "max_tokens_1":
+            finish_reasons = ["length"]
+            completion_tokens = [1]
         if case_id in ("tool_calling", "function_calling"):
             facts["tool_calls"] = 1
             finish_reasons = ["tool_calls"]
@@ -432,6 +435,21 @@ class QualityComparisonTest(unittest.TestCase):
             "evidence differs",
             result["reasons"],
         )
+
+    def test_max_tokens_one_accepts_length_but_rejects_overrun(self):
+        baseline = make_report("baseline")
+        candidate = make_report("candidate")
+        self.assertTrue(MODULE.compare_reports(
+            baseline, candidate)["qualified"])
+
+        case = next(row for row in candidate["cases"]
+                    if row["id"] == "max_tokens_1")
+        case["observation"]["completion_tokens"] = [2]
+        result = MODULE.compare_reports(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertIn(
+            "candidate: case max_tokens_1: max_tokens=1 enforcement "
+            "evidence differs", result["reasons"])
 
     def test_cross_image_cached_tokens_must_be_zero(self):
         baseline = make_report("baseline")

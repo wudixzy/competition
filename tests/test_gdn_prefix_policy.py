@@ -137,6 +137,22 @@ class GdnPrefixPolicyTest(unittest.TestCase):
                         clear=False):
             with self.assertRaises(RuntimeError):
                 gdn_cache_policy_from_env()
+        for policy in ("fine32", "admission64", "off"):
+            with self.subTest(policy=policy), patch.dict(os.environ, {
+                    "BI100_GDN_CACHE_POLICY": policy,
+                    "BI100_GDN_RESTORE_MODE": "typo",
+            }, clear=False):
+                self.assertEqual(gdn_cache_policy_from_env(), policy)
+                with self.assertRaises(RuntimeError):
+                    gdn_restore_mode_from_env()
+
+    def test_off_policy_is_explicit_and_does_not_mask_restore_validation(self):
+        with patch.dict(os.environ, {
+                "BI100_GDN_CACHE_POLICY": "off",
+                "BI100_GDN_RESTORE_MODE": "direct",
+        }, clear=False):
+            self.assertEqual(gdn_cache_policy_from_env(), "off")
+            self.assertEqual(gdn_restore_mode_from_env(), "direct")
 
 
 if __name__ == "__main__":

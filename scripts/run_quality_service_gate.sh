@@ -271,6 +271,8 @@ report = {
     "gates": {
         "runtime_identity": read_rc("runtime_identity.rc"),
         "runtime_contract": read_rc("runtime_contract.rc"),
+        "prefix_allocator": read_rc("prefix_allocator.rc"),
+        "gdn_action_broadcast": read_rc("gdn_action_broadcast.rc"),
         "preflight_before": read_rc("preflight_before.rc"),
         "startup": read_rc("startup.rc"),
         "startup_contract": read_rc("startup_contract.rc"),
@@ -385,6 +387,26 @@ printf '%s\n' "$rc" > "$RUN_ROOT/runtime_contract.rc"
 RUNTIME_IDENTITY=$(python3 -c \
     'import json,sys; print(json.load(open(sys.argv[1]))["runtime_identity"])' \
     "$RUN_ROOT/runtime_contract.json")
+
+set +e
+python3 "$ROOT/tests/prefix_namespace_fork_gate.py" \
+    --out "$RUN_ROOT/prefix_allocator.json" \
+    > "$RUN_ROOT/prefix_allocator.stdout" \
+    2> "$RUN_ROOT/prefix_allocator.stderr"
+rc=$?
+set -e
+printf '%s\n' "$rc" > "$RUN_ROOT/prefix_allocator.rc"
+[[ $rc -eq 0 ]]
+
+set +e
+python3 "$ROOT/tests/gdn_action_broadcast_gate.py" \
+    --out "$RUN_ROOT/gdn_action_broadcast.json" \
+    > "$RUN_ROOT/gdn_action_broadcast.stdout" \
+    2> "$RUN_ROOT/gdn_action_broadcast.stderr"
+rc=$?
+set -e
+printf '%s\n' "$rc" > "$RUN_ROOT/gdn_action_broadcast.rc"
+[[ $rc -eq 0 ]]
 
 run_preflight before
 BEFORE_PREFLIGHT_PASSED=1

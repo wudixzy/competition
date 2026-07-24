@@ -15,8 +15,9 @@ through M1-45:
 - scheduler metadata carries explicit GDN restore, capture, and eviction
   actions, and workers fail if a selected state is absent;
 - effective cached tokens are the contiguous KV/GDN intersection;
-- `admission64` keeps at most two useful states per sequence and no longer
-  captures every 8,192-token chunk;
+- `admission64` uses one scheduler-global 64-state LRU, proposes at most two
+  capture points for one scheduling step, and no longer captures every
+  8,192-token chunk;
 - privacy-safe v4 tracing and per-request residual-prefill simulation exist;
 - physical-block reuse, pooled forks, multimodal isolation, TP4 pressure,
   131K exactness, 235K stability, and 262K capacity have real evidence.

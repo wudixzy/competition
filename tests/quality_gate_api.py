@@ -853,13 +853,23 @@ def _max_tokens_case(
     data = _expect_200(result)
     _content(data)
     finish = (data.get("choices") or [{}])[0].get("finish_reason")
-    require(finish == "stop", "short max_tokens acceptance did not finish by stop")
     if value == 1:
         completion = _usage(data)["completion_tokens"]
         require(isinstance(completion, int) and completion <= 1,
                 "max_tokens=1 completion usage is invalid")
+        require(finish in {"stop", "length"},
+                "max_tokens=1 finish_reason is invalid")
+        facts = {
+            "requested_max_tokens": value,
+            "completion_within_limit": True,
+            "finish_reason_valid": True,
+        }
+    else:
+        require(finish == "stop",
+                "accepted max_tokens request did not finish by stop")
+        facts = {"requested_max_tokens": value, "natural_stop": True}
     return _observation([result], [_normalized_response(data)], facts={
-        "requested_max_tokens": value, "natural_stop": True,
+        **facts,
     })
 
 

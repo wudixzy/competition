@@ -22,9 +22,13 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
     def test_quality_contract_is_attested_before_start(self):
         identity = self.source.index("verify_bare_host_runtime_identity.py")
         contract = self.source.index("build_quality_runtime_contract.py")
+        allocator = self.source.index("prefix_namespace_fork_gate.py")
+        broadcast = self.source.index("gdn_action_broadcast_gate.py")
         service = self.source.index('setsid "$ROOT/launch_service"')
         self.assertLess(identity, contract)
-        self.assertLess(contract, service)
+        self.assertLess(contract, allocator)
+        self.assertLess(allocator, broadcast)
+        self.assertLess(broadcast, service)
         self.assertIn('--expected-cache-trace 1', self.source)
 
     def test_harness_preserves_model_capability_contract(self):
@@ -35,6 +39,10 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertNotIn("--quantization", self.source)
         self.assertNotIn("--speculative-model", self.source)
         self.assertNotIn("computility-run.yaml", self.source)
+
+        functional = (ROOT / "scripts/run_quality_functional_gate.sh").read_text(
+            encoding="utf-8")
+        self.assertIn("--allow-bare-engine-n2-skip", functional)
 
     def test_raw_run_artifacts_cannot_enter_repository(self):
         self.assertIn(

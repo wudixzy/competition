@@ -49,11 +49,15 @@ documented optimization switches below may differ.
 ## Fixed lifecycle harness
 
 Every invocation starts exactly one fresh TP4 service, runs four-GPU preflight
-before and after, validates the startup contract, executes one quality surface,
-scans fatal/OOM/worker-loss signatures, and kills the isolated process group.
+before and after, validates physical KV-block reuse and both installed
+model-input GDN action broadcasts, validates the startup contract, executes
+one quality surface, scans fatal/OOM/worker-loss signatures, and kills the
+isolated process group.
 Raw logs remain under a private `/tmp` path outside the repository. The
-functional run executes all 53 rows strictly; the historical direct-engine
-`n=2` skip is not enabled by this harness.
+functional run executes all 53 rows. It still sends and validates the `n=2`
+request, but records the manifest's sole documented skip only when the fixed
+`--max-num-seqs 1` direct engine returns the exact normalized 400 response and
+the post-request health probe succeeds. No other skip is accepted.
 
 The overlay must be installed from the exact clean experiment commit. Use one
 overlay and one instance for all four A/B runs:
