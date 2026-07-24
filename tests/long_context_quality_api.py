@@ -302,6 +302,23 @@ class Context:
         self.served_model_name = served_model_name
         self.template_kwargs_mode = template_kwargs_mode
         self.cache_trace_path = cache_trace_path
+        self._case_requests: list[Json] = []
+
+    def begin_case(self) -> None:
+        self._case_requests = []
+
+    def record_request(self, summary: Json) -> None:
+        self._case_requests.append(dict(summary))
+
+    def failure_observation(self) -> Json:
+        return {
+            "requests": [dict(summary) for summary in self._case_requests],
+            "construction": [],
+            "facts": {
+                "privacy_safe_requests_captured_before_failure": len(
+                    self._case_requests),
+            },
+        }
 
 
 def _payload(
@@ -411,6 +428,7 @@ def _post(
         "protocol_validated": True,
         "elapsed_s": round(elapsed, 6),
     }
+    context.record_request(summary)
     return data, summary
 
 
@@ -1114,17 +1132,18 @@ def main() -> int:
     }
     started = time.perf_counter()
     for case in selected:
+        context.begin_case()
         case_started = time.perf_counter()
         try:
             observation = HANDLERS[case["id"]](context, case)
             status = "pass"
             error_code = ""
         except (quality.CaseFailure, MatrixFailure) as error:
-            observation = {"requests": [], "construction": [], "facts": {}}
+            observation = context.failure_observation()
             status = "fail"
             error_code = str(error)
         except Exception as error:
-            observation = {"requests": [], "construction": [], "facts": {}}
+            observation = context.failure_observation()
             status = "fail"
             error_code = f"unexpected {type(error).__name__}"
         results.append({

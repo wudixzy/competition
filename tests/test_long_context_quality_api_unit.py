@@ -189,6 +189,35 @@ class LongContextQualityApiTest(unittest.TestCase):
         self.assertNotIn(secret, json.dumps(summary))
         self.assertEqual(len(summary["semantic_output_sha256"]), 64)
 
+    def test_failed_case_retains_privacy_safe_request_summaries(self):
+        context = MODULE.Context(
+            client=None,
+            tokenizer=None,
+            timeout_s=1,
+            served_model_name="llm",
+            template_kwargs_mode="direct",
+        )
+        context.begin_case()
+        source = {
+            "status": 200,
+            "semantic_output_sha256": "a" * 64,
+            "elapsed_s": 1.25,
+        }
+        context.record_request(source)
+        source["status"] = 500
+
+        observation = context.failure_observation()
+
+        self.assertEqual(observation["requests"], [{
+            "status": 200,
+            "semantic_output_sha256": "a" * 64,
+            "elapsed_s": 1.25,
+        }])
+        self.assertEqual(
+            observation["facts"]
+            ["privacy_safe_requests_captured_before_failure"], 1)
+        self.assertEqual(observation["construction"], [])
+
     def test_matrix_file_hash_cannot_be_overridden(self):
         value = json.loads((
             ROOT / "quality/long_context_matrix.v2.json"
