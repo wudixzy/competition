@@ -277,6 +277,7 @@ report = {
         "startup": read_rc("startup.rc"),
         "startup_contract": read_rc("startup_contract.rc"),
         "quality": read_rc("quality.rc"),
+        "agent_workload": read_rc("agent_workload.rc"),
         "cleanup": read_rc("cleanup.rc"),
         "fatal_scan": read_rc("fatal_scan.rc"),
         "preflight_after": read_rc("preflight_after.rc"),
@@ -289,6 +290,7 @@ report = {
 }
 contract = root / "runtime_contract.json"
 quality = root / "quality_report.json"
+agent = root / "agent_workload.json"
 report["artifacts"] = {
     "runtime_contract_sha256": (
         hashlib.sha256(contract.read_bytes()).hexdigest()
@@ -296,6 +298,9 @@ report["artifacts"] = {
     "quality_report_sha256": (
         hashlib.sha256(quality.read_bytes()).hexdigest()
         if quality.is_file() else None),
+    "agent_workload_sha256": (
+        hashlib.sha256(agent.read_bytes()).hexdigest()
+        if agent.is_file() else None),
 }
 (root / "status.json").write_text(
     json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -472,7 +477,27 @@ if [[ "$SUITE" == functional ]]; then
         "$RUN_ROOT/runtime_contract.json" "$LABEL" "$RUNTIME_IDENTITY" \
         "$INSTANCE" "$RUN_ROOT/quality_report.json" \
         > "$RUN_ROOT/quality.stdout" 2> "$RUN_ROOT/quality.stderr"
-    rc=$?
+    quality_rc=$?
+    printf '%s\n' "$quality_rc" > "$RUN_ROOT/quality.rc"
+
+    timeout --signal=TERM --kill-after=30s 3600s \
+        python3 "$ROOT/tests/agent_workload_matrix.py" \
+        --base http://127.0.0.1:8000 \
+        --source-revision "$(git -C "$ROOT" rev-parse HEAD)" \
+        --runtime-identity "$RUNTIME_IDENTITY" \
+        --runtime-contract "$RUN_ROOT/runtime_contract.json" \
+        --instance "$INSTANCE" \
+        --label "$LABEL" \
+        --run-id "${LABEL}-agent-workload-$(date -u +%Y%m%dT%H%M%SZ)-$$" \
+        --out "$RUN_ROOT/agent_workload.json" \
+        > "$RUN_ROOT/agent_workload.stdout" \
+        2> "$RUN_ROOT/agent_workload.stderr"
+    agent_rc=$?
+    printf '%s\n' "$agent_rc" > "$RUN_ROOT/agent_workload.rc"
+    rc=0
+    if [[ $quality_rc -ne 0 || $agent_rc -ne 0 ]]; then
+        rc=1
+    fi
 else
     timeout --signal=TERM --kill-after=30s 43200s \
         "$ROOT/scripts/run_quality_long_context_gate.sh" \
@@ -482,7 +507,7 @@ else
         "$RUN_ROOT/quality_report.json" \
         > "$RUN_ROOT/quality.stdout" 2> "$RUN_ROOT/quality.stderr"
     rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/quality.rc"
 fi
 set -e
-printf '%s\n' "$rc" > "$RUN_ROOT/quality.rc"
 [[ $rc -eq 0 ]]

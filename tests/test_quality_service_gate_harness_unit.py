@@ -30,6 +30,8 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertLess(allocator, broadcast)
         self.assertLess(broadcast, service)
         self.assertIn('--expected-cache-trace 1', self.source)
+        self.assertIn('tests/agent_workload_matrix.py', self.source)
+        self.assertIn('agent_workload.rc', self.source)
 
     def test_harness_preserves_model_capability_contract(self):
         self.assertIn('export BI100_HYBRID_KV_ACCOUNTING=full_attention',

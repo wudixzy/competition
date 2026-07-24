@@ -1,9 +1,14 @@
 import importlib.util
+import json
 import pathlib
+import sys
+import tempfile
 import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT / "tests") not in sys.path:
+    sys.path.insert(0, str(ROOT / "tests"))
 MODULE_PATH = ROOT / "tests" / "agent_workload_matrix.py"
 SPEC = importlib.util.spec_from_file_location("agent_workload_matrix", MODULE_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -31,6 +36,128 @@ class AgentWorkloadMatrixUnitTest(unittest.TestCase):
     def test_argument_parser_accepts_string_and_object(self):
         self.assertEqual(MODULE.parse_arguments('{"value": 7}'), {"value": 7})
         self.assertEqual(MODULE.parse_arguments({"value": 7}), {"value": 7})
+
+    def test_safe_observation_retains_only_hashes_and_rules(self):
+        secret = "raw-agent-output-must-not-be-retained"
+        result = {
+            "elapsed_s": 1.0,
+            "finish_reason": "tool_calls",
+            "content": secret,
+            "reasoning_content": secret,
+            "tool_calls": [{
+                "name": "terminal",
+                "arguments": {"command": secret},
+            }],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 3,
+                "total_tokens": 13,
+                "prompt_tokens_details": {"cached_tokens": 4},
+            },
+        }
+        observation = MODULE.safe_observation(result, {"rule": True})
+        serialized = json.dumps(observation)
+        self.assertNotIn(secret, serialized)
+        self.assertEqual(observation["cached_tokens"], 4)
+        self.assertEqual(len(observation["semantic_output_sha256"]), 64)
+
+    def test_manifest_and_runtime_contract_are_bound(self):
+        manifest, digest = MODULE.load_manifest(
+            ROOT / "quality/agent_workload_matrix.v1.json")
+        self.assertEqual(len(manifest["cases"]), 9)
+        self.assertEqual(digest, MODULE.EXPECTED_MANIFEST_SHA256)
+
+        runtime = MODULE.runtime_contract
+        contract = {
+            "schema": "bi100-quality-runtime-contract-v1",
+            "version": 1,
+            "source_revision": "a" * 40,
+            "runtime_identity": "runtime-test",
+            "runtime_overlay_sha256": "b" * 64,
+            "instance": "private-instance",
+            "gpu_count": 4,
+            "tensor_parallel_size": 4,
+            "max_model_len": 262144,
+            "model_path": "/model",
+            "tokenizer_path": "/model",
+            "served_model_name": "llm",
+            "base_image": runtime.BASE_IMAGE,
+            "command": runtime.service_command("/model"),
+            "environment": runtime.service_environment(
+                "/runtime/site-packages",
+                gdn_cache_policy="fine32",
+                gdn_restore_mode="direct",
+                fused_prefill="0",
+                kv_eviction_policy="lru",
+            ),
+            "cache_trace_enabled": True,
+            "optimization_label": "fine32",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "runtime.json"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+            loaded, contract_sha = MODULE.load_runtime_contract(
+                path, "a" * 40, "runtime-test", "private-instance")
+        self.assertEqual(loaded, contract)
+        self.assertEqual(len(contract_sha), 64)
+
+    def test_runtime_contract_rejects_obsolete_base_image(self):
+        runtime = MODULE.runtime_contract
+        contract = {
+            "schema": "bi100-quality-runtime-contract-v1",
+            "version": 1,
+            "source_revision": "a" * 40,
+            "runtime_identity": "runtime-test",
+            "runtime_overlay_sha256": "b" * 64,
+            "instance": "private-instance",
+            "gpu_count": 4,
+            "tensor_parallel_size": 4,
+            "max_model_len": 262144,
+            "model_path": "/model",
+            "tokenizer_path": "/model",
+            "served_model_name": "llm",
+            "base_image": "git.modelhub.org.cn:9443/obsolete:v1.2.3",
+            "command": runtime.service_command("/model"),
+            "environment": runtime.service_environment(
+                "/runtime/site-packages",
+                gdn_cache_policy="fine32",
+                gdn_restore_mode="direct",
+                fused_prefill="0",
+                kv_eviction_policy="lru",
+            ),
+            "cache_trace_enabled": True,
+            "optimization_label": "fine32",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "runtime.json"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "base image"):
+                MODULE.load_runtime_contract(
+                    path, "a" * 40, "runtime-test", "private-instance")
+
+    def test_validation_checks_tool_finish_and_multiple_system_markers(self):
+        tool_case = MODULE.build_cases()["auto_terminal"]
+        tool_result = {
+            "finish_reason": "tool_calls",
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [{
+                "name": "terminal", "arguments": {"command": "pwd"},
+            }],
+        }
+        facts = MODULE.validate(tool_case, tool_result)
+        self.assertTrue(facts["tool_call_valid"])
+
+        system_case = MODULE.build_cases()["multiple_system"]
+        system_result = {
+            "finish_reason": "stop",
+            "content": "SYSTEM_A SYSTEM_B",
+            "reasoning_content": "",
+            "tool_calls": [],
+        }
+        facts = MODULE.validate(system_case, system_result)
+        self.assertTrue(facts["primary_content_rule_passed"])
+        self.assertTrue(facts["secondary_content_rule_passed"])
 
 
 if __name__ == "__main__":

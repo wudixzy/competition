@@ -1,0 +1,62 @@
+{
+  "schema": "bi100-agent-workload-manifest-v1",
+  "version": 1,
+  "name": "BI100 deterministic agent compatibility matrix",
+  "author_or_org": "private BI100 optimization project",
+  "source_kind": "project_generated",
+  "source_url": null,
+  "license": "private project data",
+  "revision": "agent-workload-v1-seed-20260716",
+  "generated_at_utc": "2026-07-24T00:00:00Z",
+  "seed": 20260716,
+  "split": "all",
+  "selection_rule": "all nine cases in manifest order",
+  "transformation": "deterministic OpenAI chat/tool payload construction in tests/agent_workload_matrix.py",
+  "redistribution_allowed": false,
+  "contains_external_dataset_rows": false,
+  "contains_restricted_evaluation_data": false,
+  "contains_credentials_or_private_user_data": false,
+  "expected_report_privacy": {
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_tool_arguments": false
+  },
+  "cases": [
+    {
+      "id": "forced_terminal",
+      "goal": "named tool choice with one string argument"
+    },
+    {
+      "id": "forced_read",
+      "goal": "named file-read tool choice"
+    },
+    {
+      "id": "forced_edit",
+      "goal": "named tool choice with three exact arguments"
+    },
+    {
+      "id": "forced_web_search",
+      "goal": "named search tool choice"
+    },
+    {
+      "id": "auto_terminal",
+      "goal": "automatic tool selection and valid JSON arguments"
+    },
+    {
+      "id": "tool_result_roundtrip",
+      "goal": "assistant tool_calls plus tool role history"
+    },
+    {
+      "id": "long_history",
+      "goal": "multi-turn memory across twenty stored markers"
+    },
+    {
+      "id": "large_tool_schema",
+      "goal": "named selection from ninety-two tool definitions"
+    },
+    {
+      "id": "multiple_system",
+      "goal": "two ordered system messages remain effective"
+    }
+  ]
+}

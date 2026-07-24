@@ -55,6 +55,14 @@ EXPECTED_GENERATED_ASSETS = {
 EXPECTED_MATRIX_SHA256 = (
     "3217ec047f7b78af6747269c3f85baed6bfdd86c6527aca6335dbfa7d9f0452b"
 )
+EXPECTED_AGENT_MATRIX_SHA256 = (
+    "d8759919b2577effa45264c12c8aa9fe912dbb4dd5929744d272bd054b5ddafb"
+)
+EXPECTED_AGENT_CASES = [
+    "forced_terminal", "forced_read", "forced_edit", "forced_web_search",
+    "auto_terminal", "tool_result_roundtrip", "long_history",
+    "large_tool_schema", "multiple_system",
+]
 
 
 def _sha256(path: Path) -> str:
@@ -260,6 +268,45 @@ def validate_matrix(value: Any) -> list[str]:
     return reasons
 
 
+def validate_agent_manifest(value: Any) -> list[str]:
+    reasons = []
+    if not isinstance(value, dict):
+        return ["Agent manifest root must be an object"]
+    if (value.get("schema") != "bi100-agent-workload-manifest-v1"
+            or value.get("version") != 1
+            or value.get("seed") != 20260716
+            or value.get("revision") != "agent-workload-v1-seed-20260716"):
+        reasons.append("Agent manifest schema, version, or revision is invalid")
+    expected_privacy = {
+        "contains_raw_requests": False,
+        "contains_raw_model_outputs": False,
+        "contains_tool_arguments": False,
+    }
+    if (value.get("author_or_org")
+            != "private BI100 optimization project"
+            or value.get("source_kind") != "project_generated"
+            or value.get("license") != "private project data"
+            or value.get("redistribution_allowed") is not False
+            or value.get("contains_external_dataset_rows") is not False
+            or value.get("contains_restricted_evaluation_data") is not False
+            or value.get("contains_credentials_or_private_user_data") is not False
+            or value.get("expected_report_privacy") != expected_privacy):
+        reasons.append("Agent manifest provenance or privacy contract is invalid")
+    cases = value.get("cases")
+    if (not isinstance(cases, list)
+            or [case.get("id") for case in cases if isinstance(case, dict)]
+            != EXPECTED_AGENT_CASES
+            or any(set(case) != {"id", "goal"} for case in cases
+                   if isinstance(case, dict))):
+        reasons.append("Agent manifest case identity or order differs")
+    serialized = json.dumps(value, ensure_ascii=True).lower()
+    if any(marker in serialized for marker in (
+            "begin openssh private key", "github_pat_", "ghp_",
+            "modelhub_access_token")):
+        reasons.append("Agent manifest contains a credential marker")
+    return reasons
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -268,15 +315,22 @@ def main() -> int:
     parser.add_argument(
         "--matrix", type=Path,
         default=ROOT / "quality/long_context_matrix.v2.json")
+    parser.add_argument(
+        "--agent-matrix", type=Path,
+        default=ROOT / "quality/agent_workload_matrix.v1.json")
     parser.add_argument("--metrics-source", type=Path)
     parser.add_argument("--workload-source", type=Path)
     args = parser.parse_args()
     provenance = json.loads(args.provenance.read_text(encoding="utf-8"))
     matrix = json.loads(args.matrix.read_text(encoding="utf-8"))
+    agent_matrix = json.loads(args.agent_matrix.read_text(encoding="utf-8"))
     reasons = validate_provenance(provenance)
     reasons.extend(validate_matrix(matrix))
+    reasons.extend(validate_agent_manifest(agent_matrix))
     if _sha256(args.matrix) != EXPECTED_MATRIX_SHA256:
         reasons.append("long-context matrix SHA-256 differs")
+    if _sha256(args.agent_matrix) != EXPECTED_AGENT_MATRIX_SHA256:
+        reasons.append("Agent workload matrix SHA-256 differs")
     operator_checked = (
         args.metrics_source is not None and args.workload_source is not None)
     if (args.metrics_source is None) != (args.workload_source is None):
@@ -291,9 +345,11 @@ def main() -> int:
         "reasons": reasons,
         "provenance_sha256": _sha256(args.provenance),
         "matrix_sha256": _sha256(args.matrix),
+        "agent_matrix_sha256": _sha256(args.agent_matrix),
         "operator_sources_checked": operator_checked,
         "source_count": len(provenance.get("sources") or []),
         "matrix_case_count": len(matrix.get("cases") or []),
+        "agent_case_count": len(agent_matrix.get("cases") or []),
     }
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if not reasons else 1

@@ -2,16 +2,59 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
+import os
+import tempfile
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
+import quality_runtime_contract as runtime_contract
+
 
 Json = dict[str, Any]
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_MANIFEST = ROOT / "quality/agent_workload_matrix.v1.json"
+EXPECTED_MANIFEST_SHA256 = (
+    "d8759919b2577effa45264c12c8aa9fe912dbb4dd5929744d272bd054b5ddafb"
+)
+REPORT_SCHEMA = "bi100-agent-workload-result-v1"
+REPORT_VERSION = 1
+
+
+def require(condition: bool, reason: str) -> None:
+    if not condition:
+        raise AssertionError(reason)
+
+
+def sha256_json(value: Any) -> str:
+    payload = json.dumps(
+        value, ensure_ascii=True, sort_keys=True, separators=(",", ":"),
+    ).encode("ascii")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def atomic_write(path: Path, report: Json) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp",
+                                     dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(report, stream, ensure_ascii=True, indent=2,
+                      sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
 
 
 def tool(name: str, required: list[str], properties: Json) -> Json:
@@ -55,8 +98,10 @@ def post(base: str, payload: Json, timeout_s: float) -> tuple[Json, float]:
             body = json.loads(response.read().decode("utf-8"))
             return body, time.monotonic() - started
     except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8", "replace")
-        raise AssertionError(f"HTTP {exc.code}: {raw[:1000]}") from exc
+        raw = exc.read()
+        digest = hashlib.sha256(raw).hexdigest()
+        raise AssertionError(
+            f"HTTP {exc.code}; response_sha256={digest}") from exc
 
 
 def parse_arguments(value: Any) -> Json:
@@ -70,9 +115,16 @@ def parse_arguments(value: Any) -> Json:
 
 
 def normalize(response: Json, elapsed_s: float) -> Json:
-    choice = response["choices"][0]
-    message = choice["message"]
+    require(isinstance(response, dict), "response must be an object")
+    choices = response.get("choices")
+    require(isinstance(choices, list) and len(choices) == 1,
+            "response must contain one choice")
+    choice = choices[0]
+    require(isinstance(choice, dict), "choice must be an object")
+    message = choice.get("message")
+    require(isinstance(message, dict), "assistant message is missing")
     calls = message.get("tool_calls") or []
+    require(isinstance(calls, list), "tool_calls must be a list")
     normalized_calls = []
     for call in calls:
         function = call.get("function") or {}
@@ -82,14 +134,24 @@ def normalize(response: Json, elapsed_s: float) -> Json:
         })
     content = message.get("content") or ""
     reasoning = message.get("reasoning_content") or ""
+    require(isinstance(content, str), "content must be a string")
+    require(isinstance(reasoning, str), "reasoning_content must be a string")
+    usage = response.get("usage") or {}
+    require(isinstance(usage, dict), "usage must be an object")
+    for field in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        value = usage.get(field)
+        require(isinstance(value, int) and not isinstance(value, bool)
+                and value >= 0, f"usage {field} is invalid")
+    require(usage["total_tokens"]
+            == usage["prompt_tokens"] + usage["completion_tokens"],
+            "usage total_tokens is inconsistent")
     return {
         "elapsed_s": elapsed_s,
         "finish_reason": choice.get("finish_reason"),
         "content": content,
-        "content_sha256": hashlib.sha256(content.encode()).hexdigest(),
-        "reasoning_chars": len(reasoning),
+        "reasoning_content": reasoning,
         "tool_calls": normalized_calls,
-        "usage": response.get("usage") or {},
+        "usage": usage,
     }
 
 
@@ -229,56 +291,213 @@ def build_cases() -> dict[str, Json]:
     return cases
 
 
-def validate(case: Json, result: Json) -> None:
+def validate(case: Json, result: Json) -> Json:
+    facts: Json = {
+        "http_200": True,
+        "usage_valid": True,
+    }
     calls = result["tool_calls"]
     expected_tool = case.get("expected_tool")
     if expected_tool:
-        assert calls, result
-        assert calls[0]["name"] == expected_tool, result
+        require(bool(calls), "expected tool call is missing")
+        require(calls[0]["name"] == expected_tool,
+                "selected tool name differs")
+        require(result["finish_reason"] == "tool_calls",
+                "tool request did not finish as tool_calls")
         arguments = calls[0]["arguments"]
         for key, value in (case.get("expected_args") or {}).items():
-            assert arguments.get(key) == value, (key, value, arguments)
+            require(arguments.get(key) == value,
+                    "exact tool argument differs")
         for key in case.get("required_arg_keys") or []:
-            assert key in arguments and arguments[key] not in (None, ""), result
+            require(key in arguments and arguments[key] not in (None, ""),
+                    "required tool argument is missing")
+        facts.update({
+            "tool_call_valid": True,
+            "tool_arguments_valid_json": True,
+            "tool_argument_rule_passed": True,
+            "finish_reason_tool_calls": True,
+        })
     if case.get("content_contains"):
-        assert case["content_contains"] in result["content"], result
+        require(case["content_contains"] in result["content"],
+                "required content marker is missing")
+        facts["primary_content_rule_passed"] = True
     if case.get("content_contains_also"):
-        assert case["content_contains_also"] in result["content"], result
+        require(case["content_contains_also"] in result["content"],
+                "secondary content marker is missing")
+        facts["secondary_content_rule_passed"] = True
+    return facts
+
+
+def safe_observation(result: Json, facts: Json) -> Json:
+    usage = result["usage"]
+    details = usage.get("prompt_tokens_details") or {}
+    semantic = {
+        "finish_reason": result["finish_reason"],
+        "content": result["content"],
+        "reasoning_content": result["reasoning_content"],
+        "tool_calls": result["tool_calls"],
+    }
+    return {
+        "elapsed_s": result["elapsed_s"],
+        "finish_reason": result["finish_reason"],
+        "content_chars": len(result["content"]),
+        "reasoning_chars": len(result["reasoning_content"]),
+        "tool_call_count": len(result["tool_calls"]),
+        "prompt_tokens": usage["prompt_tokens"],
+        "cached_tokens": details.get("cached_tokens", 0),
+        "completion_tokens": usage["completion_tokens"],
+        "semantic_output_sha256": sha256_json(semantic),
+        "facts": facts,
+    }
+
+
+def load_manifest(path: Path) -> tuple[Json, str]:
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    require(digest == EXPECTED_MANIFEST_SHA256,
+            "agent workload manifest identity is invalid")
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    require(manifest.get("schema") == "bi100-agent-workload-manifest-v1"
+            and manifest.get("version") == 1,
+            "agent workload manifest schema is invalid")
+    expected_ids = list(build_cases())
+    actual_ids = [case.get("id") for case in manifest.get("cases", [])]
+    require(actual_ids == expected_ids,
+            "agent workload manifest case order differs")
+    return manifest, digest
+
+
+def load_runtime_contract(path: Path, source_revision: str,
+                          runtime_identity: str, instance: str) -> tuple[Json, str]:
+    contract = json.loads(path.read_text(encoding="utf-8"))
+    expected = {
+        "source_revision": source_revision,
+        "runtime_identity": runtime_identity,
+        "instance": instance,
+        "gpu_count": 4,
+        "tensor_parallel_size": 4,
+        "max_model_len": 262144,
+        "model_path": contract.get("model_path"),
+        "tokenizer_path": contract.get("tokenizer_path"),
+        "served_model_name": contract.get("served_model_name"),
+    }
+    try:
+        digest = runtime_contract.validate_runtime_contract(
+            contract, expected, require_cache_trace=True)
+    except runtime_contract.RuntimeContractError as error:
+        raise AssertionError(str(error)) from error
+    return contract, digest
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument("--timeout-s", type=float, default=360)
+    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument("--source-revision", required=True)
+    parser.add_argument("--runtime-identity", required=True)
+    parser.add_argument("--runtime-contract", type=Path, required=True)
+    parser.add_argument("--instance", required=True)
+    parser.add_argument("--label", required=True)
+    parser.add_argument("--run-id", required=True)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
-    report: Json = {"ok": False, "base": args.base, "cases": {}}
-    args.out.parent.mkdir(parents=True, exist_ok=True)
+    manifest, manifest_sha = load_manifest(args.manifest)
+    contract, contract_sha = load_runtime_contract(
+        args.runtime_contract, args.source_revision,
+        args.runtime_identity, args.instance)
+    report: Json = {
+        "schema": REPORT_SCHEMA,
+        "version": REPORT_VERSION,
+        "qualified": False,
+        "promotion_authorized": False,
+        "label": args.label,
+        "created_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "run_id_sha256": hashlib.sha256(args.run_id.encode()).hexdigest(),
+        "manifest": {
+            "path_name": args.manifest.name,
+            "sha256": manifest_sha,
+            "revision": manifest["revision"],
+            "case_count": len(manifest["cases"]),
+        },
+        "runtime": {
+            "source_revision": args.source_revision,
+            "runtime_identity": args.runtime_identity,
+            "runtime_overlay_sha256": contract["runtime_overlay_sha256"],
+            "runtime_contract_sha256": contract_sha,
+            "instance": args.instance,
+            "gpu_count": 4,
+            "tensor_parallel_size": 4,
+            "max_model_len": 262144,
+        },
+        "runtime_contract": {
+            "sha256": contract_sha,
+            "contract": contract,
+        },
+        "generator": {
+            "runner_sha256": hashlib.sha256(
+                Path(__file__).read_bytes()).hexdigest(),
+            "seed": 20260716,
+        },
+        "privacy": {
+            "contains_raw_requests": False,
+            "contains_raw_model_outputs": False,
+            "contains_tool_arguments": False,
+            "contains_credentials": False,
+        },
+        "summary": {},
+        "cases": [],
+    }
+    atomic_write(args.out, report)
     for name, case in build_cases().items():
         started = time.monotonic()
         try:
             response, elapsed = post(
                 args.base, case["payload"], args.timeout_s)
             result = normalize(response, elapsed)
-            validate(case, result)
-            report["cases"][name] = {"ok": True, **result}
+            facts = validate(case, result)
+            report["cases"].append({
+                "id": name,
+                "status": "pass",
+                "error_type": "",
+                "error_sha256": None,
+                "observation": safe_observation(result, facts),
+            })
             print(f"[PASS] {name} {elapsed:.3f}s", flush=True)
         except Exception as exc:
-            report["cases"][name] = {
-                "ok": False,
-                "elapsed_s": time.monotonic() - started,
-                "error": repr(exc),
-            }
-            args.out.write_text(
-                json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-            raise
-        args.out.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    report["ok"] = True
-    args.out.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    return 0
+            report["cases"].append({
+                "id": name,
+                "status": "fail",
+                "error_type": type(exc).__name__,
+                "error_sha256": hashlib.sha256(
+                    str(exc).encode("utf-8", "replace")).hexdigest(),
+                "observation": {
+                    "elapsed_s": time.monotonic() - started,
+                    "finish_reason": None,
+                    "content_chars": None,
+                    "reasoning_chars": None,
+                    "tool_call_count": None,
+                    "prompt_tokens": None,
+                    "cached_tokens": None,
+                    "completion_tokens": None,
+                    "semantic_output_sha256": None,
+                    "facts": {},
+                },
+            })
+            print(f"[FAIL] {name} {type(exc).__name__}", flush=True)
+        passed = sum(row["status"] == "pass" for row in report["cases"])
+        failed = sum(row["status"] == "fail" for row in report["cases"])
+        report["summary"] = {
+            "complete": len(report["cases"]) == len(manifest["cases"]),
+            "passed": passed,
+            "failed": failed,
+            "total": len(report["cases"]),
+        }
+        atomic_write(args.out, report)
+    report["qualified"] = (
+        report["summary"]["complete"] and report["summary"]["failed"] == 0)
+    atomic_write(args.out, report)
+    return 0 if report["qualified"] else 1
 
 
 if __name__ == "__main__":

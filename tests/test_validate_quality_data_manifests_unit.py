@@ -26,18 +26,42 @@ class QualityDataManifestTest(unittest.TestCase):
         cls.matrix = json.loads((
             ROOT / "quality/long_context_matrix.v2.json"
         ).read_text(encoding="utf-8"))
+        cls.agent_matrix = json.loads((
+            ROOT / "quality/agent_workload_matrix.v1.json"
+        ).read_text(encoding="utf-8"))
 
     def test_frozen_manifests_are_valid(self):
         self.assertEqual(MODULE.validate_provenance(self.provenance), [])
         self.assertEqual(MODULE.validate_matrix(self.matrix), [])
+        self.assertEqual(
+            MODULE.validate_agent_manifest(self.agent_matrix), [])
         self.assertEqual(len(self.provenance["sources"]), 7)
         self.assertEqual(len(self.matrix["cases"]), 12)
+        self.assertEqual(len(self.agent_matrix["cases"]), 9)
         self.assertEqual(
             hashlib.sha256((
                 ROOT / "quality/long_context_matrix.v2.json"
             ).read_bytes()).hexdigest(),
             MODULE.EXPECTED_MATRIX_SHA256,
         )
+        self.assertEqual(
+            hashlib.sha256((
+                ROOT / "quality/agent_workload_matrix.v1.json"
+            ).read_bytes()).hexdigest(),
+            MODULE.EXPECTED_AGENT_MATRIX_SHA256,
+        )
+
+    def test_agent_manifest_privacy_and_order_fail_closed(self):
+        value = copy.deepcopy(self.agent_matrix)
+        value["expected_report_privacy"]["contains_tool_arguments"] = True
+        value["cases"] = list(reversed(value["cases"]))
+        reasons = MODULE.validate_agent_manifest(value)
+        self.assertIn(
+            "Agent manifest provenance or privacy contract is invalid",
+            reasons,
+        )
+        self.assertIn(
+            "Agent manifest case identity or order differs", reasons)
 
     def test_operator_files_match_frozen_identity(self):
         metrics = ROOT.parent / "指标集合"
