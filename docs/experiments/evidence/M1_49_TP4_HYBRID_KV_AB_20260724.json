@@ -1,0 +1,96 @@
+{
+  "schema": "bi100-experiment-evidence-v1",
+  "version": 1,
+  "experiment": "M1-49 TP4 hybrid KV accounting A/B",
+  "date": "2026-07-24",
+  "source_revision": "a24023c49300e14a80a02f601792e46418be70cb",
+  "scope": "capacity-and-pressure-not-long-context-or-score",
+  "fixed_contract": {
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144,
+    "max_num_batched_tokens": 8192,
+    "concurrency": 1,
+    "gdn_cache_policy": "admission64",
+    "gdn_restore_mode": "direct",
+    "kv_eviction_policy": "lru",
+    "cpu_kv_offload": false,
+    "fused_prefill": false
+  },
+  "gates": {
+    "minimum_capacity_ratio": 3.5,
+    "maximum_immediate_warm_latency_ratio": 1.02
+  },
+  "capacity": {
+    "legacy_gpu_blocks": 16878,
+    "candidate_gpu_blocks": 67512,
+    "gpu_block_ratio": 4.0,
+    "legacy_cpu_blocks": 6553,
+    "candidate_cpu_blocks": 26214,
+    "cpu_block_ratio": 4.000305203723485
+  },
+  "requests": {
+    "target_cold": {
+      "legacy_cached_tokens": 0,
+      "candidate_cached_tokens": 0,
+      "legacy_elapsed_s": 106.99787339195609,
+      "candidate_elapsed_s": 103.29986111819744,
+      "elapsed_ratio": 0.9654384507231089,
+      "outputs_identical": true
+    },
+    "target_immediate_warm": {
+      "legacy_cached_tokens": 65520,
+      "candidate_cached_tokens": 65520,
+      "legacy_elapsed_s": 3.387843169271946,
+      "candidate_elapsed_s": 3.0332985669374466,
+      "elapsed_ratio": 0.8953479884930177,
+      "outputs_identical": true
+    },
+    "pressure_cold_0000": {
+      "legacy_cached_tokens": 0,
+      "candidate_cached_tokens": 0,
+      "legacy_elapsed_s": 276.29714062437415,
+      "candidate_elapsed_s": 270.00677547976375,
+      "elapsed_ratio": 0.9772333324536204,
+      "outputs_identical": true
+    },
+    "pressure_cold_0001": {
+      "legacy_cached_tokens": 16,
+      "candidate_cached_tokens": 16,
+      "legacy_elapsed_s": 278.7721219584346,
+      "candidate_elapsed_s": 268.1258696205914,
+      "elapsed_ratio": 0.9618101972928608,
+      "outputs_identical": true
+    },
+    "target_after_pressure": {
+      "legacy_cached_tokens": 16,
+      "candidate_cached_tokens": 65520,
+      "legacy_elapsed_s": 106.8297769613564,
+      "candidate_elapsed_s": 2.935681663453579,
+      "elapsed_ratio": 0.027479994313902807,
+      "outputs_identical": true
+    },
+    "target_refreshed": {
+      "legacy_cached_tokens": 65520,
+      "candidate_cached_tokens": 65520,
+      "legacy_elapsed_s": 3.0275212451815605,
+      "candidate_elapsed_s": 3.3302808962762356,
+      "elapsed_ratio": 1.1000024860524202,
+      "outputs_identical": true,
+      "frozen_gate": false
+    }
+  },
+  "return_codes": {
+    "comparison": 0,
+    "preflight_comparison_final": 0,
+    "cleanup": 0,
+    "overall": 0
+  },
+  "cleanup": {
+    "legacy_zombie_count": 1,
+    "candidate_zombie_count": 1,
+    "live_members_after_cleanup": 0
+  },
+  "qualified": true,
+  "reasons": [],
+  "decision": "admit-to-fixed-long-context-gates-only"
+}
