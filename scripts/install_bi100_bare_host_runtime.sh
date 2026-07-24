@@ -117,6 +117,8 @@ mkdir -p "$EXPECTED_ROOT/vllm/core"
 touch "$EXPECTED_ROOT/vllm/__init__.py" "$EXPECTED_ROOT/vllm/core/__init__.py"
 install -m 0644 "$ROOT/vllm/core/block_manager_v2.py" \
     "$EXPECTED_ROOT/vllm/core/block_manager_v2.py"
+install -m 0644 "$SYSTEM_VLLM_ROOT/outputs.py" \
+    "$EXPECTED_ROOT/vllm/outputs.py"
 PYTHONPATH="$PATCH_STAGE:$EXPECTED_ROOT" \
     python3 "$PATCH_STAGE/patch_block_manager_cache_trace.py"
 
@@ -124,7 +126,8 @@ REPORT_PATH="$RUNTIME_STAGE/install.json"
 (
 cd /tmp
 python3 - "$ROOT" "$SITE_PACKAGES" "$RUNTIME_ROOT" "$REPORT_PATH" \
-    "$EXPECTED_ROOT/vllm/core/block_manager_v2.py" <<'PY'
+    "$EXPECTED_ROOT/vllm/core/block_manager_v2.py" \
+    "$EXPECTED_ROOT/vllm/outputs.py" <<'PY'
 from __future__ import annotations
 
 import hashlib
@@ -140,6 +143,7 @@ site = Path(sys.argv[2]).resolve()
 runtime_root = Path(sys.argv[3])
 output = Path(sys.argv[4])
 expected_block_manager = Path(sys.argv[5]).resolve()
+expected_outputs = Path(sys.argv[6]).resolve()
 
 
 def package_root(name: str) -> Path:
@@ -189,6 +193,10 @@ checks = {
     "block_manager": (
         expected_block_manager,
         vllm_root / "core/block_manager_v2.py",
+    ),
+    "cache_trace_outputs": (
+        expected_outputs,
+        vllm_root / "outputs.py",
     ),
     "content_cache": (
         root / "vllm/core/block/cpu_kv_content_cache.py",

@@ -3,6 +3,7 @@ from patch_utils import package_root, replace_once, replace_one_of
 
 VLLM_ROOT = package_root("vllm")
 TARGET = VLLM_ROOT / "core" / "block_manager_v2.py"
+OUTPUTS_TARGET = VLLM_ROOT / "outputs.py"
 
 HELPER = '''
     def _bi100_capture_cache_trace(self, seq_group, seq, block_table) -> None:
@@ -35,8 +36,10 @@ HELPER = '''
             ),
             "block_size": self.block_size,
             "capacity_blocks": self.num_total_gpu_blocks,
-            "_seq_group": seq_group,
         }
+        setattr(seq_group, "_bi100_cache_trace_seq_id", seq.seq_id)
+        setattr(seq_group, "_bi100_cache_trace_emit",
+                self._bi100_emit_cache_trace)
 
     def _bi100_update_cache_trace(
             self, seq, raw_kv_hit_blocks, restore_key, capture_actions,
@@ -70,7 +73,7 @@ HELPER = '''
                 "reason": "capacity_lru",
             })
 
-    def _bi100_emit_cache_trace(self, seq, block_table) -> None:
+    def _bi100_finalize_cache_trace(self, seq, block_table) -> None:
         if os.getenv("BI100_CACHE_TRACE", "0") != "1":
             return
 
@@ -78,28 +81,9 @@ HELPER = '''
         if not requests:
             return
 
-        record = requests.pop(seq.seq_id, None)
+        record = requests.get(seq.seq_id)
         if record is None:
             return
-
-        seq_group = record.pop("_seq_group", None)
-        metrics = getattr(seq_group, "metrics", None)
-        if metrics is not None:
-            arrival = getattr(metrics, "arrival_time", None)
-            first_token = getattr(metrics, "first_token_time", None)
-            finished = getattr(metrics, "finished_time", None)
-            queue = getattr(metrics, "time_in_queue", None)
-            cached = getattr(metrics, "num_cached_tokens", None)
-            if arrival is not None and first_token is not None:
-                record["ttft_s"] = max(0.0, float(first_token - arrival))
-            if arrival is not None and finished is not None:
-                record["request_latency_s"] = max(
-                    0.0, float(finished - arrival))
-            if queue is not None:
-                record["time_in_queue_s"] = max(0.0, float(queue))
-            if cached is not None:
-                record["observed_effective_cached_tokens"] = max(
-                    0, int(cached))
 
         total_tokens = len(seq.get_token_ids())
         block_hashes = block_table.get_content_hashes()
@@ -116,16 +100,47 @@ HELPER = '''
             "full_blocks": full_blocks,
             "hash_encoding": "sha256_base64",
             "block_hashes": base64.b64encode(b"".join(block_hashes)).decode("ascii"),
+            "_finalized": True,
         })
         generated_tokens = max(0, total_tokens - record["prompt_tokens"])
         record["generated_tokens"] = generated_tokens
-        ttft_s = record.get("ttft_s")
-        if isinstance(ttft_s, (int, float)) and ttft_s > 0:
+
+    def _bi100_emit_cache_trace(self, seq_group) -> None:
+        if os.getenv("BI100_CACHE_TRACE", "0") != "1":
+            return
+        seq_id = getattr(seq_group, "_bi100_cache_trace_seq_id", None)
+        requests = getattr(self, "_bi100_trace_requests", None)
+        if seq_id is None or not requests:
+            return
+        record = requests.pop(seq_id, None)
+        if record is None:
+            return
+        if record.pop("_finalized", False) is not True:
+            raise RuntimeError(
+                "BI100 cache trace emitted before block finalization")
+
+        metrics = getattr(seq_group, "metrics", None)
+        arrival = getattr(metrics, "arrival_time", None)
+        first_token = getattr(metrics, "first_token_time", None)
+        finished = getattr(metrics, "finished_time", None)
+        queue = getattr(metrics, "time_in_queue", None)
+        cached = getattr(metrics, "num_cached_tokens", None)
+        if any(value is None for value in (
+                arrival, first_token, finished, queue)):
+            raise RuntimeError(
+                "BI100 cache trace requires finalized request metrics")
+        record["ttft_s"] = max(0.0, float(first_token - arrival))
+        record["request_latency_s"] = max(
+            0.0, float(finished - arrival))
+        record["time_in_queue_s"] = max(0.0, float(queue))
+        record["observed_effective_cached_tokens"] = max(
+            0, int(cached or 0))
+        ttft_s = record["ttft_s"]
+        if ttft_s > 0:
             record["observed_input_tps"] = record["prompt_tokens"] / ttft_s
-        if (metrics is not None and generated_tokens > 1
-                and getattr(metrics, "first_token_time", None) is not None
-                and getattr(metrics, "finished_time", None) is not None):
-            decode_s = metrics.finished_time - metrics.first_token_time
+        generated_tokens = record["generated_tokens"]
+        if generated_tokens > 1:
+            decode_s = finished - first_token
             if decode_s > 0:
                 record["observed_output_tps"] = (
                     (generated_tokens - 1) / decode_s)
@@ -156,7 +171,7 @@ def main():
             "physical_block_ids)\n")
         replacements.append((
             prefix + "\n        # Untrack seq",
-            prefix + "        self._bi100_emit_cache_trace(\n"
+            prefix + "        self._bi100_finalize_cache_trace(\n"
             f"            seq, self.block_tables[{table_key}])\n\n"
             "        # Untrack seq",
         ))
@@ -164,8 +179,24 @@ def main():
         TARGET,
         replacements,
         required=True,
-        already_contains="        self._bi100_emit_cache_trace(\n"
+        already_contains="        self._bi100_finalize_cache_trace(\n"
                          "            seq, self.block_tables[")
+    replace_once(
+        OUTPUTS_TARGET,
+        "        seq_group.set_finished_time(finished_time)\n\n"
+        "        init_args = (seq_group.request_id, prompt, prompt_token_ids,\n",
+        "        seq_group.set_finished_time(finished_time)\n"
+        "        cache_trace_emit = getattr(\n"
+        "            seq_group, \"_bi100_cache_trace_emit\", None)\n"
+        "        if callable(cache_trace_emit):\n"
+        "            cache_trace_emit(seq_group)\n"
+        "            delattr(seq_group, \"_bi100_cache_trace_emit\")\n"
+        "            delattr(seq_group, \"_bi100_cache_trace_seq_id\")\n\n"
+        "        init_args = (seq_group.request_id, prompt, prompt_token_ids,\n",
+        required=True,
+        already_contains="cache_trace_emit = getattr(\n"
+                         "            seq_group, \"_bi100_cache_trace_emit\"",
+    )
 
 
 if __name__ == "__main__":

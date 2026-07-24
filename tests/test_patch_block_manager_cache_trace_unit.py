@@ -16,11 +16,24 @@ ROOT = pathlib.Path(__file__).parents[1]
 SCRIPT = ROOT / "qwen3_6_scripts" / "patch_block_manager_cache_trace.py"
 
 
-def fake_package(root, source):
+OUTPUTS_SOURCE = (
+    "class RequestOutput:\n"
+    "    @classmethod\n"
+    "    def create(cls, seq_group, finished_time, prompt, "
+    "prompt_token_ids):\n"
+    "        seq_group.set_finished_time(finished_time)\n\n"
+    "        init_args = (seq_group.request_id, prompt, prompt_token_ids,\n"
+    "                     None)\n"
+    "        return init_args\n"
+)
+
+
+def fake_package(root, source, outputs_source=OUTPUTS_SOURCE):
     (root / "vllm" / "core").mkdir(parents=True)
     for path in (root / "vllm", root / "vllm" / "core"):
         (path / "__init__.py").write_text("")
     (root / "vllm" / "core" / "block_manager_v2.py").write_text(source)
+    (root / "vllm" / "outputs.py").write_text(outputs_source)
 
 
 class PatchTest(unittest.TestCase):
@@ -65,20 +78,33 @@ class PatchTest(unittest.TestCase):
                 "            seq_group, seq, block_table)",
                 first,
             )
-            self.assertEqual(first.count("def _bi100_emit_cache_trace("), 1)
-            self.assertEqual(first.count("self._bi100_emit_cache_trace("), 1)
-            self.assertEqual(first.count("_bi100_emit_cache_trace"), 2)
+            self.assertEqual(first.count("def _bi100_finalize_cache_trace("), 1)
+            self.assertEqual(first.count("self._bi100_finalize_cache_trace("), 1)
             self.assertIn(
                 "self._last_access_blocks_tracker.update_seq_blocks_last_access(\n"
                 "            seq_id, self.block_tables[seq_id].physical_block_ids)\n"
-                "        self._bi100_emit_cache_trace(\n"
+                "        self._bi100_finalize_cache_trace(\n"
                 "            seq, self.block_tables[seq_id])",
                 first,
+            )
+            outputs = root / "vllm/outputs.py"
+            first_outputs = outputs.read_text()
+            self.assertIn(
+                'cache_trace_emit = getattr(\n'
+                '            seq_group, "_bi100_cache_trace_emit", None)',
+                first_outputs,
+            )
+            self.assertLess(
+                first_outputs.index("seq_group.set_finished_time"),
+                first_outputs.index("cache_trace_emit(seq_group)"),
             )
             subprocess.run([sys.executable, str(SCRIPT)], env=env, check=True,
                            capture_output=True)
             self.assertEqual(first, target.read_text())
+            self.assertEqual(first_outputs, outputs.read_text())
             subprocess.run([sys.executable, "-m", "py_compile", str(target)],
+                           check=True)
+            subprocess.run([sys.executable, "-m", "py_compile", str(outputs)],
                            check=True)
 
     def test_unknown_layout_fails(self):
@@ -97,9 +123,10 @@ class PatchTest(unittest.TestCase):
 
     def test_real_authoritative_override_patches_twice(self):
         source = (ROOT / "vllm/core/block_manager_v2.py").read_text()
+        outputs_source = (ROOT / "vllm/outputs.py").read_text()
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
-            fake_package(root, source)
+            fake_package(root, source, outputs_source)
             env = dict(
                 os.environ,
                 PYTHONPATH=str(ROOT / "qwen3_6_scripts")
@@ -112,10 +139,15 @@ class PatchTest(unittest.TestCase):
             first = target.read_text()
             self.assertIn(
                 "seq, self.block_tables[seq.seq_id]", first)
-            self.assertEqual(first.count("def _bi100_emit_cache_trace("), 1)
+            self.assertEqual(
+                first.count("def _bi100_finalize_cache_trace("), 1)
+            outputs = root / "vllm/outputs.py"
+            first_outputs = outputs.read_text()
+            self.assertIn("cache_trace_emit(seq_group)", first_outputs)
             subprocess.run([sys.executable, str(SCRIPT)], env=env, check=True,
                            capture_output=True)
             self.assertEqual(first, target.read_text())
+            self.assertEqual(first_outputs, outputs.read_text())
             subprocess.run([sys.executable, "-m", "py_compile", str(target)],
                            check=True)
 
@@ -173,8 +205,11 @@ class PatchTest(unittest.TestCase):
         old = os.environ.pop("BI100_CACHE_TRACE", None)
         try:
             with contextlib.redirect_stdout(output):
-                fake._bi100_capture_cache_trace(Group(), seq, Table([hash_a]))
-                fake._bi100_emit_cache_trace(seq, Table([hash_a]))
+                disabled_group = Group()
+                fake._bi100_capture_cache_trace(
+                    disabled_group, seq, Table([hash_a]))
+                fake._bi100_finalize_cache_trace(seq, Table([hash_a]))
+                fake._bi100_emit_cache_trace(disabled_group)
             self.assertEqual(output.getvalue(), "")
 
             os.environ["BI100_CACHE_TRACE"] = "1"
@@ -186,7 +221,9 @@ class PatchTest(unittest.TestCase):
                     [((1, hash_a), "final_prefill")],
                     [(2, hash_b)], "admission64")
                 seq.token_ids = [10, 11, 12, 13, 14, 15, 16, 17]
-                fake._bi100_emit_cache_trace(seq, Table([hash_a, hash_b]))
+                fake._bi100_finalize_cache_trace(
+                    seq, Table([hash_a, hash_b]))
+                group._bi100_cache_trace_emit(group)
             record = json.loads(output.getvalue().split(" ", 1)[1])
             self.assertEqual(record["version"], 4)
             self.assertEqual(record["ordinal"], 1)
@@ -214,6 +251,7 @@ class PatchTest(unittest.TestCase):
             self.assertEqual(record["time_in_queue_s"], 0.25)
             self.assertEqual(record["observed_effective_cached_tokens"], 4)
             self.assertEqual(record["generated_tokens"], 3)
+            self.assertEqual(record["observed_output_tps"], 1.0)
             self.assertEqual(
                 base64.b64decode(record["block_hashes"]),
                 hash_a + hash_b
@@ -223,10 +261,18 @@ class PatchTest(unittest.TestCase):
             second = io.StringIO()
             with contextlib.redirect_stdout(second):
                 seq.token_ids = [10, 11, 12, 13, 14]
-                fake._bi100_capture_cache_trace(Group(), seq, Table([hash_a]))
-                fake._bi100_emit_cache_trace(seq, Table([hash_a]))
+                second_group = Group()
+                second_group.metrics.num_cached_tokens = None
+                fake._bi100_capture_cache_trace(
+                    second_group, seq, Table([hash_a]))
+                fake._bi100_update_cache_trace(
+                    seq, 0, None, [], [], "admission64")
+                fake._bi100_finalize_cache_trace(seq, Table([hash_a]))
+                second_group._bi100_cache_trace_emit(second_group)
             second_record = json.loads(second.getvalue().split(" ", 1)[1])
             self.assertEqual(second_record["ordinal"], 2)
+            self.assertEqual(
+                second_record["observed_effective_cached_tokens"], 0)
             self.assertEqual(second_record["trace_session_sha256"],
                              record["trace_session_sha256"])
 
@@ -235,7 +281,7 @@ class PatchTest(unittest.TestCase):
                 with contextlib.redirect_stdout(bad):
                     fake._bi100_capture_cache_trace(
                         Group(), seq, Table([hash_a]))
-                    fake._bi100_emit_cache_trace(
+                    fake._bi100_finalize_cache_trace(
                         seq, Table([truncated_hash]))
             self.assertEqual(bad.getvalue(), "")
         finally:
