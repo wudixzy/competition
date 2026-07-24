@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import base64
 import importlib.util
 import json
@@ -96,6 +97,18 @@ class LongContextQualityApiTest(unittest.TestCase):
             self.manifest, "full", [])), 7)
         self.assertEqual(len(MODULE._selected_cases(
             self.manifest, "extended", [])), 12)
+
+    def test_main_does_not_shadow_runtime_contract_module(self):
+        tree = ast.parse(
+            SCRIPT.read_text(encoding="utf-8"), filename=str(SCRIPT))
+        main = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "main")
+        assigned_names = {
+            node.id for node in ast.walk(main)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+        }
+        self.assertNotIn("runtime_contract", assigned_names)
 
     def test_exact_recipe_fitting_is_deterministic(self):
         tokenizer = FakeTokenizer()

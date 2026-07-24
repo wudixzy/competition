@@ -986,7 +986,7 @@ def main() -> int:
         parser.error("--source-revision must be a fixed Git object id")
 
     manifest, manifest_sha = _load_manifest(args.manifest)
-    runtime_contract, runtime_contract_sha = _load_runtime_contract(
+    loaded_runtime_contract, runtime_contract_sha = _load_runtime_contract(
         args.runtime_contract, args)
     require({case["id"] for case in manifest["cases"]} == set(HANDLERS),
             "matrix handlers do not match frozen cases")
@@ -1050,12 +1050,12 @@ def main() -> int:
         "runtime": {
             "source_revision": args.source_revision,
             "runtime_identity": args.runtime_identity,
-            "runtime_overlay_sha256": runtime_contract[
+            "runtime_overlay_sha256": loaded_runtime_contract[
                 "runtime_overlay_sha256"],
             "service_command_sha256": quality._sha256_json(
-                runtime_contract["command"]),
+                loaded_runtime_contract["command"]),
             "service_env_sha256": quality._sha256_json(
-                runtime_contract["environment"]),
+                loaded_runtime_contract["environment"]),
             "instance": args.instance,
             "gpu_count": args.gpu_count,
             "tensor_parallel_size": args.tensor_parallel_size,
@@ -1069,7 +1069,7 @@ def main() -> int:
         },
         "runtime_contract": {
             "sha256": runtime_contract_sha,
-            "contract": runtime_contract,
+            "contract": loaded_runtime_contract,
         },
         "generator": {
             "runner_sha256": hashlib.sha256(
