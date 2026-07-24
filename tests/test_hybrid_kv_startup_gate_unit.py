@@ -21,10 +21,12 @@ def _log(
     mode: str = "full_attention",
     configured_layers: int = 10,
     model_path: str = "/model",
+    cache_trace: str = "0",
 ) -> str:
     service_contract = dict(MODULE.FIXED_SERVICE_CONTRACT)
     service_contract.update({
         "accounting": mode,
+        "cache_trace": cache_trace,
         "model_path": model_path,
         "runtime_site_packages": "system",
     })
@@ -124,6 +126,46 @@ class HybridKvStartupGateTest(unittest.TestCase):
         self.assertEqual(
             contract["service"]["accounting"], "full_attention")
         self.assertEqual(contract["engine"]["block_size"], 16)
+
+    def test_diagnostic_trace_contract_is_explicit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = pathlib.Path(directory)
+            (model_path / "config.json").write_text(
+                '{}\n', encoding="utf-8")
+            contract, reasons = MODULE._runtime_contract(
+                _log(model_path=str(model_path), cache_trace="1"),
+                model_path,
+                mode="full_attention",
+                max_model_len=262_144,
+                block_size=16,
+                tensor_parallel_size=4,
+                expected_cache_trace="1",
+            )
+            _, mismatch_reasons = MODULE._runtime_contract(
+                _log(model_path=str(model_path), cache_trace="1"),
+                model_path,
+                mode="full_attention",
+                max_model_len=262_144,
+                block_size=16,
+                tensor_parallel_size=4,
+            )
+        self.assertEqual(reasons, [])
+        self.assertEqual(contract["service"]["cache_trace"], "1")
+        self.assertTrue(any(
+            "cache_trace" in reason for reason in mismatch_reasons))
+
+    def test_invalid_expected_trace_mode_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = pathlib.Path(directory)
+            with self.assertRaisesRegex(ValueError, "must be 0 or 1"):
+                MODULE._runtime_contract(
+                    "", model_path,
+                    mode="full_attention",
+                    max_model_len=262_144,
+                    block_size=16,
+                    tensor_parallel_size=4,
+                    expected_cache_trace="yes",
+                )
 
     def test_duplicate_service_contract_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -297,7 +297,10 @@ def _runtime_contract(
     max_model_len: int,
     block_size: int,
     tensor_parallel_size: int,
+    expected_cache_trace: str = "0",
 ) -> tuple[dict[str, Any], list[str]]:
+    if expected_cache_trace not in {"0", "1"}:
+        raise ValueError("expected_cache_trace must be 0 or 1")
     reasons: list[str] = []
     matches = SERVICE_CONTRACT_RE.findall(log_text)
     service: dict[str, str] = {}
@@ -321,6 +324,7 @@ def _runtime_contract(
     expected_service = dict(FIXED_SERVICE_CONTRACT)
     expected_service.update({
         "accounting": mode,
+        "cache_trace": expected_cache_trace,
         "model_path": str(model_path),
         "runtime_site_packages": os.environ.get(
             "BI100_RUNTIME_SITE_PACKAGES", "system"),
@@ -382,6 +386,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-model-len", type=int, default=262_144)
     parser.add_argument("--block-size", type=int, default=16)
     parser.add_argument("--tensor-parallel-size", type=int, default=4)
+    parser.add_argument(
+        "--expected-cache-trace", choices=("0", "1"), default="0")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.max_model_len <= 0:
@@ -406,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
             max_model_len=args.max_model_len,
             block_size=args.block_size,
             tensor_parallel_size=args.tensor_parallel_size,
+            expected_cache_trace=args.expected_cache_trace,
         )
         report = evaluate(
             log_text,

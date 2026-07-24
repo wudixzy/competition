@@ -9,8 +9,14 @@ MODEL_PATH=${MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
 DATASET=${M1_49_SELECTED_DATASET:-$ROOT/chat_dataset_v0.json}
 RUN_ID=${M1_49_SELECTED_RUN_ID:-m149-selected-dataset-20260724}
 EXPECTED_DATASET_SHA256=dac6afc77621b51dbc09cfa046c008a1e51a779bb771edcb27cb6a686f8884c8
+TRACE_MODE=${M1_49_SELECTED_TRACE_MODE:-0}
 ACTIVE_PID=""
 ACTIVE_PGID=""
+
+if [[ "$TRACE_MODE" != 0 && "$TRACE_MODE" != 1 ]]; then
+    echo "M1_49_SELECTED_TRACE_MODE must be 0 or 1" >&2
+    exit 3
+fi
 
 export LD_LIBRARY_PATH="/usr/local/corex/lib:/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib:${LD_LIBRARY_PATH:-}"
 export HOST=0.0.0.0
@@ -23,7 +29,7 @@ export BI100_GDN_COREX_PACKED_DECODE=1
 export BI100_CPU_KV_OFFLOAD=0
 export BI100_GDN_CACHE_POLICY=admission64
 export BI100_GDN_RESTORE_MODE=direct
-export BI100_CACHE_TRACE=0
+export BI100_CACHE_TRACE="$TRACE_MODE"
 export BI100_ATTN_COREX_FUSED_PREFILL=0
 export BI100_KV_EVICTION_POLICY=lru
 export BI100_HYBRID_KV_ACCOUNTING=full_attention
@@ -47,8 +53,9 @@ require_zero_rc "$M1_49_LONG_DIR/overall.rc"
 require_zero_rc "$M1_49_LONG_DIR/cleanup.rc"
 require_zero_rc "$M1_49_LONG_DIR/qualification.rc"
 M1_49_QUALIFICATION="$M1_49_LONG_DIR/qualification.json"
-if [[ ! -f "$M1_49_QUALIFICATION" ]]; then
-    echo "M1-49 long-context qualification is missing" >&2
+M1_49_STARTUP="$M1_49_LONG_DIR/startup_gate.json"
+if [[ ! -f "$M1_49_QUALIFICATION" || ! -f "$M1_49_STARTUP" ]]; then
+    echo "M1-49 long-context qualification or startup is missing" >&2
     exit 3
 fi
 python3 - "$M1_49_QUALIFICATION" <<'PY'
@@ -274,21 +281,51 @@ run_gate startup_gate 180 \
     python3 "$ROOT/tests/hybrid_kv_startup_gate.py" \
     "$RUN_ROOT/server.log" --mode full_attention --model-path "$MODEL_PATH" \
     --max-model-len 262144 --block-size 16 --tensor-parallel-size 4 \
+    --expected-cache-trace "$TRACE_MODE" \
     --out "$RUN_ROOT/startup_gate.json"
-python3 - "$M1_49_QUALIFICATION" "$RUN_ROOT/startup_gate.json" <<'PY'
+python3 - "$M1_49_QUALIFICATION" "$M1_49_STARTUP" \
+        "$RUN_ROOT/startup_gate.json" "$TRACE_MODE" <<'PY'
+import copy
 import json
 import sys
 
-prior = json.load(open(sys.argv[1], encoding="utf-8"))
-current = json.load(open(sys.argv[2], encoding="utf-8"))
-expected = prior.get("candidate_startup") or {}
+qualification = json.load(open(sys.argv[1], encoding="utf-8"))
+prior = json.load(open(sys.argv[2], encoding="utf-8"))
+current = json.load(open(sys.argv[3], encoding="utf-8"))
+trace_mode = sys.argv[4]
+expected = qualification.get("candidate_startup") or {}
+if (prior.get("qualified") is not True
+        or prior.get("runtime_contract_sha256")
+        != expected.get("runtime_contract_sha256")):
+    raise SystemExit("M1-49 long-context startup source is invalid")
 if (current.get("qualified") is not True
         or current.get("mode") != expected.get("mode")
         or current.get("observed_attention_layers")
-        != expected.get("attention_layers")
-        or current.get("runtime_contract_sha256")
-        != expected.get("runtime_contract_sha256")):
+        != expected.get("attention_layers")):
     raise SystemExit("selected replay startup differs from M1-49 qualification")
+if trace_mode == "0":
+    if (current.get("runtime_contract_sha256")
+            != expected.get("runtime_contract_sha256")):
+        raise SystemExit(
+            "selected replay runtime contract differs from M1-49 qualification")
+else:
+    prior_contract = copy.deepcopy(prior.get("runtime_contract"))
+    current_contract = copy.deepcopy(current.get("runtime_contract"))
+    if not isinstance(prior_contract, dict) or not isinstance(
+            current_contract, dict):
+        raise SystemExit("selected trace runtime contracts are missing")
+    prior_service = prior_contract.get("service")
+    current_service = current_contract.get("service")
+    if (not isinstance(prior_service, dict)
+            or not isinstance(current_service, dict)
+            or prior_service.get("cache_trace") != "0"
+            or current_service.get("cache_trace") != "1"):
+        raise SystemExit("selected trace mode is not isolated to cache_trace=1")
+    prior_service["cache_trace"] = "<diagnostic>"
+    current_service["cache_trace"] = "<diagnostic>"
+    if prior_contract != current_contract:
+        raise SystemExit(
+            "selected trace runtime differs beyond the diagnostic trace flag")
 PY
 printf '%s\n' 0 > "$RUN_ROOT/startup_match.rc"
 
@@ -313,5 +350,19 @@ run_offline_gate qualification 60 \
     python3 "$ROOT/tests/qualify_selected_dataset_replay.py" \
     --source "$RUN_ROOT/replay.json" \
     --out "$RUN_ROOT/qualification.json"
+
+if [[ "$TRACE_MODE" == 1 ]]; then
+    run_offline_gate trace_analysis 300 \
+        python3 "$ROOT/scripts/analyze_prefix_cache_trace.py" \
+        "$RUN_ROOT/server.log" --expected-requests 13 \
+        --expected-block-size 16 --gdn-restore-mode direct \
+        --out "$RUN_ROOT/trace_analysis.json"
+    run_offline_gate trace_smoke 120 \
+        python3 "$ROOT/tests/qualify_selected_dataset_trace_smoke.py" \
+        --log "$RUN_ROOT/server.log" \
+        --analysis "$RUN_ROOT/trace_analysis.json" \
+        --replay "$RUN_ROOT/replay.json" --dataset "$DATASET" \
+        --out "$RUN_ROOT/trace_smoke.json"
+fi
 
 echo "M1-49 selected dataset replay qualified"

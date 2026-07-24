@@ -34,9 +34,13 @@ class M149SelectedDatasetHarnessTest(unittest.TestCase):
             "BI100_GDN_CACHE_POLICY=admission64",
             "BI100_GDN_RESTORE_MODE=direct",
             "BI100_ATTN_COREX_FUSED_PREFILL=0",
-            "BI100_CACHE_TRACE=0",
         ):
             self.assertIn(value, self.source)
+        self.assertIn(
+            "TRACE_MODE=${M1_49_SELECTED_TRACE_MODE:-0}", self.source)
+        self.assertIn('export BI100_CACHE_TRACE="$TRACE_MODE"', self.source)
+        self.assertIn(
+            "M1_49_SELECTED_TRACE_MODE must be 0 or 1", self.source)
         self.assertIn(
             "dac6afc77621b51dbc09cfa046c008a1e51a779bb771edcb27cb6a686f8884c8",
             self.source,
@@ -66,6 +70,15 @@ class M149SelectedDatasetHarnessTest(unittest.TestCase):
             self.source,
         )
         self.assertIn("fatal_scan", self.source)
+
+    def test_trace_smoke_is_explicit_and_cannot_qualify_as_881(self):
+        self.assertIn('if [[ "$TRACE_MODE" == 1 ]]', self.source)
+        self.assertIn("--expected-requests 13", self.source)
+        self.assertNotIn("--qualification-trace", self.source)
+        self.assertIn("qualify_selected_dataset_trace_smoke.py", self.source)
+        self.assertIn('--expected-cache-trace "$TRACE_MODE"', self.source)
+        self.assertIn(
+            'prior_service["cache_trace"] = "<diagnostic>"', self.source)
 
 
 if __name__ == "__main__":
