@@ -90,8 +90,9 @@ class PatchTest(unittest.TestCase):
             outputs = root / "vllm/outputs.py"
             first_outputs = outputs.read_text()
             self.assertIn(
-                'cache_trace_emit = getattr(\n'
-                '            seq_group, "_bi100_cache_trace_emit", None)',
+                'if finished_time is not None:\n'
+                '            cache_trace_emit = getattr(\n'
+                '                seq_group, "_bi100_cache_trace_emit", None)',
                 first_outputs,
             )
             self.assertLess(
@@ -106,6 +107,29 @@ class PatchTest(unittest.TestCase):
                            check=True)
             subprocess.run([sys.executable, "-m", "py_compile", str(outputs)],
                            check=True)
+            spec = importlib.util.spec_from_file_location(
+                "patched_outputs", outputs)
+            module = importlib.util.module_from_spec(spec)
+            assert spec.loader is not None
+            spec.loader.exec_module(module)
+
+            class Group:
+                request_id = "request"
+
+                def set_finished_time(self, value):
+                    self.finished_time = value
+
+            group = Group()
+            emissions = []
+            group._bi100_cache_trace_seq_id = 1
+            group._bi100_cache_trace_emit = lambda value: emissions.append(
+                value.finished_time)
+            module.RequestOutput.create(group, None, None, None)
+            self.assertEqual(emissions, [])
+            self.assertTrue(hasattr(group, "_bi100_cache_trace_emit"))
+            module.RequestOutput.create(group, 2.0, None, None)
+            self.assertEqual(emissions, [2.0])
+            self.assertFalse(hasattr(group, "_bi100_cache_trace_emit"))
 
     def test_unknown_layout_fails(self):
         with tempfile.TemporaryDirectory() as directory:

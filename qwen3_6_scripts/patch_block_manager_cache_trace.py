@@ -186,16 +186,17 @@ def main():
         "        seq_group.set_finished_time(finished_time)\n\n"
         "        init_args = (seq_group.request_id, prompt, prompt_token_ids,\n",
         "        seq_group.set_finished_time(finished_time)\n"
-        "        cache_trace_emit = getattr(\n"
-        "            seq_group, \"_bi100_cache_trace_emit\", None)\n"
-        "        if callable(cache_trace_emit):\n"
-        "            cache_trace_emit(seq_group)\n"
-        "            delattr(seq_group, \"_bi100_cache_trace_emit\")\n"
-        "            delattr(seq_group, \"_bi100_cache_trace_seq_id\")\n\n"
+        "        if finished_time is not None:\n"
+        "            cache_trace_emit = getattr(\n"
+        "                seq_group, \"_bi100_cache_trace_emit\", None)\n"
+        "            if callable(cache_trace_emit):\n"
+        "                cache_trace_emit(seq_group)\n"
+        "                delattr(seq_group, \"_bi100_cache_trace_emit\")\n"
+        "                delattr(seq_group, \"_bi100_cache_trace_seq_id\")\n\n"
         "        init_args = (seq_group.request_id, prompt, prompt_token_ids,\n",
         required=True,
-        already_contains="cache_trace_emit = getattr(\n"
-                         "            seq_group, \"_bi100_cache_trace_emit\"",
+        already_contains="if finished_time is not None:\n"
+                         "            cache_trace_emit = getattr(\n",
     )
 
 
