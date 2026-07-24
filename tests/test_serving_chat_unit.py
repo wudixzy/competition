@@ -27,6 +27,19 @@ def _load_serialize_tool_arguments():
     return namespace["_serialize_tool_arguments"]
 
 
+def _load_named_tool_delta_payload():
+    tree = ast.parse(SERVING_CHAT.read_text(), filename=str(SERVING_CHAT))
+    function = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_named_tool_delta_payload")
+    module = ast.Module(body=[function], type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {"Dict": dict}
+    exec(compile(module, str(SERVING_CHAT), "exec"), namespace)
+    return namespace["_named_tool_delta_payload"]
+
+
 def _load_chat_placeholder_method():
     tree = ast.parse(CHAT_UTILS_SOURCE, filename=str(CHAT_UTILS))
     class_node = next(
@@ -49,6 +62,7 @@ class ServingChatUnitTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.serialize = staticmethod(_load_serialize_tool_arguments())
+        cls.named_delta = staticmethod(_load_named_tool_delta_payload())
 
     def test_tool_arguments_string_is_not_double_json_encoded(self):
         arguments = '{"city": "上海", "unit": "c"}'
@@ -71,6 +85,28 @@ class ServingChatUnitTest(unittest.TestCase):
             "auto_tools_called or tool_choice_function_name",
             SERVING_CHAT_SOURCE,
         )
+
+    def test_named_stream_tool_identity_is_stable_and_sent_once(self):
+        first = self.named_delta(
+            "terminal", '{"command":', 0, "call-stable", True)
+        following = self.named_delta(
+            "terminal", '"pwd"}', 0, "call-stable", False)
+
+        self.assertEqual(first, {
+            "id": "call-stable",
+            "type": "function",
+            "index": 0,
+            "function": {
+                "name": "terminal",
+                "arguments": '{"command":',
+            },
+        })
+        self.assertEqual(following, {
+            "index": 0,
+            "function": {"arguments": '"pwd"}'},
+        })
+        self.assertIn("named_tool_call_ids = (", SERVING_CHAT_SOURCE)
+        self.assertIn("previous_num_tokens[i] == 0", SERVING_CHAT_SOURCE)
 
     def test_empty_messages_are_rejected_before_async_work(self):
         guard = 'if not request.messages:'

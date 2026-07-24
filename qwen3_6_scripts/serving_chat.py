@@ -55,6 +55,18 @@ def _serialize_tool_arguments(arguments) -> str:
     return json.dumps(arguments, ensure_ascii=False)
 
 
+def _named_tool_delta_payload(name: str, arguments: str, index: int,
+                              call_id: str, first_delta: bool
+                              ) -> Dict[str, object]:
+    function: Dict[str, object] = {"arguments": arguments}
+    payload: Dict[str, object] = {"index": index, "function": function}
+    if first_delta:
+        function["name"] = name
+        payload["id"] = call_id
+        payload["type"] = "function"
+    return payload
+
+
 class OpenAIServingChat(OpenAIServing):
 
     def __init__(self,
@@ -349,6 +361,9 @@ class OpenAIServingChat(OpenAIServing):
             tool_choice_function_name = request.tool_choice.function.name
         else:
             tool_choice_function_name = None
+        named_tool_call_ids = (
+            [f"chatcmpl-tool-{random_uuid()}" for _ in range(num_choices)]
+            if tool_choice_function_name else [])
 
         # Determine whether tools are in use with "auto" tool choice
         tool_choice_auto = (
@@ -565,10 +580,13 @@ class OpenAIServingChat(OpenAIServing):
                     # handle streaming deltas for tools with named tool_choice
                     if tool_choice_function_name:
                         delta_message = DeltaMessage(tool_calls=[
-                            DeltaToolCall(function=DeltaFunctionCall(
-                                name=tool_choice_function_name,
-                                arguments=delta_text),
-                                          index=i)
+                            DeltaToolCall(**_named_tool_delta_payload(
+                                tool_choice_function_name,
+                                delta_text,
+                                i,
+                                named_tool_call_ids[i],
+                                previous_num_tokens[i] == 0,
+                            ))
                         ])
 
                     # handle reasoning: route through reasoning parser while
