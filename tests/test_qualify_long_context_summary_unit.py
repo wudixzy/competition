@@ -9,16 +9,21 @@ TESTS = pathlib.Path(__file__).resolve().parent
 if str(TESTS) not in sys.path:
     sys.path.insert(0, str(TESTS))
 
-from qualify_long_context_summary import qualify
+from qualify_long_context_summary import _sha256_json, qualify
 
 
 def _request(cached: int, digest: str) -> dict:
     return {
         "cached_tokens": cached,
         "completion_tokens": 16,
+        "total_tokens": 262_016,
+        "model": "llm",
         "elapsed_s": 1.0,
         "finish_reason": "length",
         "message_sha256": digest,
+        "semantic_output_sha256": digest,
+        "request_contract_sha256": "d" * 64,
+        "protocol_validated": True,
         "prompt_tokens": 262_000,
         "ignored_raw_field": "must not be copied",
     }
@@ -26,7 +31,45 @@ def _request(cached: int, digest: str) -> dict:
 
 def _source(mode: str = "exact") -> dict:
     digest = "a" * 64
+    files = [{"name": "tokenizer.json", "bytes": 10,
+              "sha256": "e" * 64}]
     source = {
+        "schema": "bi100-long-context-api-result-v2",
+        "version": 2,
+        "privacy": {
+            "contains_raw_request": False,
+            "contains_raw_model_output": False,
+            "raw_response_files_retained": False,
+        },
+        "evidence_scope": "legacy-long-context-diagnostic",
+        "overall_promotion_authorized": False,
+        "run_id_sha256": "f" * 64,
+        "runtime": {
+            "model_path": "/model",
+            "served_model_name": "llm",
+            "max_model_len": 262_144,
+        },
+        "prompt_construction": {
+            "schema": "bi100-exact-chat-prompt-v1",
+            "target_prompt_tokens": 262_000,
+            "local_prompt_tokens": 262_000,
+            "fixed_prompt_tokens": 64,
+            "filler_token_ids_requested": 261_936,
+            "filler_text_sha256": "1" * 64,
+            "filler_source_sha256": "2" * 64,
+            "rendered_prompt_token_ids_sha256": "3" * 64,
+            "messages_sha256": "4" * 64,
+            "tools_sha256": "5" * 64,
+            "thinking": False,
+            "template_kwargs_mode": "direct",
+            "attempts": 2,
+        },
+        "tokenizer": {
+            "tokenizer_class": "UnitTokenizer",
+            "artifact_set_sha256": _sha256_json(files),
+            "chat_template_sha256": "6" * 64,
+            "files": files,
+        },
         "equivalence_mode": mode,
         "first": _request(0, digest),
         "max_tokens": 16,
@@ -129,6 +172,20 @@ class LongContextSafeGateTest(unittest.TestCase):
         self.assertFalse(report["qualified"], report)
         self.assertTrue(any("target_prompt_tokens" in reason
                             for reason in report["reasons"]))
+
+    def test_raw_response_retention_is_rejected(self):
+        source = _source()
+        source["privacy"]["raw_response_files_retained"] = True
+        report = _qualify(source)
+        self.assertFalse(report["qualified"], report)
+        self.assertIn("source privacy contract is invalid", report["reasons"])
+
+    def test_tokenizer_identity_drift_is_rejected(self):
+        source = _source()
+        source["tokenizer"]["artifact_set_sha256"] = "0" * 64
+        report = _qualify(source)
+        self.assertFalse(report["qualified"], report)
+        self.assertIn("source tokenizer identity is invalid", report["reasons"])
 
 
 if __name__ == "__main__":

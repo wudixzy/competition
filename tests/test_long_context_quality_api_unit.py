@@ -1,0 +1,247 @@
+from __future__ import annotations
+
+import base64
+import importlib.util
+import json
+from pathlib import Path
+import sys
+import tempfile
+from types import SimpleNamespace
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "tests") not in sys.path:
+    sys.path.insert(0, str(ROOT / "tests"))
+SCRIPT = ROOT / "tests/long_context_quality_api.py"
+SPEC = importlib.util.spec_from_file_location("long_quality", SCRIPT)
+MODULE = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+SPEC.loader.exec_module(MODULE)
+
+
+class FakeTokenizer:
+    chat_template = "fake {{ enable_thinking }}"
+
+    def encode(self, text, add_special_tokens=False):
+        return [ord(character) for character in text]
+
+    def decode(self, token_ids, **kwargs):
+        return "".join(chr(token_id) for token_id in token_ids)
+
+    def apply_chat_template(self, messages, **kwargs):
+        parts = ["<chat>"]
+        for message in messages:
+            parts.append(message["role"])
+            content = message.get("content")
+            if isinstance(content, str):
+                parts.append(content)
+            elif isinstance(content, list):
+                parts.extend(json.dumps(item, sort_keys=True) for item in content)
+            parts.append(json.dumps(
+                message.get("tool_calls") or [], sort_keys=True))
+        parts.append(json.dumps(kwargs.get("tools") or [], sort_keys=True))
+        thinking = kwargs.get("enable_thinking")
+        if thinking is None:
+            thinking = (kwargs.get("chat_template_kwargs") or {}).get(
+                "enable_thinking")
+        parts.append("<think>" if thinking else "<no-think>")
+        return [ord(character) for character in "".join(parts)]
+
+
+class FakeClient:
+    def __init__(self, content: str):
+        self.content = content
+
+    def post(self, payload, timeout=1):
+        prompt_tokens = payload["_test_prompt_tokens"]
+        return 200, {
+            "id": "chatcmpl-matrix-test",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "llm",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {
+                    "role": "assistant",
+                    "content": self.content,
+                    "tool_calls": [],
+                },
+            }],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": 2,
+                "total_tokens": prompt_tokens + 2,
+                "prompt_tokens_details": {"cached_tokens": 0},
+            },
+        }
+
+
+class LongContextQualityApiTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.manifest, cls.manifest_sha = MODULE._load_manifest(
+            ROOT / "quality/long_context_matrix.v2.json")
+
+    def test_handlers_and_tiers_match_frozen_matrix(self):
+        self.assertEqual(
+            set(MODULE.HANDLERS),
+            {case["id"] for case in self.manifest["cases"]},
+        )
+        self.assertEqual(len(MODULE._selected_cases(
+            self.manifest, "quick", [])), 2)
+        self.assertEqual(len(MODULE._selected_cases(
+            self.manifest, "full", [])), 7)
+        self.assertEqual(len(MODULE._selected_cases(
+            self.manifest, "extended", [])), 12)
+
+    def test_exact_recipe_fitting_is_deterministic(self):
+        tokenizer = FakeTokenizer()
+        recipe = MODULE._recall_recipe("unit", "EXPECTED")
+        first, first_tools, first_evidence = MODULE._fit_recipe(
+            tokenizer, 512, recipe, namespace="unit")
+        second, second_tools, second_evidence = MODULE._fit_recipe(
+            tokenizer, 512, recipe, namespace="unit")
+        self.assertEqual(first, second)
+        self.assertIsNone(first_tools)
+        self.assertIsNone(second_tools)
+        self.assertEqual(first_evidence, second_evidence)
+        self.assertEqual(
+            MODULE.exact_prompt.chat_template_token_count(tokenizer, first),
+            512,
+        )
+
+    def test_large_tool_schema_has_92_unique_names(self):
+        tools = MODULE._large_tools("target_tool")
+        names = [tool["function"]["name"] for tool in tools]
+        self.assertEqual(len(tools), 92)
+        self.assertEqual(len(set(names)), 92)
+        self.assertEqual(names.count("target_tool"), 1)
+
+    def test_post_summary_does_not_retain_model_output(self):
+        secret = "raw-long-context-output-must-not-be-retained"
+        context = MODULE.Context(
+            FakeClient(secret), FakeTokenizer(), 1,
+            served_model_name="llm", template_kwargs_mode="direct")
+        payload = {
+            "_test_prompt_tokens": 10,
+            "model": "llm",
+            "messages": [{"role": "user", "content": "test"}],
+            "max_tokens": 4,
+        }
+        data, summary = MODULE._post(context, payload, 10)
+        self.assertEqual(data["choices"][0]["message"]["content"], secret)
+        self.assertNotIn(secret, json.dumps(summary))
+        self.assertEqual(len(summary["semantic_output_sha256"]), 64)
+
+    def test_matrix_file_hash_cannot_be_overridden(self):
+        value = json.loads((
+            ROOT / "quality/long_context_matrix.v2.json"
+        ).read_text(encoding="utf-8"))
+        value["cases"][0]["max_tokens"] = 32
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matrix.json"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(
+                    MODULE.MatrixFailure, "file identity is invalid"):
+                MODULE._load_manifest(path)
+
+    def test_cache_trace_proof_is_parsed_without_raw_tokens(self):
+        encoded = base64.b64encode(b"a" * 32 + b"b" * 32).decode("ascii")
+        record = {
+            "version": 4,
+            "trace_session_sha256": "session",
+            "hash_encoding": "sha256_base64",
+            "block_size": 16,
+            "prompt_tokens": 32,
+            "observed_effective_cached_tokens": 0,
+            "block_hashes": encoded,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "service.log"
+            path.write_text("".join(
+                "[BI100_CACHE_TRACE] " + json.dumps(record) + "\n"
+                for _ in range(3)
+            ), encoding="utf-8")
+            records = MODULE._cache_trace_records(path, 0, 3)
+        self.assertEqual(len(records), 3)
+        self.assertEqual(
+            MODULE._prompt_trace_hashes(records[0], 0),
+            [b"a" * 32, b"b" * 32],
+        )
+
+    def test_cache_trace_accounting_mismatch_fails(self):
+        record = {
+            "version": 4,
+            "hash_encoding": "sha256_base64",
+            "block_size": 16,
+            "prompt_tokens": 16,
+            "observed_effective_cached_tokens": 16,
+            "block_hashes": base64.b64encode(b"a" * 32).decode("ascii"),
+        }
+        with self.assertRaisesRegex(
+                MODULE.MatrixFailure, "API cached_tokens differ"):
+            MODULE._prompt_trace_hashes(record, 0)
+
+    def _runtime_args(self):
+        return SimpleNamespace(
+            source_revision="a" * 40,
+            runtime_identity="unit-overlay",
+            instance="unit-tp4",
+            gpu_count=4,
+            tensor_parallel_size=4,
+            max_model_len=262144,
+            model_path="/model",
+            served_model_name="llm",
+        )
+
+    def _runtime_contract(self):
+        args = self._runtime_args()
+        return {
+            "schema": "bi100-quality-runtime-contract-v1",
+            "version": 1,
+            "source_revision": args.source_revision,
+            "runtime_identity": args.runtime_identity,
+            "runtime_overlay_sha256": "b" * 64,
+            "instance": args.instance,
+            "gpu_count": args.gpu_count,
+            "tensor_parallel_size": args.tensor_parallel_size,
+            "max_model_len": args.max_model_len,
+            "model_path": args.model_path,
+            "tokenizer_path": args.model_path,
+            "served_model_name": args.served_model_name,
+            "base_image": MODULE.BASE_IMAGE,
+            "command": ["python3", "-m", "vllm.entrypoints.openai.api_server"],
+            "environment": {"BI100_CACHE_TRACE": "1"},
+            "cache_trace_enabled": True,
+            "optimization_label": "baseline",
+        }
+
+    def test_runtime_contract_requires_new_base_image_and_no_secrets(self):
+        contract = self._runtime_contract()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "runtime.json"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+            loaded, digest = MODULE._load_runtime_contract(
+                path, self._runtime_args())
+            self.assertEqual(loaded, contract)
+            self.assertEqual(len(digest), 64)
+
+            contract["base_image"] = (
+                "git.modelhub.org.cn:9443/enginex-iluvatar/obsolete:v1.2.3")
+            path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(MODULE.MatrixFailure, "base image"):
+                MODULE._load_runtime_contract(path, self._runtime_args())
+
+            contract = self._runtime_contract()
+            contract["environment"]["MODELHUB_ACCESS_TOKEN"] = "secret"
+            path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(
+                    MODULE.MatrixFailure, "secret-bearing"):
+                MODULE._load_runtime_contract(path, self._runtime_args())
+
+
+if __name__ == "__main__":
+    unittest.main()

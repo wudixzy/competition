@@ -1497,3 +1497,25 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 - 8 项行为测试、60 项聚焦/静态门禁及真实 vendor 源副本的两次幂等 patch/compile
   通过。该分支默认打开 trace，只用于 diagnostic evaluator log，不能用于正式分数。
 - 正式提交继续使用 production `main`，不要合入 trace patch 或其 Docker ENV。
+
+## 2026-07-24 模型能力非回退门禁
+
+- 当前工作位于私有实验分支 `prep/M1-48-on-M1-49-20260722`，没有修改
+  `main`、正式 `computility-run.yaml` 默认开关或仓库可见性。
+- 新增由 `指标集合`冻结的 53 项功能门禁和 12 项长上下文能力矩阵。性能、功能
+  质量、cold/warm 正确性和长上下文能力分别报告，任何一项通过都不能替代其他项。
+- 长上下文矩阵覆盖 512/4K/32K/65K/131K/235K、`261887+256` 和
+  `261888+256=262144`，包括 tool calling、reasoning、多轮、长 tool result、
+  大 tools schema、多模态同图复用/异图隔离及大 `max_tokens`。
+- 精确 prompt 改为从真实 tokenizer token ID 流反向解码，再经过固定 chat
+  template 复核；报告绑定 tokenizer/config/chat-template SHA，不记录原始 prompt
+  或模型输出。多模态视觉 token 展开与本地文本模板 token 分开记账。
+- 多模态隔离必须同时满足 API `cached_tokens`、颜色能力规则和 cache trace v4
+  逻辑 prompt hash 证据；相同图的 hash 链必须一致，不同图首块逻辑 hash 必须不同。
+- baseline/candidate 均必须提供无凭据的 runtime contract，固定新 Harbor 基础镜像、
+  TP4、262144、模型/tokenizer、启动命令和环境。A/B 只允许改变 `BI100_*` 优化开关。
+- 完整运行方式见 `docs/QUALITY_NON_REGRESSION_GATE_20260724.md`。当前仅完成本地
+  harness/validator/unit/preflight 验证，尚未获得新的 TP4 baseline/candidate 远端结果，
+  因此不具备晋升资格。
+- ModelHub push 最近一次返回认证失败，已按纪律停止所有 push 重试；本地提交保留，
+  等凭据由用户修复后再同时推送私有 ModelHub/GitHub 远端。

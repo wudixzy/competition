@@ -5,10 +5,13 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "tests") not in sys.path:
+    sys.path.insert(0, str(ROOT / "tests"))
 MANIFEST = json.loads((
     ROOT / "quality/official_metrics_manifest.v1.json"
 ).read_text(encoding="utf-8"))
@@ -122,6 +125,36 @@ def make_report(label: str) -> dict:
         })
         groups[case["group"]]["passed"] += 1
         groups[case["group"]]["total"] += 1
+    revision = hashlib.sha1(label.encode("ascii")).hexdigest()
+    command = [
+        "python3", "-m", "vllm.entrypoints.openai.api_server",
+        "--model", "/model", "--max-model-len", "262144", "-tp", "4",
+    ]
+    environment = {
+        "BI100_CACHE_TRACE": "1",
+        "BI100_GDN_CACHE_POLICY": "fine32",
+    }
+    contract = {
+        "schema": "bi100-quality-runtime-contract-v1",
+        "version": 1,
+        "source_revision": revision,
+        "runtime_identity": label + "-runtime",
+        "runtime_overlay_sha256": "b" * 64,
+        "instance": "private-instance",
+        "gpu_count": 4,
+        "tensor_parallel_size": 4,
+        "max_model_len": 262144,
+        "model_path": "/model",
+        "tokenizer_path": "/model",
+        "served_model_name": "llm",
+        "base_image": MODULE.runtime_contract.BASE_IMAGE,
+        "command": command,
+        "environment": environment,
+        "cache_trace_enabled": True,
+        "optimization_label": label,
+    }
+    files = [{"name": "tokenizer.json", "bytes": 10,
+              "sha256": "c" * 64}]
     return {
         "schema": "bi100-quality-gate-result-v1",
         "version": 1,
@@ -129,6 +162,8 @@ def make_report(label: str) -> dict:
         "quality_run_eligible_for_baseline": True,
         "promotion_authorized": False,
         "label": label,
+        "run_id_sha256": "d" * 64,
+        "created_at_utc": "2026-07-24T00:00:00+00:00",
         "manifest": {
             "path_name": "official_metrics_manifest.v1.json",
             "sha256": MANIFEST_SHA,
@@ -136,16 +171,37 @@ def make_report(label: str) -> dict:
             "total_cases": 53,
         },
         "runtime": {
-            "source_revision": label + "-revision",
+            "source_revision": revision,
             "runtime_identity": label + "-runtime",
+            "runtime_overlay_sha256": "b" * 64,
+            "service_command_sha256": MODULE.runtime_contract.sha256_json(
+                command),
+            "service_env_sha256": MODULE.runtime_contract.sha256_json(
+                environment),
             "instance": "private-instance",
             "gpu_count": 4,
+            "tensor_parallel_size": 4,
             "model_path": "/model",
             "tokenizer_path": "/model",
             "max_model_len": 262144,
             "model": "llm",
             "endpoint_mode": "direct",
             "allow_bare_engine_n2_skip": False,
+            "cache_trace_v4_attested": True,
+        },
+        "runtime_contract": {
+            "sha256": MODULE.runtime_contract.sha256_json(contract),
+            "contract": contract,
+        },
+        "generator": {
+            "runner_sha256": "e" * 64,
+            "transformers_version": "unit",
+        },
+        "tokenizer": {
+            "tokenizer_class": "UnitTokenizer",
+            "artifact_set_sha256": MODULE.runtime_contract.sha256_json(files),
+            "chat_template_sha256": "f" * 64,
+            "files": files,
         },
         "selection": {
             "tier": "extended",
@@ -213,6 +269,37 @@ class QualityComparisonTest(unittest.TestCase):
         self.assertFalse(result["qualified"])
         self.assertIn(
             "basic_chat: prompt tokenization differs", result["reasons"])
+
+        candidate = make_report("candidate")
+        candidate["tokenizer"]["chat_template_sha256"] = "0" * 64
+        result = MODULE.compare_reports(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertIn(
+            "baseline and candidate tokenizer identities differ",
+            result["reasons"],
+        )
+
+    def test_ab_may_only_change_bi100_environment(self):
+        baseline = make_report("baseline")
+        candidate = make_report("candidate")
+        contract = candidate["runtime_contract"]["contract"]
+        contract["environment"]["BI100_GDN_CACHE_POLICY"] = "admission64"
+        candidate["runtime_contract"]["sha256"] = (
+            MODULE.runtime_contract.sha256_json(contract))
+        candidate["runtime"]["service_env_sha256"] = (
+            MODULE.runtime_contract.sha256_json(contract["environment"]))
+        self.assertTrue(MODULE.compare_reports(
+            baseline, candidate)["qualified"])
+
+        candidate = make_report("candidate")
+        contract = candidate["runtime_contract"]["contract"]
+        contract["environment"]["OMP_NUM_THREADS"] = "2"
+        candidate["runtime_contract"]["sha256"] = (
+            MODULE.runtime_contract.sha256_json(contract))
+        candidate["runtime"]["service_env_sha256"] = (
+            MODULE.runtime_contract.sha256_json(contract["environment"]))
+        self.assertFalse(MODULE.compare_reports(
+            baseline, candidate)["qualified"])
 
     def test_incomplete_or_raw_report_fails(self):
         baseline = make_report("baseline")

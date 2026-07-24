@@ -13,8 +13,13 @@ SUMMARY_FIELDS = (
     "prompt_tokens",
     "cached_tokens",
     "completion_tokens",
+    "total_tokens",
+    "model",
     "finish_reason",
     "message_sha256",
+    "semantic_output_sha256",
+    "request_contract_sha256",
+    "protocol_validated",
     "elapsed_s",
 )
 
@@ -26,6 +31,13 @@ def _is_integer(value: Any) -> bool:
 def _is_digest(value: Any) -> bool:
     return (isinstance(value, str) and len(value) == 64
             and all(character in "0123456789abcdef" for character in value))
+
+
+def _sha256_json(value: Any) -> str:
+    encoded = json.dumps(
+        value, ensure_ascii=True, sort_keys=True, separators=(",", ":"),
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _request(
@@ -55,10 +67,20 @@ def _request(
         reasons.append(
             f"{label} completion_tokens must be at least "
             f"{minimum_completion_tokens}")
+    if (_is_integer(completion_tokens)
+            and safe["total_tokens"] != target_prompt_tokens + completion_tokens):
+        reasons.append(f"{label} total_tokens is inconsistent")
+    if safe["model"] != "llm":
+        reasons.append(f"{label} model must equal llm")
     if not isinstance(safe["finish_reason"], str):
         reasons.append(f"{label} finish_reason must be a string")
     if not _is_digest(safe["message_sha256"]):
         reasons.append(f"{label} message_sha256 is invalid")
+    for field in ("semantic_output_sha256", "request_contract_sha256"):
+        if not _is_digest(safe[field]):
+            reasons.append(f"{label} {field} is invalid")
+    if safe["protocol_validated"] is not True:
+        reasons.append(f"{label} protocol validation is missing")
     elapsed_s = safe["elapsed_s"]
     if (not isinstance(elapsed_s, (int, float))
             or isinstance(elapsed_s, bool)
@@ -80,6 +102,56 @@ def qualify(
     reasons: list[str] = []
     if not isinstance(source, dict):
         return {"qualified": False, "reasons": ["source must be an object"]}
+    if (source.get("schema") != "bi100-long-context-api-result-v2"
+            or source.get("version") != 2):
+        reasons.append("source schema or version is invalid")
+    privacy = source.get("privacy") or {}
+    if (privacy.get("contains_raw_request") is not False
+            or privacy.get("contains_raw_model_output") is not False
+            or privacy.get("raw_response_files_retained") is not False):
+        reasons.append("source privacy contract is invalid")
+    if (source.get("evidence_scope") != "legacy-long-context-diagnostic"
+            or source.get("overall_promotion_authorized") is not False
+            or not _is_digest(source.get("run_id_sha256"))):
+        reasons.append("source evidence scope or run identity is invalid")
+    runtime = source.get("runtime") or {}
+    runtime_max_model_len = runtime.get("max_model_len")
+    if (not isinstance(runtime.get("model_path"), str)
+            or not runtime["model_path"]
+            or runtime.get("served_model_name") != "llm"
+            or not _is_integer(runtime_max_model_len)
+            or runtime_max_model_len < target_prompt_tokens + max_tokens):
+        reasons.append("source runtime contract is invalid")
+    construction = source.get("prompt_construction") or {}
+    construction_digests = (
+        "filler_text_sha256", "filler_source_sha256",
+        "rendered_prompt_token_ids_sha256", "messages_sha256", "tools_sha256",
+    )
+    if (construction.get("schema") != "bi100-exact-chat-prompt-v1"
+            or construction.get("target_prompt_tokens") != target_prompt_tokens
+            or construction.get("local_prompt_tokens") != target_prompt_tokens
+            or construction.get("thinking") is not False
+            or construction.get("template_kwargs_mode") != "direct"
+            or any(not _is_digest(construction.get(field))
+                   for field in construction_digests)):
+        reasons.append("source prompt construction evidence is invalid")
+    tokenizer = source.get("tokenizer") or {}
+    files = tokenizer.get("files")
+    valid_files = (
+        isinstance(files, list) and bool(files)
+        and all(isinstance(item, dict)
+                and set(item) == {"name", "bytes", "sha256"}
+                and isinstance(item["name"], str) and bool(item["name"])
+                and _is_integer(item["bytes"]) and item["bytes"] > 0
+                and _is_digest(item["sha256"])
+                for item in files)
+    )
+    if (not valid_files
+            or tokenizer.get("artifact_set_sha256") != _sha256_json(files)
+            or not _is_digest(tokenizer.get("chat_template_sha256"))
+            or not isinstance(tokenizer.get("tokenizer_class"), str)
+            or not tokenizer["tokenizer_class"]):
+        reasons.append("source tokenizer identity is invalid")
     expected_contract = {
         "target_prompt_tokens": target_prompt_tokens,
         "max_tokens": max_tokens,
@@ -128,7 +200,8 @@ def qualify(
                    else (second, third))
     if left is not None and right is not None:
         for field in (
-                "completion_tokens", "finish_reason", "message_sha256"):
+                "completion_tokens", "finish_reason", "message_sha256",
+                "semantic_output_sha256", "request_contract_sha256"):
             if left.get(field) != right.get(field):
                 reasons.append(
                     f"equivalent requests differ in {field}")
@@ -143,6 +216,7 @@ def qualify(
         "requests": safe_requests,
         "schema": "bi100-long-context-safe-gate-v1",
         "version": 1,
+        "overall_promotion_authorized": False,
     }
 
 

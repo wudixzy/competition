@@ -3,11 +3,14 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "tests") not in sys.path:
+    sys.path.insert(0, str(ROOT / "tests"))
 SCRIPT = ROOT / "tests/quality_gate_api.py"
 SPEC = importlib.util.spec_from_file_location("quality_gate_api", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)

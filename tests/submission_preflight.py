@@ -296,6 +296,28 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
             compile(source, str(path), "exec")
         return f"compiled {len(paths)} Python sources"
 
+    def sensitive_artifacts() -> str:
+        forbidden_names = {".env"}
+        forbidden_suffixes = {".pem", ".key"}
+        forbidden_globs = (
+            "long_context_response*.json", "*raw_response*.json",
+        )
+        offenders = {
+            str(path.relative_to(root))
+            for path in root.rglob("*")
+            if path.is_file()
+            and (path.name in forbidden_names
+                 or path.suffix.lower() in forbidden_suffixes)
+        }
+        for pattern in forbidden_globs:
+            offenders.update(
+                str(path.relative_to(root)) for path in root.rglob(pattern)
+                if path.is_file())
+        if offenders:
+            raise ValueError(
+                f"sensitive/raw diagnostic artifacts present: {sorted(offenders)}")
+        return "no credential files or retained raw long-context responses"
+
     check("root_manifest", root_manifest)
     check("run_contract", run_contract)
     check("docker_contract", docker_contract)
@@ -304,6 +326,7 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
     check("line_endings", line_endings)
     check("shell_syntax", shell_syntax)
     check("python_syntax", python_syntax)
+    check("sensitive_artifacts", sensitive_artifacts)
     return results
 
 

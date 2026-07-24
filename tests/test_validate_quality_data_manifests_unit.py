@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -23,7 +24,7 @@ class QualityDataManifestTest(unittest.TestCase):
             ROOT / "quality/source_provenance.v1.json"
         ).read_text(encoding="utf-8"))
         cls.matrix = json.loads((
-            ROOT / "quality/long_context_matrix.v1.json"
+            ROOT / "quality/long_context_matrix.v2.json"
         ).read_text(encoding="utf-8"))
 
     def test_frozen_manifests_are_valid(self):
@@ -31,6 +32,12 @@ class QualityDataManifestTest(unittest.TestCase):
         self.assertEqual(MODULE.validate_matrix(self.matrix), [])
         self.assertEqual(len(self.provenance["sources"]), 7)
         self.assertEqual(len(self.matrix["cases"]), 12)
+        self.assertEqual(
+            hashlib.sha256((
+                ROOT / "quality/long_context_matrix.v2.json"
+            ).read_bytes()).hexdigest(),
+            MODULE.EXPECTED_MATRIX_SHA256,
+        )
 
     def test_operator_files_match_frozen_identity(self):
         self.assertEqual(MODULE.validate_operator_files(

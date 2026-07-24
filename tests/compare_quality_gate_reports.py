@@ -11,6 +11,7 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
+import quality_runtime_contract as runtime_contract
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "quality/official_metrics_manifest.v1.json"
@@ -197,6 +198,11 @@ def _report_reasons(
         reasons.append(f"{label}: run is not eligible for baseline comparison")
     if report.get("promotion_authorized") is not False:
         reasons.append(f"{label}: standalone run must not authorize promotion")
+    if (not isinstance(report.get("label"), str) or not report["label"]
+            or not isinstance(report.get("created_at_utc"), str)
+            or not report["created_at_utc"]
+            or not _is_sha256(report.get("run_id_sha256"))):
+        reasons.append(f"{label}: report run identity is invalid")
 
     expected_manifest = {
         "path_name": manifest_name,
@@ -209,23 +215,94 @@ def _report_reasons(
 
     runtime = report.get("runtime") or {}
     required_runtime_strings = (
-        "source_revision", "runtime_identity", "instance", "model_path",
-        "tokenizer_path",
+        "runtime_identity", "instance", "model_path", "tokenizer_path",
     )
     if any(not isinstance(runtime.get(key), str) or not runtime[key]
            for key in required_runtime_strings):
         reasons.append(f"{label}: runtime identity is incomplete")
+    if not runtime_contract.is_git_revision(runtime.get("source_revision")):
+        reasons.append(f"{label}: source revision is not fixed")
+    for field in (
+            "runtime_overlay_sha256", "service_command_sha256",
+            "service_env_sha256"):
+        if not _is_sha256(runtime.get(field)):
+            reasons.append(f"{label}: runtime field {field} is invalid")
     endpoint_mode = runtime.get("endpoint_mode")
     allow_skip = runtime.get("allow_bare_engine_n2_skip")
     if (runtime.get("max_model_len") != 262144
             or runtime.get("model") != "llm"
-            or not isinstance(runtime.get("gpu_count"), int)
-            or isinstance(runtime.get("gpu_count"), bool)
-            or runtime.get("gpu_count", 0) <= 0
+            or runtime.get("gpu_count") != 4
+            or runtime.get("tensor_parallel_size") != 4
+            or runtime.get("cache_trace_v4_attested") is not True
             or endpoint_mode not in ("direct", "gateway")
             or not isinstance(allow_skip, bool)
             or (allow_skip and endpoint_mode != "direct")):
         reasons.append(f"{label}: runtime capacity or topology is invalid")
+
+    wrapper = report.get("runtime_contract") or {}
+    if (not isinstance(wrapper, dict)
+            or set(wrapper) != {"sha256", "contract"}):
+        reasons.append(f"{label}: runtime contract wrapper is invalid")
+    else:
+        contract = wrapper["contract"]
+        expected_runtime = {
+            "source_revision": runtime.get("source_revision"),
+            "runtime_identity": runtime.get("runtime_identity"),
+            "instance": runtime.get("instance"),
+            "gpu_count": runtime.get("gpu_count"),
+            "tensor_parallel_size": runtime.get("tensor_parallel_size"),
+            "max_model_len": runtime.get("max_model_len"),
+            "model_path": runtime.get("model_path"),
+            "tokenizer_path": runtime.get("tokenizer_path"),
+            "served_model_name": runtime.get("model"),
+        }
+        try:
+            contract_sha = runtime_contract.validate_runtime_contract(
+                contract, expected_runtime, require_cache_trace=True)
+        except runtime_contract.RuntimeContractError as error:
+            reasons.append(f"{label}: {error}")
+        else:
+            if wrapper["sha256"] != contract_sha:
+                reasons.append(f"{label}: runtime contract SHA-256 differs")
+            if (runtime.get("runtime_overlay_sha256")
+                    != contract["runtime_overlay_sha256"]
+                    or runtime.get("service_command_sha256")
+                    != runtime_contract.sha256_json(contract["command"])
+                    or runtime.get("service_env_sha256")
+                    != runtime_contract.sha256_json(contract["environment"])):
+                reasons.append(
+                    f"{label}: runtime contract hashes differ from runtime")
+
+    generator = report.get("generator") or {}
+    if (not isinstance(generator, dict)
+            or set(generator) != {"runner_sha256", "transformers_version"}
+            or not _is_sha256(generator.get("runner_sha256"))
+            or not isinstance(generator.get("transformers_version"), str)
+            or not generator["transformers_version"]):
+        reasons.append(f"{label}: generator identity is invalid")
+    tokenizer = report.get("tokenizer") or {}
+    files = tokenizer.get("files") if isinstance(tokenizer, dict) else None
+    valid_files = (
+        isinstance(files, list) and bool(files)
+        and all(isinstance(item, dict)
+                and set(item) == {"name", "bytes", "sha256"}
+                and isinstance(item["name"], str) and bool(item["name"])
+                and isinstance(item["bytes"], int)
+                and not isinstance(item["bytes"], bool)
+                and item["bytes"] > 0
+                and _is_sha256(item["sha256"])
+                for item in files)
+    )
+    if (not isinstance(tokenizer, dict) or set(tokenizer) != {
+            "tokenizer_class", "artifact_set_sha256",
+            "chat_template_sha256", "files"}
+            or not valid_files
+            or tokenizer.get("artifact_set_sha256")
+            != runtime_contract.sha256_json(files)
+            or not _is_sha256(tokenizer.get("chat_template_sha256"))
+            or not isinstance(tokenizer.get("tokenizer_class"), str)
+            or not tokenizer["tokenizer_class"]):
+        reasons.append(f"{label}: tokenizer identity is invalid")
 
     expected_skips = ["n_2"] if allow_skip else []
     selection = report.get("selection") or {}
@@ -536,11 +613,43 @@ def compare_reports(
         baseline_runtime = baseline.get("runtime") or {}
         candidate_runtime = candidate.get("runtime") or {}
         for field in (
-            "gpu_count", "model_path", "tokenizer_path", "max_model_len",
-            "model", "endpoint_mode", "allow_bare_engine_n2_skip",
+            "gpu_count", "tensor_parallel_size", "model_path",
+            "tokenizer_path", "max_model_len", "model", "endpoint_mode",
+            "allow_bare_engine_n2_skip", "service_command_sha256",
         ):
             if baseline_runtime.get(field) != candidate_runtime.get(field):
                 reasons.append(f"runtime contract differs in {field}")
+        if baseline.get("generator") != candidate.get("generator"):
+            reasons.append("baseline and candidate generator identities differ")
+        if baseline.get("tokenizer") != candidate.get("tokenizer"):
+            reasons.append("baseline and candidate tokenizer identities differ")
+        baseline_wrapper = baseline.get("runtime_contract") or {}
+        candidate_wrapper = candidate.get("runtime_contract") or {}
+        baseline_contract = (
+            baseline_wrapper.get("contract") or {}
+            if isinstance(baseline_wrapper, dict) else {})
+        candidate_contract = (
+            candidate_wrapper.get("contract") or {}
+            if isinstance(candidate_wrapper, dict) else {})
+        if isinstance(baseline_contract, dict) and isinstance(
+                candidate_contract, dict):
+            for field in (
+                    "base_image", "command", "gpu_count",
+                    "tensor_parallel_size", "max_model_len", "model_path",
+                    "tokenizer_path", "served_model_name",
+                    "cache_trace_enabled"):
+                if baseline_contract.get(field) != candidate_contract.get(field):
+                    reasons.append(f"A/B runtime contract differs in {field}")
+            baseline_env = baseline_contract.get("environment") or {}
+            candidate_env = candidate_contract.get("environment") or {}
+            if isinstance(baseline_env, dict) and isinstance(candidate_env, dict):
+                changed_env = {
+                    key for key in set(baseline_env) | set(candidate_env)
+                    if baseline_env.get(key) != candidate_env.get(key)
+                }
+                if any(not key.startswith("BI100_") for key in changed_env):
+                    reasons.append(
+                        "A/B changed a non-BI100 runtime environment value")
         baseline_cases, case_reasons = _case_map(
             baseline, "baseline", manifest)
         reasons.extend(case_reasons)

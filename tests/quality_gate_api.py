@@ -18,6 +18,9 @@ import urllib.error
 import urllib.request
 import zlib
 
+import exact_chat_prompt as exact_prompt
+import quality_runtime_contract as runtime_contract
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "quality/official_metrics_manifest.v1.json"
@@ -405,7 +408,7 @@ class Client:
             raise CaseFailure(
                 f"transport failure: {type(error).__name__}") from error
 
-    def models(self) -> None:
+    def models(self, expected_model: str = "llm") -> Json:
         request = urllib.request.Request(f"{self.base}/v1/models", method="GET")
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
@@ -414,9 +417,11 @@ class Client:
             raise CaseFailure("model-list endpoint is unavailable") from error
         models = data.get("data") if isinstance(data, dict) else None
         require(response.status == 200 and isinstance(models, list)
-                and any(isinstance(model, dict) and model.get("id") == "llm"
+                and any(isinstance(model, dict)
+                        and model.get("id") == expected_model
                         for model in models),
-                "model-list endpoint does not expose llm")
+                f"model-list endpoint does not expose {expected_model}")
+        return data
 
     def stream(self, payload: Json, *, timeout: float = 300) -> tuple[int, Json]:
         request = urllib.request.Request(
@@ -1134,6 +1139,9 @@ def _selected_cases(manifest: Json, tier: str, requested: list[str]) -> list[Jso
 
 
 def main() -> int:
+    import transformers
+    from transformers import AutoTokenizer
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument("--model", default="llm")
@@ -1148,10 +1156,13 @@ def main() -> int:
     parser.add_argument("--label", required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--runtime-identity", required=True)
+    parser.add_argument("--runtime-contract", type=Path, required=True)
     parser.add_argument("--instance", required=True)
     parser.add_argument("--gpu-count", type=int, required=True)
+    parser.add_argument("--tensor-parallel-size", type=int, required=True)
     parser.add_argument("--model-path", required=True)
     parser.add_argument("--tokenizer-path", required=True)
+    parser.add_argument("--run-id", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--fail-fast", action="store_true")
     args = parser.parse_args()
@@ -1163,11 +1174,41 @@ def main() -> int:
         parser.error("quality gate requires truncation_tokens=32768")
     if args.gpu_count <= 0:
         parser.error("gpu-count must be positive")
+    if args.tensor_parallel_size <= 0:
+        parser.error("tensor-parallel-size must be positive")
+    if not runtime_contract.is_git_revision(args.source_revision):
+        parser.error("source-revision must be a fixed Git object id")
     if args.allow_bare_engine_n2_skip and args.endpoint_mode != "direct":
         parser.error("n=2 skip is only valid for direct bare-engine runs")
 
     manifest, manifest_sha = _load_manifest(args.manifest)
     selected = _selected_cases(manifest, args.tier, args.case)
+    expected_runtime = {
+        "source_revision": args.source_revision,
+        "runtime_identity": args.runtime_identity,
+        "instance": args.instance,
+        "gpu_count": args.gpu_count,
+        "tensor_parallel_size": args.tensor_parallel_size,
+        "max_model_len": args.max_model_len,
+        "model_path": args.model_path,
+        "tokenizer_path": args.tokenizer_path,
+        "served_model_name": args.model,
+    }
+    try:
+        run_contract, run_contract_sha = runtime_contract.load_runtime_contract(
+            args.runtime_contract,
+            expected_runtime,
+            require_cache_trace=True,
+        )
+    except runtime_contract.RuntimeContractError as error:
+        parser.error(str(error))
+    tokenizer_path = Path(args.tokenizer_path)
+    if not tokenizer_path.is_dir():
+        parser.error("tokenizer-path must be a local directory")
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.tokenizer_path, trust_remote_code=True, local_files_only=True)
+    tokenizer_metadata = exact_prompt.tokenizer_identity(
+        tokenizer_path, tokenizer)
     client = Client(args.base)
     config = RunConfig(args)
     results = []
@@ -1178,6 +1219,8 @@ def main() -> int:
         "quality_run_eligible_for_baseline": False,
         "promotion_authorized": False,
         "label": args.label,
+        "run_id_sha256": hashlib.sha256(
+            args.run_id.encode("utf-8")).hexdigest(),
         "created_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
         "manifest": {
             "path_name": args.manifest.name,
@@ -1188,15 +1231,34 @@ def main() -> int:
         "runtime": {
             "source_revision": args.source_revision,
             "runtime_identity": args.runtime_identity,
+            "runtime_overlay_sha256": run_contract[
+                "runtime_overlay_sha256"],
+            "service_command_sha256": runtime_contract.sha256_json(
+                run_contract["command"]),
+            "service_env_sha256": runtime_contract.sha256_json(
+                run_contract["environment"]),
             "instance": args.instance,
             "gpu_count": args.gpu_count,
+            "tensor_parallel_size": args.tensor_parallel_size,
             "model_path": args.model_path,
             "tokenizer_path": args.tokenizer_path,
             "max_model_len": args.max_model_len,
             "model": args.model,
             "endpoint_mode": args.endpoint_mode,
             "allow_bare_engine_n2_skip": args.allow_bare_engine_n2_skip,
+            "cache_trace_v4_attested": run_contract[
+                "cache_trace_enabled"],
         },
+        "runtime_contract": {
+            "sha256": run_contract_sha,
+            "contract": run_contract,
+        },
+        "generator": {
+            "runner_sha256": hashlib.sha256(
+                Path(__file__).read_bytes()).hexdigest(),
+            "transformers_version": transformers.__version__,
+        },
+        "tokenizer": tokenizer_metadata,
         "selection": {
             "tier": args.tier,
             "explicit_cases": args.case,
@@ -1303,6 +1365,8 @@ def main() -> int:
         and args.tier == "extended"
         and not args.case
         and len(results) == 53
+        and args.gpu_count == 4
+        and args.tensor_parallel_size == 4
     )
     report["summary"] = {
         "passed": passed,

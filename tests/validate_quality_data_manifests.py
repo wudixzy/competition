@@ -40,6 +40,21 @@ REQUIRED_CAPABILITIES = {
     "large_tools_schema", "long_tool_result", "reasoning", "multimodal",
     "capacity",
 }
+EXPECTED_GENERATED_ASSETS = {
+    "red_png_data_url_sha256": (
+        "49571191557f87f03b1f83e2f233241df962dae58e0604fc1c1c7d7d51c60da4"),
+    "blue_png_data_url_sha256": (
+        "57d7214b7255958657b84ae8922a1c886b4933cbbd0242084ec0cdb5eb0d9d55"),
+    "large_tools_65k_sha256": (
+        "0a2f2730ca84ad390766666e1f4cb622fe9f1030e21e89529375ddc469877ac8"),
+    "large_tools_235k_sha256": (
+        "846f986c5cd8d376fa41cb73040fe2937ed6822ce356f87b5df73ac174d4ee14"),
+    "fetch_record_tool_sha256": (
+        "f3da291816c2a09bfd5ca73709a678da32fc1b423ffdb4626c462f65e9ec11f4"),
+}
+EXPECTED_MATRIX_SHA256 = (
+    "3217ec047f7b78af6747269c3f85baed6bfdd86c6527aca6335dbfa7d9f0452b"
+)
 
 
 def _sha256(path: Path) -> str:
@@ -133,8 +148,8 @@ def validate_matrix(value: Any) -> list[str]:
     reasons = []
     if not isinstance(value, dict):
         return ["matrix root must be an object"]
-    if (value.get("schema") != "bi100-long-context-quality-matrix-v1"
-            or value.get("version") != 1
+    if (value.get("schema") != "bi100-long-context-quality-matrix-v2"
+            or value.get("version") != 2
             or value.get("seed") != 20260724):
         reasons.append("matrix schema, version, or seed is invalid")
     if (value.get("max_model_len") != 262144
@@ -142,6 +157,48 @@ def validate_matrix(value: Any) -> list[str]:
             or value.get("contains_raw_requests") is not False
             or value.get("promotion_tier") != "extended"):
         reasons.append("matrix global contract is invalid")
+    expected_provenance = {
+        "kind": "deterministic_project_generated",
+        "author_or_org": "BI100 competition project",
+        "license": "project-internal",
+        "redistribution_allowed": False,
+        "contains_external_dataset_rows": False,
+        "contains_personal_or_secret_data": False,
+    }
+    if value.get("provenance") != expected_provenance:
+        reasons.append("matrix provenance contract is invalid")
+    generator = value.get("generator") or {}
+    if (generator.get("id") != "bi100-long-context-quality-generator"
+            or generator.get("version") != 2
+            or generator.get("runner") != "tests/long_context_quality_api.py"
+            or generator.get("exact_prompt_module")
+            != "tests/exact_chat_prompt.py"
+            or not isinstance(generator.get("construction"), str)
+            or not generator["construction"]):
+        reasons.append("matrix generator contract is invalid")
+    expected_tokenization = {
+        "text_cases": "server_exact_post_chat_template_tokens",
+        "multimodal_cases": (
+            "local_post_chat_template_tokens_plus_server_vision_expansion"),
+        "runtime_tokenizer_artifact_sha256_required": True,
+        "runtime_chat_template_sha256_required": True,
+        "chat_template_kwargs_mode_required": True,
+    }
+    if value.get("tokenization_contract") != expected_tokenization:
+        reasons.append("matrix tokenization contract is invalid")
+    expected_cache_trace = {
+        "version": 4,
+        "required_for_multimodal_isolation": True,
+        "same_image_prompt_chain_must_match": True,
+        "different_image_first_prompt_hash_must_differ": True,
+        "contains_raw_tokens_or_media": False,
+    }
+    if value.get("cache_trace_contract") != expected_cache_trace:
+        reasons.append("matrix cache trace contract is invalid")
+    if value.get("generated_assets") != EXPECTED_GENERATED_ASSETS:
+        reasons.append("matrix generated asset identities differ")
+    if value.get("capacity_prompt_boundaries") != [261887, 261888]:
+        reasons.append("matrix capacity boundaries differ")
     cases = value.get("cases")
     if not isinstance(cases, list) or len(cases) != 12:
         reasons.append("matrix must contain twelve cases")
@@ -195,6 +252,11 @@ def validate_matrix(value: Any) -> list[str]:
     agent = case_map.get("235k_agent_large_output_budget") or {}
     if agent.get("target_prompt_tokens") != 235000 or agent.get("max_tokens") != 8192:
         reasons.append("235K Agent case must retain the official large output budget")
+    serialized = json.dumps(value, ensure_ascii=True).lower()
+    if any(marker in serialized for marker in (
+            "begin openssh private key", "github_pat_", "ghp_",
+            "modelhub_access_token")):
+        reasons.append("matrix contains a credential marker")
     return reasons
 
 
@@ -205,7 +267,7 @@ def main() -> int:
         default=ROOT / "quality/source_provenance.v1.json")
     parser.add_argument(
         "--matrix", type=Path,
-        default=ROOT / "quality/long_context_matrix.v1.json")
+        default=ROOT / "quality/long_context_matrix.v2.json")
     parser.add_argument("--metrics-source", type=Path)
     parser.add_argument("--workload-source", type=Path)
     args = parser.parse_args()
@@ -213,6 +275,8 @@ def main() -> int:
     matrix = json.loads(args.matrix.read_text(encoding="utf-8"))
     reasons = validate_provenance(provenance)
     reasons.extend(validate_matrix(matrix))
+    if _sha256(args.matrix) != EXPECTED_MATRIX_SHA256:
+        reasons.append("long-context matrix SHA-256 differs")
     operator_checked = (
         args.metrics_source is not None and args.workload_source is not None)
     if (args.metrics_source is None) != (args.workload_source is None):

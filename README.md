@@ -2,6 +2,8 @@
 
 协作交接、远端阻塞点、最新验证结果和下一步建议见
 [`docs/HANDOFF_SUMMARY.md`](docs/HANDOFF_SUMMARY.md)。
+模型能力、缓存正确性和长上下文非回退门禁见
+[`docs/QUALITY_NON_REGRESSION_GATE_20260724.md`](docs/QUALITY_NON_REGRESSION_GATE_20260724.md)。
 
 自 2026-07-20 起，天垓100 v1.2.3 基础镜像必须使用
 `harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3`。
@@ -78,7 +80,8 @@ python tests/test_submission_preflight_unit.py
 
 `submission_preflight.py` 对根目录制品、固定 YAML argv/env、离线 wheel
 size/SHA256、10 个预编译 CoreX 扩展的集合/大小/SHA256、关键文件 LF 换行、
-全部 shell 语法和 Python 语法执行统一 RC 门禁；任何检查失败都返回非 0，禁止提交。
+全部 shell/Python 语法，以及私钥、`.env` 和 raw 长上下文响应制品执行统一 RC
+门禁；任何检查失败都返回非 0，禁止提交。
 
 M1-31 引入稳定 SHA-256 前缀键和 scheduler-owned GDN 状态动作协议。M1-32 的严格
 同请求 TP4 A/B 中，`admission64/direct` 将有效命中从 49.93% 提高到 61.07%、代理
@@ -152,9 +155,11 @@ python tests/bench_perf.py --base http://127.0.0.1:8000 \
   --max-tokens 64 --prompt-salt fixed-contract --out bench-fixed.json
 python tests/prefix_cache_stress.py --base http://127.0.0.1:8000 \
   --eviction-count 17 --json-out prefix-cache-stress.json
-python tests/long_context_api.py --base http://127.0.0.1:8000 \
-  --target-prompt-tokens 99500 --output-dir long-context-artifacts
 ```
+
+完整的 53 项功能质量门禁和 512/4K/32K/65K/131K/235K/262144 边界门禁
+必须使用冻结 runtime contract，并在每组前重启服务和清空缓存。运行命令见
+[`docs/QUALITY_NON_REGRESSION_GATE_20260724.md`](docs/QUALITY_NON_REGRESSION_GATE_20260724.md)。
 
 M1-32 的固定基线矩阵完成后，可使用
 `scripts/run_m1_32_remaining_gates.sh` 顺序执行 direct 长上下文和 aligned 正确性
@@ -175,13 +180,15 @@ Output TPS P10、Input TPS、Cache TPS、缓存命中率和加权分。
 验证 A/B/A/B 交错会话隔离，并以 17 个不同前缀覆盖 GDN checkpoint LRU 的驱逐、
 安全重算和刷新后再次命中。
 
-`long_context_api.py` 精确构造 99,500-token chat prompt，在固定 100K 合同边界内
-验证首次 prefill、近全量 prefix hit、API usage 和两次响应等价性。默认
+`long_context_api.py` 现在只作为兼容旧实验脚本的诊断门禁，使用真实 tokenizer
+token ID 反向构造并重新经过 chat template 复核；其报告始终保持
+`overall_promotion_authorized=false`。默认
 `--equivalence-mode exact` 比较 cold/warm；235K direct 门禁可使用
 `--equivalence-mode warm-repeat` 发送第三次请求，只允许 cold/warm 分叉，但要求两次
 warm 输出一致且所有 JSON 数值有限。
 GDN state 需要按 chunk 分阶段恢复；`cached_tokens` 会累计每阶段实际跳过的 token，
-而不是只报告第一个 8,176-token checkpoint。
+而不是只报告第一个 8,176-token checkpoint。正式能力晋升必须使用完整的
+`long_context_quality_api.py` 矩阵和 CoreX baseline comparator。
 
 BI100 预启动检查
 
