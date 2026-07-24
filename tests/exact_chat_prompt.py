@@ -12,6 +12,7 @@ from typing import Any, Callable
 Json = dict[str, Any]
 Recipe = Callable[[str], tuple[list[Json], list[Json] | None]]
 TEMPLATE_KWARG_MODES = ("direct", "nested")
+MAX_FILLER_SOURCE_VARIANTS = 16
 
 
 class PromptConstructionError(RuntimeError):
@@ -127,6 +128,12 @@ def _filler_source(seed: int, namespace: str) -> str:
     return "".join(lines)
 
 
+def _variant_namespace(namespace: str, variant: int) -> str:
+    _require(0 <= variant < MAX_FILLER_SOURCE_VARIANTS,
+             "filler source variant is outside the fixed search range")
+    return namespace if variant == 0 else f"{namespace}:v{variant}"
+
+
 def fit_exact_chat_prompt(
     tokenizer: Any,
     target_tokens: int,
@@ -151,49 +158,57 @@ def fit_exact_chat_prompt(
     _require(fixed_tokens <= target_tokens,
              "fixed request structure exceeds target token count")
 
-    source_text = _filler_source(seed, namespace)
-    source_ids = _text_token_ids(tokenizer, source_text)
-    _require(bool(source_ids), "deterministic filler produced no tokens")
-
-    def materialize(requested_ids: int) -> tuple[int, list[Json],
-                                                 list[Json] | None, str,
-                                                 list[int]]:
-        _require(requested_ids >= 0,
-                 "requested filler token count became negative")
-        repeats = ((requested_ids + len(source_ids) - 1) // len(source_ids)
-                   if requested_ids else 0)
-        ids = (source_ids * repeats)[:requested_ids]
-        filler = _decode_token_ids(tokenizer, ids)
-        messages, tools = recipe(filler)
-        rendered_ids = chat_template_token_ids(
-            tokenizer,
-            messages,
-            tools=tools,
-            thinking=thinking,
-            template_kwargs_mode=template_kwargs_mode,
-        )
-        return len(rendered_ids), messages, tools, filler, rendered_ids
-
-    requested = target_tokens - fixed_tokens
-    closest: tuple[int, int] | None = None
-    seen = set()
+    initial_requested = target_tokens - fixed_tokens
+    closest_delta: int | None = None
     attempts = 0
-    for _ in range(12):
-        if requested in seen:
-            break
-        seen.add(requested)
-        attempts += 1
-        actual, messages, tools, filler, rendered_ids = materialize(requested)
-        delta = target_tokens - actual
-        if closest is None or abs(delta) < abs(closest[1]):
-            closest = (requested, delta)
-        if delta == 0:
+    for variant in range(MAX_FILLER_SOURCE_VARIANTS):
+        source_namespace = _variant_namespace(namespace, variant)
+        source_text = _filler_source(seed, source_namespace)
+        source_ids = _text_token_ids(tokenizer, source_text)
+        _require(bool(source_ids), "deterministic filler produced no tokens")
+
+        def materialize(requested_ids: int) -> tuple[
+                int, list[Json], list[Json] | None, str, list[int]]:
+            _require(requested_ids >= 0,
+                     "requested filler token count became negative")
+            repeats = (
+                (requested_ids + len(source_ids) - 1) // len(source_ids)
+                if requested_ids else 0)
+            ids = (source_ids * repeats)[:requested_ids]
+            filler = _decode_token_ids(tokenizer, ids)
+            messages, tools = recipe(filler)
+            rendered_ids = chat_template_token_ids(
+                tokenizer,
+                messages,
+                tools=tools,
+                thinking=thinking,
+                template_kwargs_mode=template_kwargs_mode,
+            )
+            return len(rendered_ids), messages, tools, filler, rendered_ids
+
+        def evaluate(requested_ids: int) -> tuple[
+                int, list[Json], list[Json] | None, str, list[int]]:
+            nonlocal attempts, closest_delta
+            attempts += 1
+            value = materialize(requested_ids)
+            delta = target_tokens - value[0]
+            if closest_delta is None or abs(delta) < abs(closest_delta):
+                closest_delta = delta
+            return value
+
+        def completed(
+            requested_ids: int,
+            value: tuple[int, list[Json], list[Json] | None, str, list[int]],
+        ) -> tuple[list[Json], list[Json] | None, Json] | None:
+            actual, messages, tools, filler, rendered_ids = value
+            if actual != target_tokens:
+                return None
             evidence = {
                 "schema": "bi100-exact-chat-prompt-v1",
                 "target_prompt_tokens": target_tokens,
                 "local_prompt_tokens": actual,
                 "fixed_prompt_tokens": fixed_tokens,
-                "filler_token_ids_requested": requested,
+                "filler_token_ids_requested": requested_ids,
                 "filler_text_sha256": hashlib.sha256(
                     filler.encode("utf-8")).hexdigest(),
                 "filler_source_sha256": hashlib.sha256(
@@ -206,42 +221,41 @@ def fit_exact_chat_prompt(
                 "attempts": attempts,
             }
             return messages, tools, evidence
-        requested = max(0, requested + delta)
 
-    assert closest is not None
-    closest_requested, closest_delta = closest
-    for offset in range(1, 17):
-        for candidate in (closest_requested - offset,
-                          closest_requested + offset):
-            if candidate < 0 or candidate in seen:
-                continue
-            seen.add(candidate)
-            attempts += 1
-            actual, messages, tools, filler, rendered_ids = materialize(candidate)
-            if actual == target_tokens:
-                evidence = {
-                    "schema": "bi100-exact-chat-prompt-v1",
-                    "target_prompt_tokens": target_tokens,
-                    "local_prompt_tokens": actual,
-                    "fixed_prompt_tokens": fixed_tokens,
-                    "filler_token_ids_requested": candidate,
-                    "filler_text_sha256": hashlib.sha256(
-                        filler.encode("utf-8")).hexdigest(),
-                    "filler_source_sha256": hashlib.sha256(
-                        source_text.encode("ascii")).hexdigest(),
-                    "rendered_prompt_token_ids_sha256": _sha256_json(
-                        rendered_ids),
-                    "messages_sha256": _sha256_json(messages),
-                    "tools_sha256": _sha256_json(tools),
-                    "thinking": thinking,
-                    "template_kwargs_mode": template_kwargs_mode,
-                    "attempts": attempts,
-                }
-                return messages, tools, evidence
+        requested = initial_requested
+        variant_closest: tuple[int, int] | None = None
+        seen = set()
+        for _ in range(12):
+            if requested in seen:
+                break
+            seen.add(requested)
+            value = evaluate(requested)
+            delta = target_tokens - value[0]
+            if variant_closest is None or abs(delta) < abs(variant_closest[1]):
+                variant_closest = (requested, delta)
+            result = completed(requested, value)
+            if result is not None:
+                return result
+            requested = max(0, requested + delta)
+
+        assert variant_closest is not None
+        closest_requested, _ = variant_closest
+        for offset in range(1, 17):
+            for candidate in (closest_requested - offset,
+                              closest_requested + offset):
+                if candidate < 0 or candidate in seen:
+                    continue
+                seen.add(candidate)
+                value = evaluate(candidate)
+                result = completed(candidate, value)
+                if result is not None:
+                    return result
+
+    assert closest_delta is not None
     raise PromptConstructionError(
         "exact prompt construction failed: "
         f"target={target_tokens} closest_delta={closest_delta} "
-        f"attempts={attempts}"
+        f"attempts={attempts} variants={MAX_FILLER_SOURCE_VARIANTS}"
     )
 
 

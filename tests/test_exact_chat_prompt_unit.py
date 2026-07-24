@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,13 @@ class CharacterTokenizer:
 class ConstantTemplateTokenizer(CharacterTokenizer):
     def apply_chat_template(self, messages, **kwargs):
         return [1, 2, 3]
+
+
+class DiscreteGapTokenizer(CharacterTokenizer):
+    def apply_chat_template(self, messages, **kwargs):
+        filler = messages[0]["content"]
+        multiplier = 1 if "y" in filler else 2
+        return [1] * (4 + multiplier * len(filler))
 
 
 class ExactChatPromptTest(unittest.TestCase):
@@ -91,6 +99,34 @@ class ExactChatPromptTest(unittest.TestCase):
                 seed=1,
                 namespace="unreachable",
             )
+
+    def test_deterministic_source_variant_crosses_token_count_gap(self):
+        tokenizer = DiscreteGapTokenizer()
+
+        def source(_seed, namespace):
+            character = "y" if namespace.endswith(":v2") else "x"
+            return character * 128
+
+        with mock.patch.object(MODULE, "_filler_source", side_effect=source):
+            first = MODULE.fit_exact_chat_prompt(
+                tokenizer,
+                11,
+                lambda filler: (
+                    [{"role": "user", "content": filler}], None),
+                seed=20260724,
+                namespace="gap",
+            )
+            second = MODULE.fit_exact_chat_prompt(
+                tokenizer,
+                11,
+                lambda filler: (
+                    [{"role": "user", "content": filler}], None),
+                seed=20260724,
+                namespace="gap",
+            )
+        self.assertEqual(first, second)
+        self.assertEqual(first[2]["local_prompt_tokens"], 11)
+        self.assertGreater(first[2]["attempts"], 2)
 
     def test_tokenizer_identity_hashes_only_frozen_artifacts(self):
         tokenizer = CharacterTokenizer()
