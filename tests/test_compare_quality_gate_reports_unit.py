@@ -56,6 +56,8 @@ def make_report(label: str) -> dict:
             completion_tokens = [1]
         if case_id in ("tool_calling", "function_calling"):
             facts["tool_calls"] = 1
+            facts["tool_choice_mode"] = (
+                "auto" if case_id == "tool_calling" else "named")
             finish_reasons = ["tool_calls"]
         if case_id == "reasoning":
             facts["reasoning_present"] = True

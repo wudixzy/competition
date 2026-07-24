@@ -705,8 +705,9 @@ class OpenAIServingChat(OpenAIServing):
                             index=i,
                             delta=delta_message,
                             logprobs=logprobs,
-                            finish_reason=output.finish_reason
-                            if not auto_tools_called else "tool_calls",
+                            finish_reason=("tool_calls" if (
+                                auto_tools_called or tool_choice_function_name)
+                                else output.finish_reason),
                             stop_reason=output.stop_reason)
                         chunk = ChatCompletionStreamResponse(
                             id=request_id,
@@ -878,6 +879,8 @@ class OpenAIServingChat(OpenAIServing):
                     output.text, request)
                 output_text = extracted or ""
 
+            named_tool_called = False
+
             # if auto tools are not enabled, and a named tool choice using
             #   outlines is not being used
             if (not self.enable_auto_tools
@@ -892,6 +895,7 @@ class OpenAIServingChat(OpenAIServing):
             elif request.tool_choice and type(
                     request.tool_choice) is ChatCompletionNamedToolChoiceParam:
 
+                named_tool_called = True
                 message = ChatMessage(
                     role=role,
                     reasoning_content=reasoning_text,
@@ -951,7 +955,8 @@ class OpenAIServingChat(OpenAIServing):
                 index=output.index,
                 message=message,
                 logprobs=logprobs,
-                finish_reason="tool_calls" if auto_tools_called else
+                finish_reason="tool_calls" if (
+                    auto_tools_called or named_tool_called) else
                 output.finish_reason if output.finish_reason else "stop",
                 stop_reason=output.stop_reason)
             choices.append(choice_data)

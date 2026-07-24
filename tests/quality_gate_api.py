@@ -586,18 +586,40 @@ def _streaming_usage(client: Client, config: RunConfig) -> Json:
 
 def _forced_tool(client: Client, config: RunConfig) -> Json:
     payload = _base_payload("调用 get_weather 查询北京天气。", max_tokens=128)
-    payload.pop("thinking", None)
     payload["tools"] = _weather_tool()
     payload["tool_choice"] = {
         "type": "function", "function": {"name": "get_weather"},
     }
+    return _weather_tool_case(client, payload, "named")
+
+
+def _auto_tool(client: Client, config: RunConfig) -> Json:
+    payload = _base_payload("调用 get_weather 查询北京天气。", max_tokens=128)
+    payload["tools"] = _weather_tool()
+    payload["tool_choice"] = "auto"
+    return _weather_tool_case(client, payload, "auto")
+
+
+def _weather_tool_case(client: Client, payload: Json, mode: str) -> Json:
     result = client.post(payload)
     data = _expect_200(result)
     calls = _normalized_tool_calls(_message(data))
-    require(bool(calls), "forced tool call is empty")
-    require(calls[0]["name"] == "get_weather", "forced tool name differs")
+    require(bool(calls), "weather tool call is empty")
+    require(calls[0]["name"] == "get_weather", "weather tool name differs")
+    arguments = calls[0]["arguments"]
+    require(isinstance(arguments, dict), "weather arguments are not an object")
+    city = arguments.get("city")
+    require(isinstance(city, str) and (
+        "北京" in city or "beijing" in city.lower()),
+        "weather city argument is incorrect")
+    finish = (data.get("choices") or [{}])[0].get("finish_reason")
+    require(finish == "tool_calls", "tool response did not finish as tool_calls")
     return _observation([result], [_normalized_response(data)], facts={
-        "tool_calls": len(calls), "arguments_valid_json": True,
+        "tool_calls": len(calls),
+        "arguments_valid_json": True,
+        "argument_semantics_valid": True,
+        "finish_reason_tool_calls": True,
+        "tool_choice_mode": mode,
     })
 
 
@@ -718,7 +740,7 @@ def _prefix_cache(client: Client, config: RunConfig) -> Json:
 
 
 def _reasoning_split(client: Client, config: RunConfig) -> Json:
-    payload = _base_payload("请思考后回答：6 乘以 7 等于多少？", max_tokens=128)
+    payload = _base_payload("请思考后回答：6 乘以 7 等于多少？", max_tokens=512)
     payload["thinking"] = True
     result = client.post(payload)
     data = _expect_200(result)
@@ -726,8 +748,11 @@ def _reasoning_split(client: Client, config: RunConfig) -> Json:
     require(bool(_reasoning(message).strip()), "reasoning_content is empty")
     require(isinstance(message.get("content"), str)
             and bool(message["content"].strip()), "final content is empty")
+    require("42" in message["content"], "final reasoning answer is incorrect")
     return _observation([result], [_normalized_response(data)], facts={
-        "reasoning_content_nonempty": True, "content_nonempty": True,
+        "reasoning_content_nonempty": True,
+        "content_nonempty": True,
+        "final_answer_rule_passed": True,
     })
 
 
@@ -1019,7 +1044,7 @@ def _handlers() -> dict[str, Handler]:
     handlers: dict[str, Handler] = {
         "basic_chat": _basic_chat,
         "streaming_usage": _streaming_usage,
-        "tool_calling": _forced_tool,
+        "tool_calling": _auto_tool,
         "reasoning": _reasoning_case,
         "multimodal_input": lambda c, r: _image_case(
             c, r, "multimodal-input", (255, 0, 0), (0, 0, 255)),

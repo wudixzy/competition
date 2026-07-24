@@ -58,8 +58,14 @@ TRUE_FACTS = {
         "completion_tokens_positive", "ten_distinct_color_lines_exact",
         "incremental_events_observed",
     ),
-    "tool_calling": ("arguments_valid_json",),
-    "function_calling": ("arguments_valid_json",),
+    "tool_calling": (
+        "arguments_valid_json", "argument_semantics_valid",
+        "finish_reason_tool_calls",
+    ),
+    "function_calling": (
+        "arguments_valid_json", "argument_semantics_valid",
+        "finish_reason_tool_calls",
+    ),
     "reasoning": ("answer_rule_passed",),
     "multimodal_input": (
         "content_length_gt_15", "red_identified", "blue_identified",
@@ -77,6 +83,7 @@ TRUE_FACTS = {
     ),
     "reasoning_content_split": (
         "reasoning_content_nonempty", "content_nonempty",
+        "final_answer_rule_passed",
     ),
     "max_tokens_unset": ("natural_stop",),
     "max_tokens_1": ("completion_within_limit", "finish_reason_valid"),
@@ -426,6 +433,12 @@ def _validate_case_contract(case: Json, report: Json, label: str) -> list[str]:
                 or isinstance(facts.get("tool_calls"), bool)
                 or facts["tool_calls"] <= 0):
             reasons.append(f"{label}: tool call count is not positive")
+        expected_mode = {
+            "tool_calling": "auto",
+            "function_calling": "named",
+        }[case_id]
+        if facts.get("tool_choice_mode") != expected_mode:
+            reasons.append(f"{label}: tool choice mode differs")
 
     thinking_expected = {
         "thinking_disabled_top_level": (False, False),

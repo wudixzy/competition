@@ -62,6 +62,16 @@ class ServingChatUnitTest(unittest.TestCase):
     def test_tool_arguments_none_defaults_to_empty_object(self):
         self.assertEqual(self.serialize(None), "{}")
 
+    def test_named_tool_calls_use_tool_finish_reason(self):
+        self.assertIn("named_tool_called = False", SERVING_CHAT_SOURCE)
+        self.assertIn("named_tool_called = True", SERVING_CHAT_SOURCE)
+        self.assertIn(
+            "auto_tools_called or named_tool_called", SERVING_CHAT_SOURCE)
+        self.assertIn(
+            "auto_tools_called or tool_choice_function_name",
+            SERVING_CHAT_SOURCE,
+        )
+
     def test_empty_messages_are_rejected_before_async_work(self):
         guard = 'if not request.messages:'
         guard_pos = SERVING_CHAT_SOURCE.index(guard)

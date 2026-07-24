@@ -65,6 +65,43 @@ class ResponseClient:
         }
 
 
+class ToolClient:
+
+    def __init__(self, city="北京"):
+        self.city = city
+        self.payloads = []
+
+    def post(self, payload, timeout=None):
+        self.payloads.append(payload)
+        return 200, {
+            "id": "chatcmpl-tool-test",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "llm",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call-test",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": json.dumps({"city": self.city}),
+                        },
+                    }],
+                },
+            }],
+            "usage": {
+                "prompt_tokens": 32,
+                "completion_tokens": 8,
+                "total_tokens": 40,
+            },
+        }
+
+
 class QualityGateApiTest(unittest.TestCase):
 
     @classmethod
@@ -110,6 +147,23 @@ class QualityGateApiTest(unittest.TestCase):
         self.assertEqual(MODULE._normalized_tool_calls(message), [{
             "name": "get_weather", "arguments": {"city": "北京"},
         }])
+
+    def test_auto_and_named_tool_cases_preserve_disabled_thinking(self):
+        named = ToolClient()
+        named_observation = MODULE._forced_tool(named, object())
+        self.assertFalse(named.payloads[0]["thinking"])
+        self.assertEqual(
+            named_observation["facts"]["tool_choice_mode"], "named")
+
+        auto = ToolClient()
+        auto_observation = MODULE._auto_tool(auto, object())
+        self.assertFalse(auto.payloads[0]["thinking"])
+        self.assertEqual(auto.payloads[0]["tool_choice"], "auto")
+        self.assertEqual(
+            auto_observation["facts"]["tool_choice_mode"], "auto")
+
+        with self.assertRaisesRegex(MODULE.CaseFailure, "city argument"):
+            MODULE._auto_tool(ToolClient(city="上海"), object())
 
     def test_observation_does_not_retain_raw_semantic_value(self):
         secret = "raw-model-output-must-not-be-retained"
