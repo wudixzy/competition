@@ -165,6 +165,8 @@ class CompareHybridKvAccountingAbTest(unittest.TestCase):
             'bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID"',
             source,
         )
+        self.assertIn("ACTIVE_PGID=$ACTIVE_PID", source)
+        self.assertIn("wait_for_port_free\n        cleanup_rc=$?", source)
         self.assertIn('printf \'%s\\n\' "$cleanup_rc"', source)
         self.assertIn("run_preflight after_legacy", source)
         self.assertIn("run_preflight after_candidate", source)

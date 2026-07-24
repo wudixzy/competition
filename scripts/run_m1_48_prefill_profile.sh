@@ -154,7 +154,9 @@ stop_service() {
     if [[ -n "$ACTIVE_PGID" ]]; then
         bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" || return $?
     elif [[ -n "$ACTIVE_PID" ]]; then
-        wait "$ACTIVE_PID" 2>/dev/null || true
+        kill -TERM "$ACTIVE_PID" 2>/dev/null || true
+        echo "service PID $ACTIVE_PID has no verified process group" >&2
+        return 2
     fi
     ACTIVE_PID=""
     ACTIVE_PGID=""
@@ -257,13 +259,15 @@ run_arm() {
     BI100_PROFILE="$profile_enabled" setsid "$ROOT/launch_service" \
         > "$output/server.log" 2>&1 < /dev/null &
     ACTIVE_PID=$!
+    ACTIVE_PGID=$ACTIVE_PID
     printf '%s\n' "$ACTIVE_PID" > "$output/server.pid"
+    local observed_pgid=""
     for _ in $(seq 1 20); do
-        ACTIVE_PGID=$(ps -o pgid= -p "$ACTIVE_PID" 2>/dev/null | tr -d ' ')
-        [[ -n "$ACTIVE_PGID" ]] && break
+        observed_pgid=$(ps -o pgid= -p "$ACTIVE_PID" 2>/dev/null | tr -d ' ')
+        [[ -n "$observed_pgid" ]] && break
         sleep 1
     done
-    if [[ -z "$ACTIVE_PGID" || "$ACTIVE_PGID" != "$ACTIVE_PID" ]]; then
+    if [[ -z "$observed_pgid" || "$observed_pgid" != "$ACTIVE_PGID" ]]; then
         echo "M1-48 $arm service did not enter an isolated process group" >&2
         return 1
     fi

@@ -115,7 +115,9 @@ stop_service() {
     if [[ -n "$ACTIVE_PGID" ]]; then
         bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" || return $?
     elif [[ -n "$ACTIVE_PID" ]]; then
-        wait "$ACTIVE_PID" 2>/dev/null || true
+        kill -TERM "$ACTIVE_PID" 2>/dev/null || true
+        echo "service PID $ACTIVE_PID has no verified process group" >&2
+        return 2
     fi
     ACTIVE_PID=""
     ACTIVE_PGID=""
@@ -193,13 +195,15 @@ run_preflight before_long
 wait_for_port_free
 setsid "$ROOT/launch_service" > "$RUN_ROOT/server.log" 2>&1 < /dev/null &
 ACTIVE_PID=$!
+ACTIVE_PGID=$ACTIVE_PID
 printf '%s\n' "$ACTIVE_PID" > "$RUN_ROOT/server.pid"
+OBSERVED_PGID=""
 for _ in $(seq 1 20); do
-    ACTIVE_PGID=$(ps -o pgid= -p "$ACTIVE_PID" 2>/dev/null | tr -d ' ')
-    [[ -n "$ACTIVE_PGID" ]] && break
+    OBSERVED_PGID=$(ps -o pgid= -p "$ACTIVE_PID" 2>/dev/null | tr -d ' ')
+    [[ -n "$OBSERVED_PGID" ]] && break
     sleep 1
 done
-if [[ -z "$ACTIVE_PGID" || "$ACTIVE_PGID" != "$ACTIVE_PID" ]]; then
+if [[ -z "$OBSERVED_PGID" || "$OBSERVED_PGID" != "$ACTIVE_PGID" ]]; then
     echo "service did not enter an isolated process group" >&2
     exit 1
 fi

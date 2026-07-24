@@ -13,10 +13,10 @@ bi100_process_group_count() {
     local table
     bi100_validate_pid "$pgid" || return 2
     [[ "$state" == live || "$state" == zombie ]] || return 2
-    table=$(ps -eo pgid=,stat= 2>/dev/null) || return 2
+    table=$(ps -eo pid=,pgid=,stat= 2>/dev/null) || return 2
     awk -v pgid="$pgid" -v state="$state" '
-        $1 == pgid {
-            zombie = substr($2, 1, 1) == "Z"
+        $2 == pgid {
+            zombie = substr($3, 1, 1) == "Z"
             if ((state == "zombie" && zombie) ||
                     (state == "live" && !zombie)) {
                 count++
@@ -24,6 +24,27 @@ bi100_process_group_count() {
         }
         END { print count + 0 }
     ' <<< "$table"
+}
+
+bi100_validate_process_group_leader() {
+    local pgid=$1
+    local leader_pid=$2
+    local table
+    local identity
+    local observed_pgid
+    local state
+    bi100_validate_pid "$pgid" || return 2
+    bi100_validate_pid "$leader_pid" || return 2
+    table=$(ps -eo pid=,pgid=,stat= 2>/dev/null) || return 2
+    identity=$(awk -v pid="$leader_pid" '$1 == pid { print $2, $3; exit }' \
+        <<< "$table")
+    [[ -z "$identity" ]] && return 0
+    read -r observed_pgid state <<< "$identity"
+    [[ "$state" == Z* ]] && return 0
+    if [[ "$observed_pgid" != "$pgid" ]]; then
+        echo "service leader $leader_pid moved from process group $pgid to $observed_pgid" >&2
+        return 1
+    fi
 }
 
 bi100_process_group_snapshot() {
@@ -60,6 +81,8 @@ bi100_stop_process_group() {
     bi100_validate_pid "$pgid" || return 2
     if [[ -n "$leader_pid" ]]; then
         bi100_validate_pid "$leader_pid" || return 2
+        bi100_validate_process_group_leader \
+            "$pgid" "$leader_pid" || return $?
     fi
 
     live_count=$(bi100_process_group_count "$pgid" live) || return 2
@@ -91,6 +114,8 @@ bi100_stop_process_group() {
     fi
 
     if [[ -n "$leader_pid" ]]; then
+        bi100_validate_process_group_leader \
+            "$pgid" "$leader_pid" || return $?
         wait "$leader_pid" 2>/dev/null || true
     fi
     live_count=$(bi100_process_group_count "$pgid" live) || return 2

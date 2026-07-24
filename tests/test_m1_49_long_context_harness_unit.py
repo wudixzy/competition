@@ -70,7 +70,7 @@ class M149LongContextHarnessTest(unittest.TestCase):
         )
         self.assertIn('kill -TERM -- "-$pgid"', self.cleanup)
         self.assertIn('kill -KILL -- "-$pgid"', self.cleanup)
-        self.assertIn('substr($2, 1, 1) == "Z"', self.cleanup)
+        self.assertIn('substr($3, 1, 1) == "Z"', self.cleanup)
         self.assertIn('printf \'%s\\n\' "$cleanup_rc"', self.source)
 
 
