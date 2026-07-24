@@ -343,6 +343,7 @@ run_gate profile_summary 300 \
     "$RUN_ROOT/profile/server.log" \
     --expected-prefill-tokens 235000 --expected-processes 4 \
     --expected-chunk-size 8192 --block-size 16 \
+    --num-attention-heads 16 \
     --control-service "$RUN_ROOT/control/service.json" \
     --profile-service "$RUN_ROOT/profile/service.json" \
     --out "$RUN_ROOT/profile_summary.json"

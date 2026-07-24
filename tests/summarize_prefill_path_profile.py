@@ -378,6 +378,7 @@ def _expected_dispatch_rows(
     context_len: int,
     query_len: int,
     block_size: int,
+    query_heads_per_rank: int,
 ) -> list[dict[str, Any]]:
     rows = []
     for segment_len, segment_context in _strict_segments(
@@ -390,7 +391,7 @@ def _expected_dispatch_rows(
             "kv_heads": 1,
             "name": "paged_attn.prefix_dispatch",
             "path": "pytorch",
-            "query_heads": 8,
+            "query_heads": query_heads_per_rank,
             "query_len": segment_len,
             "request_query_len": query_len,
         })
@@ -402,6 +403,7 @@ def _validate_forward_contract(
     rank: int,
     expected_geometry: list[tuple[int, int]],
     block_size: int,
+    query_heads_per_rank: int,
     reasons: list[str],
 ) -> None:
     if len(records) != len(expected_geometry):
@@ -458,7 +460,7 @@ def _validate_forward_contract(
             key=lambda row: json.dumps(row, sort_keys=True),
         )
         expected_counters = _expected_dispatch_rows(
-            expected[0], expected[1], block_size)
+            expected[0], expected[1], block_size, query_heads_per_rank)
         if observed_counters != expected_counters:
             reasons.append(
                 f"rank {rank} paged dispatch differs at offset {offset}")
@@ -511,11 +513,19 @@ def summarize(
     control_service: Path | None = None,
     expected_chunk_size: int = 8192,
     block_size: int = 16,
+    num_attention_heads: int = 16,
 ) -> dict[str, Any]:
     if expected_prefill_tokens <= 0:
         raise ValueError("expected_prefill_tokens must be positive")
     if expected_processes != 4:
         raise ValueError("M1-48 requires exact TP4 evidence")
+    if (not isinstance(num_attention_heads, int)
+            or isinstance(num_attention_heads, bool)
+            or num_attention_heads <= 0
+            or num_attention_heads % expected_processes != 0):
+        raise ValueError(
+            "num_attention_heads must be positive and divisible by TP size")
+    query_heads_per_rank = num_attention_heads // expected_processes
     if profile_service is None or control_service is None:
         raise ValueError("control and profile service reports are required")
 
@@ -568,7 +578,8 @@ def summarize(
     reasons = []
     for rank, records in selected.items():
         _validate_forward_contract(
-            records, rank, expected_geometry, block_size, reasons)
+            records, rank, expected_geometry, block_size,
+            query_heads_per_rank, reasons)
 
     forwards = _aligned_forwards(selected)
     regions, rank_spread = _mean_rank_regions(selected)
@@ -659,6 +670,8 @@ def summarize(
             "prefill_tokens": expected_prefill_tokens,
             "expected_chunk_size": expected_chunk_size,
             "block_size": block_size,
+            "num_attention_heads": num_attention_heads,
+            "query_heads_per_rank": query_heads_per_rank,
             "forward_count": len(forwards),
             "tp_ranks": sorted(selected),
             "control_ttft_s": control_ttft_s,
@@ -737,6 +750,7 @@ def main() -> int:
     parser.add_argument("--expected-processes", type=int, default=4)
     parser.add_argument("--expected-chunk-size", type=int, default=8192)
     parser.add_argument("--block-size", type=int, default=16)
+    parser.add_argument("--num-attention-heads", type=int, default=16)
     parser.add_argument("--control-service", type=Path, required=True)
     parser.add_argument("--profile-service", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
@@ -749,6 +763,7 @@ def main() -> int:
         args.control_service,
         args.expected_chunk_size,
         args.block_size,
+        args.num_attention_heads,
     )
     _write_atomic(args.out, report)
     print(json.dumps(report, indent=2, sort_keys=True))

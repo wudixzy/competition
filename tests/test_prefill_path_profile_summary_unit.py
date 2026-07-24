@@ -70,7 +70,7 @@ def _payload(
                 "kv_heads": 1,
                 "name": "paged_attn.prefix_dispatch",
                 "path": "pytorch",
-                "query_heads": 8,
+                "query_heads": 4,
                 "query_len": query_len,
                 "request_query_len": prefill,
             })
@@ -202,6 +202,8 @@ class PrefillPathProfileSummaryTest(unittest.TestCase):
         self.assertTrue(report["qualified_profile"], report)
         self.assertEqual(report["request"]["forward_count"], 2)
         self.assertEqual(report["request"]["tp_ranks"], [0, 1, 2, 3])
+        self.assertEqual(report["request"]["num_attention_heads"], 16)
+        self.assertEqual(report["request"]["query_heads_per_rank"], 4)
         self.assertAlmostEqual(
             report["full_attention"]["paged_share_of_model_work"], 0.30)
         self.assertAlmostEqual(
@@ -225,6 +227,32 @@ class PrefillPathProfileSummaryTest(unittest.TestCase):
             directory = Path(directory_text)
             with self.assertRaisesRegex(ValueError, "counter mismatch"):
                 self._summarize(directory, mismatch=True)
+
+    def test_attention_heads_must_divide_tensor_parallel_size(self):
+        with tempfile.TemporaryDirectory() as directory_text:
+            with self.assertRaisesRegex(
+                    ValueError, "divisible by TP size"):
+                self._summarize(
+                    Path(directory_text), num_attention_heads=15)
+
+    def test_dispatch_query_heads_must_match_model_geometry(self):
+        with tempfile.TemporaryDirectory() as directory_text:
+            directory = Path(directory_text)
+            log = self._write_log(directory)
+            text = log.read_text(encoding="utf-8").replace(
+                '"query_heads":4', '"query_heads":8').replace(
+                '"query_heads": 4', '"query_heads": 8')
+            log.write_text(text, encoding="utf-8")
+            control, profile = self._write_services(directory)
+            report = summarize(
+                log, 100, 4, profile, control,
+                expected_chunk_size=64, block_size=16,
+                num_attention_heads=16)
+
+        self.assertFalse(report["qualified_profile"], report)
+        self.assertTrue(any(
+            "paged dispatch differs" in reason
+            for reason in report["reasons"]), report)
 
     def test_extra_profile_request_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory_text:

@@ -39,6 +39,7 @@ class M148ProfileHarnessTest(unittest.TestCase):
         self.assertIn("run_arm control 0", self.source)
         self.assertIn("run_arm profile 1", self.source)
         self.assertIn('--run-id "$RUN_ID" --mode "$arm"', self.source)
+        self.assertIn("--num-attention-heads 16", self.source)
 
     def test_process_cleanup_and_gpu_leak_gates_are_mandatory(self):
         self.assertIn('setsid "$ROOT/launch_service"', self.source)

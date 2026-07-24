@@ -155,6 +155,8 @@ def _inputs():
             "prefill_tokens": 235000,
             "expected_chunk_size": 8192,
             "block_size": 16,
+            "num_attention_heads": 16,
+            "query_heads_per_rank": 4,
             "forward_count": 29,
             "tp_ranks": [0, 1, 2, 3],
             "profile_overhead_limit_fraction": 0.15,

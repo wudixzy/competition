@@ -269,6 +269,8 @@ def _validate_profile(
     if (request.get("prefill_tokens") != 235000
             or request.get("expected_chunk_size") != 8192
             or request.get("block_size") != 16
+            or request.get("num_attention_heads") != 16
+            or request.get("query_heads_per_rank") != 4
             or request.get("group_index") != 0
             or request.get("forward_count") != 29
             or request.get("tp_ranks") != [0, 1, 2, 3]
@@ -438,6 +440,8 @@ def qualify(
             "prefill_tokens": request.get("prefill_tokens"),
             "forward_count": request.get("forward_count"),
             "tp_ranks": request.get("tp_ranks"),
+            "num_attention_heads": request.get("num_attention_heads"),
+            "query_heads_per_rank": request.get("query_heads_per_rank"),
             "control_ttft_s": request.get("control_ttft_s"),
             "profile_ttft_s": request.get("profile_ttft_s"),
             "profile_overhead_fraction": request.get(
@@ -542,6 +546,7 @@ def main() -> int:
                 control_service=args.control_service,
                 expected_chunk_size=8192,
                 block_size=16,
+                num_attention_heads=16,
             ),
             prequalification_cleanup=(
                 sources["prequalification_cleanup"][0]),
