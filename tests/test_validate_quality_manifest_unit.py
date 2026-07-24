@@ -34,7 +34,10 @@ class QualityManifestTest(unittest.TestCase):
         )
 
     def test_operator_source_is_bound_when_available(self):
-        self.assertEqual(MODULE.validate_source(ROOT.parent / "指标集合"), [])
+        source = ROOT.parent / "指标集合"
+        if not source.is_file():
+            self.skipTest("external operator metric collection is unavailable")
+        self.assertEqual(MODULE.validate_source(source), [])
 
     def test_missing_case_fails(self):
         value = copy.deepcopy(self.value)
