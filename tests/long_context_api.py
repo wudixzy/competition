@@ -112,6 +112,7 @@ def main() -> int:
     parser.add_argument("--min-completion-tokens", type=int, default=0)
     parser.add_argument("--max-model-len", type=int, default=100000)
     parser.add_argument("--min-cached-tokens", type=int, default=98304)
+    parser.add_argument("--max-first-cached-tokens", type=int, default=0)
     parser.add_argument("--timeout-s", type=float, default=1800)
     parser.add_argument("--run-id", default=str(time.time_ns()))
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -130,6 +131,10 @@ def main() -> int:
     if not 0 <= args.min_completion_tokens <= args.max_tokens:
         parser.error(
             "--min-completion-tokens must be between zero and --max-tokens")
+    if not 0 <= args.max_first_cached_tokens < args.min_cached_tokens:
+        parser.error(
+            "--max-first-cached-tokens must be nonnegative and less than "
+            "--min-cached-tokens")
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_path, trust_remote_code=True, local_files_only=True)
@@ -158,6 +163,7 @@ def main() -> int:
         "target_prompt_tokens": args.target_prompt_tokens,
         "max_tokens": args.max_tokens,
         "min_cached_tokens": args.min_cached_tokens,
+        "max_first_cached_tokens": args.max_first_cached_tokens,
         "min_completion_tokens": args.min_completion_tokens,
         "equivalence_mode": args.equivalence_mode,
         "first": first_summary,
@@ -170,7 +176,10 @@ def main() -> int:
 
     assert first_summary["prompt_tokens"] == args.target_prompt_tokens, first_summary
     assert second_summary["prompt_tokens"] == args.target_prompt_tokens, second_summary
-    assert first_summary["cached_tokens"] == 0, first_summary
+    first_cached_tokens = first_summary["cached_tokens"]
+    assert (isinstance(first_cached_tokens, int)
+            and not isinstance(first_cached_tokens, bool)), first_summary
+    assert 0 <= first_cached_tokens <= args.max_first_cached_tokens, first_summary
     assert second_summary["cached_tokens"] >= args.min_cached_tokens, second_summary
     assert first_summary["completion_tokens"] >= args.min_completion_tokens, first_summary
     assert second_summary["completion_tokens"] >= args.min_completion_tokens, second_summary

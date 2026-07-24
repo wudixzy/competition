@@ -51,6 +51,10 @@ class M149LongContextHarnessTest(unittest.TestCase):
         self.assertIn("--target-prompt-tokens 235000 --max-tokens 1000", self.source)
         self.assertIn("--equivalence-mode warm-repeat", self.source)
         self.assertIn("--target-prompt-tokens 262000 --max-tokens 16", self.source)
+        self.assertGreaterEqual(
+            self.source.count("--max-first-cached-tokens 0"), 4)
+        self.assertEqual(
+            self.source.count("--max-first-cached-tokens 32"), 2)
         self.assertIn("multimodal_prefix_isolation_api.py", self.source)
         self.assertIn("qualify_multimodal_prefix_isolation.py", self.source)
         self.assertIn("qualify_m1_49_long_context.py", self.source)
@@ -72,6 +76,27 @@ class M149LongContextHarnessTest(unittest.TestCase):
         self.assertIn('kill -KILL -- "-$pgid"', self.cleanup)
         self.assertIn('substr($3, 1, 1) == "Z"', self.cleanup)
         self.assertIn('printf \'%s\\n\' "$cleanup_rc"', self.source)
+
+    def test_resume_mode_reuses_only_prequalified_passed_evidence(self):
+        self.assertIn("M1_49_LONG_RESUME_FROM", self.source)
+        self.assertIn('require_nonzero_rc "$RESUME_FROM/overall.rc"', self.source)
+        self.assertIn(
+            'require_nonzero_rc "$RESUME_FROM/long_262k_api.rc"',
+            self.source,
+        )
+        self.assertIn(
+            'require_zero_rc "$RESUME_FROM/${gate}.rc"', self.source)
+        self.assertIn(
+            'LONG_131K_INPUT="$RESUME_FROM/long_131k_exact/', self.source)
+        self.assertIn(
+            'LONG_235K_INPUT="$RESUME_FROM/long_235k_warm_repeat/',
+            self.source,
+        )
+        self.assertIn('SMOKE_REPORT="$RESUME_FROM/smoke.json"', self.source)
+        self.assertIn(
+            'MULTIMODAL_REPORT="$RESUME_FROM/multimodal_qualification.json"',
+            self.source,
+        )
 
 
 if __name__ == "__main__":

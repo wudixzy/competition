@@ -73,6 +73,7 @@ def qualify(
     target_prompt_tokens: int,
     max_tokens: int,
     minimum_cached_tokens: int,
+    maximum_first_cached_tokens: int,
     minimum_completion_tokens: int,
     equivalence_mode: str,
 ) -> dict[str, Any]:
@@ -83,12 +84,25 @@ def qualify(
         "target_prompt_tokens": target_prompt_tokens,
         "max_tokens": max_tokens,
         "min_cached_tokens": minimum_cached_tokens,
+        "max_first_cached_tokens": maximum_first_cached_tokens,
         "min_completion_tokens": minimum_completion_tokens,
         "equivalence_mode": equivalence_mode,
     }
     for field, expected in expected_contract.items():
-        if source.get(field) != expected:
+        actual = source.get(field)
+        if field == "max_first_cached_tokens" and field not in source:
+            actual = 0
+        if actual != expected:
             reasons.append(f"{field} must equal {expected!r}")
+
+    first_cache_bound_is_valid = (
+        _is_integer(maximum_first_cached_tokens)
+        and 0 <= maximum_first_cached_tokens < minimum_cached_tokens
+    )
+    if not first_cache_bound_is_valid:
+        reasons.append(
+            "maximum_first_cached_tokens must be nonnegative and less than "
+            "minimum_cached_tokens")
 
     first = _request(
         source.get("first"), "first", target_prompt_tokens, 0,
@@ -104,8 +118,12 @@ def qualify(
     elif equivalence_mode != "exact":
         reasons.append("equivalence_mode must be exact or warm-repeat")
 
-    if first is not None and first.get("cached_tokens") != 0:
-        reasons.append("first cached_tokens must equal zero")
+    if (first_cache_bound_is_valid and first is not None
+            and _is_integer(first.get("cached_tokens"))
+            and first["cached_tokens"] > maximum_first_cached_tokens):
+        reasons.append(
+            "first cached_tokens must not exceed "
+            f"{maximum_first_cached_tokens}")
     left, right = ((first, second) if equivalence_mode == "exact"
                    else (second, third))
     if left is not None and right is not None:
@@ -135,6 +153,7 @@ def main() -> int:
     parser.add_argument("--target-prompt-tokens", type=int, required=True)
     parser.add_argument("--max-tokens", type=int, required=True)
     parser.add_argument("--min-cached-tokens", type=int, required=True)
+    parser.add_argument("--max-first-cached-tokens", type=int, required=True)
     parser.add_argument("--min-completion-tokens", type=int, required=True)
     parser.add_argument(
         "--equivalence-mode", choices=("exact", "warm-repeat"), required=True)
@@ -146,6 +165,7 @@ def main() -> int:
         target_prompt_tokens=args.target_prompt_tokens,
         max_tokens=args.max_tokens,
         minimum_cached_tokens=args.min_cached_tokens,
+        maximum_first_cached_tokens=args.max_first_cached_tokens,
         minimum_completion_tokens=args.min_completion_tokens,
         equivalence_mode=args.equivalence_mode,
     )

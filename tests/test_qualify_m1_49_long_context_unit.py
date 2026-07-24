@@ -144,7 +144,10 @@ def _long_report(contract: dict) -> dict:
         "raw_prompt": "must not survive",
     }
     requests = {
-        "first": {**request, "cached_tokens": 0},
+        "first": {
+            **request,
+            "cached_tokens": contract["max_first_cached_tokens"],
+        },
         "second": dict(request),
     }
     if contract["equivalence_mode"] == "warm-repeat":
@@ -211,6 +214,28 @@ class M149LongContextQualificationTest(unittest.TestCase):
         self.assertFalse(report["qualified"])
         self.assertIn(
             "long_235k_warm_repeat contract differs from the fixed gate",
+            report["reasons"],
+        )
+
+    def test_262k_first_cache_over_fixed_bound_fails_closed(self):
+        inputs = _inputs()
+        requests = inputs["long_reports"]["long_262k_capacity"]["requests"]
+        requests["first"]["cached_tokens"] = 33
+        report = qualifier.qualify(**inputs)
+        self.assertFalse(report["qualified"])
+        self.assertIn(
+            "long_262k_capacity/first cached tokens are invalid",
+            report["reasons"],
+        )
+
+    def test_weakened_262k_first_cache_contract_fails_closed(self):
+        inputs = _inputs()
+        report_262k = inputs["long_reports"]["long_262k_capacity"]
+        report_262k["contract"]["max_first_cached_tokens"] = 64
+        report = qualifier.qualify(**inputs)
+        self.assertFalse(report["qualified"])
+        self.assertIn(
+            "long_262k_capacity contract differs from the fixed gate",
             report["reasons"],
         )
 

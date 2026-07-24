@@ -43,6 +43,7 @@ EXPECTED_LONG_CONTRACTS = {
         "target_prompt_tokens": 131_000,
         "max_tokens": 256,
         "min_cached_tokens": 130_992,
+        "max_first_cached_tokens": 0,
         "min_completion_tokens": 256,
         "equivalence_mode": "exact",
     },
@@ -50,6 +51,7 @@ EXPECTED_LONG_CONTRACTS = {
         "target_prompt_tokens": 235_000,
         "max_tokens": 1_000,
         "min_cached_tokens": 234_992,
+        "max_first_cached_tokens": 0,
         "min_completion_tokens": 1_000,
         "equivalence_mode": "warm-repeat",
     },
@@ -57,6 +59,7 @@ EXPECTED_LONG_CONTRACTS = {
         "target_prompt_tokens": 262_000,
         "max_tokens": 16,
         "min_cached_tokens": 261_984,
+        "max_first_cached_tokens": 32,
         "min_completion_tokens": 16,
         "equivalence_mode": "exact",
     },
@@ -288,10 +291,17 @@ def _validate_long_report(
         if record["prompt_tokens"] != contract["target_prompt_tokens"]:
             reasons.append(f"{name}/{request_name} prompt token count is invalid")
         cached = record["cached_tokens"]
-        minimum_cached = (
-            0 if request_name == "first" else contract["min_cached_tokens"])
-        if (not _is_integer(cached) or cached < minimum_cached
-                or (request_name == "first" and cached != 0)):
+        if request_name == "first":
+            cached_is_valid = (
+                _is_integer(cached)
+                and 0 <= cached <= contract["max_first_cached_tokens"]
+            )
+        else:
+            cached_is_valid = (
+                _is_integer(cached)
+                and cached >= contract["min_cached_tokens"]
+            )
+        if not cached_is_valid:
             reasons.append(f"{name}/{request_name} cached tokens are invalid")
         completion = record["completion_tokens"]
         if (not _is_integer(completion)

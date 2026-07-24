@@ -51,5 +51,12 @@ output equivalence, the selected dataset, final weighted score, or a submission
 default. `computility-run.yaml` remains unchanged until all downstream gates
 pass.
 
+The first downstream run subsequently passed 131K exact equivalence and 235K
+warm-repeat equivalence. Its two 262K requests also completed with identical
+outputs, but the client rejected a bounded 32-token cross-gate prefix hit. That
+test-only false negative and the isolated 262K recovery procedure are recorded
+in
+`docs/incidents/M1_49_262K_SHARED_PREFIX_FALSE_NEGATIVE_20260724.md`.
+
 Structured evidence:
 `docs/experiments/evidence/M1_49_TP4_HYBRID_KV_AB_20260724.json`.
