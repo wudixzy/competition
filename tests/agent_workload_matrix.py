@@ -13,6 +13,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+import quality_gate_api as quality_api
 import quality_runtime_contract as runtime_contract
 
 
@@ -20,7 +21,7 @@ Json = dict[str, Any]
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "quality/agent_workload_matrix.v1.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "d8759919b2577effa45264c12c8aa9fe912dbb4dd5929744d272bd054b5ddafb"
+    "962d19f51cfbeb3f414e62444a225029616ed547682e5a97219b0af98c8959ba"
 )
 REPORT_SCHEMA = "bi100-agent-workload-result-v1"
 REPORT_VERSION = 1
@@ -104,6 +105,17 @@ def post(base: str, payload: Json, timeout_s: float) -> tuple[Json, float]:
             f"HTTP {exc.code}; response_sha256={digest}") from exc
 
 
+def post_stream(
+    base: str,
+    payload: Json,
+    timeout_s: float,
+) -> tuple[int, Json, float]:
+    started = time.monotonic()
+    status, stream = quality_api.Client(base).stream(
+        payload, timeout=timeout_s)
+    return status, stream, time.monotonic() - started
+
+
 def parse_arguments(value: Any) -> Json:
     if isinstance(value, dict):
         return value
@@ -155,6 +167,39 @@ def normalize(response: Json, elapsed_s: float) -> Json:
     }
 
 
+def normalize_stream(status: int, stream: Json, elapsed_s: float) -> Json:
+    require(status == 200, "stream request did not return HTTP 200")
+    require(stream.get("done") == 1,
+            "stream must contain exactly one DONE event")
+    require(stream.get("usage_blocks") == 1,
+            "stream must contain exactly one final usage block")
+    require(isinstance(stream.get("chunks"), int) and stream["chunks"] >= 2,
+            "stream must contain at least two JSON chunks")
+    finish_reasons = stream.get("finish_reasons")
+    require(finish_reasons == ["tool_calls"],
+            "stream must finish exactly once as tool_calls")
+    response = {
+        "choices": [{
+            "finish_reason": "tool_calls",
+            "message": {
+                "content": stream.get("content"),
+                "reasoning_content": stream.get("reasoning_content"),
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": call.get("name"),
+                            "arguments": call.get("arguments"),
+                        },
+                    }
+                    for call in stream.get("tool_calls") or []
+                ],
+            },
+        }],
+        "usage": stream.get("usage"),
+    }
+    return normalize(response, elapsed_s)
+
+
 def base_payload(messages: list[Json], *, tools: list[Json] | None = None,
                  max_tokens: int = 128, thinking: Any = False) -> Json:
     payload: Json = {
@@ -180,6 +225,20 @@ def forced_case(name: str, prompt: str, expected_args: Json) -> Json:
         "expected_tool": name,
         "expected_args": expected_args,
     }
+
+
+def as_streaming(case: Json) -> Json:
+    value = dict(case)
+    value["payload"] = dict(case["payload"])
+    value["payload"].update({
+        "stream": True,
+        "stream_options": {
+            "include_usage": True,
+            "continuous_usage_stats": False,
+        },
+    })
+    value["stream"] = True
+    return value
 
 
 def build_cases() -> dict[str, Json]:
@@ -211,6 +270,20 @@ def build_cases() -> dict[str, Json]:
         "expected_tool": "terminal",
         "required_arg_keys": ["command"],
     }
+    cases["stream_forced_terminal"] = as_streaming(forced_case(
+        "terminal", "Run exactly: printf STREAM_NAMED_OK", {
+            "command": "printf STREAM_NAMED_OK",
+        }))
+    stream_auto_payload = base_payload([{
+        "role": "user",
+        "content": "Call terminal to run exactly: printf STREAM_AUTO_OK",
+    }], tools=CORE_TOOLS)
+    stream_auto_payload["tool_choice"] = "auto"
+    cases["stream_auto_terminal"] = as_streaming({
+        "payload": stream_auto_payload,
+        "expected_tool": "terminal",
+        "required_arg_keys": ["command"],
+    })
 
     roundtrip = base_payload([
         {"role": "user", "content": "Read /tmp/value.txt"},
@@ -452,10 +525,21 @@ def main() -> int:
     for name, case in build_cases().items():
         started = time.monotonic()
         try:
-            response, elapsed = post(
-                args.base, case["payload"], args.timeout_s)
-            result = normalize(response, elapsed)
+            if case.get("stream"):
+                status, stream, elapsed = post_stream(
+                    args.base, case["payload"], args.timeout_s)
+                result = normalize_stream(status, stream, elapsed)
+            else:
+                response, elapsed = post(
+                    args.base, case["payload"], args.timeout_s)
+                result = normalize(response, elapsed)
             facts = validate(case, result)
+            if case.get("stream"):
+                facts.update({
+                    "sse_contract_valid": True,
+                    "single_done_event": True,
+                    "single_final_usage_block": True,
+                })
             report["cases"].append({
                 "id": name,
                 "status": "pass",

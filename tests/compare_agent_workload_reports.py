@@ -231,7 +231,7 @@ def compare_reports(baseline: Any, candidate: Any) -> Json:
             })
             reasons.extend(f"{case_id}: {reason}" for reason in failures)
 
-    qualified = not reasons and len(case_results) == 9
+    qualified = not reasons and len(case_results) == len(manifest["cases"])
     return {
         "schema": SCHEMA,
         "version": VERSION,

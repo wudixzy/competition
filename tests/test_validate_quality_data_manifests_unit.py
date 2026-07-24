@@ -37,7 +37,7 @@ class QualityDataManifestTest(unittest.TestCase):
             MODULE.validate_agent_manifest(self.agent_matrix), [])
         self.assertEqual(len(self.provenance["sources"]), 7)
         self.assertEqual(len(self.matrix["cases"]), 12)
-        self.assertEqual(len(self.agent_matrix["cases"]), 9)
+        self.assertEqual(len(self.agent_matrix["cases"]), 11)
         self.assertEqual(
             hashlib.sha256((
                 ROOT / "quality/long_context_matrix.v2.json"

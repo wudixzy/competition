@@ -6,11 +6,11 @@
   "source_kind": "project_generated",
   "source_url": null,
   "license": "private project data",
-  "revision": "agent-workload-v1-seed-20260716",
+  "revision": "agent-workload-v1.1-seed-20260716",
   "generated_at_utc": "2026-07-24T00:00:00Z",
   "seed": 20260716,
   "split": "all",
-  "selection_rule": "all nine cases in manifest order",
+  "selection_rule": "all eleven cases in manifest order",
   "transformation": "deterministic OpenAI chat/tool payload construction in tests/agent_workload_matrix.py",
   "redistribution_allowed": false,
   "contains_external_dataset_rows": false,
@@ -41,6 +41,14 @@
     {
       "id": "auto_terminal",
       "goal": "automatic tool selection and valid JSON arguments"
+    },
+    {
+      "id": "stream_forced_terminal",
+      "goal": "streaming named tool choice, SSE framing, and final usage"
+    },
+    {
+      "id": "stream_auto_terminal",
+      "goal": "streaming automatic tool choice and assembled JSON arguments"
     },
     {
       "id": "tool_result_roundtrip",

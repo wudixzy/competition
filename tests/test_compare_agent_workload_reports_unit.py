@@ -58,6 +58,12 @@ def make_report(policy: str) -> dict:
     contract_sha = MODULE.runtime_contract.sha256_json(contract)
     cases = []
     for index, item in enumerate(manifest["cases"]):
+        tool_case = (
+            item["id"].startswith("forced_")
+            or item["id"].startswith("auto_")
+            or item["id"].startswith("stream_")
+            or item["id"] == "large_tool_schema"
+        )
         cases.append({
             "id": item["id"],
             "status": "pass",
@@ -65,11 +71,10 @@ def make_report(policy: str) -> dict:
             "error_sha256": None,
             "observation": {
                 "elapsed_s": 1.0,
-                "finish_reason": (
-                    "tool_calls" if index < 5 or index == 7 else "stop"),
+                "finish_reason": "tool_calls" if tool_case else "stop",
                 "content_chars": index,
                 "reasoning_chars": 0,
-                "tool_call_count": 1 if index < 5 or index == 7 else 0,
+                "tool_call_count": 1 if tool_case else 0,
                 "prompt_tokens": 100 + index,
                 "cached_tokens": 0,
                 "completion_tokens": 8,
@@ -89,7 +94,7 @@ def make_report(policy: str) -> dict:
             "path_name": workload.DEFAULT_MANIFEST.name,
             "sha256": manifest_sha,
             "revision": manifest["revision"],
-            "case_count": 9,
+            "case_count": len(manifest["cases"]),
         },
         "runtime": {
             "source_revision": contract["source_revision"],
@@ -116,7 +121,10 @@ def make_report(policy: str) -> dict:
             "contains_credentials": False,
         },
         "summary": {
-            "complete": True, "passed": 9, "failed": 0, "total": 9,
+            "complete": True,
+            "passed": len(manifest["cases"]),
+            "failed": 0,
+            "total": len(manifest["cases"]),
         },
         "cases": cases,
     }

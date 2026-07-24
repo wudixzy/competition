@@ -56,12 +56,13 @@ EXPECTED_MATRIX_SHA256 = (
     "3217ec047f7b78af6747269c3f85baed6bfdd86c6527aca6335dbfa7d9f0452b"
 )
 EXPECTED_AGENT_MATRIX_SHA256 = (
-    "d8759919b2577effa45264c12c8aa9fe912dbb4dd5929744d272bd054b5ddafb"
+    "962d19f51cfbeb3f414e62444a225029616ed547682e5a97219b0af98c8959ba"
 )
 EXPECTED_AGENT_CASES = [
     "forced_terminal", "forced_read", "forced_edit", "forced_web_search",
-    "auto_terminal", "tool_result_roundtrip", "long_history",
-    "large_tool_schema", "multiple_system",
+    "auto_terminal", "stream_forced_terminal", "stream_auto_terminal",
+    "tool_result_roundtrip", "long_history", "large_tool_schema",
+    "multiple_system",
 ]
 
 
@@ -275,7 +276,7 @@ def validate_agent_manifest(value: Any) -> list[str]:
     if (value.get("schema") != "bi100-agent-workload-manifest-v1"
             or value.get("version") != 1
             or value.get("seed") != 20260716
-            or value.get("revision") != "agent-workload-v1-seed-20260716"):
+            or value.get("revision") != "agent-workload-v1.1-seed-20260716"):
         reasons.append("Agent manifest schema, version, or revision is invalid")
     expected_privacy = {
         "contains_raw_requests": False,

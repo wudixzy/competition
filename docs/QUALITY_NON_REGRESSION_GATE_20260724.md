@@ -58,10 +58,10 @@ functional run executes all 53 rows. It still sends and validates the `n=2`
 request, but records the manifest's sole documented skip only when the fixed
 `--max-num-seqs 1` direct engine returns the exact normalized 400 response and
 the post-request health probe succeeds. No other skip is accepted. The same
-fresh service then executes the separate nine-case Agent compatibility matrix
-covering named and automatic tools, tool-role round trips, a 92-tool schema,
-long history, and multiple system messages. Its report retains only hashes,
-counts, usage, and validation facts.
+fresh service then executes the separate eleven-case Agent compatibility
+matrix covering named and automatic tools in both non-streaming and SSE modes,
+tool-role round trips, a 92-tool schema, long history, and multiple system
+messages. Its report retains only hashes, counts, usage, and validation facts.
 
 The overlay must be installed from the exact clean experiment commit. Use one
 overlay and one instance for all four A/B runs:

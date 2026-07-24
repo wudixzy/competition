@@ -20,7 +20,7 @@ class AgentWorkloadMatrixUnitTest(unittest.TestCase):
 
     def test_matrix_covers_agent_contracts(self):
         cases = MODULE.build_cases()
-        self.assertEqual(len(cases), 9)
+        self.assertEqual(len(cases), 11)
         self.assertEqual(
             cases["auto_terminal"]["expected_tool"], "terminal")
         self.assertEqual(
@@ -32,6 +32,11 @@ class AgentWorkloadMatrixUnitTest(unittest.TestCase):
                 message["role"]
                 for message in cases["tool_result_roundtrip"]["payload"]["messages"]
             })
+        for name in ("stream_forced_terminal", "stream_auto_terminal"):
+            self.assertTrue(cases[name]["stream"])
+            self.assertTrue(cases[name]["payload"]["stream"])
+            self.assertTrue(
+                cases[name]["payload"]["stream_options"]["include_usage"])
 
     def test_argument_parser_accepts_string_and_object(self):
         self.assertEqual(MODULE.parse_arguments('{"value": 7}'), {"value": 7})
@@ -64,7 +69,7 @@ class AgentWorkloadMatrixUnitTest(unittest.TestCase):
     def test_manifest_and_runtime_contract_are_bound(self):
         manifest, digest = MODULE.load_manifest(
             ROOT / "quality/agent_workload_matrix.v1.json")
-        self.assertEqual(len(manifest["cases"]), 9)
+        self.assertEqual(len(manifest["cases"]), 11)
         self.assertEqual(digest, MODULE.EXPECTED_MANIFEST_SHA256)
 
         runtime = MODULE.runtime_contract
@@ -158,6 +163,31 @@ class AgentWorkloadMatrixUnitTest(unittest.TestCase):
         facts = MODULE.validate(system_case, system_result)
         self.assertTrue(facts["primary_content_rule_passed"])
         self.assertTrue(facts["secondary_content_rule_passed"])
+
+    def test_stream_normalization_requires_complete_tool_sse(self):
+        stream = {
+            "chunks": 4,
+            "done": 1,
+            "usage_blocks": 1,
+            "finish_reasons": ["tool_calls"],
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [{
+                "name": "terminal",
+                "arguments": {"command": "printf STREAM_NAMED_OK"},
+            }],
+            "usage": {
+                "prompt_tokens": 20,
+                "completion_tokens": 5,
+                "total_tokens": 25,
+            },
+        }
+        result = MODULE.normalize_stream(200, stream, 1.0)
+        self.assertEqual(result["finish_reason"], "tool_calls")
+        self.assertEqual(result["tool_calls"][0]["name"], "terminal")
+        bad = dict(stream, finish_reasons=["stop"])
+        with self.assertRaisesRegex(AssertionError, "tool_calls"):
+            MODULE.normalize_stream(200, bad, 1.0)
 
 
 if __name__ == "__main__":
