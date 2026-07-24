@@ -1,0 +1,86 @@
+{
+  "schema": "bi100-candidate-lineage-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "repository_visibility_required": "private",
+  "lineage": {
+    "frozen_optimization_baseline": "a594c55b4d102f028d692e34e5a3ec0447f8c646",
+    "local_main": "7194b37dac7a5344e8b6d79a9bbb74339bf81a65",
+    "formal_quality_baseline_source": "62b8b83dccf3106e9a10ddabc016fb60ed19fc6e",
+    "m1_51_implementation_source": "69ac3da25e72df3ea7ccd5b2c7a1bf5981333a8c",
+    "m1_51_parent": "62b8b83dccf3106e9a10ddabc016fb60ed19fc6e",
+    "local_main_to_formal_baseline": {
+      "commits_ahead": 120,
+      "commits_behind": 0,
+      "changed_files": 232,
+      "insertions": 39682,
+      "deletions": 1358
+    }
+  },
+  "evidence_partitions": {
+    "platform_main_881": {
+      "path": "docs/experiments/evidence/PLATFORM_MAIN_REFERENCE_20260724.json",
+      "source_revision": null,
+      "runtime_overlay_sha256": null,
+      "attribution": "unbound-historical-reference-only",
+      "eligible_for_candidate_comparison": false
+    },
+    "formal_quality_baseline": {
+      "source_revision": "62b8b83dccf3106e9a10ddabc016fb60ed19fc6e",
+      "branch": "prep/M1-48-on-M1-49-20260722",
+      "runtime_overlay_sha256": "03aad9d1411375adc6e5895933930357f31873f42f7c4eb5582429a17b386c23",
+      "cache_policy": "fine32",
+      "restore_mode": "direct",
+      "functional_gate": "pending-exact-source-rerun",
+      "long_context_gate": "running"
+    },
+    "m1_51_named_tool_parser": {
+      "source_revision": "69ac3da25e72df3ea7ccd5b2c7a1bf5981333a8c",
+      "branch": "fix/M1-51-named-tool-parser-20260725",
+      "scope": "repair invalid non-stream named Qwen XML tool payloads without changing valid JSON",
+      "local_unit_tests": {
+        "passed": 555,
+        "skipped": 25
+      },
+      "submission_preflight": "9/9 passed",
+      "quality_data_manifest": "passed",
+      "runtime_overlay_sha256": null,
+      "runtime_quality_gate": "not-run",
+      "performance_gate": "not-run"
+    },
+    "m1_50_gqa_decode_prototype": {
+      "source_revision": "b685bfd13bfab92422c96fd181db04d91ad51cdc",
+      "branch": "exp/M1-50-gqa-flash-decode-20260725",
+      "production_default_changed": false,
+      "runtime_operator_gate": "not-run"
+    }
+  },
+  "comparison_policy": {
+    "required_equal_fields": [
+      "source_revision",
+      "runtime_overlay_sha256",
+      "runtime_contract_sha256",
+      "model_identity",
+      "tokenizer_identity",
+      "request_manifest_sha256",
+      "request_order",
+      "gpu_count"
+    ],
+    "single_variable_exception": "an A/B may differ only by the declared candidate switch or candidate patch",
+    "forbid_cross_version_gain_claims": true,
+    "forbid_13_request_to_881_extrapolation": true
+  },
+  "promotion": {
+    "authorized": false,
+    "main_change_authorized": false,
+    "computility_run_change_authorized": false,
+    "reasons": [
+      "the platform main result is not bound to a source or runtime overlay",
+      "the exact 62b8b83 long-context baseline is still running",
+      "the exact 62b8b83 full functional rerun is pending",
+      "M1-51 has not passed a TP4 runtime quality gate",
+      "admission64 has not passed a same-source quality A/B",
+      "the official 881 performance and quality gates have not passed"
+    ]
+  }
+}
