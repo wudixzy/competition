@@ -75,8 +75,8 @@ class GdnPrefixSchedulerIntegrationTest(unittest.TestCase):
 
         class BlockManager:
             allocated = False
-            content_hashes = keys_from_block_hashes(
-                [digest(i) for i in range(1, block_count + 1)])
+            block_hashes = [digest(i) for i in range(1, block_count + 1)]
+            content_hashes = keys_from_block_hashes(block_hashes)
             policy: GdnPrefixStatePolicy = GdnPrefixStatePolicy("fine32")
             policy.admit([content_hashes[-1]])
 
@@ -92,7 +92,7 @@ class GdnPrefixSchedulerIntegrationTest(unittest.TestCase):
                 return list(range(block_count))
 
             def get_content_hashes(self, seq):
-                return list(BlockManager.content_hashes)
+                return list(BlockManager.block_hashes)
 
             @staticmethod
             def get_block_table(seq):
@@ -152,7 +152,7 @@ class GdnPrefixSchedulerIntegrationTest(unittest.TestCase):
 
         capture_targets = scheduler._gdn_request_capture_targets["m1-12"]
         self.assertEqual(capture_targets, (final_capture_key(
-            [k[1] for k in block_manager.content_hashes],
+            block_manager.block_hashes,
             prompt_len,
             block_size,
             "direct",
