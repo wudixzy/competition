@@ -209,6 +209,75 @@ class QualityGateApiTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.CaseFailure, "does not end"):
             MODULE._parse_sse_payload(wrong_order)
 
+    def test_strict_sse_parser_assembles_fragmented_tool_identity(self):
+        def chunk(choices, usage=None):
+            value = {
+                "id": "chatcmpl-test",
+                "object": "chat.completion.chunk",
+                "created": 1,
+                "model": "llm",
+                "choices": choices,
+            }
+            if usage is not None:
+                value["usage"] = usage
+            return f"data: {json.dumps(value)}\n\n"
+
+        body = "".join([
+            chunk([{
+                "index": 0,
+                "delta": {"role": "assistant", "tool_calls": [{
+                    "index": 0,
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "terminal",
+                        "arguments": "{\"command\":",
+                    },
+                }]},
+                "finish_reason": None,
+            }]),
+            chunk([{
+                "index": 0,
+                "delta": {"tool_calls": [{
+                    "index": 0,
+                    "function": {"arguments": "\"pwd\"}"},
+                }]},
+                "finish_reason": None,
+            }]),
+            chunk([{
+                "index": 0,
+                "delta": {},
+                "finish_reason": "tool_calls",
+            }]),
+            chunk([], {
+                "prompt_tokens": 3,
+                "completion_tokens": 4,
+                "total_tokens": 7,
+            }),
+            "data: [DONE]\n\n",
+        ]).encode()
+
+        parsed = MODULE._parse_sse_payload(body)
+        self.assertEqual(parsed["finish_reasons"], ["tool_calls"])
+        self.assertEqual(parsed["tool_calls"], [{
+            "name": "terminal",
+            "arguments": {"command": "pwd"},
+        }])
+
+        missing_identity = body.replace(
+            b'"id": "call-1", "type": "function", ', b"", 1)
+        with self.assertRaisesRegex(MODULE.CaseFailure, "identity is invalid"):
+            MODULE._parse_sse_payload(missing_identity)
+
+        conflicting_identity = body.replace(
+            b'"index": 0, "function": {"arguments": "\\\"pwd\\\"}"}',
+            b'"index": 0, "id": "call-2", '
+            b'"function": {"arguments": "\\\"pwd\\\"}"}',
+            1,
+        )
+        with self.assertRaisesRegex(MODULE.CaseFailure, "identity changed"):
+            MODULE._parse_sse_payload(conflicting_identity)
+
     def test_response_schema_rejects_missing_usage(self):
         response = {
             "id": "chatcmpl-test",

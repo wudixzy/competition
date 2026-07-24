@@ -345,14 +345,30 @@ def _parse_sse_payload(raw: bytes) -> Json:
             for call in delta.get("tool_calls") or []:
                 require(isinstance(call, dict),
                         "stream tool call delta is invalid")
-                require(isinstance(call.get("id"), str) and bool(call["id"])
-                        and call.get("type") == "function",
-                        "stream tool call identity is invalid")
                 index = call.get("index", 0)
                 require(_nonnegative_int(index),
                         "stream tool call index is invalid")
-                item = tools.setdefault(index, {"name": "", "arguments": ""})
-                function = call.get("function") or {}
+                item = tools.setdefault(index, {
+                    "id": None,
+                    "type": None,
+                    "name": "",
+                    "arguments": "",
+                })
+                if "id" in call:
+                    call_id = call["id"]
+                    require(isinstance(call_id, str) and bool(call_id),
+                            "stream tool call identity is invalid")
+                    require(item["id"] in (None, call_id),
+                            "stream tool call identity changed")
+                    item["id"] = call_id
+                if "type" in call:
+                    call_type = call["type"]
+                    require(call_type == "function",
+                            "stream tool call identity is invalid")
+                    require(item["type"] in (None, call_type),
+                            "stream tool call identity changed")
+                    item["type"] = call_type
+                function = call.get("function")
                 require(isinstance(function, dict),
                         "stream tool function delta is invalid")
                 if isinstance(function.get("name"), str):
@@ -362,12 +378,17 @@ def _parse_sse_payload(raw: bytes) -> Json:
     normalized_tools = []
     for index in sorted(tools):
         item = tools[index]
+        require(isinstance(item["id"], str) and bool(item["id"])
+                and item["type"] == "function",
+                "stream tool call identity is invalid")
         require(bool(item["name"]), "streamed tool name is empty")
         try:
             arguments = json.loads(item["arguments"] or "{}")
         except json.JSONDecodeError as error:
             raise CaseFailure(
                 "streamed tool arguments are invalid JSON") from error
+        require(isinstance(arguments, dict),
+                "streamed tool arguments must be a JSON object")
         normalized_tools.append({"name": item["name"], "arguments": arguments})
     return {
         "chunks": len(chunks),
