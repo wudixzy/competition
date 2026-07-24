@@ -15,6 +15,12 @@ import urllib.error
 import urllib.request
 
 
+EXPECTED_DATASET_SHA256 = (
+    "dac6afc77621b51dbc09cfa046c008a1e51a779bb771edcb27cb6a686f8884c8"
+)
+EXPECTED_CONVERSATION_TURNS = (4, 4, 3, 2)
+
+
 @dataclass
 class StreamResult:
     ok: bool
@@ -249,6 +255,23 @@ def load_dataset(path: Path) -> list[dict[str, Any]]:
     return data
 
 
+def validate_frozen_dataset(
+    dataset_bytes: bytes,
+    dataset: list[dict[str, Any]],
+) -> str:
+    digest = hashlib.sha256(dataset_bytes).hexdigest()
+    if digest != EXPECTED_DATASET_SHA256:
+        raise ValueError(
+            "selected dataset SHA-256 differs from the frozen contract")
+    observed_turns = tuple(
+        len(item["user_questions"]) for item in dataset)
+    if observed_turns != EXPECTED_CONVERSATION_TURNS:
+        raise ValueError(
+            "selected dataset conversation/turn shape differs from the "
+            "frozen contract")
+    return digest
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=Path,
@@ -263,6 +286,7 @@ def main() -> int:
 
     dataset_bytes = args.dataset.read_bytes()
     dataset = load_dataset(args.dataset)
+    dataset_sha256 = validate_frozen_dataset(dataset_bytes, dataset)
     expected_turns = sum(
         len(item["user_questions"]) for item in dataset)
     turns: list[dict[str, Any]] = []
@@ -300,17 +324,19 @@ def main() -> int:
     report = summarize(
         args.label,
         args.dataset,
-        hashlib.sha256(dataset_bytes).hexdigest(),
+        dataset_sha256,
         len(dataset),
         expected_turns,
         turns,
         time.perf_counter() - wall_started,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(
+    temporary = args.out.with_suffix(args.out.suffix + ".tmp")
+    temporary.write_text(
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    temporary.replace(args.out)
     print(json.dumps({
         "label": args.label,
         "validation": report["validation"],

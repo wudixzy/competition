@@ -102,6 +102,17 @@ class SelectedDatasetReplayTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "root must be a list"):
                 MODULE.load_dataset(path)
 
+    def test_frozen_dataset_identity(self):
+        dataset_bytes = (ROOT / "chat_dataset_v0.json").read_bytes()
+        dataset = MODULE.load_dataset(ROOT / "chat_dataset_v0.json")
+        self.assertEqual(
+            MODULE.validate_frozen_dataset(dataset_bytes, dataset),
+            MODULE.EXPECTED_DATASET_SHA256,
+        )
+
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
+            MODULE.validate_frozen_dataset(dataset_bytes + b"\n", dataset)
+
 
 if __name__ == "__main__":
     unittest.main()

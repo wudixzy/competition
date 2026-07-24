@@ -21,19 +21,32 @@ after the candidate has passed its capacity A/B and 131K/235K/262K gates, with
 a freshly restarted service and an empty cache. Control and candidate runs must
 use the same dataset identity, request order, seed, and `max_tokens`.
 
+Use the fixed service-lifecycle harness after providing the qualified M1-49
+long-context evidence and the atomic runtime overlay:
+
 ```bash
-python3 scripts/replay_selected_dataset.py \
-  --dataset chat_dataset_v0.json \
-  --label m1-49-selected-dataset \
-  --max-tokens 256 \
-  --out bench_runs/m1_49/selected_dataset/report.json
+BI100_RUNTIME_SITE_PACKAGES=/path/to/runtime_overlay/site-packages \
+M1_49_LONG_DIR=bench_runs/m1_49/full_attention_long \
+bash scripts/run_m1_49_selected_dataset.sh
 ```
+
+The harness rejects dataset SHA or shape drift before starting the service. It
+uses a fresh `full_attention/admission64/direct` TP4 service, makes the selected
+dataset replay its first API workload, performs before/after four-GPU
+preflights, and uses process-group cleanup. The replay command is frozen at 256
+maximum output tokens, seed 20260713, and sequential concurrency one.
 
 The report contains request dimensions, usage counters, TTFT, decode TPS,
 cache counters, finish reasons, and SHA-256 output identities. It does not
 contain raw prompts, images, assistant text, reasoning text, or tool calls.
 `bench_runs/` is ignored by Git so local diagnostic artifacts cannot be added
 accidentally.
+
+`tests/qualify_selected_dataset_replay.py` recomputes all aggregate metrics
+from the 13 redacted turns and rejects failures, non-finite values, cache
+accounting errors, metric tampering, and identity drift. Its qualification
+scope is `selected-13-turn-supplemental-not-official-score`; a zero RC confirms
+evidence integrity only.
 
 ## Interpretation
 
