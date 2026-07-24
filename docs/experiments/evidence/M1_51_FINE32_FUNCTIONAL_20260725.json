@@ -1,0 +1,133 @@
+{
+  "schema": "bi100-m1-51-functional-quality-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "revision": "8c00ba6c6a916b68d1d020330ccf0e4d7fb0800c",
+    "branch": "run/quality-m1-51-8c00ba6",
+    "instance": "ssh-73ca29ba",
+    "runtime_identity": "bare-host-overlay-v1:373d5d28818b8c7b42f0",
+    "runtime_overlay_sha256": "373d5d28818b8c7b42f0a169d6eac8649fc7162a4d4641e615bde166ac29a9b0",
+    "base_image": "harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3"
+  },
+  "runtime": {
+    "gpu_count": 4,
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144,
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "tokenizer_artifact_set_sha256": "48722960152a0db89e6d98e3d48558d2ffb072a5267b24a347d4c4bea3c08ae2",
+    "transformers_version": "4.55.3",
+    "gdn_cache_policy": "fine32",
+    "gdn_restore_mode": "direct",
+    "fused_prefill": false,
+    "kv_eviction_policy": "lru",
+    "hybrid_kv_accounting": "full_attention"
+  },
+  "functional": {
+    "manifest": "official_metrics_manifest.v1.json",
+    "manifest_sha256": "fe9b958610d9d0df8f54504d9c149442f145226c03cf76668711d2d38ed51d0e",
+    "operator_source_sha256": "116e7edc617d8f96fc92caa3e75a3ba4692aae7619026896df1eaf69df12feac",
+    "total": 53,
+    "passed": 52,
+    "failed": 0,
+    "skipped": 1,
+    "skip_ids": ["n_2"],
+    "skip_reason": "documented bare-engine n=2 limitation under fixed max_num_seqs=1",
+    "executed_pass_rate": 1.0,
+    "wall_s": 1709.633307043463,
+    "qualified": true,
+    "quality_run_eligible_for_baseline": true,
+    "passed_by_group": {
+      "basic": 3,
+      "cache": 1,
+      "determinism": 1,
+      "instruction": 2,
+      "long_output": 1,
+      "max_tokens": 7,
+      "memory": 1,
+      "multilingual": 3,
+      "multimodal": 2,
+      "reasoning": 2,
+      "sampling": 16,
+      "stop": 1,
+      "structured": 2,
+      "thinking": 4,
+      "tool": 2,
+      "validation": 4
+    }
+  },
+  "named_tool_repair_gate": {
+    "functional_forced_named_tool": "pass",
+    "functional_auto_tool": "pass",
+    "agent_forced_tool_cases": 4,
+    "agent_auto_tool_cases": 1,
+    "agent_streaming_tool_cases": 2,
+    "arguments_valid_json_and_semantics_checked": true,
+    "finish_reason_tool_calls_checked": true
+  },
+  "agent_workload": {
+    "manifest": "agent_workload_matrix.v1.json",
+    "manifest_sha256": "962d19f51cfbeb3f414e62444a225029616ed547682e5a97219b0af98c8959ba",
+    "total": 11,
+    "passed": 11,
+    "failed": 0,
+    "qualified": true,
+    "covered": [
+      "forced tools",
+      "automatic tools",
+      "forced and automatic streaming tools",
+      "tool-result round trip",
+      "long history",
+      "large tool schema",
+      "multiple system messages"
+    ]
+  },
+  "lifecycle": {
+    "overall_rc": 0,
+    "quality_rc": 0,
+    "agent_workload_rc": 0,
+    "runtime_identity_rc": 0,
+    "runtime_contract_rc": 0,
+    "prefix_allocator_rc": 0,
+    "gdn_action_broadcast_rc": 0,
+    "preflight_before_rc": 0,
+    "startup_rc": 0,
+    "startup_contract_rc": 0,
+    "cleanup_rc": 0,
+    "fatal_scan_rc": 0,
+    "preflight_after_rc": 0,
+    "preflight_comparison_rc": 0,
+    "fatal_scan_empty": true,
+    "residual_api_server_processes": 0,
+    "port_8000_listeners_after_cleanup": 0,
+    "free_memory_drop_bytes": [0, 0, 0, 0]
+  },
+  "artifact_sha256": {
+    "quality_report.json": "08d6a4a3956afdf274478ffc4c76e911726c86048a9238f3ff21c7ff55eb808d",
+    "agent_workload.json": "17bae564230df43b63e4bf509c5c8d3b667609812c9e69d9309916d9b8fc15a8",
+    "status.json": "72fcf89eef3e0410f67a7d7d8a54cee6b63d42b5cb2e862ffa85e3d940c7bf52",
+    "runtime_contract.json": "f687892a92e0517ec841cf17ff9eec9b207819173fbfecc531c112f362ddb304",
+    "runtime_identity.json": "e0adeed4e83442f7a8f92f7dda48fdbe993064e4358fda585e4381ca441787b3",
+    "startup_contract.json": "e59d8b7bb444080408fe98e321c22aac483148dad11491798683f2fd20f6abb8",
+    "preflight_before.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_after.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_comparison.json": "1d529bc179ed4cad258d017f7a39c9788fbe3bbb99289b47ef70d2e8789416fe",
+    "fatal_scan.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_tool_arguments": false,
+    "raw_service_log_committed": false
+  },
+  "decision": {
+    "functional_gate_qualified": true,
+    "model_capability_regression_observed": false,
+    "performance_score_established": false,
+    "long_context_gate_established": false,
+    "overall_promotion_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "reason": "functional and Agent gates pass, but M1-51 long-context, cache A/B, performance, and official 881 gates remain pending"
+  }
+}
