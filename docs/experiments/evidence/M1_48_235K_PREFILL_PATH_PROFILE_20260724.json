@@ -1,0 +1,78 @@
+{
+  "schema": "bi100-m1-48-prefill-profile-summary-v1",
+  "version": 1,
+  "date": "2026-07-24",
+  "source_revision": "7324b896635ca677279f979d15a862aecab98c88",
+  "requalifier_revision": "9c1851aca289529fbd666239b3e68dc52c02dade",
+  "scope": "post-m1-49-diagnostic-path-ranking-only",
+  "qualified": true,
+  "promotion_authorized": false,
+  "reasons": [],
+  "source_run": {
+    "path": "bench_runs/m1_48/prefill_profile_7324b89_20260724",
+    "overall_rc": 1,
+    "profile_summary_rc": 1,
+    "expected_contract_failure_count": 116,
+    "expected_contract_failure": "rank-local query heads were hard-coded as 8 instead of 16 / TP4 = 4",
+    "all_other_gates_rc": 0
+  },
+  "requalification": {
+    "path": "bench_runs/m1_48/prefill_profile_requalified_9c1851a_20260724",
+    "post_source_preflight_rc": 0,
+    "profile_summary_rc": 0,
+    "prequalification_cleanup_rc": 0,
+    "qualification_rc": 0,
+    "cleanup_rc": 0,
+    "overall_rc": 0
+  },
+  "request": {
+    "prefill_tokens": 235000,
+    "forward_count": 29,
+    "tp_ranks": [0, 1, 2, 3],
+    "num_attention_heads": 16,
+    "query_heads_per_rank": 4,
+    "control_ttft_s": 547.1554141305387,
+    "profile_ttft_s": 529.7897761836648,
+    "profile_overhead_fraction": -0.03173803548022802,
+    "model_rank_spread_fraction": 0.000020865012593527943,
+    "max_forward_model_rank_spread_fraction": 0.00016109098980468815,
+    "model_share_of_profiled_ttft": 0.9932215221301975,
+    "worker_share_of_profiled_ttft": 0.9940763309490958,
+    "output_sha256": "0923dd0bbb272ef93e2444c683625fca1b54d7ac48f169b389ef04cf0fcdb7d3"
+  },
+  "coverage": {
+    "exclusive_model_regions_min": 0.9999620249828008,
+    "full_attention_subregions_min": 0.9999789258052644
+  },
+  "regions": {
+    "model_forward_ms_per_rank_mean": 526192.0574951172,
+    "layer_full_attention_ms_per_rank_mean": 356622.6558666229,
+    "layer_full_attention_share_of_model": 0.6777423771166143,
+    "paged_prefix_ms_per_rank_mean": 348123.6541149616,
+    "paged_prefix_share_of_model": 0.6615904766259078,
+    "paged_prefix_critical_upper_share_of_control_ttft": 0.6435954832174179,
+    "gdn_ms_per_rank_mean": 85873.04608249664,
+    "gdn_share_of_model": 0.16319715369951873,
+    "moe_ms_per_rank_mean": 78494.37217521667,
+    "moe_share_of_model": 0.14917437665038313,
+    "moe_routed_ms_per_rank_mean": 65940.09642314911,
+    "moe_all_reduce_ms_per_rank_mean": 9941.104264974594,
+    "full_attention_output_projection_ms_per_rank_mean": 6459.108869671822,
+    "attention_unattributed_ms_per_rank_mean": 28.88918925076723,
+    "paged_unattributed_ms_per_rank_mean": 202.36684489250183
+  },
+  "decision": {
+    "largest_path": "paged_attn.prefix_pytorch",
+    "m1_47_reopened": false,
+    "reason": "M1-47 already tested the corrected TP4 production shape and improved 235K cold service TTFT by 8.832%, below the frozen 20% gate",
+    "complete_881_trace_required": true,
+    "selected_13_request_replay_is_supplemental_only": true
+  },
+  "sha256": {
+    "control_service": "bdf4baa2048cf619f77c57fdd24d53d37496822891d0b425cef06f82e0bacc4f",
+    "profile_service": "303a01d10fc5c889ba051ca1f43bcbcbe6d7047b901668b6bedefd775d8568b0",
+    "profile_log": "ab88c595a73176b2a8669ecc05197cd47e6b39c899faa5c47cf5b1258782d972",
+    "requalified_profile_summary": "2dc410ae5e0521e24a3c618391c9bf9b2dc17e7b081a450564b0cf7557d95882",
+    "requalified_qualification": "303dfe47328e6f870eb3d9bc1869bb0665c3cb193d64e7a9592e9ca3f469a012"
+  }
+}

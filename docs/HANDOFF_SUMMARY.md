@@ -1,8 +1,42 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-24 TP4 资格、选取数据集与 M1-48 归因
+
+- 当前私有准备分支为 `prep/M1-48-on-M1-49-20260722`，已推送的运行时实现为
+  `9c1851a`。`main`、`computility-run.yaml`、默认实验开关和两个仓库的可见性
+  均未修改。
+- `ssh-73ca29ba` 的四张 Iluvatar BI-V100 通过固定预检。M1-49 同运行时 A/B
+  证明 `full_attention` 将每 rank GPU KV blocks 从 `16,878` 提高到 `67,512`，
+  约为 `4.0x`；压力后的可缓存前缀从 16 tokens 提高到 65,520 tokens，输出一致，
+  候选资格通过。
+- 候选随后通过 quick smoke `8/8`、多模态 `5/5`、131K exact、235K/1000-token
+  warm-repeat 和 262K exact。235K 冷/暖为 `781.124s -> 221.894s`，暖重复为
+  `221.592s`；262K 冷/暖为 `742.750s -> 10.372s`，所有对应输出 SHA-256 一致。
+- 冻结的四会话、13 请求选取数据集已在新服务和空缓存上回放：成功率 `100%`、
+  Output TPS P10 `21.309`、TTFT P90 `3.089s`、有效命中 `50.189%`。这是回归和
+  小样本直接指标，不能把其 `650.493` weighted proxy 与官方 8000 比较，也不能
+  替代 881 请求。
+- M1-48 235K profile-off/profile-on 已完成。旧汇总器把 TP4 rank-local query
+  heads 错写为 8，真实合同是全局 16 / 每 rank 4；原始运行仅因此产生
+  `4*29=116` 个诊断 false negative。`9c1851a` 修正并有界重资格后所有 RC 为 0。
+  控制/剖析 TTFT 为 `547.155s/529.790s`，输出一致，剖析扰动 `-3.174%`。
+- 生产 235K 中 `paged_attn.prefix_pytorch` 占模型时间 `66.159%`，GDN 占
+  `16.320%`，MoE 占 `14.917%`。M1-47 已在正确 `[T,4,256]` 形状上测试且
+  235K 服务收益只有 `8.832%`，低于固定 20% 门槛，因此不得重新扫描 tile、split
+  或 launch 参数；GDN/MoE 单项也没有 20% 理论服务余量。
+- 本地 `result`、历史压缩证据和远端已做有界盘点，没有 v4 ordinal `1..881`
+  单会话轨迹。下一项有效工作是从 evaluator-equivalent 会话取得完整隐私安全轨迹，
+  再按逐请求 residual prefill 比较 `fine32/LRU`、`admission64/LRU` 和
+  `admission64/frequency`。在此之前不修改 YAML、默认值或 `main`。
+- 结果与边界见
+  `docs/experiments/M1_49_LONG_CONTEXT_QUALIFICATION_20260724.md`、
+  `docs/experiments/M1_49_SELECTED_DATASET_RESULT_20260724.md`、
+  `docs/experiments/M1_48_235K_PREFILL_PATH_PROFILE_20260721.md` 和
+  `docs/incidents/M1_48_TP_QUERY_HEAD_CONTRACT_20260724.md`。
+
 ## 2026-07-24 双卡 staging 与运行时身份修复
 
-- 当前私有准备分支为 `prep/M1-48-on-M1-49-20260722@f2c4b6e`；
+- 双卡阶段使用私有准备分支 `prep/M1-48-on-M1-49-20260722@f2c4b6e`；
   `main`、`computility-run.yaml` 和仓库可见性均未修改。
 - `ssh-92d14d83` 的两张 Iluvatar BI-V100 均通过独立 CUDA 检查，TP2 NCCL
   all-reduce 两个 rank 均得到 `3.0`。但模型权重为 71,903,776,776 bytes，

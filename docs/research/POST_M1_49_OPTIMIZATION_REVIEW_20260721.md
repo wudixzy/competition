@@ -74,13 +74,21 @@ service gate and closes both the primary fusion and its one allowed structural
 alternative. Reopening tile or launch scans would violate the stopping rule.
 
 The old `68.788% layer.full_attn` measurement was inclusive: it did not prove
-that the paged-prefix loop accelerated by M1-47 occupied that share. M1-48 is
-therefore the next measurement, not a new optimization. Its corrected protocol
-uses paired profile-off/profile-on services, streaming TTFT, exact TP-rank and
+that the paged-prefix loop accelerated by M1-47 occupied that share. M1-48 used
+paired profile-off/profile-on services, streaming TTFT, exact TP-rank and
 per-chunk event counts, per-forward rank-spread rejection, and separate
-KV-write/dense/paged regions. The old
-`2.5770x` microbenchmark is not extrapolated across production chunks. Profile
-perturbation above 15% invalidates the report instead of being interpreted.
+KV-write/dense/paged regions. The qualified TP4 result measured the PyTorch
+paged-prefix segments at `66.159%` of model work and at a `64.360%` critical
+upper bound relative to unprofiled control TTFT. Profile perturbation was
+`-3.174%`, and output identity, all 29 forward geometries, rank spread, and
+coverage gates passed.
+
+That result locates the production bottleneck but does not reopen M1-47. M1-47
+already used the corrected `[T, 4, 256]` TP4 query shape and one KV head per
+rank; its `8.832%` 235K service gain remains below the fixed 20% gate. GDN and
+MoE represented only `16.320%` and `14.917%` of model work respectively, so
+neither is eligible as a new single-direction 20% cold-TTFT experiment. The old
+`2.5770x` microbenchmark is not extrapolated across production chunks.
 
 ## Fixed decision sequence
 
@@ -102,6 +110,16 @@ perturbation above 15% invalidates the report instead of being interpreted.
    hit >=50%, success >=99%, weighted score >=8000, and 262144 capacity all
    hold on the fixed evaluator contract.
 
+The selected 13-request replay passed its small-sample direct metrics with
+100% success, Output TPS P10 `21.309`, TTFT P90 `3.089s`, and effective hit
+`50.189%`. It is useful for regression detection, but its hit margin is only
+`0.189` percentage points and its weighted proxy is not comparable to the
+official 881-request score. A bounded local-result inventory on 2026-07-24
+found no v4 trace records and no ordinal sequence `1..881`; marker matches were
+source or design documents only.
+
 With the current evidence, no additional YAML parameter, cache capacity,
 restore alignment, attention tile, or launch threshold is an admissible
-optimization variable.
+optimization variable. The next evidence-producing action is acquisition of
+one complete privacy-safe 881-request trace from a single evaluator-equivalent
+session, followed by the already fixed per-request residual-prefill comparison.

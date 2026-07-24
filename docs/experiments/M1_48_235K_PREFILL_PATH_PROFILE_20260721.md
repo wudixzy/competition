@@ -1,9 +1,9 @@
 # M1-48: Post-M1-49 235K prefill path profile
 
-Status: corrected measurement implementation complete; M1-49 prerequisite and
-TP4 runtime evidence pending. This private preparation branch is based on
-M1-49 `9460b71`. It does not change model mathematics, `computility-run.yaml`,
-`main`, Docker defaults, or repository visibility.
+Status: TP4 measurement qualified on 2026-07-24. The report scope is diagnostic
+path ranking only and records `promotion_authorized=false`. It does not change
+model mathematics, `computility-run.yaml`, `main`, Docker defaults, or
+repository visibility.
 
 ## Scope
 
@@ -123,3 +123,83 @@ alternative, numerical parity gates, and a 20% end-to-end cold-TTFT gate.
 
 No M1-48 result alone changes YAML, `main`, the 881-request requirement, or the
 final score gates.
+
+## TP4 result
+
+The immutable source run is:
+
+```text
+/root/competition-m1-49-tp4-dca9508/bench_runs/m1_48/
+  prefill_profile_7324b89_20260724
+```
+
+Both services, both startup gates, all three GPU preflights, the preflight
+comparison, runtime identity, fatal scans, and cleanup returned zero. Control
+and profile produced the same output SHA-256. The source run's summary alone
+returned one because its diagnostic contract incorrectly expected eight query
+heads per TP rank. The model has 16 global query heads and TP4 therefore emits
+four per rank. All 116 reasons were exactly one stale dispatch-contract mismatch
+for each of 29 forwards on each of four ranks; no runtime measurement failed.
+
+Commit `9c1851a` derives the per-rank count from `16 / 4`, validates exact
+divisibility, and adds the global and per-rank values to both the summary and
+qualification schemas. Its bounded requalifier accepts only that exact
+`4 * 29` failure set, verifies that every other source gate passed, proves the
+source process groups and port are inactive, performs a fresh four-GPU
+preflight, and writes a new report without changing the source run:
+
+```text
+/root/competition-m1-49-tp4-dca9508/bench_runs/m1_48/
+  prefill_profile_requalified_9c1851a_20260724
+```
+
+All six requalification return codes are zero and the resulting report is
+qualified. The paired request result is:
+
+| Metric | Result |
+|---|---:|
+| Control TTFT | 547.155414 s |
+| Profile TTFT | 529.789776 s |
+| Profile perturbation | -3.1738% |
+| Prompt / forwards | 235000 / 29 |
+| Global / per-rank query heads | 16 / 4 |
+| Aggregate model rank spread | 0.00209% |
+| Maximum per-forward rank spread | 0.01611% |
+| Model span / profiled TTFT | 99.3222% |
+| Worker span / profiled TTFT | 99.4076% |
+
+The largest measured regions, using per-rank means, are:
+
+| Region | Time | Share of model work |
+|---|---:|---:|
+| `layer.full_attn` | 356622.656 ms | 67.7742% |
+| `paged_attn.prefix_pytorch` | 348123.654 ms | 66.1590% |
+| `layer.gdn` | 85873.046 ms | 16.3197% |
+| `layer.moe` | 78494.372 ms | 14.9174% |
+| `moe.routed` | 65940.096 ms | 12.5316% |
+| `moe.all_reduce` | 9941.104 ms | 1.8893% |
+| `full_attn.output_proj` | 6459.109 ms | 1.2275% |
+
+Exclusive model-region coverage is at least `99.99620%` on every rank;
+full-attention subregion coverage is at least `99.99789%`. The paged-prefix
+critical-path upper bound is `64.3595%` of unprofiled control TTFT. Its
+unattributed residual is only `202.367 ms` per rank, while the enclosing
+attention residual is `28.889 ms`.
+
+## Decision
+
+M1-48 confirms that paged prefix attention is the dominant production path.
+It does not reopen M1-47: that experiment already used the corrected production
+shape `[T, 4, 256]` with one KV head per rank and dispatched on all four ranks,
+yet improved 235K cold service TTFT by only `8.832%`, below the frozen `20%`
+gate. Tile, split, launch-threshold, and YAML scans remain closed.
+
+GDN and MoE individually account for only `16.32%` and `14.92%` of model work,
+so neither has the predeclared 20% single-direction service headroom. The next
+cache decision still requires one complete privacy-safe single-session v4 trace
+with ordinals `1..881`; the qualified 13-request selected-dataset replay is
+useful supplemental evidence but cannot replace it.
+
+Structured evidence:
+
+- `docs/experiments/evidence/M1_48_235K_PREFILL_PATH_PROFILE_20260724.json`
