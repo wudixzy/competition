@@ -55,6 +55,35 @@ def _serialize_tool_arguments(arguments) -> str:
     return json.dumps(arguments, ensure_ascii=False)
 
 
+def _tool_arguments_are_json_object(arguments: str) -> bool:
+    try:
+        value = json.loads(arguments)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return False
+    return isinstance(value, dict)
+
+
+def _select_named_tool_arguments(
+    output_text: str,
+    expected_name: str,
+    parsed_tool_calls: Optional[List[ToolCall]],
+) -> str:
+    """Use parser output only to repair a malformed named-tool payload."""
+    if _tool_arguments_are_json_object(output_text):
+        return output_text
+    if not parsed_tool_calls or len(parsed_tool_calls) != 1:
+        return output_text
+    call = parsed_tool_calls[0]
+    function = getattr(call, "function", None)
+    if function is None or getattr(function, "name", None) != expected_name:
+        return output_text
+    arguments = _serialize_tool_arguments(
+        getattr(function, "arguments", None))
+    if not _tool_arguments_are_json_object(arguments):
+        return output_text
+    return arguments
+
+
 def _named_tool_delta_payload(name: str, arguments: str, index: int,
                               call_id: str, first_delta: bool
                               ) -> Dict[str, object]:
@@ -914,6 +943,24 @@ class OpenAIServingChat(OpenAIServing):
                     request.tool_choice) is ChatCompletionNamedToolChoiceParam:
 
                 named_tool_called = True
+                parsed_named_tool_calls: Optional[List[ToolCall]] = None
+                if (not _tool_arguments_are_json_object(output_text)
+                        and self.tool_parser is not None):
+                    try:
+                        named_tool_info = self.tool_parser(
+                            tokenizer).extract_tool_calls(
+                                output_text, request=request)
+                        if named_tool_info.tools_called:
+                            parsed_named_tool_calls = named_tool_info.tool_calls
+                    except RuntimeError as e:
+                        logger.warning(
+                            "Named tool parser unavailable; preserving raw "
+                            "arguments: %s", type(e).__name__)
+                named_arguments = _select_named_tool_arguments(
+                    output_text,
+                    request.tool_choice.function.name,
+                    parsed_named_tool_calls,
+                )
                 message = ChatMessage(
                     role=role,
                     reasoning_content=reasoning_text,
@@ -921,7 +968,7 @@ class OpenAIServingChat(OpenAIServing):
                     tool_calls=[
                         ToolCall(function=FunctionCall(
                             name=request.tool_choice.function.name,
-                            arguments=output_text))
+                            arguments=named_arguments))
                     ])
 
             # if the request doesn't use tool choice

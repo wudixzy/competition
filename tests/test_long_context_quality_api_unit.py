@@ -133,6 +133,46 @@ class LongContextQualityApiTest(unittest.TestCase):
         self.assertEqual(len(set(names)), 92)
         self.assertEqual(names.count("target_tool"), 1)
 
+    @staticmethod
+    def _tool_response(arguments):
+        return {
+            "choices": [{
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call-unit",
+                        "type": "function",
+                        "function": {
+                            "name": "lookup_quality_marker",
+                            "arguments": json.dumps(arguments),
+                        },
+                    }],
+                },
+            }],
+        }
+
+    def test_tool_argument_diagnostic_reports_keys_without_values(self):
+        response = self._tool_response({"key": "secret", "ordinal": 7})
+        with self.assertRaisesRegex(
+                MODULE.MatrixFailure,
+                "expected=key;actual=key,ordinal") as raised:
+            MODULE._require_single_tool_call(
+                response, "lookup_quality_marker", {"key": "expected"})
+        self.assertNotIn("secret", str(raised.exception))
+        self.assertNotIn("expected\"", str(raised.exception))
+
+    def test_tool_argument_diagnostic_reports_mismatched_field_only(self):
+        response = self._tool_response({"key": "secret"})
+        with self.assertRaisesRegex(
+                MODULE.MatrixFailure,
+                "values differ for fields: key") as raised:
+            MODULE._require_single_tool_call(
+                response, "lookup_quality_marker", {"key": "expected"})
+        self.assertNotIn("secret", str(raised.exception))
+        self.assertNotIn("expected", str(raised.exception))
+
     def test_post_summary_does_not_retain_model_output(self):
         secret = "raw-long-context-output-must-not-be-retained"
         context = MODULE.Context(

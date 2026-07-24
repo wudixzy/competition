@@ -40,6 +40,29 @@ def _load_named_tool_delta_payload():
     return namespace["_named_tool_delta_payload"]
 
 
+def _load_named_tool_argument_helpers():
+    tree = ast.parse(SERVING_CHAT.read_text(), filename=str(SERVING_CHAT))
+    names = {
+        "_serialize_tool_arguments",
+        "_tool_arguments_are_json_object",
+        "_select_named_tool_arguments",
+    }
+    functions = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in names
+    ]
+    module = ast.Module(body=functions, type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {
+        "json": json,
+        "List": list,
+        "Optional": Optional,
+        "ToolCall": object,
+    }
+    exec(compile(module, str(SERVING_CHAT), "exec"), namespace)
+    return namespace
+
+
 def _load_chat_placeholder_method():
     tree = ast.parse(CHAT_UTILS_SOURCE, filename=str(CHAT_UTILS))
     class_node = next(
@@ -63,6 +86,9 @@ class ServingChatUnitTest(unittest.TestCase):
     def setUpClass(cls):
         cls.serialize = staticmethod(_load_serialize_tool_arguments())
         cls.named_delta = staticmethod(_load_named_tool_delta_payload())
+        helpers = _load_named_tool_argument_helpers()
+        cls.select_named_arguments = staticmethod(
+            helpers["_select_named_tool_arguments"])
 
     def test_tool_arguments_string_is_not_double_json_encoded(self):
         arguments = '{"city": "上海", "unit": "c"}'
@@ -107,6 +133,59 @@ class ServingChatUnitTest(unittest.TestCase):
         })
         self.assertIn("named_tool_call_ids = (", SERVING_CHAT_SOURCE)
         self.assertIn("previous_num_tokens[i] == 0", SERVING_CHAT_SOURCE)
+
+    def test_named_nonstream_keeps_valid_raw_json_exactly(self):
+        raw = '{ "key" : "TOOLS-731" }'
+        parsed = [types.SimpleNamespace(function=types.SimpleNamespace(
+            name="lookup_quality_marker", arguments='{"key":"other"}'))]
+        self.assertEqual(
+            self.select_named_arguments(
+                raw, "lookup_quality_marker", parsed),
+            raw,
+        )
+
+    def test_named_nonstream_recovers_unique_same_name_parser_call(self):
+        parsed = [types.SimpleNamespace(function=types.SimpleNamespace(
+            name="report_agent_marker",
+            arguments={"key": "AGENT-235K-731", "ordinal": 235000},
+        ))]
+        selected = self.select_named_arguments(
+            "<tool_call>not-json</tool_call>",
+            "report_agent_marker",
+            parsed,
+        )
+        self.assertEqual(json.loads(selected), {
+            "key": "AGENT-235K-731",
+            "ordinal": 235000,
+        })
+
+    def test_named_nonstream_rejects_ambiguous_or_wrong_parser_call(self):
+        raw = "<tool_call>not-json</tool_call>"
+        wrong = [types.SimpleNamespace(function=types.SimpleNamespace(
+            name="other", arguments='{"key":"x"}'))]
+        ambiguous = wrong + wrong
+        invalid = [types.SimpleNamespace(function=types.SimpleNamespace(
+            name="report_agent_marker", arguments="not-json"))]
+        for parsed in (wrong, ambiguous, invalid, None):
+            with self.subTest(parsed=parsed):
+                self.assertEqual(
+                    self.select_named_arguments(
+                        raw, "report_agent_marker", parsed),
+                    raw,
+                )
+
+    def test_named_nonstream_invokes_parser_only_for_invalid_json(self):
+        branch = SERVING_CHAT_SOURCE.index(
+            "parsed_named_tool_calls: Optional[List[ToolCall]]")
+        guard = SERVING_CHAT_SOURCE.index(
+            "not _tool_arguments_are_json_object(output_text)", branch)
+        parser_call = SERVING_CHAT_SOURCE.index(
+            ".extract_tool_calls(", guard)
+        selector = SERVING_CHAT_SOURCE.index(
+            "named_arguments = _select_named_tool_arguments", parser_call)
+        self.assertLess(branch, guard)
+        self.assertLess(guard, parser_call)
+        self.assertLess(parser_call, selector)
 
     def test_empty_messages_are_rejected_before_async_work(self):
         guard = 'if not request.messages:'

@@ -434,9 +434,23 @@ def _require_single_tool_call(
     require(isinstance(raw_calls, list) and len(raw_calls) == 1,
             "forced tool response must contain exactly one call")
     calls = quality._normalized_tool_calls(message)
-    require(calls == [{"name": expected_name,
-                       "arguments": expected_arguments}],
-            "forced tool response arguments differ")
+    require(len(calls) == 1 and calls[0].get("name") == expected_name,
+            "forced tool response name differs")
+    actual_arguments = calls[0].get("arguments")
+    require(isinstance(actual_arguments, dict),
+            "forced tool arguments must decode to an object")
+    expected_keys = sorted(expected_arguments)
+    actual_keys = sorted(actual_arguments)
+    require(actual_keys == expected_keys,
+            "forced tool argument keys differ: "
+            f"expected={','.join(expected_keys)};"
+            f"actual={','.join(actual_keys)}")
+    mismatched = sorted(
+        key for key in expected_keys
+        if actual_arguments.get(key) != expected_arguments[key])
+    require(not mismatched,
+            "forced tool argument values differ for fields: "
+            + ",".join(mismatched))
 
 
 def _simple_recall(context: Context, case: Json) -> Json:

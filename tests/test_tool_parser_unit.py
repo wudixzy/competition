@@ -119,6 +119,39 @@ def _load_parser_class():
 
 class Qwen3CoderToolParserUnitTest(unittest.TestCase):
 
+    def test_nonstream_named_tool_xml_yields_json_object_arguments(self):
+        parser_cls = _load_parser_class()
+        parser = parser_cls(_Tokenizer())
+        request = _Struct(tools=[_Struct(
+            type="function",
+            function=_Struct(
+                name="report_agent_marker",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string"},
+                        "ordinal": {"type": "integer"},
+                    },
+                },
+            ),
+        )])
+        output = (
+            "<tool_call><function=report_agent_marker>"
+            "<parameter=key>\nAGENT-235K-731\n</parameter>"
+            "<parameter=ordinal>\n235000\n</parameter>"
+            "</function></tool_call>")
+
+        parsed = parser.extract_tool_calls(output, request)
+
+        self.assertTrue(parsed.tools_called)
+        self.assertEqual(len(parsed.tool_calls), 1)
+        self.assertEqual(
+            parsed.tool_calls[0].function.name, "report_agent_marker")
+        self.assertEqual(json.loads(parsed.tool_calls[0].function.arguments), {
+            "key": "AGENT-235K-731",
+            "ordinal": 235000,
+        })
+
     def test_streaming_argument_name_is_json_escaped(self):
         parser_cls = _load_parser_class()
         parser = parser_cls(_Tokenizer())
