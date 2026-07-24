@@ -1,5 +1,27 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-25 当前提交绑定的功能与 Agent 基线
+
+- 平台 `main` 的 881 请求聚合结果没有源码、镜像或 overlay 身份，只保留为历史
+  参考；它不能代表当前私有候选，也不能用于计算当前候选相对 `main` 的收益。
+- 当前功能基线绑定私有分支提交 `3cbb98d`、实例 `ssh-73ca29ba` 和 atomic
+  overlay `84c27dacebce52620084cb2314a535cc9d409ac20ca98a6c8bbd4b7503188001`。
+  固定配置仍为 TP4、262144、8192 chunk、`fine32/direct`、LRU、关闭 fused
+  prefill；`main`、正式 YAML、默认开关和仓库可见性均未修改。
+- 53 项功能合同为 `52 pass / 0 fail / 1 skip`，唯一 skip 是固定
+  `--max-num-seqs 1` 下已记录的 direct-engine `n=2` 限制；所有实际执行项通过。
+  独立 Agent 矩阵为 `11/11`，覆盖 named/auto tools、两种 SSE tool calling、
+  tool result、多轮长历史、大 tools schema 和多 system 消息。
+- `3cbb98d` 修复 named-tool SSE：稳定 call ID 只在首个 delta 显式发送
+  `id/type/name`，后续仅追加 arguments。该修改不改变非流式响应、请求采样、
+  tokenizer、chat template、模型计算或缓存语义。
+- runtime identity、启动合同、prefix allocator、四 rank GDN action broadcast、
+  前后四卡预检、fatal 扫描和清理全部 RC 0；四卡空闲显存前后下降均为 0，
+  没有 fatal、OOM、Gloo、worker loss、segfault 或残留 API 进程。
+- 该结果只解锁固定 `fine32` 长上下文基线，不是 881 性能结果，也不授权
+  `admission64`、`main` 或 YAML。详情见
+  `docs/experiments/QUALITY_FUNCTIONAL_BASELINE_20260725.md`。
+
 ## 2026-07-24 模型能力与输出正确性同级硬门禁
 
 - 私有准备分支新增完整质量基线框架；`main`、`computility-run.yaml`、默认优化

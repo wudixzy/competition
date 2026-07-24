@@ -1,0 +1,103 @@
+{
+  "schema": "bi100-quality-functional-baseline-evidence-v1",
+  "version": 1,
+  "created_date": "2026-07-25",
+  "scope": "commit-bound-functional-and-agent-baseline-not-performance-score",
+  "promotion_authorized": false,
+  "source": {
+    "branch": "run/quality-3cbb98d",
+    "revision": "3cbb98dd5628c545c312cf4c185e399f8c80f32e",
+    "instance": "ssh-73ca29ba"
+  },
+  "runtime": {
+    "base_image": "harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3",
+    "identity": "bare-host-overlay-v1:84c27dacebce52620084",
+    "overlay_sha256": "84c27dacebce52620084cb2314a535cc9d409ac20ca98a6c8bbd4b7503188001",
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "tokenizer_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "gpu_count": 4,
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 1,
+    "gdn_cache_policy": "fine32",
+    "gdn_restore_mode": "direct",
+    "fused_prefill": false,
+    "kv_eviction_policy": "lru",
+    "hybrid_kv_accounting": "full_attention"
+  },
+  "startup": {
+    "qualified": true,
+    "model_layers": 40,
+    "full_attention_layers": 10,
+    "full_attention_ordinals": [3, 7, 11, 15, 19, 23, 27, 31, 35, 39],
+    "gpu_blocks_per_rank": 67512,
+    "cpu_blocks_per_rank": 26214,
+    "gpu_tokens": 1080192
+  },
+  "functional": {
+    "qualified": true,
+    "total": 53,
+    "passed": 52,
+    "failed": 0,
+    "skipped": 1,
+    "skip_ids": ["n_2"],
+    "skip_reason": "documented bare-engine n=2 limitation under fixed max_num_seqs=1",
+    "executed_pass_rate": 1.0,
+    "wall_seconds": 1703.603712644428
+  },
+  "agent_workload": {
+    "qualified": true,
+    "total": 11,
+    "passed": 11,
+    "failed": 0,
+    "covered": [
+      "forced tools",
+      "automatic tools",
+      "forced and automatic SSE tools",
+      "tool result round trip",
+      "long history",
+      "large tool schema",
+      "multiple system messages"
+    ]
+  },
+  "lifecycle": {
+    "overall_rc": 0,
+    "all_gate_rc_zero": true,
+    "fatal": 0,
+    "oom": 0,
+    "gloo": 0,
+    "worker_loss": 0,
+    "segfault": 0,
+    "cleanup_rc": 0,
+    "residual_api_server_processes": 0,
+    "gpu_preflight_before_qualified": true,
+    "gpu_preflight_after_qualified": true,
+    "gpu_preflight_comparison_qualified": true,
+    "free_memory_drop_bytes": [0, 0, 0, 0]
+  },
+  "artifact_sha256": {
+    "status.json": "438d4c836333b44c81a0cc3dc401e6445ae615f375aaa3f83c40e86e17bb91dc",
+    "quality_report.json": "3a6ac14ba6c15ea467bb3f418e8d69e87816772d7c06ce34f4676343ced8c5ad",
+    "agent_workload.json": "6eb5d431c5fd3dd09fb70d186c162b935cea145d653a5279b19c5856edae1e6c",
+    "runtime_contract.json": "6a6af22f7bcb143585fa914f1dc9e067eb0b4fd9a04ac471ebc7bfb4b44dd11b",
+    "runtime_identity.json": "fa8580ce503271db1f4e302bb3b6a3c628086bf177f969b93a853c13f9b93810",
+    "startup_contract.json": "665c1ed65ca05c77e73634b91ec828ce731ac532c4cea561da84857ba6ce7e84",
+    "preflight_comparison.json": "1d529bc179ed4cad258d017f7a39c9788fbe3bbb99289b47ef70d2e8789416fe",
+    "gdn_action_broadcast.json": "8fa002fd118e800bb46ca9d1db62e22c2708d4552158894c3bfc9ddb1250f81e",
+    "prefix_allocator.json": "d643d4a7b0661d99b019d2470304f1458110fb2970013b40d3f1bf8a579d6448"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_tool_arguments": false,
+    "raw_service_log_committed": false
+  },
+  "decision": {
+    "functional_baseline_passed": true,
+    "long_context_baseline_unlocked": true,
+    "official_881_score_established": false,
+    "main_or_yaml_change_authorized": false
+  }
+}
