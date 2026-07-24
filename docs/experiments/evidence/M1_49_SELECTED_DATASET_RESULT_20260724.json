@@ -1,0 +1,45 @@
+{
+  "schema": "bi100-selected-dataset-result-v1",
+  "version": 1,
+  "date": "2026-07-24",
+  "source_revision": "7324b896635ca677279f979d15a862aecab98c88",
+  "scope": "selected-13-turn-supplemental-not-official-score",
+  "qualified": true,
+  "reasons": [],
+  "dataset": {
+    "sha256": "dac6afc77621b51dbc09cfa046c008a1e51a779bb771edcb27cb6a686f8884c8",
+    "conversation_count": 4,
+    "turn_count": 13
+  },
+  "aggregate": {
+    "wall_s": 181.1166550554335,
+    "success_rate": 1.0,
+    "ttft_p90_s": 3.088520142436028,
+    "output_tps_p10": 21.30906454091335,
+    "cache_hit_rate": 0.5018886516669404,
+    "input_tps_residual_proxy": 86.99516333513353,
+    "cache_tps_proxy": 87.65486948637259,
+    "weighted_score_proxy": 650.493237116588,
+    "prompt_tokens": 6089,
+    "cached_tokens": 3056,
+    "uncached_prompt_tokens": 3033,
+    "completion_tokens": 3216
+  },
+  "gates": {
+    "startup": 0,
+    "startup_match": 0,
+    "replay": 0,
+    "qualification": 0,
+    "fatal_scan": 0,
+    "preflight_before": 0,
+    "preflight_after": 0,
+    "preflight_comparison": 0,
+    "cleanup": 0,
+    "overall": 0
+  },
+  "privacy": {
+    "contains_raw_messages": false,
+    "contains_raw_model_output": false
+  },
+  "qualification_source_sha256": "c959273200cca8418729abf4ae9835ce56e6eeafe18d828412df12890c0b1742"
+}
