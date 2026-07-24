@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 *.log
 build.log
+bench_runs/
 bench-*.json
 bi100-preflight.json
 bi100-nccl-preflight.json
