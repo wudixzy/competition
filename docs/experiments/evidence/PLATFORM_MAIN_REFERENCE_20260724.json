@@ -1,0 +1,112 @@
+{
+  "schema": "bi100-unbound-platform-reference-v1",
+  "version": 1,
+  "captured_date": "2026-07-24",
+  "source": {
+    "kind": "user-supplied-platform-metrics",
+    "declared_repository_branch": "main",
+    "source_revision": null,
+    "image_digest": null,
+    "runtime_overlay_sha256": null,
+    "runtime_contract_sha256": null,
+    "source_artifact_sha256": null,
+    "official_score": null
+  },
+  "attribution": {
+    "eligible": false,
+    "promotion_authorized": false,
+    "comparison_to_latest_candidate_authorized": false,
+    "reasons": [
+      "the platform result does not identify its source commit",
+      "the platform result does not identify its image or runtime overlay",
+      "the platform result does not contain an official weighted score",
+      "the supplied aggregate is not a per-request privacy-safe 881 trace",
+      "the local ModelHub tracking ref may be stale"
+    ]
+  },
+  "local_topology_snapshot": {
+    "remote_fetch_performed": false,
+    "modelhub_tracking_main": "2f7d5f5720863570d23d989ef8bbc7a387c606d4",
+    "local_main": "7194b37dac7a5344e8b6d79a9bbb74339bf81a65",
+    "latest_candidate": "7812dac146ffa2465488315b89449129ad6211b7",
+    "candidate_modelhub_merge_base": "a594c55b4d102f028d692e34e5a3ec0447f8c646",
+    "modelhub_unique_commits": 1,
+    "candidate_unique_commits": 115,
+    "changed_files": 232,
+    "insertions": 41758,
+    "deletions": 1812
+  },
+  "functional_suite": {
+    "tests_total": 56,
+    "tests_executed": 52,
+    "tests_passed": 51,
+    "tests_failed": 1,
+    "tests_skipped": 4,
+    "reported_pass_rate": 0.98,
+    "failed_case_ids": [
+      "t2_n_2"
+    ]
+  },
+  "single_long_output": {
+    "total_requests": 1,
+    "error_rate": 0.0,
+    "completion_tokens": 8192,
+    "elapsed_s": 374.38,
+    "output_tps": 20.81
+  },
+  "workload_881": {
+    "attempted_requests": 881,
+    "successful_requests": 631,
+    "error_requests": 250,
+    "reported_error_rate": 0.28,
+    "computed_success_rate": 0.7162315550510783,
+    "output_tps_p10": 5.22,
+    "output_tps_mean": 12.72,
+    "input_tps_mean": 1983.5,
+    "ttft_p90_ms": 14825.49,
+    "ttft_p99_ms": 147143.94,
+    "cache_hit_rate": 0.59,
+    "total_input_tokens": 10204718,
+    "total_cached_tokens": 5978480,
+    "total_uncached_input_tokens": 4226238,
+    "total_output_tokens": 442867,
+    "tool_requests_total": 690,
+    "tool_call_4xx_errors": 226,
+    "tool_call_4xx_rate": 0.32753623188405795,
+    "image_requests_total": 27,
+    "image_4xx_errors": 22,
+    "image_4xx_rate": 0.8148148148148148,
+    "multi_system_requests": 34,
+    "multi_system_4xx_errors": 7,
+    "multi_system_4xx_rate": 0.20588235294117646
+  },
+  "reported_capability_scores": {
+    "hle": 0.0,
+    "aime2025": 0.13,
+    "simpleqa": 0.0,
+    "gpqa_diamond": 0.0,
+    "longbench_v2": 0.0
+  },
+  "hard_gate_observation": {
+    "output_tps_p10_at_least_20": false,
+    "ttft_p90_at_most_5s": false,
+    "effective_cache_hit_at_least_50_percent": true,
+    "success_rate_at_least_99_percent": false,
+    "weighted_score_at_least_8000": null,
+    "max_model_len_262144": null,
+    "quality_non_regression": null
+  },
+  "use": {
+    "allowed": [
+      "identify platform-visible failure categories",
+      "prioritize commit-bound reruns of tool, image, and multi-system requests",
+      "serve as an explicitly unbound historical reference"
+    ],
+    "forbidden": [
+      "attribute a gain or regression to the latest candidate",
+      "estimate the latest candidate official score",
+      "substitute aggregate hit rate for per-request residual-prefill analysis",
+      "authorize a main, YAML, or default-policy change"
+    ]
+  }
+}

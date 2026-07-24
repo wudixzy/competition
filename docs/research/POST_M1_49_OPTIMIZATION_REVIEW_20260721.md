@@ -124,3 +124,20 @@ restore alignment, attention tile, or launch threshold is an admissible
 optimization variable. The next evidence-producing action is acquisition of
 one complete privacy-safe 881-request trace from a single evaluator-equivalent
 session, followed by the already fixed per-request residual-prefill comparison.
+
+## Unbound platform `main` reference
+
+The aggregate supplied on 2026-07-24 is retained in
+`docs/experiments/evidence/PLATFORM_MAIN_REFERENCE_20260724.json`. It reports
+631/881 successful requests, Output TPS P10 `5.22`, TTFT P90 `14.82549s`, and
+cache hit `59%`, with 226/690 tool, 22/27 image, and 7/34 multi-system requests
+returning 4xx responses. It therefore identifies API compatibility and tail
+latency as immediate platform-visible failures.
+
+It does not identify a source revision, image digest, runtime overlay, runtime
+contract, or official weighted score. The local `modelhub/main` tracking ref
+and candidate `7812dac` also differ by 115 candidate-side commits and 232
+files. This result is consequently an unbound historical reference only: it
+cannot measure the latest branch, authorize promotion, or substitute for the
+required commit-bound baseline/candidate runs and privacy-safe per-request 881
+trace.
