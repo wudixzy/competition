@@ -87,6 +87,46 @@ class ExactChatPromptTest(unittest.TestCase):
             MODULE.chat_template_token_ids(
                 tokenizer, messages, template_kwargs_mode="automatic")
 
+    def test_openai_tool_arguments_are_normalized_only_for_template(self):
+        messages = [{
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "id": "call-unit",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": '{"key":"value"}',
+                },
+            }],
+        }]
+        normalized = MODULE._messages_for_template(messages)
+        self.assertEqual(
+            normalized[0]["tool_calls"][0]["function"]["arguments"],
+            {"key": "value"},
+        )
+        self.assertEqual(
+            messages[0]["tool_calls"][0]["function"]["arguments"],
+            '{"key":"value"}',
+        )
+
+    def test_invalid_tool_arguments_fail_before_template_rendering(self):
+        def messages(arguments):
+            return [{
+                "role": "assistant",
+                "tool_calls": [{
+                    "type": "function",
+                    "function": {"name": "lookup", "arguments": arguments},
+                }],
+            }]
+
+        with self.assertRaisesRegex(
+                MODULE.PromptConstructionError, "not valid JSON"):
+            MODULE._messages_for_template(messages("{"))
+        with self.assertRaisesRegex(
+                MODULE.PromptConstructionError, "decode to an object"):
+            MODULE._messages_for_template(messages("[]"))
+
     def test_unreachable_target_fails_with_construction_reason(self):
         tokenizer = ConstantTemplateTokenizer()
         with self.assertRaisesRegex(

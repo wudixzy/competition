@@ -53,6 +53,44 @@ def _template_kwargs(mode: str, thinking: bool) -> Json:
     return {"chat_template_kwargs": {"enable_thinking": thinking}}
 
 
+def _messages_for_template(messages: list[Json]) -> list[Json]:
+    """Mirror vLLM's OpenAI-to-HF tool argument normalization."""
+    normalized = []
+    for message in messages:
+        tool_calls = message.get("tool_calls")
+        if message.get("role") != "assistant" or not isinstance(
+                tool_calls, list):
+            normalized.append(message)
+            continue
+
+        normalized_calls = []
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, dict):
+                normalized_calls.append(tool_call)
+                continue
+            normalized_call = dict(tool_call)
+            function = normalized_call.get("function")
+            if isinstance(function, dict):
+                normalized_function = dict(function)
+                arguments = normalized_function.get("arguments")
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError as error:
+                        raise PromptConstructionError(
+                            "assistant tool arguments are not valid JSON"
+                        ) from error
+                    _require(isinstance(arguments, dict),
+                             "assistant tool arguments must decode to an object")
+                    normalized_function["arguments"] = arguments
+                normalized_call["function"] = normalized_function
+            normalized_calls.append(normalized_call)
+        normalized_message = dict(message)
+        normalized_message["tool_calls"] = normalized_calls
+        normalized.append(normalized_message)
+    return normalized
+
+
 def chat_template_token_ids(
     tokenizer: Any,
     messages: list[Json],
@@ -69,7 +107,8 @@ def chat_template_token_ids(
     if tools is not None:
         kwargs["tools"] = tools
     try:
-        value = tokenizer.apply_chat_template(messages, **kwargs)
+        value = tokenizer.apply_chat_template(
+            _messages_for_template(messages), **kwargs)
     except (TypeError, ValueError) as error:
         raise PromptConstructionError(
             f"chat-template invocation failed in {template_kwargs_mode} mode"
