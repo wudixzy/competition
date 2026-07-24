@@ -1,0 +1,120 @@
+{
+  "schema": "bi100-quality-long-context-baseline-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "revision": "62b8b83dccf3106e9a10ddabc016fb60ed19fc6e",
+    "branch": "run/quality-62b8b83",
+    "instance": "ssh-73ca29ba",
+    "runtime_identity": "bare-host-overlay-v1:03aad9d1411375adc6e5",
+    "runtime_overlay_sha256": "03aad9d1411375adc6e5895933930357f31873f42f7c4eb5582429a17b386c23",
+    "base_image": "harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3"
+  },
+  "runtime": {
+    "gpu_count": 4,
+    "tensor_parallel_size": 4,
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "tokenizer_artifact_set_sha256": "48722960152a0db89e6d98e3d48558d2ffb072a5267b24a347d4c4bea3c08ae2",
+    "max_model_len": 262144,
+    "max_num_batched_tokens": 8192,
+    "gdn_cache_policy": "fine32",
+    "gdn_restore_mode": "direct",
+    "fused_prefill": false,
+    "kv_eviction_policy": "lru",
+    "hybrid_kv_accounting": "full_attention",
+    "observed_gpu_blocks": 67512,
+    "observed_gpu_token_capacity": 1080192
+  },
+  "matrix": {
+    "name": "long_context_matrix.v2.json",
+    "sha256": "3217ec047f7b78af6747269c3f85baed6bfdd86c6527aca6335dbfa7d9f0452b",
+    "seed": 20260724,
+    "runner_sha256": "daa5ed52d8ef982ca7b81705eadf8f113e2ddc26af61ec8ca27c126ccbd6c839",
+    "exact_prompt_module_sha256": "2c466ee10ef5cb9f8690edc44bde99f78fc0846768aa6d3a40c5d08ae462c51f",
+    "total": 12,
+    "passed": 9,
+    "failed": 3,
+    "pass_rate": 0.75,
+    "wall_s": 3652.064867783338
+  },
+  "cases": [
+    {"id": "short_basic_recall", "status": "pass", "elapsed_s": 6.641049, "request_count": 1},
+    {"id": "4k_cold_warm_recall", "status": "pass", "elapsed_s": 9.360713, "request_count": 2},
+    {"id": "32k_partial_branch", "status": "pass", "elapsed_s": 53.933313, "request_count": 3},
+    {"id": "32k_multimodal_isolation", "status": "pass", "elapsed_s": 105.863708, "request_count": 3},
+    {"id": "65k_multiturn_large_tools", "status": "fail", "elapsed_s": 112.460737, "request_count": 0, "error_code": "forced tool response arguments differ"},
+    {"id": "65k_long_tool_result", "status": "pass", "elapsed_s": 91.98584, "request_count": 2},
+    {"id": "65k_interleaved_sessions", "status": "pass", "elapsed_s": 184.582134, "request_count": 4},
+    {"id": "131k_cold_warm_recall", "status": "pass", "elapsed_s": 303.826182, "request_count": 2},
+    {"id": "131k_reasoning_recall", "status": "fail", "elapsed_s": 282.1452, "request_count": 0, "error_code": "long-context reasoning marker recall failed"},
+    {"id": "235k_agent_large_output_budget", "status": "fail", "elapsed_s": 560.41863, "request_count": 0, "error_code": "tool arguments are not valid JSON"},
+    {"id": "235k_partial_branch", "status": "pass", "elapsed_s": 602.170499, "request_count": 4},
+    {"id": "near_262k_capacity", "status": "pass", "elapsed_s": 1338.647882, "request_count": 3}
+  ],
+  "confirmed_capabilities": {
+    "short_4k_32k_65k_131k_recall": true,
+    "235k_partial_prefix_branch": true,
+    "262144_and_minus_one_capacity": true,
+    "multimodal_same_image_reuse": true,
+    "multimodal_different_image_isolation": true,
+    "cold_warm_exact_for_all_passing_cache_cases": true,
+    "interleaved_session_isolation": true,
+    "large_tool_result_recall": true
+  },
+  "failure_classification": {
+    "65k_multiturn_large_tools": "unresolved: old runner retained neither safe request summary nor argument-key diagnostic",
+    "131k_reasoning_recall": "quality-rule failure: final-answer sub-rule passed before marker recall failed; requires baseline-aware test analysis",
+    "235k_agent_large_output_budget": "serving compatibility bug: named Qwen XML tool payload was returned as non-JSON arguments",
+    "infrastructure_failure": false
+  },
+  "runner_limitation": {
+    "failed_request_summaries_retained": false,
+    "fixed_by_revision": "8c00ba6c6a916b68d1d020330ccf0e4d7fb0800c",
+    "raw_requests_or_outputs_recovered": false
+  },
+  "lifecycle": {
+    "overall_rc": 1,
+    "quality_rc": 1,
+    "runtime_identity_rc": 0,
+    "runtime_contract_rc": 0,
+    "prefix_allocator_rc": 0,
+    "gdn_action_broadcast_rc": 0,
+    "preflight_before_rc": 0,
+    "startup_rc": 0,
+    "startup_contract_rc": 0,
+    "cleanup_rc": 0,
+    "fatal_scan_rc": 0,
+    "preflight_after_rc": 0,
+    "preflight_comparison_rc": 0,
+    "fatal_scan_empty": true,
+    "residual_api_server_processes": 0,
+    "port_8000_listeners_after_cleanup": 0,
+    "free_memory_drop_bytes": [0, 0, 0, 0]
+  },
+  "artifact_sha256": {
+    "quality_report.json": "431c9f2b8cf1145d6cef2ef91ff0e8f24d9844e6f22802f78bdd09df4a90a22c",
+    "status.json": "f4b424be12169d3723e6356f928c154dc31c96a9383fd577f806861a63f17bab",
+    "runtime_contract.json": "cd9da9186c4b45c20fdea53e6c80a1482e881638611097660be0d533346a476b",
+    "runtime_identity.json": "8ab37a1d5d8ea5ec0c6faa6e15fdca682f7ae56bc5ecb3ba44752baa22d4bc5d",
+    "startup_contract.json": "034577ebe37178e07da6a4f43c4a788f5e4b445fa53b7b01284a678e08ef9600",
+    "preflight_before.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_after.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_comparison.json": "1d529bc179ed4cad258d017f7a39c9788fbe3bbb99289b47ef70d2e8789416fe",
+    "fatal_scan.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_tool_argument_values": false,
+    "raw_service_log_committed": false
+  },
+  "decision": {
+    "qualified": false,
+    "eligible_as_passing_quality_baseline": false,
+    "performance_score_established": false,
+    "main_or_yaml_change_authorized": false,
+    "next_source_revision": "8c00ba6c6a916b68d1d020330ccf0e4d7fb0800c",
+    "next_action": "run exact TP4 functional and long-context gates with the named-tool repair and privacy-safe failed-request summaries"
+  }
+}
