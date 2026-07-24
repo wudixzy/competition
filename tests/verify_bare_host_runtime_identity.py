@@ -17,22 +17,78 @@ SCHEMA = "bi100-bare-host-runtime-identity-v1"
 VERSION = 1
 INSTALL_SCHEMA = "bi100-bare-host-runtime-install-v2"
 DIRECT_SOURCE_FILES = {
+    "api_server": Path("qwen3_6_scripts/api_server.py"),
+    "bi100_env": Path("qwen3_6_scripts/bi100_env.py"),
     "vllm_model": Path("qwen3_6_scripts/qwen3_5.py"),
     "bi100_profile": Path("qwen3_6_scripts/bi100_profile.py"),
+    "block_table": Path("vllm/core/block/block_table.py"),
+    "chat_utils": Path("qwen3_6_scripts/chat_utils.py"),
+    "cli_args": Path("qwen3_6_scripts/cli_args.py"),
+    "cpu_gpu_block_allocator": Path(
+        "vllm/core/block/cpu_gpu_block_allocator.py"),
+    "evictor": Path("vllm/core/evictor_v2.py"),
     "paged_attention": Path("qwen3_6_scripts/paged_attn.py"),
     "xformers_backend": Path("vllm/attention/backends/xformers.py"),
     "gdn_prefix": Path("qwen3_6_scripts/gdn_prefix.py"),
+    "mamba_cache": Path("qwen3_6_scripts/mamba_cache.py"),
+    "prefix_caching_block": Path(
+        "vllm/core/block/prefix_caching_block.py"),
+    "protocol": Path("qwen3_6_scripts/protocol.py"),
+    "reasoning_abs": Path(
+        "qwen3_6_scripts/reasoning/abs_reasoning_parsers.py"),
+    "reasoning_init": Path("qwen3_6_scripts/reasoning/__init__.py"),
+    "reasoning_qwen3": Path(
+        "qwen3_6_scripts/reasoning/qwen3_reasoning_parser.py"),
     "scheduler": Path("qwen3_6_scripts/scheduler.py"),
+    "sequence": Path("qwen3_6_scripts/sequence.py"),
+    "serving_chat": Path("qwen3_6_scripts/serving_chat.py"),
     "content_cache": Path("vllm/core/block/cpu_kv_content_cache.py"),
+    "tool_parser": Path("qwen3_6_scripts/qwen3coder_tool_parser.py"),
+    "transformers_qwen3_5_config": Path(
+        "qwen3_6_scripts/qwen3_5/configuration_qwen3_5.py"),
+    "transformers_qwen3_5_init": Path(
+        "qwen3_6_scripts/qwen3_5/__init__.py"),
     "moe_config": Path(
         "qwen3_6_scripts/qwen3_5_moe/configuration_qwen3_5_moe.py"),
+    "transformers_qwen3_5_moe_init": Path(
+        "qwen3_6_scripts/qwen3_5_moe/__init__.py"),
 }
-GENERATED_FILES = {"block_manager", "cache_trace_outputs"}
+GENERATED_FILES = {
+    "block_manager", "cache_trace_outputs", "model_runner", "worker",
+}
 REQUIRED_FILES = set(DIRECT_SOURCE_FILES) | GENERATED_FILES
 
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def runtime_tree_sha256(root: Path) -> str:
+    root = root.resolve()
+    digest = hashlib.sha256(b"bi100-runtime-tree-v1\0")
+    for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        relative = path.relative_to(root)
+        if "__pycache__" in relative.parts or path.suffix in {".pyc", ".pyo"}:
+            continue
+        if path.is_symlink():
+            kind = b"L"
+            payload_sha = hashlib.sha256(
+                os.readlink(path).encode("utf-8")).digest()
+        elif path.is_file():
+            kind = b"F"
+            file_digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    file_digest.update(chunk)
+            payload_sha = file_digest.digest()
+        else:
+            continue
+        encoded = relative.as_posix().encode("utf-8")
+        digest.update(kind)
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+        digest.update(payload_sha)
+    return digest.hexdigest()
 
 
 def verify(
@@ -59,6 +115,15 @@ def verify(
     if (not isinstance(reported_site, str)
             or Path(reported_site).resolve() != runtime_site_packages):
         reasons.append("active runtime differs from install report")
+
+    reported_tree_sha = runtime_install.get("runtime_tree_sha256")
+    actual_tree_sha = (
+        runtime_tree_sha256(runtime_site_packages)
+        if runtime_site_packages.is_dir() else None)
+    if (not isinstance(reported_tree_sha, str)
+            or len(reported_tree_sha) != 64
+            or reported_tree_sha != actual_tree_sha):
+        reasons.append("active runtime tree identity differs from install report")
 
     versions = runtime_install.get("versions") or {}
     if versions.get("transformers") != "4.55.3":
@@ -132,6 +197,7 @@ def verify(
         "reasons": reasons,
         "source_revision": source_revision,
         "runtime_site_packages": str(runtime_site_packages),
+        "runtime_tree_sha256": actual_tree_sha,
         "files": files,
         "fixed_source_identity": fixed_source_identity,
     }

@@ -169,14 +169,14 @@ def valid_report() -> dict:
     cases = [case_result(case) for case in manifest["cases"]]
     files = [{"name": "tokenizer.json", "bytes": 10,
               "sha256": digest("a")}]
-    command = [
-        "python3", "-m", "vllm.entrypoints.openai.api_server",
-        "--model", "/model", "--max-model-len", "262144", "-tp", "4",
-    ]
-    environment = {
-        "BI100_CACHE_TRACE": "1",
-        "BI100_GDN_CACHE_POLICY": "fine32",
-    }
+    command = MODULE.runtime_contract.service_command("/model")
+    environment = MODULE.runtime_contract.service_environment(
+        "/runtime/site-packages",
+        gdn_cache_policy="fine32",
+        gdn_restore_mode="direct",
+        fused_prefill="0",
+        kv_eviction_policy="lru",
+    )
     contract = {
         "schema": "bi100-quality-runtime-contract-v1",
         "version": 1,
@@ -331,7 +331,7 @@ class LongContextQualityComparisonTest(unittest.TestCase):
             "cached_tokens"] = 16
         self.assertFalse(self.compare(baseline, candidate)["qualified"])
 
-    def test_only_bi100_environment_may_differ_between_ab_runs(self):
+    def test_only_declared_environment_may_differ_between_ab_runs(self):
         baseline = valid_report()
         candidate = copy.deepcopy(baseline)
         candidate["runtime_contract"]["contract"]["environment"][
@@ -343,9 +343,24 @@ class LongContextQualityComparisonTest(unittest.TestCase):
 
         candidate = copy.deepcopy(baseline)
         candidate["runtime_contract"]["contract"]["environment"][
-            "OMP_NUM_THREADS"] = "2"
+            "BI100_UNDOCUMENTED_FAST_PATH"] = "1"
         refresh_runtime_contract(candidate)
         self.assertFalse(self.compare(baseline, candidate)["qualified"])
+
+    def test_ab_requires_same_source_overlay_and_instance(self):
+        baseline = valid_report()
+        for field, value in (
+                ("source_revision", "1" * 40),
+                ("runtime_identity", "different-runtime"),
+                ("runtime_overlay_sha256", "2" * 64),
+                ("instance", "different-instance")):
+            with self.subTest(field=field):
+                candidate = copy.deepcopy(baseline)
+                candidate["runtime"][field] = value
+                candidate["runtime_contract"]["contract"][field] = value
+                refresh_runtime_contract(candidate)
+                self.assertFalse(self.compare(
+                    baseline, candidate)["qualified"])
 
     def test_raw_or_incomplete_report_fails_without_crashing(self):
         baseline = valid_report()

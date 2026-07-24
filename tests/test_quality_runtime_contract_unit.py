@@ -31,8 +31,14 @@ def contract() -> dict:
         "tokenizer_path": "/model",
         "served_model_name": "llm",
         "base_image": MODULE.BASE_IMAGE,
-        "command": ["python3", "-m", "vllm.entrypoints.openai.api_server"],
-        "environment": {"BI100_CACHE_TRACE": "1"},
+        "command": MODULE.service_command("/model"),
+        "environment": MODULE.service_environment(
+            "/runtime/site-packages",
+            gdn_cache_policy="fine32",
+            gdn_restore_mode="direct",
+            fused_prefill="0",
+            kv_eviction_policy="lru",
+        ),
         "cache_trace_enabled": True,
         "optimization_label": "baseline",
     }

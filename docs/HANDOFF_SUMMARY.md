@@ -1,5 +1,27 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-24 模型能力与输出正确性同级硬门禁
+
+- 私有准备分支新增完整质量基线框架；`main`、`computility-run.yaml`、默认优化
+  开关和仓库可见性均未修改。性能结论与质量结论继续分开，13 请求选取集仍只作为
+  smoke/proxy，不能外推到官方 881 请求或 8000 分门槛。
+- 功能门禁严格执行 `指标集合`对应的 53 项，不启用历史 direct-engine `n=2`
+  skip；另有 12 项确定性长上下文矩阵，覆盖短请求、4K、32K、65K、131K、235K、
+  262144 边界、多轮 tool result、大型 tools schema、reasoning 和多模态隔离。
+- `scripts/run_quality_service_gate.sh` 将每个功能/长上下文、baseline/candidate 运行
+  隔离为独立 TP4 服务生命周期，自动执行前后四卡预检、启动合同、cache trace v4、
+  fatal/OOM/Gloo/worker-loss 扫描、进程组清理和安全状态汇总。原始日志只允许留在
+  仓库外的私有 `/tmp` 路径。
+- 质量运行契约不再手填。生成器绑定同一源码 revision、实例、模型、tokenizer、固定
+  服务命令和所有质量相关环境值；A/B 只允许 GDN policy/restore、融合 prefill 和
+  KV eviction 四个声明开关变化。baseline/candidate 换 overlay 或实例会 fail-closed。
+- bare-host overlay 身份已扩展到 API server、serving chat、chat utils、tool parser、
+  reasoning parser、多模态/模型/缓存关键文件，并额外重算排除 pycache 后的完整 runtime
+  tree SHA-256；服务启动前发现文件漂移即失败。
+- 本地验证为 `516 passed, 25 skipped`，submission preflight `9/9`，214 个 Python
+  源和 32 个 shell 脚本语法通过，敏感文件扫描干净。`ssh-73ca29ba` 四张 BI100
+  最新预检均通过，但本轮尚未启动质量服务，因此没有新的模型能力或性能通过结论。
+
 ## 2026-07-24 TP4 资格、选取数据集与 M1-48 归因
 
 - 当前私有准备分支为 `prep/M1-48-on-M1-49-20260722`，已推送的运行时实现为

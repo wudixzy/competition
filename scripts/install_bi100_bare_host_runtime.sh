@@ -141,6 +141,7 @@ import hashlib
 import importlib.metadata
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -165,6 +166,33 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def tree_digest(root: Path) -> str:
+    value = hashlib.sha256(b"bi100-runtime-tree-v1\0")
+    for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        relative = path.relative_to(root)
+        if "__pycache__" in relative.parts or path.suffix in {".pyc", ".pyo"}:
+            continue
+        if path.is_symlink():
+            kind = b"L"
+            payload_sha = hashlib.sha256(
+                os.readlink(path).encode("utf-8")).digest()
+        elif path.is_file():
+            kind = b"F"
+            file_digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    file_digest.update(chunk)
+            payload_sha = file_digest.digest()
+        else:
+            continue
+        encoded = relative.as_posix().encode("utf-8")
+        value.update(kind)
+        value.update(len(encoded).to_bytes(8, "big"))
+        value.update(encoded)
+        value.update(payload_sha)
+    return value.hexdigest()
+
+
 vllm_root = package_root("vllm")
 transformers_root = package_root("transformers")
 if not vllm_root.is_relative_to(site):
@@ -174,6 +202,14 @@ if not transformers_root.is_relative_to(site):
         f"Transformers resolved outside staged overlay: {transformers_root}")
 
 checks = {
+    "api_server": (
+        root / "qwen3_6_scripts/api_server.py",
+        vllm_root / "entrypoints/openai/api_server.py",
+    ),
+    "bi100_env": (
+        root / "qwen3_6_scripts/bi100_env.py",
+        vllm_root / "bi100_env.py",
+    ),
     "vllm_model": (
         root / "qwen3_6_scripts/qwen3_5.py",
         vllm_root / "model_executor/models/qwen3_5.py",
@@ -210,11 +246,86 @@ checks = {
         root / "vllm/core/block/cpu_kv_content_cache.py",
         vllm_root / "core/block/cpu_kv_content_cache.py",
     ),
+    "block_table": (
+        root / "vllm/core/block/block_table.py",
+        vllm_root / "core/block/block_table.py",
+    ),
+    "chat_utils": (
+        root / "qwen3_6_scripts/chat_utils.py",
+        vllm_root / "entrypoints/chat_utils.py",
+    ),
+    "cli_args": (
+        root / "qwen3_6_scripts/cli_args.py",
+        vllm_root / "entrypoints/openai/cli_args.py",
+    ),
+    "cpu_gpu_block_allocator": (
+        root / "vllm/core/block/cpu_gpu_block_allocator.py",
+        vllm_root / "core/block/cpu_gpu_block_allocator.py",
+    ),
+    "evictor": (
+        root / "vllm/core/evictor_v2.py",
+        vllm_root / "core/evictor_v2.py",
+    ),
+    "mamba_cache": (
+        root / "qwen3_6_scripts/mamba_cache.py",
+        vllm_root / "model_executor/models/mamba_cache.py",
+    ),
+    "prefix_caching_block": (
+        root / "vllm/core/block/prefix_caching_block.py",
+        vllm_root / "core/block/prefix_caching_block.py",
+    ),
+    "protocol": (
+        root / "qwen3_6_scripts/protocol.py",
+        vllm_root / "entrypoints/openai/protocol.py",
+    ),
+    "reasoning_abs": (
+        root / "qwen3_6_scripts/reasoning/abs_reasoning_parsers.py",
+        vllm_root / "reasoning/abs_reasoning_parsers.py",
+    ),
+    "reasoning_init": (
+        root / "qwen3_6_scripts/reasoning/__init__.py",
+        vllm_root / "reasoning/__init__.py",
+    ),
+    "reasoning_qwen3": (
+        root / "qwen3_6_scripts/reasoning/qwen3_reasoning_parser.py",
+        vllm_root / "reasoning/qwen3_reasoning_parser.py",
+    ),
+    "sequence": (
+        root / "qwen3_6_scripts/sequence.py",
+        vllm_root / "sequence.py",
+    ),
+    "serving_chat": (
+        root / "qwen3_6_scripts/serving_chat.py",
+        vllm_root / "entrypoints/openai/serving_chat.py",
+    ),
+    "tool_parser": (
+        root / "qwen3_6_scripts/qwen3coder_tool_parser.py",
+        vllm_root / "entrypoints/openai/tool_parsers/qwen3coder_tool_parser.py",
+    ),
+    "transformers_qwen3_5_config": (
+        root / "qwen3_6_scripts/qwen3_5/configuration_qwen3_5.py",
+        transformers_root / "models/qwen3_5/configuration_qwen3_5.py",
+    ),
+    "transformers_qwen3_5_init": (
+        root / "qwen3_6_scripts/qwen3_5/__init__.py",
+        transformers_root / "models/qwen3_5/__init__.py",
+    ),
     "moe_config": (
         root / "qwen3_6_scripts/qwen3_5_moe/configuration_qwen3_5_moe.py",
         transformers_root / "models/qwen3_5_moe/configuration_qwen3_5_moe.py",
     ),
+    "transformers_qwen3_5_moe_init": (
+        root / "qwen3_6_scripts/qwen3_5_moe/__init__.py",
+        transformers_root / "models/qwen3_5_moe/__init__.py",
+    ),
 }
+model_runner = vllm_root / "worker/model_runner.py"
+worker = vllm_root / "worker/worker.py"
+for label, path in {
+        "model_runner": model_runner,
+        "worker": worker,
+}.items():
+    checks[label] = (path, path)
 files = {}
 qualified = True
 for label, (source, installed) in checks.items():
@@ -231,13 +342,11 @@ for label, (source, installed) in checks.items():
             runtime_root / "site-packages" / installed_relative),
     }
 
-model_runner = vllm_root / "worker/model_runner.py"
 model_runner_text = model_runner.read_text(encoding="utf-8")
 profile_patch_present = (
     "self.model_config.get_num_attention_layers(" in model_runner_text
 )
 qualified = qualified and profile_patch_present
-worker = vllm_root / "worker/worker.py"
 worker_text = worker.read_text(encoding="utf-8")
 startup_profile_guard_patch = (
     "Mark this synthetic pass so BI100_PROFILE can exclude" in worker_text
@@ -258,6 +367,7 @@ report = {
     "system_site_packages_modified": False,
     "source_revision": source_revision,
     "source_tree_clean": True,
+    "runtime_tree_sha256": tree_digest(site),
     "versions": versions,
     "files": files,
     "block_manager_base_sha256": digest(

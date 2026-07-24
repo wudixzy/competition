@@ -32,24 +32,63 @@ SHA-256.
 
 ## Runtime contract
 
-Create one private runtime-contract JSON per service launch from
-`quality/runtime_contract.example.json`. Replace both zero placeholders and all
-`replace-with-*` values. `source_revision` must equal `git rev-parse HEAD`, and
-the command/environment must describe the process that is actually running.
+Create one private runtime-contract JSON per service launch. The fixed lifecycle
+harness calls `tests/build_quality_runtime_contract.py`; operators must not fill
+revision, overlay hash, command, or environment fields by hand. The builder
+requires a clean source tree, verifies every capability-critical runtime file,
+and recomputes the complete overlay tree SHA-256 before writing the contract.
+`quality/runtime_contract.example.json` is documentation only.
 
 The validator rejects the retired ModelHub base image, credential-like fields,
 SSH keys, access tokens, and a quality service without `BI100_CACHE_TRACE=1`.
 Do not add proxy credentials or repository tokens to the contract. Baseline and
-candidate contracts must use the same model, tokenizer, command, base image,
-TP topology, and non-`BI100_*` environment. Only documented `BI100_*`
-optimization switches may differ.
+candidate contracts must use the same source revision, overlay tree, instance,
+model, tokenizer, command, base image, and TP topology. Only the four explicitly
+documented optimization switches below may differ.
 
-## Execution order
+## Fixed lifecycle harness
 
-Use a newly started service with an empty prefix/GDN cache for every gate and
-for every A/B side. Do not execute the functional and long-context suites back
-to back against one service. Restart between them. Capture the service stdout
-and stderr in a local diagnostic log for the long-context cache-trace proof.
+Every invocation starts exactly one fresh TP4 service, runs four-GPU preflight
+before and after, validates the startup contract, executes one quality surface,
+scans fatal/OOM/worker-loss signatures, and kills the isolated process group.
+Raw logs remain under a private `/tmp` path outside the repository. The
+functional run executes all 53 rows strictly; the historical direct-engine
+`n=2` skip is not enabled by this harness.
+
+The overlay must be installed from the exact clean experiment commit. Use one
+overlay and one instance for all four A/B runs:
+
+```bash
+export BI100_RUNTIME_SITE_PACKAGES=/root/private-quality-runtime/site-packages
+
+scripts/run_quality_service_gate.sh \
+  functional fine32 direct 0 lru baseline-fine32 private-instance \
+  /tmp/bi100-quality/baseline-functional
+
+scripts/run_quality_service_gate.sh \
+  long-context fine32 direct 0 lru baseline-fine32 private-instance \
+  /tmp/bi100-quality/baseline-long-context
+
+scripts/run_quality_service_gate.sh \
+  functional admission64 direct 0 lru candidate-admission64 private-instance \
+  /tmp/bi100-quality/candidate-functional
+
+scripts/run_quality_service_gate.sh \
+  long-context admission64 direct 0 lru candidate-admission64 private-instance \
+  /tmp/bi100-quality/candidate-long-context
+```
+
+The only A/B environment differences accepted by the comparison gates are
+`BI100_GDN_CACHE_POLICY`, `BI100_GDN_RESTORE_MODE`,
+`BI100_ATTN_COREX_FUSED_PREFILL`, and `BI100_KV_EVICTION_POLICY`. Every other
+recorded environment value must match.
+
+## Manual execution
+
+Manual execution is diagnostic-only. Use a newly started service with an empty
+prefix/GDN cache for every gate and every A/B side. Do not execute functional
+and long-context suites back to back against one service. Capture stdout and
+stderr in a private diagnostic log for long-context cache-trace proof.
 
 Run the complete functional contract:
 

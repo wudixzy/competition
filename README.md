@@ -4,6 +4,8 @@
 [`docs/HANDOFF_SUMMARY.md`](docs/HANDOFF_SUMMARY.md)。
 模型能力、缓存正确性和长上下文非回退门禁见
 [`docs/QUALITY_NON_REGRESSION_GATE_20260724.md`](docs/QUALITY_NON_REGRESSION_GATE_20260724.md)。
+固定 TP4 基线/候选质量实验使用 `scripts/run_quality_service_gate.sh`；该
+harness 不修改正式 YAML、默认优化开关或仓库可见性。
 
 自 2026-07-20 起，天垓100 v1.2.3 基础镜像必须使用
 `harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3`。

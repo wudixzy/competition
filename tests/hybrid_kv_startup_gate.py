@@ -298,6 +298,10 @@ def _runtime_contract(
     block_size: int,
     tensor_parallel_size: int,
     expected_cache_trace: str = "0",
+    expected_gdn_cache_policy: str = "admission64",
+    expected_gdn_restore_mode: str = "direct",
+    expected_fused_prefill: str = "0",
+    expected_kv_eviction_policy: str = "lru",
 ) -> tuple[dict[str, Any], list[str]]:
     if expected_cache_trace not in {"0", "1"}:
         raise ValueError("expected_cache_trace must be 0 or 1")
@@ -325,6 +329,10 @@ def _runtime_contract(
     expected_service.update({
         "accounting": mode,
         "cache_trace": expected_cache_trace,
+        "gdn_cache_policy": expected_gdn_cache_policy,
+        "gdn_restore_mode": expected_gdn_restore_mode,
+        "fused_prefill": expected_fused_prefill,
+        "kv_eviction_policy": expected_kv_eviction_policy,
         "model_path": str(model_path),
         "runtime_site_packages": os.environ.get(
             "BI100_RUNTIME_SITE_PACKAGES", "system"),
@@ -388,6 +396,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tensor-parallel-size", type=int, default=4)
     parser.add_argument(
         "--expected-cache-trace", choices=("0", "1"), default="0")
+    parser.add_argument(
+        "--expected-gdn-cache-policy",
+        choices=("fine32", "admission64"), default="admission64")
+    parser.add_argument(
+        "--expected-gdn-restore-mode",
+        choices=("direct", "aligned"), default="direct")
+    parser.add_argument(
+        "--expected-fused-prefill", choices=("0", "1"), default="0")
+    parser.add_argument(
+        "--expected-kv-eviction-policy",
+        choices=("lru", "frequency"), default="lru")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.max_model_len <= 0:
@@ -413,6 +432,10 @@ def main(argv: list[str] | None = None) -> int:
             block_size=args.block_size,
             tensor_parallel_size=args.tensor_parallel_size,
             expected_cache_trace=args.expected_cache_trace,
+            expected_gdn_cache_policy=args.expected_gdn_cache_policy,
+            expected_gdn_restore_mode=args.expected_gdn_restore_mode,
+            expected_fused_prefill=args.expected_fused_prefill,
+            expected_kv_eviction_policy=args.expected_kv_eviction_policy,
         )
         report = evaluate(
             log_text,

@@ -27,6 +27,13 @@ EXPECTED_CASES = 12
 BASE_IMAGE = runtime_contract.BASE_IMAGE
 Json = dict[str, Any]
 
+ALLOWED_AB_ENV_DIFFERENCES = {
+    "BI100_ATTN_COREX_FUSED_PREFILL",
+    "BI100_GDN_CACHE_POLICY",
+    "BI100_GDN_RESTORE_MODE",
+    "BI100_KV_EVICTION_POLICY",
+}
+
 REQUEST_COUNTS = {
     "short_basic_recall": 1,
     "4k_cold_warm_recall": 2,
@@ -663,7 +670,8 @@ def compare_reports(
         baseline_runtime = baseline.get("runtime") or {}
         candidate_runtime = candidate.get("runtime") or {}
         for field in (
-            "gpu_count", "tensor_parallel_size", "model_path",
+            "source_revision", "runtime_identity", "runtime_overlay_sha256",
+            "instance", "gpu_count", "tensor_parallel_size", "model_path",
             "max_model_len", "served_model_name", "service_command_sha256"):
             if baseline_runtime.get(field) != candidate_runtime.get(field):
                 reasons.append(f"runtime contract differs in {field}")
@@ -682,7 +690,9 @@ def compare_reports(
         if isinstance(baseline_contract, dict) and isinstance(
                 candidate_contract, dict):
             for field in (
-                    "base_image", "command", "gpu_count",
+                    "source_revision", "runtime_identity",
+                    "runtime_overlay_sha256", "instance", "base_image",
+                    "command", "gpu_count",
                     "tensor_parallel_size", "max_model_len", "model_path",
                     "tokenizer_path", "served_model_name",
                     "cache_trace_enabled"):
@@ -695,9 +705,11 @@ def compare_reports(
                     key for key in set(baseline_env) | set(candidate_env)
                     if baseline_env.get(key) != candidate_env.get(key)
                 }
-                if any(not key.startswith("BI100_") for key in changed_env):
+                disallowed_env = changed_env - ALLOWED_AB_ENV_DIFFERENCES
+                if disallowed_env:
                     reasons.append(
-                        "A/B changed a non-BI100 runtime environment value")
+                        "A/B changed disallowed runtime environment values: "
+                        + ", ".join(sorted(disallowed_env)))
 
     for expected in manifest["cases"]:
         case_id = expected["id"]

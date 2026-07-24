@@ -125,20 +125,20 @@ def make_report(label: str) -> dict:
         })
         groups[case["group"]]["passed"] += 1
         groups[case["group"]]["total"] += 1
-    revision = hashlib.sha1(label.encode("ascii")).hexdigest()
-    command = [
-        "python3", "-m", "vllm.entrypoints.openai.api_server",
-        "--model", "/model", "--max-model-len", "262144", "-tp", "4",
-    ]
-    environment = {
-        "BI100_CACHE_TRACE": "1",
-        "BI100_GDN_CACHE_POLICY": "fine32",
-    }
+    revision = "a" * 40
+    command = MODULE.runtime_contract.service_command("/model")
+    environment = MODULE.runtime_contract.service_environment(
+        "/runtime/site-packages",
+        gdn_cache_policy="fine32",
+        gdn_restore_mode="direct",
+        fused_prefill="0",
+        kv_eviction_policy="lru",
+    )
     contract = {
         "schema": "bi100-quality-runtime-contract-v1",
         "version": 1,
         "source_revision": revision,
-        "runtime_identity": label + "-runtime",
+        "runtime_identity": "corex-unit-runtime",
         "runtime_overlay_sha256": "b" * 64,
         "instance": "private-instance",
         "gpu_count": 4,
@@ -172,7 +172,7 @@ def make_report(label: str) -> dict:
         },
         "runtime": {
             "source_revision": revision,
-            "runtime_identity": label + "-runtime",
+            "runtime_identity": "corex-unit-runtime",
             "runtime_overlay_sha256": "b" * 64,
             "service_command_sha256": MODULE.runtime_contract.sha256_json(
                 command),
@@ -279,7 +279,7 @@ class QualityComparisonTest(unittest.TestCase):
             result["reasons"],
         )
 
-    def test_ab_may_only_change_bi100_environment(self):
+    def test_ab_may_only_change_declared_optimization_environment(self):
         baseline = make_report("baseline")
         candidate = make_report("candidate")
         contract = candidate["runtime_contract"]["contract"]
@@ -293,13 +293,30 @@ class QualityComparisonTest(unittest.TestCase):
 
         candidate = make_report("candidate")
         contract = candidate["runtime_contract"]["contract"]
-        contract["environment"]["OMP_NUM_THREADS"] = "2"
+        contract["environment"]["BI100_UNDOCUMENTED_FAST_PATH"] = "1"
         candidate["runtime_contract"]["sha256"] = (
             MODULE.runtime_contract.sha256_json(contract))
         candidate["runtime"]["service_env_sha256"] = (
             MODULE.runtime_contract.sha256_json(contract["environment"]))
         self.assertFalse(MODULE.compare_reports(
             baseline, candidate)["qualified"])
+
+    def test_ab_requires_same_source_overlay_and_instance(self):
+        baseline = make_report("baseline")
+        for field, value in (
+                ("source_revision", "1" * 40),
+                ("runtime_identity", "different-runtime"),
+                ("runtime_overlay_sha256", "1" * 64),
+                ("instance", "different-instance")):
+            with self.subTest(field=field):
+                candidate = make_report("candidate")
+                candidate["runtime"][field] = value
+                candidate["runtime_contract"]["contract"][field] = value
+                candidate["runtime_contract"]["sha256"] = (
+                    MODULE.runtime_contract.sha256_json(
+                        candidate["runtime_contract"]["contract"]))
+                self.assertFalse(MODULE.compare_reports(
+                    baseline, candidate)["qualified"])
 
     def test_incomplete_or_raw_report_fails(self):
         baseline = make_report("baseline")

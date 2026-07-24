@@ -26,6 +26,13 @@ EXPECTED_MANIFEST_SHA256 = (
 EXPECTED_CASES = 53
 Json = dict[str, Any]
 
+ALLOWED_AB_ENV_DIFFERENCES = {
+    "BI100_ATTN_COREX_FUSED_PREFILL",
+    "BI100_GDN_CACHE_POLICY",
+    "BI100_GDN_RESTORE_MODE",
+    "BI100_KV_EVICTION_POLICY",
+}
+
 ALWAYS_REJECTED = {
     "top_p_1_1",
     "max_tokens_minus_1",
@@ -613,7 +620,8 @@ def compare_reports(
         baseline_runtime = baseline.get("runtime") or {}
         candidate_runtime = candidate.get("runtime") or {}
         for field in (
-            "gpu_count", "tensor_parallel_size", "model_path",
+            "source_revision", "runtime_identity", "runtime_overlay_sha256",
+            "instance", "gpu_count", "tensor_parallel_size", "model_path",
             "tokenizer_path", "max_model_len", "model", "endpoint_mode",
             "allow_bare_engine_n2_skip", "service_command_sha256",
         ):
@@ -634,7 +642,9 @@ def compare_reports(
         if isinstance(baseline_contract, dict) and isinstance(
                 candidate_contract, dict):
             for field in (
-                    "base_image", "command", "gpu_count",
+                    "source_revision", "runtime_identity",
+                    "runtime_overlay_sha256", "instance", "base_image",
+                    "command", "gpu_count",
                     "tensor_parallel_size", "max_model_len", "model_path",
                     "tokenizer_path", "served_model_name",
                     "cache_trace_enabled"):
@@ -647,9 +657,11 @@ def compare_reports(
                     key for key in set(baseline_env) | set(candidate_env)
                     if baseline_env.get(key) != candidate_env.get(key)
                 }
-                if any(not key.startswith("BI100_") for key in changed_env):
+                disallowed_env = changed_env - ALLOWED_AB_ENV_DIFFERENCES
+                if disallowed_env:
                     reasons.append(
-                        "A/B changed a non-BI100 runtime environment value")
+                        "A/B changed disallowed runtime environment values: "
+                        + ", ".join(sorted(disallowed_env)))
         baseline_cases, case_reasons = _case_map(
             baseline, "baseline", manifest)
         reasons.extend(case_reasons)

@@ -213,8 +213,15 @@ class LongContextQualityApiTest(unittest.TestCase):
             "tokenizer_path": args.model_path,
             "served_model_name": args.served_model_name,
             "base_image": MODULE.BASE_IMAGE,
-            "command": ["python3", "-m", "vllm.entrypoints.openai.api_server"],
-            "environment": {"BI100_CACHE_TRACE": "1"},
+            "command": MODULE.runtime_contract.service_command(
+                args.model_path),
+            "environment": MODULE.runtime_contract.service_environment(
+                "/runtime/site-packages",
+                gdn_cache_policy="fine32",
+                gdn_restore_mode="direct",
+                fused_prefill="0",
+                kv_eviction_policy="lru",
+            ),
             "cache_trace_enabled": True,
             "optimization_label": "baseline",
         }

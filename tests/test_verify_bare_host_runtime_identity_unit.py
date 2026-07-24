@@ -72,6 +72,7 @@ class BareHostRuntimeIdentityTest(unittest.TestCase):
             "system_site_packages_modified": False,
             "source_revision": "a" * 40,
             "source_tree_clean": True,
+            "runtime_tree_sha256": MODULE.runtime_tree_sha256(site),
             "versions": {"transformers": "4.55.3"},
             "files": files,
         }
