@@ -1,5 +1,32 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-25 M1-55 生产形状分页 Prefill 门禁
+
+- 私有分支 `exp/M1-55-production-q-prefill-20260725` 已用
+  `ssh-73ca29ba` 的物理 GPU1/2/3 完成固定组件门禁；没有启动无效的 TP3
+  模型服务，也没有修改 `main`、正式 YAML、默认开关或仓库可见性。
+- 旧 full-query split4 在 Q256 探针上为 `2.341x`，但 65K/Q8176、
+  128K/Q8176、235K/Q5616 生产形状只有 `1.175-1.191x`，低于 `1.5x`
+  门槛，并使用约 `345-500 MiB` 增量工作区，因此停止。
+- 新 query-tiled FP32 WMMA 主设计消除了 full-query 全局中间量，但最佳版本在
+  `context=240, query=16` 的分页门禁上 rel L2 为 `1.3592e-5`，超过
+  `1e-5`；唯一固定四分支 PV reduction 备选回退到 `1.4863e-5`。容差没有
+  放宽，生产形状按 fail-closed 规则未运行，该方向停止。
+- LSE rel L2 约 `4.96e-8`，剩余差异定位到 PV reduction order，不是页表、
+  causal mask 或在线 softmax 状态。候选未安装到 runtime，不能据此声明模型
+  能力、端到端吞吐或官方分数。
+- CPU KV block-major 路径仍缺完整同会话 `1..881` trace；13 请求选取集总
+  prompt 仅 `6,089` token，远低于约 `1,080,192` token GPU KV 容量，不能
+  触发或验证 offload。不得用该小样本解锁 M1-46。
+- M1-48 中 full-attention 减去 paged attention 和 output projection 后只剩
+  约 `2,040 ms / 526,192 ms` 模型时间，QGKV、norm/RoPE、gate 及残差合计
+  上限不足 `0.39%`；`norm_rope` 即使无限加速也低于 `1%` 端到端门槛，
+  不实施新融合内核。
+- 结构化证据和完整说明见
+  `docs/experiments/M1_55_PRODUCTION_QUERY_TILED_PREFILL_20260725.md`。
+- 本地定向单测 21 项和完整 `tests/` 单测 681 项均通过，完整测试跳过 25；
+  submission preflight `9/9`，质量 manifest、语法和敏感制品扫描均通过。
+
 ## 2026-07-25 M1-54 881 缓存基线证据合同
 
 - 私有实验分支 `fix/M1-54-attested-881-baseline-20260725` 的实现提交为

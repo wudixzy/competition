@@ -108,3 +108,45 @@ server 进程，未观察到 fatal、OOM、Gloo reset 或 worker loss。
 - `main`、正式 YAML、默认开关：保持不变。
 - 后续优化必须回到端到端 profile，选择新的精确语义方向，不能继续扫描本内核
   的 tile、split 或阈值。
+
+## 后续方向复核
+
+M1-55 关闭后又对已有证据做了固定收益上限复核，没有直接开始新的参数或内核
+扫描。
+
+CPU KV block-major 传输曾在裸连续布局探针上达到较高带宽，但 M1-49 已把每
+rank GPU KV 容量提高到约 `1,080,192` token。仓库仍没有完整同会话、固定顺序
+的 `1..881` v4 trace。13 请求选取集只有 `6,089` prompt tokens，无法触发该
+容量下的 CPU offload，所以它只能继续作为功能和 prefix smoke，不能解锁
+M1-46 生产实现或默认路径。
+
+`norm_rope` 也不具备足够上限。M1-48 的 235K profile 中：
+
+- `layer.full_attn` 为 `356,622.656 ms`；
+- `paged_attn.prefix_pytorch` 为 `348,123.654 ms`；
+- `full_attn.output_proj` 为 `6,459.109 ms`。
+
+三者相减只剩约 `2,039.893 ms`，其中还包含 QGKV projection、norm/RoPE、
+gate、attention 和计时残差。相对 `526,192.057 ms` 模型时间，其全部理论上限
+不足 `0.39%`；单独 `norm_rope` 必然更低，即使无限加速也达不到预设 `1%`
+端到端最低收益，因此不实现融合版本。
+
+在三卡条件下，剩余高价值工作需要以下至少一项外部条件：
+
+1. 一份与当前源码、overlay 和指标同轮绑定的完整 881 privacy-safe trace，用于
+   判断缓存准入及 CPU tier 是否值得真实 A/B；
+2. 四张健康卡，用固定 TP4 服务重新测 control/candidate、完整质量与 262144
+   容量门禁。
+
+条件满足前不应通过继续调 attention tile、CPU transfer chunk、YAML 或低占比
+算子制造无依据的进展。
+
+## 本地验证
+
+- M1-55 定向单测：21 项，失败 0；
+- 完整 `tests/` 单测：681 项，跳过 25，失败 0；
+- submission preflight：9/9；
+- Python 语法：254 个源文件通过；
+- shell 语法：33 个脚本通过；
+- 质量指标与数据 provenance manifest：通过；
+- JSON、diff 和敏感制品扫描：通过。

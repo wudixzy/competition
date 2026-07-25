@@ -205,6 +205,21 @@
     "model_quality_claim_allowed": false,
     "official_score_claim_allowed": false
   },
+  "local_validation": {
+    "targeted_tests_run": 21,
+    "targeted_tests_failed": 0,
+    "full_tests_run": 681,
+    "full_tests_skipped": 25,
+    "full_tests_failed": 0,
+    "submission_preflight_checks": 9,
+    "submission_preflight_failed": 0,
+    "python_sources_compiled": 254,
+    "shell_scripts_checked": 33,
+    "quality_metric_manifest_qualified": true,
+    "quality_data_manifests_qualified": true,
+    "json_validation_passed": true,
+    "sensitive_artifact_scan_passed": true
+  },
   "cleanup": {
     "residual_benchmark_or_service_processes": 0,
     "gpu_memory_mib_after": {
