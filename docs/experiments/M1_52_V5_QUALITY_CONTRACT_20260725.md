@@ -67,6 +67,20 @@ Until that dataset and evaluator are committed and both baseline and candidate
 pass the same frozen instruction gate, strict instruction quality remains
 unqualified.
 
+The dataset and evaluator are now frozen on the private experiment branch:
+
+- manifest: `quality/external/google_ifeval/manifest.v1.json`;
+- manifest SHA-256:
+  `8ac44a97a6f569056415deedb8a59cbc815cbad6577cbb2e713016864cc7f0fa`;
+- subset: 64 rows covering all 25 instruction IDs at least four times;
+- subset SHA-256:
+  `bdb2e4ec0b0fd19b89c55ebb9ed49e17361706c923ddedeeab429f669e4bdb78`;
+- official evaluator revision:
+  `e6890f85757dd84e27ca6df2dd30651dafad28e0`.
+
+This completes ingestion only. The exact `fine32/direct` TP4 baseline still
+has to execute successfully before the instruction gate is qualified.
+
 ## Validation And Order
 
 At the implementation commit:

@@ -12,12 +12,27 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_EXTERNAL = {
-    "google_ifeval": (
-        "966cd89545d6b6acfd7638bc708b98261ca58e84", "Apache-2.0"),
     "zai_longbench_v2": (
         "2b48e494f2c7a2f0af81aae178e05c7e1dde0fe9", "Apache-2.0"),
     "berkeley_bfcl_v1_3": (
         "ea13468e4423454d0c213704fb87cf7cb3990433", "Apache-2.0"),
+}
+EXPECTED_IFEVAL = {
+    "revision": "966cd89545d6b6acfd7638bc708b98261ca58e84",
+    "license": "Apache-2.0",
+    "downloaded_at_utc": "2026-07-25T05:12:45Z",
+    "file_sha256": (
+        "6a85310ca8ce15eff755aa08a3a4ff931c7e273e7515ebb3c492ea85fd8288f2"),
+    "bytes": 207111,
+    "repository_path": (
+        "quality/external/google_ifeval/source/ifeval_input_data.jsonl"),
+    "dataset_manifest_path": (
+        "quality/external/google_ifeval/manifest.v1.json"),
+    "dataset_manifest_sha256": (
+        "8ac44a97a6f569056415deedb8a59cbc815cbad6577cbb2e713016864cc7f0fa"),
+    "subset_path": "quality/external/google_ifeval/subset.v1.jsonl",
+    "subset_sha256": (
+        "bdb2e4ec0b0fd19b89c55ebb9ed49e17361706c923ddedeeab429f669e4bdb78"),
 }
 EXPECTED_LOCAL = {
     "official_metric_collection": (
@@ -119,6 +134,23 @@ def validate_provenance(value: Any, root: Path = ROOT) -> list[str]:
                 or source.get("file_sha256") is not None
                 or source.get("repository_snapshot") is not False):
             reasons.append(f"external candidate contract differs for {source_id}")
+    ifeval = source_map.get("google_ifeval") or {}
+    for name, expected in EXPECTED_IFEVAL.items():
+        if ifeval.get(name) != expected:
+            reasons.append(f"active IFEval source field differs: {name}")
+    if (ifeval.get("kind") != "huggingface_dataset_repository_snapshot"
+            or ifeval.get("status") != "active_private_gate_source"
+            or ifeval.get("repository_snapshot") is not True
+            or ifeval.get("redistribution_allowed") is not True):
+        reasons.append("active IFEval source contract differs")
+    for path_field, sha_field in (
+            ("dataset_manifest_path", "dataset_manifest_sha256"),
+            ("subset_path", "subset_sha256")):
+        path_value = ifeval.get(path_field)
+        path = root / path_value if isinstance(path_value, str) else None
+        if (path is None or not path.is_file()
+                or _sha256(path) != ifeval.get(sha_field)):
+            reasons.append(f"active IFEval artifact differs: {path_field}")
     deferred = source_map.get("swe_bench_verified") or {}
     if (deferred.get("status") != "deferred_license_review"
             or deferred.get("redistribution_allowed") is not False

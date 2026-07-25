@@ -1,7 +1,7 @@
 {
   "schema": "bi100-quality-source-provenance-v1",
   "version": 1,
-  "reviewed_at_utc": "2026-07-24T00:00:00Z",
+  "reviewed_at_utc": "2026-07-25T05:12:45Z",
   "repository_visibility_required": "private",
   "sources": [
     {
@@ -61,21 +61,26 @@
     },
     {
       "id": "google_ifeval",
-      "kind": "huggingface_dataset_candidate",
+      "kind": "huggingface_dataset_repository_snapshot",
       "author_or_org": "Google Research",
       "source_url": "https://huggingface.co/datasets/google/IFEval",
       "revision": "966cd89545d6b6acfd7638bc708b98261ca58e84",
       "license": "Apache-2.0",
-      "downloaded_at_utc": null,
-      "file_sha256": null,
-      "bytes": null,
-      "split": "train; exact subset pending",
-      "selection_rule": "pending fixed stratified subset by instruction type",
-      "transformation": "pending OpenAI chat conversion and official rule evaluator",
+      "downloaded_at_utc": "2026-07-25T05:12:45Z",
+      "file_sha256": "6a85310ca8ce15eff755aa08a3a4ff931c7e273e7515ebb3c492ea85fd8288f2",
+      "bytes": 207111,
+      "split": "train; 541 source rows; frozen 64-row private quality subset",
+      "selection_rule": "seed bi100-ifeval-v1-seed-20260725; greedily cover every instruction ID at least four times, hash-rank remaining rows, preserve source order",
+      "transformation": "canonical JSONL subset; verbatim prompt becomes one user message; official Google strict and loose rule evaluator at e6890f85757dd84e27ca6df2dd30651dafad28e0",
       "redistribution_allowed": true,
-      "repository_snapshot": false,
-      "privacy_or_restriction_review": "public benchmark; inspect fixed files before ingestion",
-      "status": "evaluated_not_ingested"
+      "repository_snapshot": true,
+      "repository_path": "quality/external/google_ifeval/source/ifeval_input_data.jsonl",
+      "dataset_manifest_path": "quality/external/google_ifeval/manifest.v1.json",
+      "dataset_manifest_sha256": "8ac44a97a6f569056415deedb8a59cbc815cbad6577cbb2e713016864cc7f0fa",
+      "subset_path": "quality/external/google_ifeval/subset.v1.jsonl",
+      "subset_sha256": "bdb2e4ec0b0fd19b89c55ebb9ed49e17361706c923ddedeeab429f669e4bdb78",
+      "privacy_or_restriction_review": "public Apache-2.0 benchmark; fixed source and subset contain no credential markers, private user data, or official competition requests",
+      "status": "active_private_gate_source"
     },
     {
       "id": "zai_longbench_v2",

@@ -1,0 +1,2 @@
+quality/external/google_ifeval/** -whitespace
+quality/external/google_ifeval/wheelhouse/*.whl binary

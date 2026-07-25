@@ -77,8 +77,24 @@ class QualityDataManifestTest(unittest.TestCase):
             row for row in value["sources"] if row["id"] == "google_ifeval")
         source["revision"] = "main"
         self.assertIn(
-            "external candidate contract differs for google_ifeval",
+            "active IFEval source field differs: revision",
             MODULE.validate_provenance(value),
+        )
+
+    def test_active_ifeval_snapshot_and_subset_are_bound(self):
+        source = next(
+            row for row in self.provenance["sources"]
+            if row["id"] == "google_ifeval")
+        self.assertEqual(source["status"], "active_private_gate_source")
+        self.assertTrue(source["repository_snapshot"])
+        self.assertEqual(
+            hashlib.sha256((ROOT / source["subset_path"]).read_bytes())
+            .hexdigest(), source["subset_sha256"])
+        self.assertEqual(
+            hashlib.sha256((
+                ROOT / source["dataset_manifest_path"]
+            ).read_bytes()).hexdigest(),
+            source["dataset_manifest_sha256"],
         )
 
     def test_deferred_license_cannot_be_marked_redistributable(self):
