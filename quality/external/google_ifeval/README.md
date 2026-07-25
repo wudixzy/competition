@@ -62,6 +62,40 @@ timings, and response hashes only. Raw responses exist only in a mode-0600
 checkpoint under `/tmp` while a run is incomplete and are deleted when the
 report is written.
 
+Prepare the evaluator dependencies with the target CoreX CPython 3.10 binary.
+The `punkt_tab` archive must already have the revision and SHA-256 above:
+
+```bash
+python3 scripts/prepare_ifeval_env.py \
+  --target /root/competition-ifeval-env-<evaluator-revision> \
+  --punkt-tab-archive /tmp/punkt_tab-4f15a3d.zip
+```
+
+Run the model from a clean, commit-bound runtime tree and run the client from a
+separate clean evaluator tree. Evaluator-only Python packages are injected into
+the client process and never enter the service or worker `PYTHONPATH`:
+
+```bash
+bash scripts/run_ifeval_service_gate.sh \
+  /root/competition-runtime-source \
+  /root/competition-runtime-overlay/site-packages \
+  /root/competition-ifeval-env-<evaluator-revision> \
+  <runtime-revision> fine32 direct 0 lru \
+  ifeval-fine32-direct <instance> /tmp/ifeval-fine32-direct
+```
+
+After the lifecycle finishes, qualify every status, artifact, privacy, and GPU
+gate before preserving the summary:
+
+```bash
+python3 tests/qualify_ifeval_service_gate.py \
+  --run-root /tmp/ifeval-fine32-direct \
+  --ifeval-install /root/competition-ifeval-env-<evaluator-revision>/install.json \
+  --expected-runtime-revision <runtime-revision> \
+  --expected-evaluator-revision <evaluator-revision> \
+  --out /tmp/ifeval-fine32-direct/qualification.json
+```
+
 A complete fine32/direct run establishes baseline counts. A candidate may not
 decrease strict or loose pass counts at prompt, instruction, instruction-ID,
 or instruction-family level. Cache candidates additionally use
