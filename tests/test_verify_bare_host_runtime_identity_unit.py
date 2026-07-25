@@ -60,6 +60,8 @@ class BareHostRuntimeIdentityTest(unittest.TestCase):
             / "qwen3_6_scripts/patch_block_manager_cache_trace.py",
             "installer_sha256": source
             / "scripts/install_bi100_bare_host_runtime.sh",
+            "offline_metadata_normalizer_sha256": source
+            / "scripts/normalize_offline_distribution.py",
         }
         for index, path in enumerate(fixed.values()):
             path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,32 @@
 #!/bin/bash
 set -Eeuo pipefail
 
+usage() {
+    cat <<'EOF'
+Usage: install_bi100_bare_host_runtime.sh [INSTALL_REPORT_JSON]
+
+Build and atomically publish an immutable BI100 bare-host runtime overlay.
+Set BI100_BARE_HOST_RUNTIME_ROOT to an absolute, nonexistent destination.
+EOF
+}
+
+if [[ $# -gt 1 ]]; then
+    echo "expected at most one install report path" >&2
+    usage >&2
+    exit 2
+fi
+case "${1:-}" in
+    -h|--help)
+        usage
+        exit 0
+        ;;
+    -*)
+        echo "unknown option: $1" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
+
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 RUNTIME_ROOT=${BI100_BARE_HOST_RUNTIME_ROOT:-$ROOT/bench_runs/m1_49/runtime_overlay}
 JSON_OUT=${1:-}
@@ -42,6 +68,7 @@ required=(
     qwen3_6_scripts/patch_ops.sh
     qwen3_6_scripts/patch_utils.py
     qwen3_6_scripts/patch_xformers_profile.py
+    scripts/normalize_offline_distribution.py
 )
 for relative in "${required[@]}"; do
     if [[ ! -f "$ROOT/$relative" ]]; then
@@ -107,6 +134,11 @@ if [[ ${#transformers_wheels[@]} -ne 1 \
 fi
 python3 -m pip install --no-index --no-deps \
     --target "$SITE_PACKAGES" "${transformers_wheels[0]}"
+python3 "$ROOT/scripts/normalize_offline_distribution.py" \
+    --site-packages "$SITE_PACKAGES" \
+    --distribution transformers \
+    --version 4.55.3 \
+    --wheel "${transformers_wheels[0]}"
 
 # Every patch operation resolves vLLM and Transformers inside the staging
 # overlay. System site-packages remain untouched if any later command fails.
@@ -376,6 +408,8 @@ report = {
         root / "qwen3_6_scripts/patch_block_manager_cache_trace.py"),
     "installer_sha256": digest(
         root / "scripts/install_bi100_bare_host_runtime.sh"),
+    "offline_metadata_normalizer_sha256": digest(
+        root / "scripts/normalize_offline_distribution.py"),
     "model_runner_sha256": digest(model_runner),
     "worker_sha256": digest(worker),
     "profile_attention_layer_patch": profile_patch_present,

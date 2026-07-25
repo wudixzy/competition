@@ -181,6 +181,8 @@ def verify(
         / "qwen3_6_scripts/patch_block_manager_cache_trace.py",
         "installer_sha256": source_root
         / "scripts/install_bi100_bare_host_runtime.sh",
+        "offline_metadata_normalizer_sha256": source_root
+        / "scripts/normalize_offline_distribution.py",
     }
     fixed_source_identity = {}
     for field, path in fixed_sources.items():

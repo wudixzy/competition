@@ -80,6 +80,8 @@ class HybridKvStartupGateTest(unittest.TestCase):
         self.assertIn('"$EXPECTED_ROOT/vllm/outputs.py"', source)
         self.assertIn('"source_revision": source_revision', source)
         self.assertIn('"cache_trace_patcher_sha256"', source)
+        self.assertIn('"offline_metadata_normalizer_sha256"', source)
+        self.assertIn("normalize_offline_distribution.py", source)
         self.assertIn("refuses a dirty source tree", source)
         self.assertIn('mv "$RUNTIME_STAGE" "$RUNTIME_ROOT"', source)
         self.assertIn("resolved outside staged overlay", source)
