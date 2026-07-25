@@ -1,0 +1,217 @@
+{
+  "schema": "bi100-m1-55-production-query-tiled-prefill-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "branch": "exp/M1-55-production-q-prefill-20260725",
+    "baseline_revision": "a594c55b4d102f028d692e34e5a3ec0447f8c646",
+    "harness_revision": "91316233cc9934e7f424e8f840aecbfd0b6bec4f",
+    "final_experiment_revision": "a5469373dc349679b766ac58e0a5f118a366b9a3",
+    "final_experiment_tree": "d9efb3e53dc823af28b5fb30a858bef7c968e559",
+    "harness_sha256": "fe83c04c25874c8330f0e6ae0027e03cca85a76dabf63070c13667f116d3ef53",
+    "build_script_sha256": "4413b7af05d557e9e209a87dec7c6db476e0ad2beac50ba0da0ccc4bf4865938",
+    "final_kernel_source_sha256": "c0b3412eefce5a389cf117a3084cfa9dcfefb1f492913986303af6d897b9662f"
+  },
+  "runtime": {
+    "instance": "ssh-73ca29ba",
+    "physical_gpus_used": [
+      1,
+      2,
+      3
+    ],
+    "excluded_physical_gpus": [
+      0
+    ],
+    "device": "Iluvatar BI-V100",
+    "runtime_tree_sha256": "75b3c665a9767968628aecf1d15d488a89884327c73eacdfded5a55a1bdb42f1",
+    "torch_reported_version": "2.1.0",
+    "corex_version": "3.2.3",
+    "driver_version": "3.2.1",
+    "model_weights_loaded": false,
+    "model_service_started": false,
+    "tp4_claim_allowed": false
+  },
+  "fixed_gate": {
+    "seed": 20260725,
+    "dtype": "float16",
+    "accumulation_dtype": "float32",
+    "head_dim": 256,
+    "query_heads": 4,
+    "kv_heads": 1,
+    "block_size": 16,
+    "online_softmax_partition_tokens": 512,
+    "warmups": 1,
+    "trials": 3,
+    "relative_l2_limit": 0.00001,
+    "max_abs_limit": 0.001,
+    "production_speedup_minimum": 1.5,
+    "parameter_scan_performed": false
+  },
+  "legacy_full_query_split4": {
+    "revision": "91316233cc9934e7f424e8f840aecbfd0b6bec4f",
+    "binary_sha256": "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
+    "architecture": "full-query FP32 global score and split-output workspaces",
+    "results": [
+      {
+        "case": "legacy_74k_q256",
+        "raw_sha256": "be2b48b559d27881b4c6dcc903186b93958076ee7822b0107914526c739d33c5",
+        "gpu": 1,
+        "reference_ms": 49.47494888305664,
+        "candidate_ms": 21.130149841308594,
+        "speedup": 2.341438619916225,
+        "output_relative_l2": 0.000004917175733186392,
+        "qualified": true
+      },
+      {
+        "case": "production_65k_q8176",
+        "raw_sha256": "e9a1e4c25ee0e86f29bad3a0e1559b5819c67f0029e3bdfcfd6a9312d0c5465f",
+        "gpu": 1,
+        "reference_ms": 672.6272583007812,
+        "candidate_ms": 572.557861328125,
+        "speedup": 1.1747760422685174,
+        "output_relative_l2": 0.000005069940385240854,
+        "candidate_peak_incremental_bytes": 524713984,
+        "qualified": false,
+        "failure": "speedup below 1.5"
+      },
+      {
+        "case": "production_128k_q8176",
+        "raw_sha256": "6759dca289b4a534eb9f6e293979037aade2341796fb0df7323b416b3ae92bf8",
+        "gpu": 2,
+        "reference_ms": 1195.496337890625,
+        "candidate_ms": 1011.5382080078125,
+        "speedup": 1.1818597937542183,
+        "output_relative_l2": 0.000005279140261636468,
+        "candidate_peak_incremental_bytes": 524713984,
+        "qualified": false,
+        "failure": "speedup below 1.5"
+      },
+      {
+        "case": "production_235k_q5616",
+        "raw_sha256": "2c919d3b4261395e0736546e4ea1d5e60c53fb186740a2b806d103ce4f75b6a4",
+        "gpu": 3,
+        "reference_ms": 1515.2427978515625,
+        "candidate_ms": 1272.07763671875,
+        "speedup": 1.1911559122759543,
+        "output_relative_l2": 0.000005670362118724032,
+        "candidate_peak_incremental_bytes": 361996288,
+        "qualified": false,
+        "failure": "speedup below 1.5"
+      }
+    ]
+  },
+  "query_tiled_main_design": {
+    "architecture": [
+      "one 64-thread BI warp per query-head and 16-token query tile",
+      "direct paged K/V reads",
+      "FP32 WMMA QK and PV",
+      "FP32 online softmax with separate cached-context and current-token phases",
+      "no full-query global score or split-output workspace"
+    ],
+    "iterations": [
+      {
+        "name": "initial_16_token_partitions",
+        "revision": "afab78c4751ea637c773e3594a103300e5977293",
+        "binary_sha256": "1008177560283b863a5458a34a975993e97d10373a368a380c0f0c37c954dccc",
+        "paged_case_raw_sha256": "20f05994831765e30f3ca77d9f8b99652d520279ae3f55b34de5d00b3324a4bf",
+        "paged_output_relative_l2": 0.000018509192070218056,
+        "paged_speedup": 0.19800628345215088,
+        "qualified": false
+      },
+      {
+        "name": "reference_512_token_partitions",
+        "revision": "94194ae53620676ca045890f1296673033cf95ac",
+        "binary_sha256": "7ef6ea2baad2f317581c954796cb867d6f2ef6cd591be50a97020ec359cdce0e",
+        "paged_case_raw_sha256": "284792c3a4f263dae1f74b131ba2bda6cf87873a069c37d23c4150f9826c3737",
+        "paged_output_relative_l2": 0.000014912755804208495,
+        "paged_speedup": 0.26960824485354146,
+        "qualified": false
+      },
+      {
+        "name": "single_group_pv_accumulator",
+        "revision": "a30b6e7212286cd613c946b1ca02d8972a198863",
+        "binary_sha256": "c3b91c41f735e0070b55a89749d1a18fdcef56bf667c23d891bb1f9896af6067",
+        "results": [
+          {
+            "case": "golden_dense_q1",
+            "raw_sha256": "2771451d38c825730a90021e724f07afba0f53d38950e2464784cf3076a01891",
+            "output_relative_l2": 0.0,
+            "speedup": 2.158372808246811,
+            "qualified": true
+          },
+          {
+            "case": "golden_dense_q256",
+            "raw_sha256": "8c2fb1f37c79055a4566fb84c4e2caa2bf7b8a56228144419cab75bb338ae0cb",
+            "output_relative_l2": 0.000007446636361034469,
+            "speedup": 0.3036122299851528,
+            "qualified": true
+          },
+          {
+            "case": "golden_paged_240_q16",
+            "raw_sha256": "251de596d73dbef40382809b40fa76907e6c6b9cc5af4046075c6a3428c44791",
+            "output_relative_l2": 0.000013592292423561942,
+            "lse_relative_l2": 0.00000004955444213551578,
+            "output_max_abs": 0.0001220703125,
+            "speedup": 0.4066593349671884,
+            "qualified": false,
+            "failure": "output relative L2 exceeds 1e-5"
+          }
+        ]
+      }
+    ]
+  },
+  "single_allowed_split_reduction_alternative": {
+    "name": "four contiguous 128-token FP32 PV partials with fixed binary merge",
+    "revision": "a5469373dc349679b766ac58e0a5f118a366b9a3",
+    "binary_sha256": "b3e01a423310789223e9cada5209f867485c676847b74ac64f70375403d54059",
+    "results": [
+      {
+        "case": "golden_dense_q1",
+        "raw_sha256": "86586cce1103c1f231a775fc60d6c79c21a28b9f97b84f4c2c12111ab05644b6",
+        "output_relative_l2": 0.0,
+        "speedup": 2.131478530300521,
+        "qualified": true
+      },
+      {
+        "case": "golden_dense_q256",
+        "raw_sha256": "7a748caf5207fc5929e9115e621266ff18245afa54df6a9ca8f98e9633e819b2",
+        "output_relative_l2": 0.000007829728886015728,
+        "speedup": 0.3036264918266082,
+        "qualified": true
+      },
+      {
+        "case": "golden_paged_240_q16",
+        "raw_sha256": "57a214d121ab20b09adf2ce5732f36ab9572f70ed79dd9807aaa60802d4d5ae1",
+        "output_relative_l2": 0.000014862549207022673,
+        "lse_relative_l2": 0.00000004955444213551578,
+        "output_max_abs": 0.0001220703125,
+        "speedup": 0.41383872096503527,
+        "qualified": false,
+        "failure": "output relative L2 exceeds 1e-5"
+      }
+    ],
+    "parameter_scan_performed": false
+  },
+  "decision": {
+    "qualified": false,
+    "direction_stopped": true,
+    "stop_rule": "main fused design and one split-reduction alternative did not both satisfy relative L2 <= 1e-5 and production speedup >= 1.5",
+    "production_query_tiled_cases_run": false,
+    "production_cases_not_run_reason": "small paged numerical gate failed closed",
+    "patch_ops_modified": false,
+    "default_runtime_enabled": false,
+    "main_change_authorized": false,
+    "computility_yaml_change_authorized": false,
+    "model_quality_claim_allowed": false,
+    "official_score_claim_allowed": false
+  },
+  "cleanup": {
+    "residual_benchmark_or_service_processes": 0,
+    "gpu_memory_mib_after": {
+      "1": 257,
+      "2": 257,
+      "3": 257
+    },
+    "fatal_or_worker_loss_observed": false
+  }
+}
