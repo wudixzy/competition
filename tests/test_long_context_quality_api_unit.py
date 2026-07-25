@@ -304,6 +304,68 @@ class LongContextQualityApiTest(unittest.TestCase):
             ["privacy_safe_requests_captured_before_failure"], 1)
         self.assertEqual(observation["construction"], [])
 
+    def test_reasoning_failure_facts_are_boolean_and_reset_per_case(self):
+        context = MODULE.Context(
+            client=None,
+            tokenizer=None,
+            timeout_s=1,
+            served_model_name="llm",
+            template_kwargs_mode="direct",
+        )
+        context.begin_case()
+        context.record_failure_facts({
+            "content_exact_expected": False,
+            "content_contains_expected": True,
+        })
+        facts = context.failure_observation()["facts"]
+        self.assertFalse(facts["content_exact_expected"])
+        self.assertTrue(facts["content_contains_expected"])
+
+        context.begin_case()
+        self.assertEqual(
+            context.failure_observation()["facts"],
+            {"privacy_safe_requests_captured_before_failure": 0},
+        )
+
+    def test_failure_facts_reject_values_and_unknown_keys(self):
+        context = MODULE.Context(
+            client=None,
+            tokenizer=None,
+            timeout_s=1,
+            served_model_name="llm",
+            template_kwargs_mode="direct",
+        )
+        with self.assertRaisesRegex(
+                MODULE.MatrixFailure, "diagnostic facts are invalid"):
+            context.record_failure_facts({
+                "content_exact_expected": "raw-output",
+            })
+        with self.assertRaisesRegex(
+                MODULE.MatrixFailure, "diagnostic facts are invalid"):
+            context.record_failure_facts({"raw_model_output": False})
+
+    def test_reasoning_rule_diagnostics_do_not_retain_output(self):
+        expected = (
+            "BEGIN-MARKER-731|MIDDLE-MARKER-552|END-MARKER-947|323")
+        private_prefix = "private-output-before "
+        diagnostics = MODULE._reasoning_rule_diagnostics(
+            private_prefix + expected + " private-output-after",
+            "BEGIN-MARKER-731 MIDDLE-MARKER-552 END-MARKER-947 323",
+            expected,
+        )
+        self.assertFalse(diagnostics["content_exact_expected"])
+        self.assertTrue(diagnostics["content_contains_expected"])
+        self.assertTrue(diagnostics["content_markers_in_order"])
+        self.assertTrue(diagnostics["content_arithmetic_present"])
+        self.assertTrue(diagnostics["reasoning_markers_in_order"])
+        self.assertTrue(diagnostics["reasoning_arithmetic_present"])
+        self.assertTrue(all(
+            isinstance(value, bool) for value in diagnostics.values()))
+        serialized = json.dumps(diagnostics, sort_keys=True)
+        self.assertNotIn(expected, serialized)
+        self.assertNotIn(private_prefix, serialized)
+        self.assertNotIn("private-output-after", serialized)
+
     def test_invalid_tool_arguments_retain_only_structural_diagnostics(self):
         context = MODULE.Context(
             InvalidToolClient(), FakeTokenizer(), 1,

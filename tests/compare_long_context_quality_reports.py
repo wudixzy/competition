@@ -80,7 +80,11 @@ TRUE_FACTS = {
     "131k_cold_warm_recall": ("marker_rule_passed", "cold_warm_exact"),
     "131k_reasoning_recall": (
         "answer_rule_passed", "marker_rule_passed",
-        "reasoning_content_split", "natural_finish_before_max_tokens"),
+        "reasoning_content_split", "natural_finish_before_max_tokens",
+        "content_arithmetic_present", "content_contains_expected",
+        "content_exact_expected", "content_expected_prefix",
+        "content_expected_suffix", "content_markers_in_order",
+        "content_markers_present"),
     "235k_agent_large_output_budget": (
         "large_max_tokens_accepted", "tool_call_rule_passed",
         "reasoning_present", "cold_warm_exact",

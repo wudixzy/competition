@@ -31,6 +31,19 @@ SCHEMA = "bi100-long-context-quality-result-v4"
 BASE_IMAGE = runtime_contract.BASE_IMAGE
 TIER_RANK = {"quick": 0, "full": 1, "extended": 2}
 Json = dict[str, Any]
+REASONING_DIAGNOSTIC_KEYS = frozenset({
+    "content_arithmetic_present",
+    "content_contains_expected",
+    "content_exact_expected",
+    "content_expected_prefix",
+    "content_expected_suffix",
+    "content_markers_in_order",
+    "content_markers_present",
+    "reasoning_arithmetic_present",
+    "reasoning_contains_expected",
+    "reasoning_markers_in_order",
+    "reasoning_markers_present",
+})
 
 
 class MatrixFailure(RuntimeError):
@@ -325,12 +338,22 @@ class Context:
         self.template_kwargs_mode = template_kwargs_mode
         self.cache_trace_path = cache_trace_path
         self._case_requests: list[Json] = []
+        self._case_failure_facts: Json = {}
 
     def begin_case(self) -> None:
         self._case_requests = []
+        self._case_failure_facts = {}
 
     def record_request(self, summary: Json) -> None:
         self._case_requests.append(dict(summary))
+
+    def record_failure_facts(self, facts: Json) -> None:
+        require(
+            set(facts) <= REASONING_DIAGNOSTIC_KEYS
+            and all(isinstance(value, bool) for value in facts.values()),
+            "failure diagnostic facts are invalid",
+        )
+        self._case_failure_facts.update(facts)
 
     def failure_observation(self) -> Json:
         return {
@@ -339,6 +362,7 @@ class Context:
             "facts": {
                 "privacy_safe_requests_captured_before_failure": len(
                     self._case_requests),
+                **self._case_failure_facts,
             },
         }
 
@@ -922,6 +946,41 @@ def _interleaved_sessions(context: Context, case: Json) -> Json:
     }
 
 
+def _reasoning_rule_diagnostics(
+    content: str,
+    reasoning: str,
+    expected: str,
+) -> Json:
+    markers = (
+        "BEGIN-MARKER-731",
+        "MIDDLE-MARKER-552",
+        "END-MARKER-947",
+    )
+
+    def markers_present(value: str) -> bool:
+        return all(marker in value for marker in markers)
+
+    def markers_in_order(value: str) -> bool:
+        positions = [value.find(marker) for marker in markers]
+        return all(position >= 0 for position in positions) \
+            and positions == sorted(positions) \
+            and len(set(positions)) == len(positions)
+
+    return {
+        "content_arithmetic_present": "323" in content,
+        "content_contains_expected": expected in content,
+        "content_exact_expected": content == expected,
+        "content_expected_prefix": content.startswith(expected),
+        "content_expected_suffix": content.endswith(expected),
+        "content_markers_in_order": markers_in_order(content),
+        "content_markers_present": markers_present(content),
+        "reasoning_arithmetic_present": "323" in reasoning,
+        "reasoning_contains_expected": expected in reasoning,
+        "reasoning_markers_in_order": markers_in_order(reasoning),
+        "reasoning_markers_present": markers_present(reasoning),
+    }
+
+
 def _reasoning(context: Context, case: Json) -> Json:
     expected = "BEGIN-MARKER-731|MIDDLE-MARKER-552|END-MARKER-947|323"
 
@@ -947,7 +1006,9 @@ def _reasoning(context: Context, case: Json) -> Json:
     message = quality._message(data)
     reasoning = quality._reasoning(message).strip()
     content = (message.get("content") or "").strip()
-    require(content == expected,
+    diagnostics = _reasoning_rule_diagnostics(content, reasoning, expected)
+    context.record_failure_facts(diagnostics)
+    require(diagnostics["content_exact_expected"],
             "long-context reasoning marker or arithmetic answer differs")
     require(bool(reasoning) and reasoning != content,
             "reasoning/content split failed")
@@ -958,6 +1019,7 @@ def _reasoning(context: Context, case: Json) -> Json:
         "requests": [summary],
         "construction": [construction],
         "facts": {
+            **diagnostics,
             "answer_rule_passed": True,
             "marker_rule_passed": True,
             "natural_finish_before_max_tokens": True,
