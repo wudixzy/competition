@@ -45,6 +45,7 @@ def _load_named_tool_argument_helpers():
     names = {
         "_serialize_tool_arguments",
         "_tool_arguments_are_json_object",
+        "_reclassify_named_guided_json",
         "_select_named_tool_arguments",
     }
     functions = [
@@ -89,6 +90,8 @@ class ServingChatUnitTest(unittest.TestCase):
         helpers = _load_named_tool_argument_helpers()
         cls.select_named_arguments = staticmethod(
             helpers["_select_named_tool_arguments"])
+        cls.reclassify_named_json = staticmethod(
+            helpers["_reclassify_named_guided_json"])
 
     def test_tool_arguments_string_is_not_double_json_encoded(self):
         arguments = '{"city": "上海", "unit": "c"}'
@@ -143,6 +146,18 @@ class ServingChatUnitTest(unittest.TestCase):
                 raw, "lookup_quality_marker", parsed),
             raw,
         )
+
+    def test_named_guided_json_is_not_misclassified_as_reasoning(self):
+        raw = '{"key":"AGENT-235K-731","ordinal":235000}'
+        reasoning, output = self.reclassify_named_json(raw, "")
+        self.assertIsNone(reasoning)
+        self.assertEqual(output, raw)
+
+    def test_unterminated_non_json_reasoning_is_not_reclassified(self):
+        raw = "unfinished private reasoning"
+        reasoning, output = self.reclassify_named_json(raw, "")
+        self.assertEqual(reasoning, raw)
+        self.assertEqual(output, "")
 
     def test_named_nonstream_recovers_unique_same_name_parser_call(self):
         parsed = [types.SimpleNamespace(function=types.SimpleNamespace(

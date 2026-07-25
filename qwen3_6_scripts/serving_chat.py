@@ -63,6 +63,17 @@ def _tool_arguments_are_json_object(arguments: str) -> bool:
     return isinstance(value, dict)
 
 
+def _reclassify_named_guided_json(
+    reasoning_text: Optional[str],
+    output_text: str,
+) -> tuple[Optional[str], str]:
+    """Recover guided JSON misclassified as unterminated reasoning."""
+    if (not output_text and reasoning_text is not None
+            and _tool_arguments_are_json_object(reasoning_text)):
+        return None, reasoning_text
+    return reasoning_text, output_text
+
+
 def _select_named_tool_arguments(
     output_text: str,
     expected_name: str,
@@ -925,6 +936,11 @@ class OpenAIServingChat(OpenAIServing):
                 reasoning_text, extracted = r_parser.extract_reasoning(
                     output.text, request)
                 output_text = extracted or ""
+                if isinstance(request.tool_choice,
+                              ChatCompletionNamedToolChoiceParam):
+                    reasoning_text, output_text = \
+                        _reclassify_named_guided_json(
+                            reasoning_text, output_text)
 
             named_tool_called = False
 
