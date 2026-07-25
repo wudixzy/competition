@@ -1,0 +1,128 @@
+{
+  "schema": "bi100-m1-52-v4-131k-diagnostic-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "revision": "5a468d16d040f82ae1bc50d830eec72bb7d5ec58",
+    "branch": "run/quality-m1-52-v4diag-5a468d1",
+    "instance": "ssh-73ca29ba",
+    "runtime_identity": "bare-host-overlay-v1:5039020d106b53d779ef",
+    "runtime_overlay_sha256": "5039020d106b53d779efee22a42d5e2c2d3a69ed53fb405e368f8bb696df8544",
+    "base_image": "harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3"
+  },
+  "runtime": {
+    "gpu_count": 4,
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144,
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "gdn_cache_policy": "fine32",
+    "gdn_restore_mode": "direct",
+    "fused_prefill": false,
+    "kv_eviction_policy": "lru"
+  },
+  "matrix": {
+    "name": "long_context_matrix.v4.json",
+    "sha256": "242670609fc23668607e5c602ab792a041fff7fcba13db7917cf88fc8281b818",
+    "schema": "bi100-long-context-quality-result-v4",
+    "explicit_cases": ["131k_reasoning_recall"],
+    "selected_total": 1,
+    "passed": 0,
+    "failed": 1,
+    "pass_rate": 0.0,
+    "wall_s": 335.8472747094929,
+    "complete": true,
+    "qualified": false,
+    "quality_run_eligible_for_baseline": false
+  },
+  "case": {
+    "id": "131k_reasoning_recall",
+    "status": "fail",
+    "elapsed_s": 335.84408090263605,
+    "error_code": "long-context reasoning marker or arithmetic answer differs",
+    "request": {
+      "http_status": 200,
+      "prompt_tokens": 131000,
+      "cached_tokens": 0,
+      "completion_tokens": 696,
+      "max_tokens": 1024,
+      "finish_reason": "stop",
+      "content_length": 419,
+      "reasoning_length": 1695,
+      "protocol_validated": true
+    },
+    "facts": {
+      "content_arithmetic_present": true,
+      "content_contains_expected": true,
+      "content_exact_expected": false,
+      "content_expected_prefix": false,
+      "content_expected_suffix": true,
+      "content_markers_in_order": true,
+      "content_markers_present": true,
+      "reasoning_arithmetic_present": true,
+      "reasoning_contains_expected": true,
+      "reasoning_markers_in_order": true,
+      "reasoning_markers_present": true
+    }
+  },
+  "diagnosis": {
+    "classification": "semantic-long-context-pass-with-strict-format-failure",
+    "semantic_marker_recall": true,
+    "semantic_arithmetic": true,
+    "marker_order": true,
+    "expected_answer_is_final_suffix": true,
+    "strict_exact_final_content": false,
+    "budget_exhaustion": false,
+    "protocol_or_service_failure": false,
+    "evidence": "the expected marker sequence and arithmetic result occur in order at the end of final content; only additional content before that suffix violates the exact-content rule",
+    "decision": "do not relabel v4 as passing; define a version-separated semantic long-context contract and keep strict instruction following as an independent quality gate"
+  },
+  "lifecycle": {
+    "overall_rc": 1,
+    "quality_rc": 1,
+    "runtime_identity_rc": 0,
+    "runtime_contract_rc": 0,
+    "prefix_allocator_rc": 0,
+    "gdn_action_broadcast_rc": 0,
+    "preflight_before_rc": 0,
+    "startup_rc": 0,
+    "startup_contract_rc": 0,
+    "cleanup_rc": 0,
+    "fatal_scan_rc": 0,
+    "preflight_after_rc": 0,
+    "preflight_comparison_rc": 0,
+    "fatal_scan_empty": true,
+    "residual_api_server_processes": 0,
+    "ipv4_port_8000_free": true,
+    "free_memory_drop_bytes": [0, 0, 0, 0]
+  },
+  "artifact_sha256": {
+    "quality_report.json": "612d82ca638a6c8df9b0a617e314a83658a73ca862c582c26574602dcafa5c12",
+    "status.json": "7e639ba9c0a053e87129661e85d4e823e31dc7f36aced5d6f455bbcec1109093",
+    "runtime_contract.json": "ef7a43314521f88908306f27848e64b31539e65c5e1e548340dd09b87bdc82e8",
+    "runtime_identity.json": "9bed70f2dd910b54a2ab97bb185e028bb8f5247a7db3cc0c0df59055663497fd",
+    "startup_contract.json": "7c4d8f848a1849b9e09357d3b220b21c2de87e4023f1d17cb0a59d8f097cee2e",
+    "preflight_before.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_after.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_comparison.json": "1d529bc179ed4cad258d017f7a39c9788fbe3bbb99289b47ef70d2e8789416fe",
+    "fatal_scan.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_expected_answer_text": false,
+    "contains_tool_argument_values": false,
+    "raw_service_log_committed": false
+  },
+  "decision": {
+    "v4_case_qualified": false,
+    "v4_result_reclassified": false,
+    "v5_contract_required": true,
+    "strict_instruction_gate_required_before_promotion": true,
+    "full_functional_gate_authorized": false,
+    "full_long_context_gate_authorized": false,
+    "admission64_authorized": false,
+    "overall_promotion_authorized": false,
+    "main_or_yaml_change_authorized": false
+  }
+}
