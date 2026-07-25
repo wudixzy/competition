@@ -105,6 +105,17 @@ prefix/GDN cache for every gate and every A/B side. Do not execute functional
 and long-context suites back to back against one service. Capture stdout and
 stderr in a private diagnostic log for long-context cache-trace proof.
 
+To isolate known long-context failures before spending a full run, set a
+comma-separated strict case list on the lifecycle harness. Any explicit case
+selection remains ineligible for baseline or promotion regardless of outcome:
+
+```bash
+BI100_LONG_CONTEXT_CASES=65k_multiturn_large_tools,131k_reasoning_recall,235k_agent_large_output_budget \
+scripts/run_quality_service_gate.sh \
+  long-context fine32 direct 0 lru diagnostic-m1-52 private-instance \
+  /tmp/bi100-quality/diagnostic-m1-52
+```
+
 Run the complete functional contract:
 
 ```bash
