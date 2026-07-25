@@ -53,7 +53,7 @@ EXPECTED_GENERATED_ASSETS = {
         "f3da291816c2a09bfd5ca73709a678da32fc1b423ffdb4626c462f65e9ec11f4"),
 }
 EXPECTED_MATRIX_SHA256 = (
-    "a968fbbc37bf2e03b14fcf8cdb4df005e1956b4a93a23f62661860d523a85680"
+    "242670609fc23668607e5c602ab792a041fff7fcba13db7917cf88fc8281b818"
 )
 EXPECTED_AGENT_MATRIX_SHA256 = (
     "962d19f51cfbeb3f414e62444a225029616ed547682e5a97219b0af98c8959ba"
@@ -157,8 +157,8 @@ def validate_matrix(value: Any) -> list[str]:
     reasons = []
     if not isinstance(value, dict):
         return ["matrix root must be an object"]
-    if (value.get("schema") != "bi100-long-context-quality-matrix-v3"
-            or value.get("version") != 3
+    if (value.get("schema") != "bi100-long-context-quality-matrix-v4"
+            or value.get("version") != 4
             or value.get("seed") != 20260724):
         reasons.append("matrix schema, version, or seed is invalid")
     if (value.get("max_model_len") != 262144
@@ -178,7 +178,7 @@ def validate_matrix(value: Any) -> list[str]:
         reasons.append("matrix provenance contract is invalid")
     generator = value.get("generator") or {}
     if (generator.get("id") != "bi100-long-context-quality-generator"
-            or generator.get("version") != 3
+            or generator.get("version") != 4
             or generator.get("runner") != "tests/long_context_quality_api.py"
             or generator.get("exact_prompt_module")
             != "tests/exact_chat_prompt.py"
@@ -261,6 +261,10 @@ def validate_matrix(value: Any) -> list[str]:
     agent = case_map.get("235k_agent_large_output_budget") or {}
     if agent.get("target_prompt_tokens") != 235000 or agent.get("max_tokens") != 8192:
         reasons.append("235K Agent case must retain the official large output budget")
+    reasoning = case_map.get("131k_reasoning_recall") or {}
+    if reasoning.get("target_prompt_tokens") != 131000 \
+            or reasoning.get("max_tokens") != 1024:
+        reasons.append("131K reasoning case must retain its natural-finish budget")
     serialized = json.dumps(value, ensure_ascii=True).lower()
     if any(marker in serialized for marker in (
             "begin openssh private key", "github_pat_", "ghp_",
@@ -315,7 +319,7 @@ def main() -> int:
         default=ROOT / "quality/source_provenance.v1.json")
     parser.add_argument(
         "--matrix", type=Path,
-        default=ROOT / "quality/long_context_matrix.v3.json")
+        default=ROOT / "quality/long_context_matrix.v4.json")
     parser.add_argument(
         "--agent-matrix", type=Path,
         default=ROOT / "quality/agent_workload_matrix.v1.json")

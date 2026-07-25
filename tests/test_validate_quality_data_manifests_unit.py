@@ -24,7 +24,7 @@ class QualityDataManifestTest(unittest.TestCase):
             ROOT / "quality/source_provenance.v1.json"
         ).read_text(encoding="utf-8"))
         cls.matrix = json.loads((
-            ROOT / "quality/long_context_matrix.v3.json"
+            ROOT / "quality/long_context_matrix.v4.json"
         ).read_text(encoding="utf-8"))
         cls.agent_matrix = json.loads((
             ROOT / "quality/agent_workload_matrix.v1.json"
@@ -40,7 +40,7 @@ class QualityDataManifestTest(unittest.TestCase):
         self.assertEqual(len(self.agent_matrix["cases"]), 11)
         self.assertEqual(
             hashlib.sha256((
-                ROOT / "quality/long_context_matrix.v3.json"
+                ROOT / "quality/long_context_matrix.v4.json"
             ).read_bytes()).hexdigest(),
             MODULE.EXPECTED_MATRIX_SHA256,
         )
@@ -114,6 +114,17 @@ class QualityDataManifestTest(unittest.TestCase):
         case["max_tokens"] = 1024
         self.assertIn(
             "235K Agent case must retain the official large output budget",
+            MODULE.validate_matrix(value),
+        )
+
+    def test_131k_reasoning_natural_finish_budget_is_frozen(self):
+        value = copy.deepcopy(self.matrix)
+        case = next(
+            row for row in value["cases"]
+            if row["id"] == "131k_reasoning_recall")
+        case["max_tokens"] = 512
+        self.assertIn(
+            "131K reasoning case must retain its natural-finish budget",
             MODULE.validate_matrix(value),
         )
 

@@ -17,12 +17,12 @@ import validate_quality_data_manifests as manifest_validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v3.json"
+DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v4.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "a968fbbc37bf2e03b14fcf8cdb4df005e1956b4a93a23f62661860d523a85680"
+    "242670609fc23668607e5c602ab792a041fff7fcba13db7917cf88fc8281b818"
 )
-REPORT_SCHEMA = "bi100-long-context-quality-result-v3"
-COMPARISON_SCHEMA = "bi100-long-context-quality-comparison-v2"
+REPORT_SCHEMA = "bi100-long-context-quality-result-v4"
+COMPARISON_SCHEMA = "bi100-long-context-quality-comparison-v3"
 EXPECTED_CASES = 12
 BASE_IMAGE = runtime_contract.BASE_IMAGE
 Json = dict[str, Any]
@@ -80,7 +80,7 @@ TRUE_FACTS = {
     "131k_cold_warm_recall": ("marker_rule_passed", "cold_warm_exact"),
     "131k_reasoning_recall": (
         "answer_rule_passed", "marker_rule_passed",
-        "reasoning_content_split"),
+        "reasoning_content_split", "natural_finish_before_max_tokens"),
     "235k_agent_large_output_budget": (
         "large_max_tokens_accepted", "tool_call_rule_passed",
         "reasoning_present", "cold_warm_exact",
@@ -265,9 +265,10 @@ def _validate_request(
     if not (case["min_completion_tokens"]
             <= request["completion_tokens"] <= case["max_tokens"]):
         reasons.append(f"{label}: completion token count is outside contract")
-    if (case["id"] == "235k_agent_large_output_budget"
+    if (case["id"] in {
+            "131k_reasoning_recall", "235k_agent_large_output_budget"}
             and request["completion_tokens"] >= case["max_tokens"]):
-        reasons.append(f"{label}: Agent response did not finish before the cap")
+        reasons.append(f"{label}: response did not finish before the cap")
     if not isinstance(request["finish_reason"], str):
         reasons.append(f"{label}: finish_reason is invalid")
     for field in (
@@ -407,6 +408,8 @@ def _validate_case(case: Any, expected: Json, label: str) -> list[str]:
     if expected["id"] == "235k_agent_large_output_budget":
         if facts.get("tool_choice_mode") != "auto":
             reasons.append(f"{label}: Agent tool-choice mode differs")
+        if facts.get("tool_content_mode") != "optional":
+            reasons.append(f"{label}: Agent tool-content mode differs")
     if expected["id"] == "32k_multimodal_isolation":
         assets = manifest_validator.EXPECTED_GENERATED_ASSETS
         if (facts.get("red_image_sha256")
@@ -496,7 +499,7 @@ def _validate_report(
     reasons = []
     if not isinstance(report, dict):
         return {}, [f"{label}: report root is not an object"]
-    if report.get("schema") != REPORT_SCHEMA or report.get("version") != 3:
+    if report.get("schema") != REPORT_SCHEMA or report.get("version") != 4:
         reasons.append(f"{label}: report schema or version is invalid")
     if (report.get("qualified") is not True
             or report.get("quality_run_eligible_for_baseline") is not True
@@ -828,7 +831,7 @@ def compare_reports(
     qualified = not reasons and len(comparisons) == EXPECTED_CASES
     return {
         "schema": COMPARISON_SCHEMA,
-        "version": 2,
+        "version": 3,
         "qualified": qualified,
         "long_context_quality_non_regression_authorized": qualified,
         "overall_promotion_authorized": False,

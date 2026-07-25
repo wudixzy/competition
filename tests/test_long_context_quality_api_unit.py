@@ -119,7 +119,7 @@ class LongContextQualityApiTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.manifest, cls.manifest_sha = MODULE._load_manifest(
-            ROOT / "quality/long_context_matrix.v3.json")
+            ROOT / "quality/long_context_matrix.v4.json")
 
     def test_handlers_and_tiers_match_frozen_matrix(self):
         self.assertEqual(
@@ -195,13 +195,13 @@ class LongContextQualityApiTest(unittest.TestCase):
                 "target_tool", target_arguments=("key", "key"))
 
     @staticmethod
-    def _tool_response(arguments):
+    def _tool_response(arguments, content=""):
         return {
             "choices": [{
                 "finish_reason": "tool_calls",
                 "message": {
                     "role": "assistant",
-                    "content": "",
+                    "content": content,
                     "tool_calls": [{
                         "id": "call-unit",
                         "type": "function",
@@ -233,6 +233,31 @@ class LongContextQualityApiTest(unittest.TestCase):
                 response, "lookup_quality_marker", {"key": "expected"})
         self.assertNotIn("secret", str(raised.exception))
         self.assertNotIn("expected", str(raised.exception))
+
+    def test_tool_content_is_strict_by_default_and_optional_for_auto(self):
+        response = self._tool_response(
+            {"key": "expected"}, content="protocol-valid preamble")
+        with self.assertRaisesRegex(
+                MODULE.MatrixFailure, "unexpected content"):
+            MODULE._require_single_tool_call(
+                response, "lookup_quality_marker", {"key": "expected"})
+        MODULE._require_single_tool_call(
+            response,
+            "lookup_quality_marker",
+            {"key": "expected"},
+            allow_content=True,
+        )
+
+    def test_tool_content_must_remain_string_or_null(self):
+        response = self._tool_response({"key": "expected"}, content={})
+        with self.assertRaisesRegex(
+                MODULE.MatrixFailure, "string or null"):
+            MODULE._require_single_tool_call(
+                response,
+                "lookup_quality_marker",
+                {"key": "expected"},
+                allow_content=True,
+            )
 
     def test_post_summary_does_not_retain_model_output(self):
         secret = "raw-long-context-output-must-not-be-retained"
@@ -309,7 +334,7 @@ class LongContextQualityApiTest(unittest.TestCase):
 
     def test_matrix_file_hash_cannot_be_overridden(self):
         value = json.loads((
-            ROOT / "quality/long_context_matrix.v3.json"
+            ROOT / "quality/long_context_matrix.v4.json"
         ).read_text(encoding="utf-8"))
         value["cases"][0]["max_tokens"] = 32
         with tempfile.TemporaryDirectory() as directory:

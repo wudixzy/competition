@@ -23,11 +23,11 @@ import validate_quality_data_manifests as manifest_validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v3.json"
+DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v4.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "a968fbbc37bf2e03b14fcf8cdb4df005e1956b4a93a23f62661860d523a85680"
+    "242670609fc23668607e5c602ab792a041fff7fcba13db7917cf88fc8281b818"
 )
-SCHEMA = "bi100-long-context-quality-result-v3"
+SCHEMA = "bi100-long-context-quality-result-v4"
 BASE_IMAGE = runtime_contract.BASE_IMAGE
 TIER_RANK = {"quick": 0, "full": 1, "extended": 2}
 Json = dict[str, Any]
@@ -521,14 +521,19 @@ def _require_single_tool_call(
     data: Json,
     expected_name: str,
     expected_arguments: Json,
+    *,
+    allow_content: bool = False,
 ) -> None:
     choice = data["choices"][0]
     require(choice.get("finish_reason") == "tool_calls",
             "tool response finish_reason must be tool_calls")
     message = quality._message(data)
     content = message.get("content")
-    require(content is None or not content.strip(),
-            "forced tool response contains unexpected content")
+    require(content is None or isinstance(content, str),
+            "tool response content must be a string or null")
+    if not allow_content:
+        require(content is None or not content.strip(),
+                "forced tool response contains unexpected content")
     raw_calls = message.get("tool_calls")
     require(isinstance(raw_calls, list) and len(raw_calls) == 1,
             "forced tool response must contain exactly one call")
@@ -924,8 +929,8 @@ def _reasoning(context: Context, case: Json) -> Json:
         content = (
             f"case={case['id']}\nBEGIN-MARKER-731\n"
             + _filler(filler)
-            + "\nEND-MARKER-947\nReason about the marker order and compute "
-            + "17*19. After reasoning, put exactly this in the final answer: "
+            + "\nEND-MARKER-947\nReason concisely about the marker order and "
+            + "compute 17*19. After reasoning, put exactly this in the final answer: "
             + expected
         )
         return [{"role": "user", "content": content}], None
@@ -946,12 +951,16 @@ def _reasoning(context: Context, case: Json) -> Json:
             "long-context reasoning marker or arithmetic answer differs")
     require(bool(reasoning) and reasoning != content,
             "reasoning/content split failed")
+    require(summary["finish_reason"] == "stop"
+            and summary["completion_tokens"] < case["max_tokens"],
+            "long-context reasoning did not finish naturally")
     return {
         "requests": [summary],
         "construction": [construction],
         "facts": {
             "answer_rule_passed": True,
             "marker_rule_passed": True,
+            "natural_finish_before_max_tokens": True,
             "reasoning_content_split": True,
         },
     }
@@ -1014,8 +1023,10 @@ def _agent_large_budget(context: Context, case: Json) -> Json:
         context, payload, case["target_prompt_tokens"])
     reasoning = quality._reasoning(quality._message(first_data))
     expected_arguments = {"key": marker, "ordinal": 235000}
-    _require_single_tool_call(first_data, target_name, expected_arguments)
-    _require_single_tool_call(second_data, target_name, expected_arguments)
+    _require_single_tool_call(
+        first_data, target_name, expected_arguments, allow_content=True)
+    _require_single_tool_call(
+        second_data, target_name, expected_arguments, allow_content=True)
     require(bool(reasoning.strip()),
             "235K Agent response contains no reasoning_content")
     require(quality._normalized_response(first_data)
@@ -1034,6 +1045,7 @@ def _agent_large_budget(context: Context, case: Json) -> Json:
         "facts": {
             "large_max_tokens_accepted": True,
             "natural_finish_before_max_tokens": True,
+            "tool_content_mode": "optional",
             "tool_choice_mode": "auto",
             "tool_count": len(fitted_tools or []),
             "tool_call_rule_passed": True,
@@ -1156,7 +1168,7 @@ def main() -> int:
     results = []
     report: Json = {
         "schema": SCHEMA,
-        "version": 3,
+        "version": 4,
         "qualified": False,
         "quality_run_eligible_for_baseline": False,
         "overall_promotion_authorized": False,

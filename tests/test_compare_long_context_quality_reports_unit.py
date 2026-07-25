@@ -92,6 +92,7 @@ def facts(case_id: str) -> dict:
         value["tool_count"] = 92
     if case_id == "235k_agent_large_output_budget":
         value["tool_choice_mode"] = "auto"
+        value["tool_content_mode"] = "optional"
     if case_id == "32k_multimodal_isolation":
         assets = MODULE.manifest_validator.EXPECTED_GENERATED_ASSETS
         value["red_image_sha256"] = assets["red_png_data_url_sha256"]
@@ -230,7 +231,7 @@ def valid_report() -> dict:
     }
     return {
         "schema": MODULE.REPORT_SCHEMA,
-        "version": 3,
+        "version": 4,
         "qualified": True,
         "quality_run_eligible_for_baseline": True,
         "overall_promotion_authorized": False,
@@ -378,7 +379,35 @@ class LongContextQualityComparisonTest(unittest.TestCase):
             "Agent tool-choice mode differs" in reason
             for reason in result["reasons"]))
         self.assertTrue(any(
-            "Agent response did not finish before the cap" in reason
+            "response did not finish before the cap" in reason
+            for reason in result["reasons"]))
+
+    def test_reasoning_requires_natural_finish_before_cap(self):
+        baseline = valid_report()
+        candidate = copy.deepcopy(baseline)
+        reasoning_case = candidate["cases"][8]
+        request = reasoning_case["observation"]["requests"][0]
+        request["completion_tokens"] = reasoning_case["max_tokens"]
+        request["total_tokens"] = (
+            request["prompt_tokens"] + request["completion_tokens"])
+        request["finish_reason"] = "length"
+        reasoning_case["observation"]["facts"][
+            "natural_finish_before_max_tokens"] = False
+        result = self.compare(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "response did not finish before the cap" in reason
+            for reason in result["reasons"]))
+
+    def test_agent_requires_explicit_optional_content_contract(self):
+        baseline = valid_report()
+        candidate = copy.deepcopy(baseline)
+        candidate["cases"][9]["observation"]["facts"][
+            "tool_content_mode"] = "empty_only"
+        result = self.compare(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "Agent tool-content mode differs" in reason
             for reason in result["reasons"]))
 
     def test_tool_call_structure_requires_only_safe_digests(self):
