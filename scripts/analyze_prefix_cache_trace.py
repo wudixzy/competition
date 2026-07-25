@@ -7,12 +7,15 @@ import hashlib
 import json
 import math
 import os
+from pathlib import Path
 import re
 import string
 import sys
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable, Sequence
 from typing import Any, Dict, Tuple
+
+import prefix_cache_baseline_contract as baseline_contract
 
 MARKER = "[BI100_CACHE_TRACE] "
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -227,11 +230,49 @@ def _file_provenance(path: str) -> Dict[str, Any]:
     return {"path": os.fspath(path), "bytes": size, "sha256": digest.hexdigest()}
 
 
-def _baseline_metrics(path: str) -> Dict[str, Any]:
+def _baseline_metrics(
+    path: str,
+    *,
+    expected_trace: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     with open(path, encoding="utf-8") as stream:
         data = json.load(stream)
     if not isinstance(data, dict):
         raise ValueError("baseline metrics must be a JSON object")
+    if data.get("schema") == baseline_contract.BASELINE_SCHEMA:
+        try:
+            digest = baseline_contract.validate_baseline_contract(
+                data, expected_trace=expected_trace)
+        except baseline_contract.BaselineContractError as error:
+            raise ValueError(
+                f"attested baseline contract is invalid: {error}") from error
+        metrics = data["metrics"]
+        return {
+            "run_id": data["run_id"],
+            "trace_session_sha256": data["trace"]["session_sha256"],
+            "cache_tps": float(metrics["cache_tps"]),
+            "input_tps": float(metrics["input_tps"]),
+            "weighted_score": float(metrics["weighted_score"]),
+            "output_tps_p10": float(metrics["output_tps_p10"]),
+            "ttft_p90_s": float(metrics["ttft_p90_s"]),
+            "cache_hit_rate": float(metrics["cache_hit_rate"]),
+            "success_rate": float(metrics["success_rate"]),
+            "attempted_requests": metrics["attempted_requests"],
+            "successful_requests": metrics["successful_requests"],
+            "error_requests": metrics["error_requests"],
+            "score_kind": metrics["score_kind"],
+            "attested": True,
+            "contract_sha256": digest,
+            "runtime_contract_sha256": (
+                data["runtime_contract"]["sha256"]),
+            "workload_manifest_sha256": (
+                data["workload_manifest"]["sha256"]),
+            "request_order_sha256": (
+                data["trace"]["request_order_sha256"]),
+            "trace_records_sha256": data["trace"]["records_sha256"],
+            "source": _file_provenance(path),
+        }
+
     run_id = data.get("run_id")
     if not isinstance(run_id, str) or not run_id.strip():
         raise ValueError("baseline metrics run_id must be non-empty")
@@ -262,6 +303,13 @@ def _baseline_metrics(path: str) -> Dict[str, Any]:
         "weighted_score": float(weighted_score),
         "output_tps_p10": float(output_tps_p10),
         "success_rate": float(success_rate),
+        "attested": False,
+        "contract_sha256": None,
+        "limitations": [
+            "legacy baseline is not bound to a runtime contract",
+            "legacy baseline is not bound to an 881-request workload manifest",
+            "legacy baseline cannot authorize qualification",
+        ],
         "source": _file_provenance(path),
     }
 
@@ -823,7 +871,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", required=True)
     parser.add_argument("--baseline-cache-tps", type=float)
     parser.add_argument("--baseline-weighted-score", type=float)
-    parser.add_argument("--baseline-metrics")
+    parser.add_argument(
+        "--baseline-metrics", "--baseline-contract",
+        dest="baseline_metrics",
+        help=(
+            "Attested 881-request baseline contract. A legacy metrics JSON "
+            "is accepted only for non-qualification diagnostics."
+        ),
+    )
     parser.add_argument(
         "--h2d-ms-per-block", type=float,
         default=M1_44_H2D_MS_PER_BLOCK)
@@ -840,11 +895,40 @@ def main(argv: list[str] | None = None) -> None:
             "aggregate hit-rate scaling is disabled; provide --baseline-metrics "
             "and per-request timing fields in the trace")
 
-    baseline = (_baseline_metrics(args.baseline_metrics)
-                if args.baseline_metrics is not None else None)
+    baseline = None
+    if args.baseline_metrics is not None:
+        with open(args.baseline_metrics, encoding="utf-8") as stream:
+            baseline_payload = json.load(stream)
+        strict_baseline = (
+            isinstance(baseline_payload, dict)
+            and baseline_payload.get("schema")
+            == baseline_contract.BASELINE_SCHEMA)
+        expected_trace = None
+        if strict_baseline:
+            try:
+                expected_trace = baseline_contract.trace_identity(
+                    records, [Path(path) for path in args.logs])
+            except baseline_contract.BaselineContractError as error:
+                raise ValueError(
+                    f"qualification trace identity is invalid: {error}"
+                ) from error
+        baseline = _baseline_metrics(
+            args.baseline_metrics, expected_trace=expected_trace)
     if (baseline is not None
             and baseline["trace_session_sha256"] != records[0]["trace_session_sha256"]):
         raise ValueError("baseline metrics trace session does not match logs")
+    if args.qualification_trace:
+        if baseline is None:
+            raise ValueError(
+                "--qualification-trace requires an attested "
+                "--baseline-metrics contract")
+        if baseline["attested"] is not True:
+            raise ValueError(
+                "--qualification-trace rejects legacy baseline metrics; "
+                "build an attested baseline contract")
+        if args.expected_requests != baseline_contract.EXPECTED_REQUESTS:
+            raise ValueError(
+                "--qualification-trace requires expected request count 881")
 
     if args.expected_requests <= 0:
         raise ValueError("expected request count must be positive")
@@ -901,6 +985,10 @@ def main(argv: list[str] | None = None) -> None:
     frequency_aware = _metrics(
         policy_results["admission64_m1_29"], total_prompt_tokens)
 
+    qualification_trace = _qualification_trace(
+        records, explicitly_declared=args.qualification_trace)
+    baseline_attested = bool(
+        baseline is not None and baseline.get("attested") is True)
     report = {
         "requests": len(records),
         "prompt_tokens": total_prompt_tokens,
@@ -916,8 +1004,9 @@ def main(argv: list[str] | None = None) -> None:
         "h2d_ms_per_block": args.h2d_ms_per_block,
         "d2h_ms_per_block": args.d2h_ms_per_block,
         "trace_version": 4,
-        "qualification_trace": _qualification_trace(
-            records, explicitly_declared=args.qualification_trace),
+        "qualification_trace": qualification_trace,
+        "qualification_evidence_attested": (
+            qualification_trace and baseline_attested),
         "candidate_gdn_restore_mode": args.gdn_restore_mode,
         "trace_session_sha256": records[0]["trace_session_sha256"],
         "trace_ordinals": {
@@ -926,6 +1015,47 @@ def main(argv: list[str] | None = None) -> None:
             "contiguous": True,
         },
         "source_logs": [_file_provenance(path) for path in args.logs],
+        "evidence": {
+            "baseline_metrics_present": baseline is not None,
+            "baseline_contract_attested": baseline_attested,
+            "baseline_run_id": (
+                baseline.get("run_id") if baseline is not None else None),
+            "baseline_score_kind": (
+                baseline.get("score_kind") if baseline is not None else None),
+            "baseline_contract_sha256": (
+                baseline.get("contract_sha256")
+                if baseline is not None else None),
+            "runtime_contract_sha256": (
+                baseline.get("runtime_contract_sha256")
+                if baseline is not None else None),
+            "workload_manifest_sha256": (
+                baseline.get("workload_manifest_sha256")
+                if baseline is not None else None),
+            "request_order_sha256": (
+                baseline.get("request_order_sha256")
+                if baseline is not None else None),
+            "trace_records_sha256": (
+                baseline.get("trace_records_sha256")
+                if baseline is not None else None),
+        },
+        "baseline_observed_metrics": ({
+            field: baseline.get(field)
+            for field in (
+                "output_tps_p10", "input_tps", "cache_tps",
+                "ttft_p90_s", "cache_hit_rate", "success_rate",
+                "weighted_score", "attempted_requests",
+                "successful_requests", "error_requests",
+            )
+        } if baseline is not None else None),
+        "promotion": {
+            "scope": "offline_cache_phase_gate_only",
+            "main_or_yaml_change_authorized": False,
+            "default_policy_change_authorized": False,
+            "official_score_claim_authorized": False,
+            "requires_tp4_same_generation_service_ab": True,
+            "requires_quality_non_regression_gates": True,
+            "projection_fixed_overhead_measured": False,
+        },
         "policy_metrics": {
             policy: _metrics(result, total_prompt_tokens)
             for policy, result in policy_results.items()
@@ -973,6 +1103,7 @@ def main(argv: list[str] | None = None) -> None:
                 if projected_score is not None else None)
             gates = {
                 "qualification_trace": report["qualification_trace"],
+                "attested_baseline_contract": baseline_attested,
                 "per_request_timing_complete": timing_complete,
                 "effective_hit_rate_at_least_50pct": (
                     candidate_metrics["usable_gdn_state_avoided_token_rate"]
@@ -993,10 +1124,22 @@ def main(argv: list[str] | None = None) -> None:
                     projected_score is not None and projected_score >= 8000.0),
             }
             qualifications[name] = {
-                "ok": report["qualification_trace"] and all(gates.values()),
+                "ok": all(gates.values()),
+                "offline_phase_gate_passed": all(gates.values()),
                 "gates": gates,
                 "qualification_trace": report["qualification_trace"],
-                "projection_model": "per_request_residual_prefill",
+                "decision_scope": "offline_cache_phase_gate_only",
+                "main_or_yaml_change_authorized": False,
+                "default_policy_change_authorized": False,
+                "official_score_claim_authorized": False,
+                "requires_tp4_same_generation_service_ab": True,
+                "projection_model": "per_request_residual_prefill_directional_v1",
+                "projection_assumptions": [
+                    "non-queue TTFT is scaled by residual prefill tokens",
+                    "fixed frontend and scheduler intercept is not measured",
+                    "baseline Output TPS P10 is held constant",
+                    "offline projection is not a service or quality result",
+                ],
                 "projected_input_tps": projected_input_tps,
                 "projected_cache_tps": projected_cache_tps,
                 "projected_weighted_score": projected_score,

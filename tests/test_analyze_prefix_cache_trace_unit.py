@@ -10,6 +10,110 @@ sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "scripts"))
 import analyze_prefix_cache_trace as sim
 
 
+def runtime_contract_value():
+    contract = sim.baseline_contract.runtime_contract
+    model_path = "/model"
+    environment = contract.service_environment(
+        "/runtime/site-packages",
+        gdn_cache_policy="fine32",
+        gdn_restore_mode="direct",
+        fused_prefill="0",
+        kv_eviction_policy="lru",
+    )
+    return {
+        "schema": "bi100-quality-runtime-contract-v1",
+        "version": 1,
+        "source_revision": "a" * 40,
+        "runtime_identity": "bare-host-overlay-v1:" + "b" * 20,
+        "runtime_overlay_sha256": "b" * 64,
+        "instance": "unit-instance",
+        "gpu_count": 4,
+        "tensor_parallel_size": 4,
+        "max_model_len": 262144,
+        "model_path": model_path,
+        "tokenizer_path": model_path,
+        "served_model_name": "llm",
+        "base_image": contract.BASE_IMAGE,
+        "command": contract.service_command(model_path),
+        "environment": environment,
+        "cache_trace_enabled": True,
+        "optimization_label": "fine32-direct-lru-control",
+    }
+
+
+def attested_baseline(records, trace_path):
+    contract = sim.baseline_contract
+    trace = contract.trace_identity(records, [trace_path])
+    runtime = runtime_contract_value()
+    runtime_sha = contract.validate_runtime_contract(runtime)
+    workload = {
+        "schema": contract.WORKLOAD_SCHEMA,
+        "version": 1,
+        "workload_kind": "restricted_official_881",
+        "name": "unit official workload",
+        "author_or_org": "unit operator",
+        "source_url": None,
+        "license": "restricted",
+        "revision": "unit-run-1",
+        "captured_at_utc": "2026-07-25T00:00:00Z",
+        "split": "all",
+        "request_count": 881,
+        "request_order_sha256": trace["request_order_sha256"],
+        "source_artifact_sha256": trace["records_sha256"],
+        "source_artifact_kind": "privacy_safe_cache_trace_v4_records",
+        "selection_rule": "all requests in fixed order",
+        "transformation": "privacy-safe cache trace v4",
+        "redistribution_allowed": False,
+        "contains_restricted_evaluation_data": True,
+        "snapshot_redistributed": False,
+    }
+    workload_sha = contract.validate_workload_manifest(
+        workload, expected_trace=trace)
+    metrics = {
+        "score_kind": "local_881_proxy",
+        "aggregation": "fixed-order sequential wall-clock aggregate",
+        "attempted_requests": 881,
+        "successful_requests": 881,
+        "error_requests": 0,
+        "output_tps_p10": 21.0,
+        "input_tps": 2800.0,
+        "cache_tps": 100.0,
+        "ttft_p90_s": 4.0,
+        "cache_hit_rate": 0.5,
+        "success_rate": 1.0,
+        "weighted_score": 0.0,
+        "formula": contract.SCORE_FORMULA,
+    }
+    metrics["weighted_score"] = contract.weighted_score(metrics)
+    value = {
+        "schema": contract.BASELINE_SCHEMA,
+        "version": 1,
+        "run_id": "unit-run-1",
+        "runtime_contract": {
+            "sha256": runtime_sha,
+            "file_sha256": "c" * 64,
+            "value": runtime,
+        },
+        "workload_manifest": {
+            "sha256": workload_sha,
+            "file_sha256": "d" * 64,
+            "value": workload,
+        },
+        "trace": trace,
+        "metrics": metrics,
+        "metrics_source": {"bytes": 2, "sha256": "e" * 64},
+        "metrics_transformation": "unit metrics copied by exact field name",
+        "attestation": {
+            "trace_metrics_same_service_run_asserted": True,
+            "metrics_cover_exact_trace_request_order_asserted": True,
+            "contains_raw_requests_or_outputs": False,
+            "qualification_scope": "offline_cache_phase_gate_only",
+        },
+    }
+    contract.validate_baseline_contract(value, expected_trace=trace)
+    return value
+
+
 def digest(value: int) -> bytes:
     return hashlib.sha256(value.to_bytes(4, "big")).digest()
 
@@ -336,9 +440,90 @@ class AnalyzerTest(unittest.TestCase):
             qualification = report["qualification"]["admission64"]
             self.assertEqual(
                 qualification["projection_model"],
-                "per_request_residual_prefill")
+                "per_request_residual_prefill_directional_v1")
             self.assertIsNotNone(qualification["projected_weighted_score"])
             self.assertFalse(qualification["ok"])
+            self.assertFalse(
+                qualification["gates"]["attested_baseline_contract"])
+            self.assertFalse(
+                report["promotion"]["main_or_yaml_change_authorized"])
+
+    def test_qualification_rejects_legacy_baseline_metrics(self):
+        records = [
+            record([1, 2], request_id=0, ordinal=1),
+            record([1, 2], request_id=1, ordinal=2),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            trace = root / "trace.log"
+            trace.write_text("\n".join(
+                sim.MARKER + json.dumps(item) for item in records) + "\n")
+            baseline = root / "legacy.json"
+            baseline.write_text(json.dumps({
+                "run_id": "legacy",
+                "trace_session_sha256": "0123456789abcdef",
+                "cache_tps": 100.0,
+                "weighted_score": 1000.0,
+                "output_tps_p10": 21.0,
+                "success_rate": 1.0,
+            }))
+            with self.assertRaisesRegex(
+                    ValueError, "rejects legacy baseline metrics"):
+                sim.main([
+                    str(trace),
+                    "--expected-requests", "2",
+                    "--qualification-trace",
+                    "--baseline-metrics", str(baseline),
+                    "--out", str(root / "out.json"),
+                ])
+
+    def test_attested_881_trace_is_only_an_offline_phase_gate(self):
+        raw_records = []
+        for index in range(881):
+            item = record(
+                [1, 2], capacity=4, request_id=index, ordinal=index + 1)
+            item.update({
+                "ttft_s": 1.0,
+                "request_latency_s": 2.0,
+                "time_in_queue_s": 0.0,
+                "observed_effective_cached_tokens": 0,
+            })
+            raw_records.append(item)
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            trace = root / "trace.log"
+            trace.write_text("\n".join(
+                sim.MARKER + json.dumps(item) for item in raw_records) + "\n")
+            records = sim.read([str(trace)])
+            baseline = root / "baseline.json"
+            baseline.write_text(json.dumps(
+                attested_baseline(records, trace), indent=2, sort_keys=True))
+            out = root / "report.json"
+
+            sim.main([
+                str(trace),
+                "--qualification-trace",
+                "--baseline-metrics", str(baseline),
+                "--out", str(out),
+            ])
+
+            report = json.loads(out.read_text())
+            self.assertTrue(report["qualification_trace"])
+            self.assertTrue(report["qualification_evidence_attested"])
+            self.assertTrue(
+                report["evidence"]["baseline_contract_attested"])
+            self.assertFalse(
+                report["promotion"]["main_or_yaml_change_authorized"])
+            self.assertFalse(
+                report["promotion"]["official_score_claim_authorized"])
+            for candidate in ("admission64", "admission64_m1_29"):
+                self.assertFalse(
+                    report["qualification"][candidate]
+                    ["main_or_yaml_change_authorized"])
+                self.assertEqual(
+                    report["qualification"][candidate]["decision_scope"],
+                    "offline_cache_phase_gate_only",
+                )
 
     def test_docker_json_wrapper_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
