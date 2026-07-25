@@ -119,7 +119,7 @@ class LongContextQualityApiTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.manifest, cls.manifest_sha = MODULE._load_manifest(
-            ROOT / "quality/long_context_matrix.v2.json")
+            ROOT / "quality/long_context_matrix.v3.json")
 
     def test_handlers_and_tiers_match_frozen_matrix(self):
         self.assertEqual(
@@ -162,11 +162,37 @@ class LongContextQualityApiTest(unittest.TestCase):
         )
 
     def test_large_tool_schema_has_92_unique_names(self):
-        tools = MODULE._large_tools("target_tool")
+        tools = MODULE._large_tools(
+            "target_tool", target_arguments=("key",))
         names = [tool["function"]["name"] for tool in tools]
         self.assertEqual(len(tools), 92)
         self.assertEqual(len(set(names)), 92)
         self.assertEqual(names.count("target_tool"), 1)
+        target = next(
+            tool["function"] for tool in tools
+            if tool["function"]["name"] == "target_tool")
+        self.assertEqual(
+            target["parameters"]["properties"],
+            {"key": {"type": "string"}},
+        )
+        self.assertEqual(target["parameters"]["required"], ["key"])
+
+        pair_tools = MODULE._large_tools("target_tool")
+        pair_target = next(
+            tool["function"] for tool in pair_tools
+            if tool["function"]["name"] == "target_tool")
+        self.assertEqual(
+            set(pair_target["parameters"]["properties"]),
+            {"key", "ordinal"},
+        )
+        self.assertEqual(
+            pair_target["parameters"]["required"], ["key", "ordinal"])
+
+    def test_large_tool_schema_rejects_invalid_target_arguments(self):
+        with self.assertRaisesRegex(
+                MODULE.MatrixFailure, "target tool arguments are invalid"):
+            MODULE._large_tools(
+                "target_tool", target_arguments=("key", "key"))
 
     @staticmethod
     def _tool_response(arguments):
@@ -283,7 +309,7 @@ class LongContextQualityApiTest(unittest.TestCase):
 
     def test_matrix_file_hash_cannot_be_overridden(self):
         value = json.loads((
-            ROOT / "quality/long_context_matrix.v2.json"
+            ROOT / "quality/long_context_matrix.v3.json"
         ).read_text(encoding="utf-8"))
         value["cases"][0]["max_tokens"] = 32
         with tempfile.TemporaryDirectory() as directory:

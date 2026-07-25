@@ -9,16 +9,23 @@ reports before it can be proposed for `main` or for a formal YAML change.
 
 The functional gate executes all 53 frozen rows derived from `指标集合`. The
 long-context gate executes the 12 deterministic cases in
-`quality/long_context_matrix.v2.json`. The selected 13-request performance
+`quality/long_context_matrix.v3.json`. The selected 13-request performance
 sample remains a smoke/proxy dataset and is not treated as an 881-request score
 or a model-quality reference.
+
+Matrix v3 supersedes v2 for new runs. It corrects the 65K target-tool schema,
+makes the 131K marker recall externally observable while independently
+requiring separated reasoning, and models the 235K Agent turn with explicit
+automatic tool selection plus natural completion before the unchanged 8192
+token cap. The v2 file and its reports remain immutable historical evidence;
+v2 and v3 results must not be compared as an A/B pair.
 
 ## Frozen identities
 
 - Functional manifest SHA-256:
   `fe9b958610d9d0df8f54504d9c149442f145226c03cf76668711d2d38ed51d0e`
 - Long-context matrix SHA-256:
-  `3217ec047f7b78af6747269c3f85baed6bfdd86c6527aca6335dbfa7d9f0452b`
+  `a968fbbc37bf2e03b14fcf8cdb4df005e1956b4a93a23f62661860d523a85680`
 - Required base image:
   `harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3`
 - Maximum model length: `262144`

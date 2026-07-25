@@ -1,0 +1,60 @@
+{
+  "schema": "bi100-long-context-quality-matrix-v3",
+  "version": 3,
+  "seed": 20260724,
+  "max_model_len": 262144,
+  "stable_order": true,
+  "contains_raw_requests": false,
+  "promotion_tier": "extended",
+  "provenance": {
+    "kind": "deterministic_project_generated",
+    "author_or_org": "BI100 competition project",
+    "license": "project-internal",
+    "redistribution_allowed": false,
+    "contains_external_dataset_rows": false,
+    "contains_personal_or_secret_data": false
+  },
+  "generator": {
+    "id": "bi100-long-context-quality-generator",
+    "version": 3,
+    "runner": "tests/long_context_quality_api.py",
+    "exact_prompt_module": "tests/exact_chat_prompt.py",
+    "construction": "deterministic token-id stream decoded to text and revalidated through the pinned local chat template"
+  },
+  "tokenization_contract": {
+    "text_cases": "server_exact_post_chat_template_tokens",
+    "multimodal_cases": "local_post_chat_template_tokens_plus_server_vision_expansion",
+    "runtime_tokenizer_artifact_sha256_required": true,
+    "runtime_chat_template_sha256_required": true,
+    "chat_template_kwargs_mode_required": true
+  },
+  "cache_trace_contract": {
+    "version": 4,
+    "required_for_multimodal_isolation": true,
+    "same_image_prompt_chain_must_match": true,
+    "different_image_first_prompt_hash_must_differ": true,
+    "contains_raw_tokens_or_media": false
+  },
+  "generated_assets": {
+    "red_png_data_url_sha256": "49571191557f87f03b1f83e2f233241df962dae58e0604fc1c1c7d7d51c60da4",
+    "blue_png_data_url_sha256": "57d7214b7255958657b84ae8922a1c886b4933cbbd0242084ec0cdb5eb0d9d55",
+    "large_tools_65k_sha256": "9e8673201ab7e43a4d64190ab2d56b33ed6a0b5d9037cd82362601b75245378f",
+    "large_tools_235k_sha256": "1e07a09e45d1b3e12497e6c5af8961e839df7bed52ba6eed79669ee1a152d5f7",
+    "fetch_record_tool_sha256": "f3da291816c2a09bfd5ca73709a678da32fc1b423ffdb4626c462f65e9ec11f4"
+  },
+  "capacity_prompt_boundaries": [261887, 261888],
+  "cases": [
+    {"ordinal": 1, "id": "short_basic_recall", "tier": "quick", "target_prompt_tokens": 512, "max_tokens": 64, "min_completion_tokens": 1, "request_shape": "single_turn_text", "cache_scenario": "cold", "capabilities": ["basic", "multilingual"], "equivalence": "baseline_exact", "validation": "three fixed markers"},
+    {"ordinal": 2, "id": "4k_cold_warm_recall", "tier": "quick", "target_prompt_tokens": 4096, "max_tokens": 64, "min_completion_tokens": 1, "request_shape": "single_turn_text", "cache_scenario": "cold_warm_identical", "capabilities": ["long_context", "cache"], "equivalence": "cold_warm_exact_and_baseline_exact", "validation": "three fixed markers"},
+    {"ordinal": 3, "id": "32k_partial_branch", "tier": "full", "target_prompt_tokens": 32768, "max_tokens": 128, "min_completion_tokens": 1, "request_shape": "two_branch_text", "cache_scenario": "partial_shared_prefix", "capabilities": ["long_context", "cache", "partial_prefix"], "equivalence": "branch_rules_and_baseline_exact", "validation": "branch-specific marker with no cross-branch leakage"},
+    {"ordinal": 4, "id": "32k_multimodal_isolation", "tier": "full", "target_prompt_tokens": 32768, "max_tokens": 128, "min_completion_tokens": 1, "request_shape": "text_plus_inline_png", "cache_scenario": "same_image_warm_then_different_image", "capabilities": ["long_context", "multimodal", "cache"], "equivalence": "same_image_exact_and_cross_image_isolated", "validation": "red and blue image rules plus cache trace identity"},
+    {"ordinal": 5, "id": "65k_multiturn_large_tools", "tier": "full", "target_prompt_tokens": 65536, "max_tokens": 256, "min_completion_tokens": 1, "request_shape": "multi_turn_with_tools", "cache_scenario": "session_continuation", "capabilities": ["long_context", "multi_turn", "tool_calling", "large_tools_schema"], "equivalence": "tool_arguments_and_baseline_exact", "validation": "target schema requires only key; forced function name and exact key-only JSON arguments"},
+    {"ordinal": 6, "id": "65k_long_tool_result", "tier": "full", "target_prompt_tokens": 65536, "max_tokens": 256, "min_completion_tokens": 1, "request_shape": "assistant_tool_call_and_long_tool_result", "cache_scenario": "session_continuation", "capabilities": ["long_context", "multi_turn", "tool_calling", "long_tool_result"], "equivalence": "answer_rule_and_baseline_exact", "validation": "marker retrieval from long tool result"},
+    {"ordinal": 7, "id": "65k_interleaved_sessions", "tier": "full", "target_prompt_tokens": 65536, "max_tokens": 128, "min_completion_tokens": 1, "request_shape": "two_interleaved_sessions", "cache_scenario": "interleaved_session_prefixes", "capabilities": ["long_context", "multi_turn", "cache", "partial_prefix"], "equivalence": "per-session exact", "validation": "session-specific marker with no state leakage"},
+    {"ordinal": 8, "id": "131k_cold_warm_recall", "tier": "extended", "target_prompt_tokens": 131000, "max_tokens": 256, "min_completion_tokens": 256, "request_shape": "single_turn_text", "cache_scenario": "cold_warm_identical", "capabilities": ["long_context", "cache"], "equivalence": "cold_warm_exact_and_baseline_next_token", "validation": "three fixed markers and 256-token stable output"},
+    {"ordinal": 9, "id": "131k_reasoning_recall", "tier": "extended", "target_prompt_tokens": 131000, "max_tokens": 512, "min_completion_tokens": 1, "request_shape": "single_turn_reasoning", "cache_scenario": "cold", "capabilities": ["long_context", "reasoning"], "equivalence": "answer_rule_and_baseline_semantic", "validation": "externally observable marker order and arithmetic answer plus nonempty separated reasoning"},
+    {"ordinal": 10, "id": "235k_agent_large_output_budget", "tier": "extended", "target_prompt_tokens": 235000, "max_tokens": 8192, "min_completion_tokens": 1, "request_shape": "multi_turn_agent_with_auto_tools", "cache_scenario": "session_continuation", "capabilities": ["long_context", "multi_turn", "tool_calling", "reasoning", "large_tools_schema", "long_tool_result"], "equivalence": "capability_rules_and_baseline_semantic", "validation": "auto tool call with exact marker and ordinal, separated reasoning, 8192-token budget acceptance, and natural finish before cap"},
+    {"ordinal": 11, "id": "235k_partial_branch", "tier": "extended", "target_prompt_tokens": 235000, "max_tokens": 1000, "min_completion_tokens": 1, "request_shape": "two_branch_text", "cache_scenario": "partial_shared_prefix", "capabilities": ["long_context", "cache", "partial_prefix"], "equivalence": "warm_repeat_exact_and_baseline_semantic", "validation": "branch-specific marker and deterministic warm repeat"},
+    {"ordinal": 12, "id": "near_262k_capacity", "tier": "extended", "target_prompt_tokens": 261888, "max_tokens": 256, "min_completion_tokens": 1, "request_shape": "single_turn_text", "cache_scenario": "cold_warm_identical", "capabilities": ["long_context", "cache", "capacity"], "equivalence": "cold_warm_exact_and_baseline_next_token", "validation": "exact context boundary, finite response, and fixed markers"}
+  ]
+}

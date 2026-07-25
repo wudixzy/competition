@@ -23,11 +23,11 @@ import validate_quality_data_manifests as manifest_validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v2.json"
+DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v3.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "3217ec047f7b78af6747269c3f85baed6bfdd86c6527aca6335dbfa7d9f0452b"
+    "a968fbbc37bf2e03b14fcf8cdb4df005e1956b4a93a23f62661860d523a85680"
 )
-SCHEMA = "bi100-long-context-quality-result-v2"
+SCHEMA = "bi100-long-context-quality-result-v3"
 BASE_IMAGE = runtime_contract.BASE_IMAGE
 TIER_RANK = {"quick": 0, "full": 1, "extended": 2}
 Json = dict[str, Any]
@@ -175,7 +175,22 @@ def _function_tool(name: str, argument: str = "key") -> Json:
     }
 
 
-def _large_tools(target_name: str, namespace: str = "matrix") -> list[Json]:
+def _large_tools(
+    target_name: str,
+    namespace: str = "matrix",
+    *,
+    target_arguments: tuple[str, ...] = ("key", "ordinal"),
+) -> list[Json]:
+    argument_properties = {
+        "key": {"type": "string"},
+        "ordinal": {"type": "integer"},
+    }
+    require(
+        bool(target_arguments)
+        and len(target_arguments) == len(set(target_arguments))
+        and set(target_arguments) <= set(argument_properties),
+        "target tool arguments are invalid",
+    )
     tools = []
     for index in range(92):
         if index == 0:
@@ -185,6 +200,13 @@ def _large_tools(target_name: str, namespace: str = "matrix") -> list[Json]:
             name = target_name
         else:
             name = f"auxiliary_{namespace}_{index:03d}"
+        is_target = name == target_name
+        properties = (
+            {argument: argument_properties[argument]
+             for argument in target_arguments}
+            if is_target else argument_properties
+        )
+        required = list(target_arguments) if is_target else ["key"]
         tools.append({
             "type": "function",
             "function": {
@@ -192,11 +214,8 @@ def _large_tools(target_name: str, namespace: str = "matrix") -> list[Json]:
                 "description": f"Deterministic quality tool {index:03d}.",
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "key": {"type": "string"},
-                        "ordinal": {"type": "integer"},
-                    },
-                    "required": ["key"],
+                    "properties": properties,
+                    "required": required,
                     "additionalProperties": False,
                 },
             },
@@ -205,7 +224,8 @@ def _large_tools(target_name: str, namespace: str = "matrix") -> list[Json]:
 
 
 def _tool_recipe(case_id: str, target_name: str, marker: str) -> Recipe:
-    tools = _large_tools(target_name, case_id)
+    tools = _large_tools(
+        target_name, case_id, target_arguments=("key",))
 
     def recipe(filler: str) -> tuple[list[Json], list[Json]]:
         content = (
@@ -276,10 +296,12 @@ def _generated_asset_contract() -> Json:
         ).hexdigest(),
         "large_tools_65k_sha256": quality._sha256_json(
             _large_tools(
-                "lookup_quality_marker", "65k_multiturn_large_tools")),
+                "lookup_quality_marker", "65k_multiturn_large_tools",
+                target_arguments=("key",))),
         "large_tools_235k_sha256": quality._sha256_json(
             _large_tools(
-                "report_agent_marker", "235k_agent_large_output_budget")),
+                "report_agent_marker", "235k_agent_large_output_budget",
+                target_arguments=("key", "ordinal"))),
         "fetch_record_tool_sha256": quality._sha256_json(
             [_function_tool("fetch_record", "record")]),
     }
@@ -896,14 +918,15 @@ def _interleaved_sessions(context: Context, case: Json) -> Json:
 
 
 def _reasoning(context: Context, case: Json) -> Json:
-    expected = "BEGIN-MARKER-731|MIDDLE-MARKER-552|END-MARKER-947"
+    expected = "BEGIN-MARKER-731|MIDDLE-MARKER-552|END-MARKER-947|323"
 
     def recipe(filler: str) -> tuple[list[Json], None]:
         content = (
             f"case={case['id']}\nBEGIN-MARKER-731\n"
             + _filler(filler)
-            + "\nEND-MARKER-947\nRecall all markers while reasoning, then "
-            + "compute 17*19. Put only 323 in the final answer."
+            + "\nEND-MARKER-947\nReason about the marker order and compute "
+            + "17*19. After reasoning, put exactly this in the final answer: "
+            + expected
         )
         return [{"role": "user", "content": content}], None
 
@@ -919,9 +942,8 @@ def _reasoning(context: Context, case: Json) -> Json:
     message = quality._message(data)
     reasoning = quality._reasoning(message).strip()
     content = (message.get("content") or "").strip()
-    require(content == "323", "long-context reasoning final answer differs")
-    require(all(marker in reasoning for marker in expected.split("|")),
-            "long-context reasoning marker recall failed")
+    require(content == expected,
+            "long-context reasoning marker or arithmetic answer differs")
     require(bool(reasoning) and reasoning != content,
             "reasoning/content split failed")
     return {
@@ -938,7 +960,8 @@ def _reasoning(context: Context, case: Json) -> Json:
 def _agent_large_budget(context: Context, case: Json) -> Json:
     target_name = "report_agent_marker"
     marker = "AGENT-235K-731"
-    tools = _large_tools(target_name, case["id"])
+    tools = _large_tools(
+        target_name, case["id"], target_arguments=("key", "ordinal"))
 
     def recipe(filler: str) -> tuple[list[Json], list[Json]]:
         tool_content = (
@@ -967,7 +990,9 @@ def _agent_large_budget(context: Context, case: Json) -> Json:
                 "content": tool_content,
             },
             {"role": "user", "content": (
-                f"Call {target_name} with key={marker} and ordinal=235000.")},
+                "Reason briefly, then call "
+                f"{target_name} exactly once with key={marker} and "
+                "ordinal=235000. Do not continue after selecting the tool.")},
         ]
         return messages, tools
 
@@ -981,8 +1006,8 @@ def _agent_large_budget(context: Context, case: Json) -> Json:
         served_model_name=context.served_model_name,
         tools=fitted_tools,
         thinking=True,
-        tool_name=target_name,
     )
+    payload["tool_choice"] = "auto"
     first_data, first = _post(
         context, payload, case["target_prompt_tokens"])
     second_data, second = _post(
@@ -998,11 +1023,18 @@ def _agent_large_budget(context: Context, case: Json) -> Json:
             "235K Agent cold/warm output differs")
     require(first["cached_tokens"] == 0 and second["cached_tokens"] > 0,
             "235K Agent cache accounting differs")
+    require(
+        first["completion_tokens"] < case["max_tokens"]
+        and second["completion_tokens"] < case["max_tokens"],
+        "235K Agent response exhausted the large output budget",
+    )
     return {
         "requests": [first, second],
         "construction": [construction],
         "facts": {
             "large_max_tokens_accepted": True,
+            "natural_finish_before_max_tokens": True,
+            "tool_choice_mode": "auto",
             "tool_count": len(fitted_tools or []),
             "tool_call_rule_passed": True,
             "reasoning_present": True,
@@ -1124,7 +1156,7 @@ def main() -> int:
     results = []
     report: Json = {
         "schema": SCHEMA,
-        "version": 2,
+        "version": 3,
         "qualified": False,
         "quality_run_eligible_for_baseline": False,
         "overall_promotion_authorized": False,

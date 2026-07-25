@@ -17,12 +17,12 @@ import validate_quality_data_manifests as manifest_validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v2.json"
+DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v3.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "3217ec047f7b78af6747269c3f85baed6bfdd86c6527aca6335dbfa7d9f0452b"
+    "a968fbbc37bf2e03b14fcf8cdb4df005e1956b4a93a23f62661860d523a85680"
 )
-REPORT_SCHEMA = "bi100-long-context-quality-result-v2"
-COMPARISON_SCHEMA = "bi100-long-context-quality-comparison-v1"
+REPORT_SCHEMA = "bi100-long-context-quality-result-v3"
+COMPARISON_SCHEMA = "bi100-long-context-quality-comparison-v2"
 EXPECTED_CASES = 12
 BASE_IMAGE = runtime_contract.BASE_IMAGE
 Json = dict[str, Any]
@@ -83,7 +83,8 @@ TRUE_FACTS = {
         "reasoning_content_split"),
     "235k_agent_large_output_budget": (
         "large_max_tokens_accepted", "tool_call_rule_passed",
-        "reasoning_present", "cold_warm_exact"),
+        "reasoning_present", "cold_warm_exact",
+        "natural_finish_before_max_tokens"),
     "235k_partial_branch": (
         "branch_markers_correct", "cold_warm_exact", "strict_partial_hit"),
     "near_262k_capacity": (
@@ -150,6 +151,64 @@ def _atomic_write(path: Path, value: Json) -> None:
             pass
 
 
+def _validate_tool_call_structure(value: Any, label: str) -> list[str]:
+    root_fields = {"container_type", "count", "calls"}
+    if not isinstance(value, dict) or set(value) != root_fields:
+        return [f"{label}: tool-call structure fields are invalid"]
+    reasons = []
+    if not isinstance(value["container_type"], str):
+        reasons.append(f"{label}: tool-call container type is invalid")
+    calls = value["calls"]
+    count = value["count"]
+    if not isinstance(calls, list):
+        return reasons + [f"{label}: tool-call structures are invalid"]
+    if count is None:
+        if calls:
+            reasons.append(f"{label}: absent tool-call count has entries")
+        return reasons
+    if (not isinstance(count, int) or isinstance(count, bool)
+            or count < 0 or count != len(calls)):
+        reasons.append(f"{label}: tool-call count is invalid")
+    base_fields = {
+        "call_type", "function_type", "name_sha256", "arguments_type",
+    }
+    argument_fields = {
+        "arguments_length", "arguments_sha256", "starts_object",
+        "ends_object", "contains_tool_call_tag", "contains_function_prefix",
+        "contains_code_fence", "json_type",
+    }
+    json_types = {"dict", "list", "str", "int", "float", "bool", "NoneType"}
+    for index, call in enumerate(calls, 1):
+        call_label = f"{label}: tool call {index}"
+        if not isinstance(call, dict) or not base_fields <= set(call):
+            reasons.append(f"{call_label} fields are invalid")
+            continue
+        if not all(isinstance(call[field], str) for field in (
+                "call_type", "function_type", "arguments_type")):
+            reasons.append(f"{call_label} type fields are invalid")
+        if not _is_sha256(call.get("name_sha256")):
+            reasons.append(f"{call_label} name digest is invalid")
+        if call.get("arguments_type") == "str":
+            if set(call) != base_fields | argument_fields:
+                reasons.append(f"{call_label} argument fields are invalid")
+                continue
+            if (not isinstance(call["arguments_length"], int)
+                    or isinstance(call["arguments_length"], bool)
+                    or call["arguments_length"] < 0
+                    or not _is_sha256(call["arguments_sha256"])):
+                reasons.append(f"{call_label} argument identity is invalid")
+            for field in (
+                    "starts_object", "ends_object", "contains_tool_call_tag",
+                    "contains_function_prefix", "contains_code_fence"):
+                if not isinstance(call[field], bool):
+                    reasons.append(f"{call_label} {field} is invalid")
+            if call["json_type"] not in json_types:
+                reasons.append(f"{call_label} JSON type is invalid")
+        elif set(call) != base_fields:
+            reasons.append(f"{call_label} non-string argument fields are invalid")
+    return reasons
+
+
 def _validate_request(
     request: Any,
     case: Json,
@@ -160,7 +219,8 @@ def _validate_request(
         "status", "model", "local_prompt_tokens", "prompt_tokens",
         "cached_tokens", "completion_tokens", "total_tokens",
         "finish_reason", "semantic_output_sha256", "content_sha256",
-        "reasoning_sha256", "tool_calls_sha256",
+        "content_length", "reasoning_sha256", "reasoning_length",
+        "tool_calls_sha256", "tool_call_structure",
         "first_generated_token_sha256", "request_contract_sha256",
         "token_accounting", "protocol_validated", "elapsed_s",
     }
@@ -169,12 +229,15 @@ def _validate_request(
     reasons = []
     integer_fields = (
         "status", "local_prompt_tokens", "prompt_tokens", "cached_tokens",
-        "completion_tokens", "total_tokens",
+        "completion_tokens", "total_tokens", "content_length",
+        "reasoning_length",
     )
     if any(not isinstance(request[field], int)
            or isinstance(request[field], bool) for field in integer_fields):
         reasons.append(f"{label}: integer counters are invalid")
         return reasons
+    if request["content_length"] < 0 or request["reasoning_length"] < 0:
+        reasons.append(f"{label}: response lengths are invalid")
     if request["status"] != 200:
         reasons.append(f"{label}: request status is not HTTP 200")
     if request["model"] != "llm":
@@ -202,6 +265,9 @@ def _validate_request(
     if not (case["min_completion_tokens"]
             <= request["completion_tokens"] <= case["max_tokens"]):
         reasons.append(f"{label}: completion token count is outside contract")
+    if (case["id"] == "235k_agent_large_output_budget"
+            and request["completion_tokens"] >= case["max_tokens"]):
+        reasons.append(f"{label}: Agent response did not finish before the cap")
     if not isinstance(request["finish_reason"], str):
         reasons.append(f"{label}: finish_reason is invalid")
     for field in (
@@ -216,6 +282,8 @@ def _validate_request(
         reasons.append(f"{label}: first generated token digest is invalid")
     if case["id"] in NEXT_TOKEN_IDS and not _is_sha256(first_token):
         reasons.append(f"{label}: next-token evidence is missing")
+    reasons.extend(_validate_tool_call_structure(
+        request["tool_call_structure"], label))
     elapsed = request["elapsed_s"]
     if (not isinstance(elapsed, (int, float)) or isinstance(elapsed, bool)
             or not math.isfinite(elapsed) or elapsed <= 0):
@@ -336,6 +404,9 @@ def _validate_case(case: Any, expected: Json, label: str) -> list[str]:
             "65k_multiturn_large_tools", "235k_agent_large_output_budget"):
         if facts.get("tool_count") != 92:
             reasons.append(f"{label}: large tools count differs")
+    if expected["id"] == "235k_agent_large_output_budget":
+        if facts.get("tool_choice_mode") != "auto":
+            reasons.append(f"{label}: Agent tool-choice mode differs")
     if expected["id"] == "32k_multimodal_isolation":
         assets = manifest_validator.EXPECTED_GENERATED_ASSETS
         if (facts.get("red_image_sha256")
@@ -411,7 +482,7 @@ def _validate_case(case: Any, expected: Json, label: str) -> list[str]:
                 "235k_agent_large_output_budget"}:
             if any(request["finish_reason"] != "tool_calls"
                    for request in requests):
-                reasons.append(f"{label}: forced tool call did not finish as tool_calls")
+                reasons.append(f"{label}: tool call did not finish as tool_calls")
     return reasons
 
 
@@ -425,7 +496,7 @@ def _validate_report(
     reasons = []
     if not isinstance(report, dict):
         return {}, [f"{label}: report root is not an object"]
-    if report.get("schema") != REPORT_SCHEMA or report.get("version") != 2:
+    if report.get("schema") != REPORT_SCHEMA or report.get("version") != 3:
         reasons.append(f"{label}: report schema or version is invalid")
     if (report.get("qualified") is not True
             or report.get("quality_run_eligible_for_baseline") is not True
@@ -757,7 +828,7 @@ def compare_reports(
     qualified = not reasons and len(comparisons) == EXPECTED_CASES
     return {
         "schema": COMPARISON_SCHEMA,
-        "version": 1,
+        "version": 2,
         "qualified": qualified,
         "long_context_quality_non_regression_authorized": qualified,
         "overall_promotion_authorized": False,

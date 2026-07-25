@@ -90,6 +90,8 @@ def facts(case_id: str) -> dict:
             "65k_multiturn_large_tools",
             "235k_agent_large_output_budget"}:
         value["tool_count"] = 92
+    if case_id == "235k_agent_large_output_budget":
+        value["tool_choice_mode"] = "auto"
     if case_id == "32k_multimodal_isolation":
         assets = MODULE.manifest_validator.EXPECTED_GENERATED_ASSETS
         value["red_image_sha256"] = assets["red_png_data_url_sha256"]
@@ -124,8 +126,38 @@ def case_result(case: dict) -> dict:
                     "235k_agent_large_output_budget"} else "stop"),
             "semantic_output_sha256": digest(str((index + 1) % 10)),
             "content_sha256": digest(str((index + 2) % 10)),
+            "content_length": 0 if case_id in {
+                "65k_multiturn_large_tools",
+                "235k_agent_large_output_budget"} else 10,
             "reasoning_sha256": digest(str((index + 3) % 10)),
+            "reasoning_length": 10 if case_id in {
+                "131k_reasoning_recall",
+                "235k_agent_large_output_budget"} else 0,
             "tool_calls_sha256": digest(str((index + 4) % 10)),
+            "tool_call_structure": ({
+                "container_type": "list",
+                "count": 1,
+                "calls": [{
+                    "call_type": "dict",
+                    "function_type": "dict",
+                    "name_sha256": digest("e"),
+                    "arguments_type": "str",
+                    "arguments_length": 16,
+                    "arguments_sha256": digest("d"),
+                    "starts_object": True,
+                    "ends_object": True,
+                    "contains_tool_call_tag": False,
+                    "contains_function_prefix": False,
+                    "contains_code_fence": False,
+                    "json_type": "dict",
+                }],
+            } if case_id in {
+                "65k_multiturn_large_tools",
+                "235k_agent_large_output_budget"} else {
+                "container_type": "NoneType",
+                "count": None,
+                "calls": [],
+            }),
             "first_generated_token_sha256": (
                 digest("f") if case_id in MODULE.NEXT_TOKEN_IDS else None),
             "request_contract_sha256": digest(str((index + 5) % 10)),
@@ -198,7 +230,7 @@ def valid_report() -> dict:
     }
     return {
         "schema": MODULE.REPORT_SCHEMA,
-        "version": 2,
+        "version": 3,
         "qualified": True,
         "quality_run_eligible_for_baseline": True,
         "overall_promotion_authorized": False,
@@ -330,6 +362,34 @@ class LongContextQualityComparisonTest(unittest.TestCase):
         candidate["cases"][3]["observation"]["requests"][2][
             "cached_tokens"] = 16
         self.assertFalse(self.compare(baseline, candidate)["qualified"])
+
+    def test_agent_requires_auto_choice_and_natural_finish(self):
+        baseline = valid_report()
+        candidate = copy.deepcopy(baseline)
+        agent_case = candidate["cases"][9]
+        agent_case["observation"]["facts"]["tool_choice_mode"] = "named"
+        for request in agent_case["observation"]["requests"]:
+            request["completion_tokens"] = agent_case["max_tokens"]
+            request["total_tokens"] = (
+                request["prompt_tokens"] + request["completion_tokens"])
+        result = self.compare(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "Agent tool-choice mode differs" in reason
+            for reason in result["reasons"]))
+        self.assertTrue(any(
+            "Agent response did not finish before the cap" in reason
+            for reason in result["reasons"]))
+
+    def test_tool_call_structure_requires_only_safe_digests(self):
+        baseline = valid_report()
+        candidate = copy.deepcopy(baseline)
+        candidate["cases"][4]["observation"]["requests"][0][
+            "tool_call_structure"]["calls"][0]["name_sha256"] = None
+        result = self.compare(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "name digest is invalid" in reason for reason in result["reasons"]))
 
     def test_only_declared_environment_may_differ_between_ab_runs(self):
         baseline = valid_report()

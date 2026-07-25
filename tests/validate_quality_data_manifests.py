@@ -46,14 +46,14 @@ EXPECTED_GENERATED_ASSETS = {
     "blue_png_data_url_sha256": (
         "57d7214b7255958657b84ae8922a1c886b4933cbbd0242084ec0cdb5eb0d9d55"),
     "large_tools_65k_sha256": (
-        "0a2f2730ca84ad390766666e1f4cb622fe9f1030e21e89529375ddc469877ac8"),
+        "9e8673201ab7e43a4d64190ab2d56b33ed6a0b5d9037cd82362601b75245378f"),
     "large_tools_235k_sha256": (
-        "846f986c5cd8d376fa41cb73040fe2937ed6822ce356f87b5df73ac174d4ee14"),
+        "1e07a09e45d1b3e12497e6c5af8961e839df7bed52ba6eed79669ee1a152d5f7"),
     "fetch_record_tool_sha256": (
         "f3da291816c2a09bfd5ca73709a678da32fc1b423ffdb4626c462f65e9ec11f4"),
 }
 EXPECTED_MATRIX_SHA256 = (
-    "3217ec047f7b78af6747269c3f85baed6bfdd86c6527aca6335dbfa7d9f0452b"
+    "a968fbbc37bf2e03b14fcf8cdb4df005e1956b4a93a23f62661860d523a85680"
 )
 EXPECTED_AGENT_MATRIX_SHA256 = (
     "962d19f51cfbeb3f414e62444a225029616ed547682e5a97219b0af98c8959ba"
@@ -157,8 +157,8 @@ def validate_matrix(value: Any) -> list[str]:
     reasons = []
     if not isinstance(value, dict):
         return ["matrix root must be an object"]
-    if (value.get("schema") != "bi100-long-context-quality-matrix-v2"
-            or value.get("version") != 2
+    if (value.get("schema") != "bi100-long-context-quality-matrix-v3"
+            or value.get("version") != 3
             or value.get("seed") != 20260724):
         reasons.append("matrix schema, version, or seed is invalid")
     if (value.get("max_model_len") != 262144
@@ -178,7 +178,7 @@ def validate_matrix(value: Any) -> list[str]:
         reasons.append("matrix provenance contract is invalid")
     generator = value.get("generator") or {}
     if (generator.get("id") != "bi100-long-context-quality-generator"
-            or generator.get("version") != 2
+            or generator.get("version") != 3
             or generator.get("runner") != "tests/long_context_quality_api.py"
             or generator.get("exact_prompt_module")
             != "tests/exact_chat_prompt.py"
@@ -315,7 +315,7 @@ def main() -> int:
         default=ROOT / "quality/source_provenance.v1.json")
     parser.add_argument(
         "--matrix", type=Path,
-        default=ROOT / "quality/long_context_matrix.v2.json")
+        default=ROOT / "quality/long_context_matrix.v3.json")
     parser.add_argument(
         "--agent-matrix", type=Path,
         default=ROOT / "quality/agent_workload_matrix.v1.json")
