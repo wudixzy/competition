@@ -9,26 +9,28 @@ reports before it can be proposed for `main` or for a formal YAML change.
 
 The functional gate executes all 53 frozen rows derived from `指标集合`. The
 long-context gate executes the 12 deterministic cases in
-`quality/long_context_matrix.v4.json`. The selected 13-request performance
+`quality/long_context_matrix.v5.json`. The selected 13-request performance
 sample remains a smoke/proxy dataset and is not treated as an 881-request score
 or a model-quality reference.
 
-Matrix v4 supersedes v3 for new runs. The bound v3 diagnostic proved the 65K
-target-tool contract, then exposed two test-contract defects: a 512-token cap
-could be consumed entirely by valid 131K reasoning, and an automatic tool call
-may carry protocol-valid assistant content. V4 raises only that reasoning case
-to a 1024-token budget and requires a natural stop; it allows optional string
-content only for the automatic 235K Agent case while retaining exact tool name,
-JSON arguments, separated reasoning, natural completion, and cold/warm output
-equality. The v2 and v3 files and reports remain immutable historical evidence;
-results from different matrix versions must not be compared as an A/B pair.
+Matrix v5 supersedes v4 for new runs. Bound v4 evidence confirmed the 235K
+automatic Agent contract and showed that the 131K response naturally stopped,
+contained the complete ordered marker sequence and correct arithmetic result as
+its final suffix, but included additional explanatory content before it. V5
+therefore gates the intended long-context semantic capability: the expected
+answer must occur exactly once as the final suffix, with ordered markers,
+correct arithmetic, separated reasoning, and a natural stop. Strict instruction
+following is not discarded or inferred from this case; a frozen IFEval gate is
+mandatory before promotion. V2, v3, and v4 files and reports remain immutable
+historical evidence, and results from different matrix versions cannot form an
+A/B pair.
 
 ## Frozen identities
 
 - Functional manifest SHA-256:
   `fe9b958610d9d0df8f54504d9c149442f145226c03cf76668711d2d38ed51d0e`
 - Long-context matrix SHA-256:
-  `242670609fc23668607e5c602ab792a041fff7fcba13db7917cf88fc8281b818`
+  `924642ffe55ff8bba66aa42c81889e1c35a231a558a9e1f902619f7c6f0182ac`
 - Required base image:
   `harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3`
 - Maximum model length: `262144`

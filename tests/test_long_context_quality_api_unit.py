@@ -119,7 +119,7 @@ class LongContextQualityApiTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.manifest, cls.manifest_sha = MODULE._load_manifest(
-            ROOT / "quality/long_context_matrix.v4.json")
+            ROOT / "quality/long_context_matrix.v5.json")
 
     def test_handlers_and_tiers_match_frozen_matrix(self):
         self.assertEqual(
@@ -349,12 +349,14 @@ class LongContextQualityApiTest(unittest.TestCase):
             "BEGIN-MARKER-731|MIDDLE-MARKER-552|END-MARKER-947|323")
         private_prefix = "private-output-before "
         diagnostics = MODULE._reasoning_rule_diagnostics(
-            private_prefix + expected + " private-output-after",
+            private_prefix + expected,
             "BEGIN-MARKER-731 MIDDLE-MARKER-552 END-MARKER-947 323",
             expected,
         )
         self.assertFalse(diagnostics["content_exact_expected"])
         self.assertTrue(diagnostics["content_contains_expected"])
+        self.assertTrue(diagnostics["content_expected_single_occurrence"])
+        self.assertTrue(diagnostics["content_expected_suffix"])
         self.assertTrue(diagnostics["content_markers_in_order"])
         self.assertTrue(diagnostics["content_arithmetic_present"])
         self.assertTrue(diagnostics["reasoning_markers_in_order"])
@@ -364,7 +366,20 @@ class LongContextQualityApiTest(unittest.TestCase):
         serialized = json.dumps(diagnostics, sort_keys=True)
         self.assertNotIn(expected, serialized)
         self.assertNotIn(private_prefix, serialized)
-        self.assertNotIn("private-output-after", serialized)
+
+    def test_reasoning_semantic_rule_allows_only_one_final_suffix(self):
+        expected = (
+            "BEGIN-MARKER-731|MIDDLE-MARKER-552|END-MARKER-947|323")
+        valid = MODULE._reasoning_rule_diagnostics(
+            "brief conclusion\n" + expected, "reasoning", expected)
+        duplicate = MODULE._reasoning_rule_diagnostics(
+            expected + "\n" + expected, "reasoning", expected)
+        trailing = MODULE._reasoning_rule_diagnostics(
+            expected + "\ntrailing text", "reasoning", expected)
+
+        self.assertTrue(MODULE._reasoning_semantic_rule_passed(valid))
+        self.assertFalse(MODULE._reasoning_semantic_rule_passed(duplicate))
+        self.assertFalse(MODULE._reasoning_semantic_rule_passed(trailing))
 
     def test_invalid_tool_arguments_retain_only_structural_diagnostics(self):
         context = MODULE.Context(
@@ -396,7 +411,7 @@ class LongContextQualityApiTest(unittest.TestCase):
 
     def test_matrix_file_hash_cannot_be_overridden(self):
         value = json.loads((
-            ROOT / "quality/long_context_matrix.v4.json"
+            ROOT / "quality/long_context_matrix.v5.json"
         ).read_text(encoding="utf-8"))
         value["cases"][0]["max_tokens"] = 32
         with tempfile.TemporaryDirectory() as directory:

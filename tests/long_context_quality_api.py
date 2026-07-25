@@ -23,11 +23,11 @@ import validate_quality_data_manifests as manifest_validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v4.json"
+DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v5.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "242670609fc23668607e5c602ab792a041fff7fcba13db7917cf88fc8281b818"
+    "924642ffe55ff8bba66aa42c81889e1c35a231a558a9e1f902619f7c6f0182ac"
 )
-SCHEMA = "bi100-long-context-quality-result-v4"
+SCHEMA = "bi100-long-context-quality-result-v5"
 BASE_IMAGE = runtime_contract.BASE_IMAGE
 TIER_RANK = {"quick": 0, "full": 1, "extended": 2}
 Json = dict[str, Any]
@@ -36,6 +36,7 @@ REASONING_DIAGNOSTIC_KEYS = frozenset({
     "content_contains_expected",
     "content_exact_expected",
     "content_expected_prefix",
+    "content_expected_single_occurrence",
     "content_expected_suffix",
     "content_markers_in_order",
     "content_markers_present",
@@ -971,6 +972,7 @@ def _reasoning_rule_diagnostics(
         "content_contains_expected": expected in content,
         "content_exact_expected": content == expected,
         "content_expected_prefix": content.startswith(expected),
+        "content_expected_single_occurrence": content.count(expected) == 1,
         "content_expected_suffix": content.endswith(expected),
         "content_markers_in_order": markers_in_order(content),
         "content_markers_present": markers_present(content),
@@ -981,6 +983,18 @@ def _reasoning_rule_diagnostics(
     }
 
 
+def _reasoning_semantic_rule_passed(diagnostics: Json) -> bool:
+    required = (
+        "content_arithmetic_present",
+        "content_contains_expected",
+        "content_expected_single_occurrence",
+        "content_expected_suffix",
+        "content_markers_in_order",
+        "content_markers_present",
+    )
+    return all(diagnostics.get(key) is True for key in required)
+
+
 def _reasoning(context: Context, case: Json) -> Json:
     expected = "BEGIN-MARKER-731|MIDDLE-MARKER-552|END-MARKER-947|323"
 
@@ -989,7 +1003,8 @@ def _reasoning(context: Context, case: Json) -> Json:
             f"case={case['id']}\nBEGIN-MARKER-731\n"
             + _filler(filler)
             + "\nEND-MARKER-947\nReason about the marker order and compute "
-            + "17*19. After reasoning, put exactly this in the final answer: "
+            + "17*19. After reasoning, end the final answer with exactly this "
+            + "sequence on the last line: "
             + expected
         )
         return [{"role": "user", "content": content}], None
@@ -1008,8 +1023,10 @@ def _reasoning(context: Context, case: Json) -> Json:
     content = (message.get("content") or "").strip()
     diagnostics = _reasoning_rule_diagnostics(content, reasoning, expected)
     context.record_failure_facts(diagnostics)
-    require(diagnostics["content_exact_expected"],
-            "long-context reasoning marker or arithmetic answer differs")
+    require(
+        _reasoning_semantic_rule_passed(diagnostics),
+        "long-context reasoning semantic answer differs",
+    )
     require(bool(reasoning) and reasoning != content,
             "reasoning/content split failed")
     require(summary["finish_reason"] == "stop"
@@ -1230,7 +1247,7 @@ def main() -> int:
     results = []
     report: Json = {
         "schema": SCHEMA,
-        "version": 4,
+        "version": 5,
         "qualified": False,
         "quality_run_eligible_for_baseline": False,
         "overall_promotion_authorized": False,

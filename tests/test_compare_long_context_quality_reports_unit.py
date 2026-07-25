@@ -231,7 +231,7 @@ def valid_report() -> dict:
     }
     return {
         "schema": MODULE.REPORT_SCHEMA,
-        "version": 4,
+        "version": 5,
         "qualified": True,
         "quality_run_eligible_for_baseline": True,
         "overall_promotion_authorized": False,

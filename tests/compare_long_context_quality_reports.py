@@ -17,12 +17,12 @@ import validate_quality_data_manifests as manifest_validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v4.json"
+DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v5.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "242670609fc23668607e5c602ab792a041fff7fcba13db7917cf88fc8281b818"
+    "924642ffe55ff8bba66aa42c81889e1c35a231a558a9e1f902619f7c6f0182ac"
 )
-REPORT_SCHEMA = "bi100-long-context-quality-result-v4"
-COMPARISON_SCHEMA = "bi100-long-context-quality-comparison-v3"
+REPORT_SCHEMA = "bi100-long-context-quality-result-v5"
+COMPARISON_SCHEMA = "bi100-long-context-quality-comparison-v4"
 EXPECTED_CASES = 12
 BASE_IMAGE = runtime_contract.BASE_IMAGE
 Json = dict[str, Any]
@@ -82,9 +82,8 @@ TRUE_FACTS = {
         "answer_rule_passed", "marker_rule_passed",
         "reasoning_content_split", "natural_finish_before_max_tokens",
         "content_arithmetic_present", "content_contains_expected",
-        "content_exact_expected", "content_expected_prefix",
-        "content_expected_suffix", "content_markers_in_order",
-        "content_markers_present"),
+        "content_expected_single_occurrence", "content_expected_suffix",
+        "content_markers_in_order", "content_markers_present"),
     "235k_agent_large_output_budget": (
         "large_max_tokens_accepted", "tool_call_rule_passed",
         "reasoning_present", "cold_warm_exact",
@@ -503,7 +502,7 @@ def _validate_report(
     reasons = []
     if not isinstance(report, dict):
         return {}, [f"{label}: report root is not an object"]
-    if report.get("schema") != REPORT_SCHEMA or report.get("version") != 4:
+    if report.get("schema") != REPORT_SCHEMA or report.get("version") != 5:
         reasons.append(f"{label}: report schema or version is invalid")
     if (report.get("qualified") is not True
             or report.get("quality_run_eligible_for_baseline") is not True
@@ -835,7 +834,7 @@ def compare_reports(
     qualified = not reasons and len(comparisons) == EXPECTED_CASES
     return {
         "schema": COMPARISON_SCHEMA,
-        "version": 3,
+        "version": 4,
         "qualified": qualified,
         "long_context_quality_non_regression_authorized": qualified,
         "overall_promotion_authorized": False,
