@@ -1,0 +1,74 @@
+{
+  "schema": "bi100-m1-52-current-lineage-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "repository_visibility_required": "private",
+  "lineage": {
+    "local_main": "7194b37dac7a5344e8b6d79a9bbb74339bf81a65",
+    "platform_tracking_main": "2f7d5f5720863570d23d989ef8bbc7a387c606d4",
+    "runtime_candidate": "aee89b44d27fe4a9e94e6a2de7e6dd2fb0adbeab",
+    "evidence_branch_parent": "ee4f73a8ed7bc382b34b38d7f7f4289651b44931",
+    "runtime_candidate_merge_base_with_local_main": "7194b37dac7a5344e8b6d79a9bbb74339bf81a65",
+    "local_main_to_runtime_candidate": {
+      "commits_ahead": 141,
+      "commits_behind": 0,
+      "changed_files": 254,
+      "insertions": 42557,
+      "deletions": 1364
+    },
+    "runtime_candidate_to_evidence_parent": {
+      "commits_ahead": 1,
+      "changed_files": [
+        "docs/experiments/evidence/M1_52_V5_TARGETED_QUALITY_20260725.json",
+        "tests/test_m1_52_v5_targeted_evidence_unit.py"
+      ],
+      "runtime_implementation_changed": false
+    }
+  },
+  "result_partitions": {
+    "platform_main_881": {
+      "reference": "docs/experiments/evidence/PLATFORM_MAIN_REFERENCE_20260724.json",
+      "source_revision": null,
+      "runtime_overlay_sha256": null,
+      "status": "unbound historical reference",
+      "eligible_for_latest_candidate_comparison": false
+    },
+    "m1_52_v5_functional_agent": {
+      "reference": "docs/experiments/evidence/M1_52_V5_FUNCTIONAL_AGENT_20260725.json",
+      "source_revision": "aee89b44d27fe4a9e94e6a2de7e6dd2fb0adbeab",
+      "runtime_overlay_sha256": "693b067dc8ffb9fcbe2a758a6e52b4ba4a7fc61e716f91e3fec525e40cf28d46",
+      "status": "commit-bound functional and Agent quality baseline",
+      "eligible_for_quality_baseline": true
+    }
+  },
+  "comparison_policy": {
+    "cross_version_gain_claims_forbidden": true,
+    "old_platform_result_may_only_prioritize_failure_categories": true,
+    "required_equal_fields": [
+      "candidate_generation",
+      "runtime_overlay_sha256",
+      "runtime_contract_sha256",
+      "model_identity",
+      "tokenizer_identity",
+      "request_manifest_sha256",
+      "request_order",
+      "gpu_count",
+      "service_command"
+    ],
+    "allowed_ab_difference": "only the declared optimization switch or patch",
+    "performance_and_quality_must_be_reported_separately": true
+  },
+  "promotion": {
+    "authorized": false,
+    "main_change_authorized": false,
+    "computility_run_change_authorized": false,
+    "reasons": [
+      "the old platform main result is not source or runtime bound",
+      "the runtime candidate is 141 commits beyond local main",
+      "the pinned IFEval instruction-following gate has not run",
+      "the complete 12-case v5 long-context gate has not run",
+      "admission64 has not passed a same-generation A/B",
+      "the official performance hard gates have not passed"
+    ]
+  }
+}

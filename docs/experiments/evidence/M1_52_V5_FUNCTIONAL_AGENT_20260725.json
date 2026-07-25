@@ -1,0 +1,171 @@
+{
+  "schema": "bi100-m1-52-v5-functional-agent-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "runtime_revision": "aee89b44d27fe4a9e94e6a2de7e6dd2fb0adbeab",
+    "runtime_branch": "run/quality-m1-52-v5-aee89b4",
+    "evidence_parent_revision": "ee4f73a8ed7bc382b34b38d7f7f4289651b44931",
+    "instance": "ssh-73ca29ba",
+    "runtime_identity": "bare-host-overlay-v1:693b067dc8ffb9fcbe2a",
+    "runtime_overlay_sha256": "693b067dc8ffb9fcbe2a758a6e52b4ba4a7fc61e716f91e3fec525e40cf28d46",
+    "base_image": "harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3"
+  },
+  "runtime": {
+    "gpu_count": 4,
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144,
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "tokenizer_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "gdn_cache_policy": "fine32",
+    "gdn_restore_mode": "direct",
+    "fused_prefill": false,
+    "kv_eviction_policy": "lru",
+    "max_num_seqs": 1
+  },
+  "functional_gate": {
+    "schema": "bi100-quality-gate-result-v1",
+    "manifest": {
+      "name": "official_metrics_manifest.v1.json",
+      "sha256": "fe9b958610d9d0df8f54504d9c149442f145226c03cf76668711d2d38ed51d0e",
+      "source_sha256": "116e7edc617d8f96fc92caa3e75a3ba4692aae7619026896df1eaf69df12feac",
+      "total_cases": 53
+    },
+    "selection": {
+      "tier": "extended",
+      "explicit_cases": [],
+      "selected_cases": 53
+    },
+    "summary": {
+      "complete": true,
+      "qualified": true,
+      "quality_run_eligible_for_baseline": true,
+      "passed": 52,
+      "failed": 0,
+      "skipped": 1,
+      "executed_pass_rate": 1.0,
+      "wall_s": 1709.6311400905252
+    },
+    "documented_skip": {
+      "id": "n_2",
+      "reason": "documented bare-engine n=2 limitation",
+      "scope": "fixed direct-engine contract with max_num_seqs=1"
+    },
+    "group_summary": {
+      "basic": [3, 0, 0],
+      "cache": [1, 0, 0],
+      "determinism": [1, 0, 0],
+      "instruction": [2, 0, 0],
+      "long_output": [1, 0, 0],
+      "max_tokens": [7, 0, 0],
+      "memory": [1, 0, 0],
+      "multilingual": [3, 0, 0],
+      "multimodal": [2, 0, 0],
+      "reasoning": [2, 0, 0],
+      "sampling": [16, 0, 1],
+      "stop": [1, 0, 0],
+      "structured": [2, 0, 0],
+      "thinking": [4, 0, 0],
+      "tool": [2, 0, 0],
+      "validation": [4, 0, 0]
+    },
+    "group_tuple_order": ["passed", "failed", "skipped"]
+  },
+  "agent_gate": {
+    "schema": "bi100-agent-workload-result-v1",
+    "manifest": {
+      "name": "agent_workload_matrix.v1.json",
+      "revision": "agent-workload-v1.1-seed-20260716",
+      "sha256": "962d19f51cfbeb3f414e62444a225029616ed547682e5a97219b0af98c8959ba",
+      "case_count": 11
+    },
+    "summary": {
+      "complete": true,
+      "qualified": true,
+      "passed": 11,
+      "failed": 0
+    },
+    "passed_case_ids": [
+      "forced_terminal",
+      "forced_read",
+      "forced_edit",
+      "forced_web_search",
+      "auto_terminal",
+      "stream_forced_terminal",
+      "stream_auto_terminal",
+      "tool_result_roundtrip",
+      "long_history",
+      "large_tool_schema",
+      "multiple_system"
+    ],
+    "validated_contracts": [
+      "forced and automatic tool selection",
+      "non-stream and SSE tool payloads",
+      "valid JSON tool arguments",
+      "tool-result roundtrip",
+      "long history",
+      "large tool schema",
+      "multiple system messages",
+      "usage accounting"
+    ]
+  },
+  "lifecycle": {
+    "overall_rc": 0,
+    "gates": {
+      "runtime_identity": 0,
+      "runtime_contract": 0,
+      "prefix_allocator": 0,
+      "gdn_action_broadcast": 0,
+      "preflight_before": 0,
+      "startup": 0,
+      "startup_contract": 0,
+      "quality": 0,
+      "agent_workload": 0,
+      "cleanup": 0,
+      "fatal_scan": 0,
+      "preflight_after": 0,
+      "preflight_comparison": 0
+    },
+    "fatal_scan_empty": true,
+    "residual_api_server_processes": 0,
+    "free_memory_drop_bytes": [0, 0, 0, 0]
+  },
+  "artifact_sha256": {
+    "quality_report.json": "0239211aec1157dc63e9f22d90293bbb873e3882c413eb86e77611fe85f938d9",
+    "agent_workload.json": "c98ad47f503d3111783000b6bd788516f391c7e589cdb97df796d08e66e553a1",
+    "status.json": "4b6c7b2c228dc01180d30ef65a86cf8850eb2fe9966908df012f62844d29fbb4",
+    "runtime_contract.json": "c696266ab924aecfe2930270b19c83fcb863b5521341b3c01f569b2ef70698e9",
+    "runtime_identity.json": "dd2b97f6e18dd213704df67198298e1566be610c991fc90b5173ba7b1884e7fe",
+    "startup_contract.json": "44e7c3479f0a9e7cb219a9e3ac26dbea4050ffc1af5c5aaba97cbb2bce19dc7e",
+    "preflight_before.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_after.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_comparison.json": "1d529bc179ed4cad258d017f7a39c9788fbe3bbb99289b47ef70d2e8789416fe",
+    "fatal_scan.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "platform_main_separation": {
+    "reference": "docs/experiments/evidence/PLATFORM_MAIN_REFERENCE_20260724.json",
+    "platform_source_revision_known": false,
+    "platform_runtime_overlay_known": false,
+    "runtime_candidate_commits_ahead_of_local_main": 141,
+    "runtime_candidate_changed_files_from_local_main": 254,
+    "direct_gain_or_regression_claim_authorized": false,
+    "required_comparator": "same candidate generation, same runtime and request manifest, differing only by the declared optimization switch"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_tool_argument_values": false,
+    "raw_service_log_committed": false
+  },
+  "decision": {
+    "functional_gate_qualified": true,
+    "agent_gate_qualified": true,
+    "ifeval_instruction_gate_required": true,
+    "full_long_context_v5_required": true,
+    "admission64_authorized": false,
+    "performance_score_established": false,
+    "overall_promotion_authorized": false,
+    "main_or_yaml_change_authorized": false
+  }
+}
