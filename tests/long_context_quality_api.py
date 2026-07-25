@@ -929,8 +929,8 @@ def _reasoning(context: Context, case: Json) -> Json:
         content = (
             f"case={case['id']}\nBEGIN-MARKER-731\n"
             + _filler(filler)
-            + "\nEND-MARKER-947\nReason concisely about the marker order and "
-            + "compute 17*19. After reasoning, put exactly this in the final answer: "
+            + "\nEND-MARKER-947\nReason about the marker order and compute "
+            + "17*19. After reasoning, put exactly this in the final answer: "
             + expected
         )
         return [{"role": "user", "content": content}], None
