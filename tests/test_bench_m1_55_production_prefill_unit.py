@@ -76,6 +76,18 @@ class M155ProductionPrefillUnitTest(unittest.TestCase):
             (229_376, 5_616, "production"),
         )
 
+    def test_small_and_paged_numerical_cases_are_frozen(self):
+        self.assertEqual(
+            MODULE.CASES["golden_dense_q1"], (0, 1, "numerical"))
+        self.assertEqual(
+            MODULE.CASES["golden_paged_240_q16"],
+            (240, 16, "numerical"),
+        )
+        self.assertEqual(
+            MODULE.CASES["boundary_234992_q8"],
+            (234_992, 8, "numerical"),
+        )
+
     def test_dense_case_has_no_synthetic_block_permutation(self):
         result = valid_result("production_dense_q8176")
         evaluation = MODULE.evaluate_cell(result)

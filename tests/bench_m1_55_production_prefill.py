@@ -34,6 +34,12 @@ EXTENSION_MODULE_NAME = "corex_fused_paged_prefill"
 SEED = 20260725
 
 CASES = {
+    "golden_dense_q1": (0, 1, "numerical"),
+    "golden_dense_q8": (0, 8, "numerical"),
+    "golden_dense_q256": (0, 256, "numerical"),
+    "golden_paged_240_q16": (240, 16, "numerical"),
+    "boundary_65520_q16": (65_520, 16, "numerical"),
+    "boundary_234992_q8": (234_992, 8, "numerical"),
     "legacy_74k_q256": (73_728, 256, "legacy"),
     "legacy_128k_q256": (130_816, 256, "legacy"),
     "legacy_235k_q256": (234_736, 256, "legacy"),
