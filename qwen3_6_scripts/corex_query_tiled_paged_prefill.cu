@@ -20,6 +20,8 @@ constexpr int kNumQueryHeads = 4;
 constexpr int kNumKvHeads = 1;
 constexpr int kQueryTile = 16;
 constexpr int kKeyTile = 16;
+constexpr int kReductionTokens = 512;
+constexpr int kKeyTilesPerReduction = kReductionTokens / kKeyTile;
 constexpr int kMmaK = 16;
 constexpr int kDimTiles = kHeadDim / kMmaK;
 constexpr int kWarpSize = 64;
@@ -30,7 +32,8 @@ using namespace nvcuda;
 
 struct __align__(128) SharedStorage {
   float matrix_tile[kQueryTile * kKeyTile];
-  float scores[kQueryTile * kKeyTile];
+  float scores[
+      kKeyTilesPerReduction * kQueryTile * kKeyTile];
   float running_output[kQueryTile * kHeadDim];
   float tile_output[kQueryTile * kMmaK];
   float running_max[kQueryTile];
@@ -138,154 +141,219 @@ __global__ void query_tiled_paged_prefill_kernel(
   __syncthreads();
 
   const int last_query = min(query_start + kQueryTile, query_len);
-  const int visible_key_tokens = context_len + last_query;
-  const int key_tiles =
-      (visible_key_tokens + kKeyTile - 1) / kKeyTile;
 
-  for (int key_tile_index = 0; key_tile_index < key_tiles;
-       ++key_tile_index) {
-    const int key_start = key_tile_index * kKeyTile;
-    wmma::fragment<wmma::accumulator, 16, 16, 16, float> score_fragment;
-    wmma::fill_fragment(score_fragment, 0.0f);
+  // Preserve the installed reference's 512-token reduction boundaries:
+  // paged context and current causal K/V are separate phases.
+  for (int phase = 0; phase < 2; ++phase) {
+    const int phase_base = phase == 0 ? 0 : context_len;
+    const int phase_tokens = phase == 0 ? context_len : last_query;
+    for (int group_start = 0; group_start < phase_tokens;
+         group_start += kReductionTokens) {
+      const int group_tokens =
+          min(kReductionTokens, phase_tokens - group_start);
+      const int group_key_tiles =
+          (group_tokens + kKeyTile - 1) / kKeyTile;
+
+      for (int key_tile_in_group = 0;
+           key_tile_in_group < group_key_tiles;
+           ++key_tile_in_group) {
+        const int local_key_start =
+            group_start + key_tile_in_group * kKeyTile;
+        const int logical_key_start = phase_base + local_key_start;
+        wmma::fragment<wmma::accumulator, 16, 16, 16, float>
+            score_fragment;
+        wmma::fill_fragment(score_fragment, 0.0f);
 
 #pragma unroll
-    for (int dim_tile = 0; dim_tile < kDimTiles; ++dim_tile) {
+        for (int dim_tile = 0; dim_tile < kDimTiles; ++dim_tile) {
 #pragma unroll
-      for (int quarter = 0; quarter < 4; ++quarter) {
-        const int row = lane / 16 + quarter * 4;
-        const int column = lane % 16;
-        const int logical_token = key_start + column;
-        const int dim = dim_tile * kMmaK + row;
-        const float value =
-            logical_token < visible_key_tokens
-                ? load_key(key_new, key_cache, block_table,
-                           logical_token, context_len, dim)
-                : 0.0f;
-        const int offset =
-            wmma::CoordToOffset<32, wmma::layout_t::mem_col_major>(
-                row, column);
-        shared.matrix_tile[offset] = value;
-      }
-      __syncthreads();
-      wmma::fragment<wmma::matrix_b, 16, 16, 16, float,
-                     wmma::col_major> key_fragment;
-      wmma::load_matrix_sync(key_fragment, shared.matrix_tile, 0);
-      wmma::mma_sync(
-          score_fragment,
-          query_fragments[dim_tile],
-          key_fragment,
-          score_fragment);
-      __syncthreads();
-    }
-
-    wmma::store_matrix_sync(
-        shared.scores, score_fragment, 0, wmma::mem_row_major);
-    __syncthreads();
-
-    if (lane < kQueryTile) {
-      const int row = lane;
-      if (row >= active_rows) {
-        shared.correction[row] = 1.0f;
-#pragma unroll
-        for (int column = 0; column < kKeyTile; ++column) {
-          shared.scores[row * kKeyTile + column] = 0.0f;
-        }
-      } else {
-        const int absolute_query = context_len + query_start + row;
-        float block_max = -std::numeric_limits<float>::infinity();
-#pragma unroll
-        for (int column = 0; column < kKeyTile; ++column) {
-          const int logical_key = key_start + column;
-          if (logical_key <= absolute_query
-              && logical_key < visible_key_tokens) {
-            block_max = fmaxf(
-                block_max, shared.scores[row * kKeyTile + column]);
-          } else {
-            shared.scores[row * kKeyTile + column] =
-                -std::numeric_limits<float>::infinity();
+          for (int quarter = 0; quarter < 4; ++quarter) {
+            const int row = lane / 16 + quarter * 4;
+            const int column = lane % 16;
+            const int logical_token = logical_key_start + column;
+            const int dim = dim_tile * kMmaK + row;
+            const float value =
+                local_key_start + column < phase_tokens
+                    ? load_key(key_new, key_cache, block_table,
+                               logical_token, context_len, dim)
+                    : 0.0f;
+            const int offset =
+                wmma::CoordToOffset<
+                    32, wmma::layout_t::mem_col_major>(
+                    row, column);
+            shared.matrix_tile[offset] = value;
           }
+          __syncthreads();
+          wmma::fragment<wmma::matrix_b, 16, 16, 16, float,
+                         wmma::col_major> key_fragment;
+          wmma::load_matrix_sync(
+              key_fragment, shared.matrix_tile, 0);
+          wmma::mma_sync(
+              score_fragment,
+              query_fragments[dim_tile],
+              key_fragment,
+              score_fragment);
+          __syncthreads();
         }
-        const float old_max = shared.running_max[row];
-        const float new_max = fmaxf(old_max, block_max);
-        const float correction =
-            old_max == -std::numeric_limits<float>::infinity()
-                ? 0.0f
-                : expf(old_max - new_max);
-        float tile_sum = 0.0f;
-#pragma unroll
-        for (int column = 0; column < kKeyTile; ++column) {
-          const float score = shared.scores[row * kKeyTile + column];
-          const float probability =
-              score == -std::numeric_limits<float>::infinity()
+
+        float* score_tile =
+            shared.scores
+            + key_tile_in_group * kQueryTile * kKeyTile;
+        wmma::store_matrix_sync(
+            score_tile, score_fragment, 0, wmma::mem_row_major);
+        __syncthreads();
+      }
+
+      if (lane < kQueryTile) {
+        const int row = lane;
+        if (row >= active_rows) {
+          shared.correction[row] = 1.0f;
+          for (int key_offset = 0; key_offset < group_tokens;
+               ++key_offset) {
+            const int key_tile = key_offset / kKeyTile;
+            const int column = key_offset % kKeyTile;
+            shared.scores[
+                key_tile * kQueryTile * kKeyTile
+                + row * kKeyTile + column] = 0.0f;
+          }
+        } else {
+          const int absolute_query =
+              context_len + query_start + row;
+          float block_max =
+              -std::numeric_limits<float>::infinity();
+          for (int key_offset = 0; key_offset < group_tokens;
+               ++key_offset) {
+            const int key_tile = key_offset / kKeyTile;
+            const int column = key_offset % kKeyTile;
+            const int score_index =
+                key_tile * kQueryTile * kKeyTile
+                + row * kKeyTile + column;
+            const int logical_key =
+                phase_base + group_start + key_offset;
+            if (logical_key <= absolute_query) {
+              block_max = fmaxf(
+                  block_max, shared.scores[score_index]);
+            } else {
+              shared.scores[score_index] =
+                  -std::numeric_limits<float>::infinity();
+            }
+          }
+          const float old_max = shared.running_max[row];
+          const float new_max = fmaxf(old_max, block_max);
+          const float correction =
+              old_max == -std::numeric_limits<float>::infinity()
                   ? 0.0f
-                  : expf(score - new_max);
-          shared.scores[row * kKeyTile + column] = probability;
-          tile_sum += probability;
+                  : expf(old_max - new_max);
+          float group_sum = 0.0f;
+          for (int key_offset = 0; key_offset < group_tokens;
+               ++key_offset) {
+            const int key_tile = key_offset / kKeyTile;
+            const int column = key_offset % kKeyTile;
+            const int score_index =
+                key_tile * kQueryTile * kKeyTile
+                + row * kKeyTile + column;
+            const float score = shared.scores[score_index];
+            const float probability =
+                score == -std::numeric_limits<float>::infinity()
+                    ? 0.0f
+                    : expf(score - new_max);
+            shared.scores[score_index] = probability;
+            group_sum += probability;
+          }
+          shared.running_sum[row] =
+              shared.running_sum[row] * correction + group_sum;
+          shared.running_max[row] = new_max;
+          shared.correction[row] = correction;
         }
-        shared.running_sum[row] =
-            shared.running_sum[row] * correction + tile_sum;
-        shared.running_max[row] = new_max;
-        shared.correction[row] = correction;
-      }
-    }
-    __syncthreads();
-
-    wmma::fragment<wmma::matrix_a, 16, 16, 16, float,
-                   wmma::row_major> probability_fragment;
-    wmma::load_matrix_sync(
-        probability_fragment, shared.scores, 0);
-
-#pragma unroll
-    for (int dim_tile = 0; dim_tile < kDimTiles; ++dim_tile) {
-#pragma unroll
-      for (int quarter = 0; quarter < 4; ++quarter) {
-        const int row = lane / 16 + quarter * 4;
-        const int column = lane % 16;
-        const int logical_token = key_start + row;
-        const int dim = dim_tile * kMmaK + column;
-        const float value =
-            logical_token < visible_key_tokens
-                ? load_value(value_new, value_cache, block_table,
-                             logical_token, context_len, dim)
-                : 0.0f;
-        const int offset =
-            wmma::CoordToOffset<32, wmma::layout_t::mem_row_major>(
-                row, column);
-        shared.matrix_tile[offset] = value;
-      }
-      __syncthreads();
-
-      wmma::fragment<wmma::matrix_b, 16, 16, 16, float,
-                     wmma::row_major> value_fragment;
-      wmma::fragment<wmma::accumulator, 16, 16, 16, float>
-          output_fragment;
-      wmma::load_matrix_sync(
-          value_fragment, shared.matrix_tile, 0);
-      wmma::fill_fragment(output_fragment, 0.0f);
-      wmma::mma_sync(
-          output_fragment,
-          probability_fragment,
-          value_fragment,
-          output_fragment);
-      wmma::store_matrix_sync(
-          shared.tile_output, output_fragment, 0, wmma::mem_row_major);
-      __syncthreads();
-
-#pragma unroll
-      for (int quarter = 0; quarter < 4; ++quarter) {
-        const int row = lane / 16 + quarter * 4;
-        const int column = lane % 16;
-        if (row < active_rows) {
-          const int output_index =
-              row * kHeadDim + dim_tile * kMmaK + column;
-          const int tile_index = row * kMmaK + column;
-          shared.running_output[output_index] =
-              shared.running_output[output_index]
-                  * shared.correction[row]
-              + shared.tile_output[tile_index];
+        for (int key_offset = group_tokens;
+             key_offset < group_key_tiles * kKeyTile;
+             ++key_offset) {
+          const int key_tile = key_offset / kKeyTile;
+          const int column = key_offset % kKeyTile;
+          shared.scores[
+              key_tile * kQueryTile * kKeyTile
+              + row * kKeyTile + column] = 0.0f;
         }
       }
       __syncthreads();
+
+      for (int index = lane;
+           index < active_rows * kHeadDim;
+           index += kWarpSize) {
+        const int row = index / kHeadDim;
+        shared.running_output[index] *= shared.correction[row];
+      }
+      __syncthreads();
+
+      for (int key_tile_in_group = 0;
+           key_tile_in_group < group_key_tiles;
+           ++key_tile_in_group) {
+        const int local_key_start =
+            group_start + key_tile_in_group * kKeyTile;
+        const int logical_key_start = phase_base + local_key_start;
+        const float* score_tile =
+            shared.scores
+            + key_tile_in_group * kQueryTile * kKeyTile;
+        wmma::fragment<wmma::matrix_a, 16, 16, 16, float,
+                       wmma::row_major> probability_fragment;
+        wmma::load_matrix_sync(
+            probability_fragment, score_tile, 0);
+
+#pragma unroll
+        for (int dim_tile = 0; dim_tile < kDimTiles; ++dim_tile) {
+#pragma unroll
+          for (int quarter = 0; quarter < 4; ++quarter) {
+            const int row = lane / 16 + quarter * 4;
+            const int column = lane % 16;
+            const int logical_token = logical_key_start + row;
+            const int dim = dim_tile * kMmaK + column;
+            const float value =
+                local_key_start + row < phase_tokens
+                    ? load_value(value_new, value_cache, block_table,
+                                 logical_token, context_len, dim)
+                    : 0.0f;
+            const int offset =
+                wmma::CoordToOffset<
+                    32, wmma::layout_t::mem_row_major>(
+                    row, column);
+            shared.matrix_tile[offset] = value;
+          }
+          __syncthreads();
+
+          wmma::fragment<wmma::matrix_b, 16, 16, 16, float,
+                         wmma::row_major> value_fragment;
+          wmma::fragment<wmma::accumulator, 16, 16, 16, float>
+              output_fragment;
+          wmma::load_matrix_sync(
+              value_fragment, shared.matrix_tile, 0);
+          wmma::fill_fragment(output_fragment, 0.0f);
+          wmma::mma_sync(
+              output_fragment,
+              probability_fragment,
+              value_fragment,
+              output_fragment);
+          wmma::store_matrix_sync(
+              shared.tile_output,
+              output_fragment,
+              0,
+              wmma::mem_row_major);
+          __syncthreads();
+
+#pragma unroll
+          for (int quarter = 0; quarter < 4; ++quarter) {
+            const int row = lane / 16 + quarter * 4;
+            const int column = lane % 16;
+            if (row < active_rows) {
+              const int output_index =
+                  row * kHeadDim + dim_tile * kMmaK + column;
+              const int tile_index = row * kMmaK + column;
+              shared.running_output[output_index] +=
+                  shared.tile_output[tile_index];
+            }
+          }
+          __syncthreads();
+        }
+      }
     }
   }
 

@@ -23,6 +23,7 @@ class M155QueryTiledSourceUnitTest(unittest.TestCase):
             "constexpr int kNumKvHeads = 1;",
             "constexpr int kQueryTile = 16;",
             "constexpr int kKeyTile = 16;",
+            "constexpr int kReductionTokens = 512;",
             "constexpr int kWarpSize = 64;",
             "constexpr int kMaxSequenceTokens = 262144;",
         ):
@@ -47,6 +48,8 @@ class M155QueryTiledSourceUnitTest(unittest.TestCase):
         self.assertIn("float running_sum[kQueryTile]", SOURCE)
         self.assertIn("expf(score - new_max)", SOURCE)
         self.assertIn("logf(shared.running_sum", SOURCE)
+        self.assertIn(
+            "phase == 0 ? context_len : last_query", SOURCE)
 
     def test_no_full_query_global_intermediates(self):
         self.assertNotIn("split_output", SOURCE)
