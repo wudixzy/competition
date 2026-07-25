@@ -285,22 +285,25 @@ __global__ void query_tiled_paged_prefill_kernel(
       }
       __syncthreads();
 
-      for (int key_tile_in_group = 0;
-           key_tile_in_group < group_key_tiles;
-           ++key_tile_in_group) {
-        const int local_key_start =
-            group_start + key_tile_in_group * kKeyTile;
-        const int logical_key_start = phase_base + local_key_start;
-        const float* score_tile =
-            shared.scores
-            + key_tile_in_group * kQueryTile * kKeyTile;
-        wmma::fragment<wmma::matrix_a, 16, 16, 16, float,
-                       wmma::row_major> probability_fragment;
-        wmma::load_matrix_sync(
-            probability_fragment, score_tile, 0);
-
 #pragma unroll
-        for (int dim_tile = 0; dim_tile < kDimTiles; ++dim_tile) {
+      for (int dim_tile = 0; dim_tile < kDimTiles; ++dim_tile) {
+        wmma::fragment<wmma::accumulator, 16, 16, 16, float>
+            output_fragment;
+        wmma::fill_fragment(output_fragment, 0.0f);
+        for (int key_tile_in_group = 0;
+             key_tile_in_group < group_key_tiles;
+             ++key_tile_in_group) {
+          const int local_key_start =
+              group_start + key_tile_in_group * kKeyTile;
+          const int logical_key_start = phase_base + local_key_start;
+          const float* score_tile =
+              shared.scores
+              + key_tile_in_group * kQueryTile * kKeyTile;
+          wmma::fragment<wmma::matrix_a, 16, 16, 16, float,
+                         wmma::row_major> probability_fragment;
+          wmma::load_matrix_sync(
+              probability_fragment, score_tile, 0);
+
 #pragma unroll
           for (int quarter = 0; quarter < 4; ++quarter) {
             const int row = lane / 16 + quarter * 4;
@@ -322,37 +325,35 @@ __global__ void query_tiled_paged_prefill_kernel(
 
           wmma::fragment<wmma::matrix_b, 16, 16, 16, float,
                          wmma::row_major> value_fragment;
-          wmma::fragment<wmma::accumulator, 16, 16, 16, float>
-              output_fragment;
           wmma::load_matrix_sync(
               value_fragment, shared.matrix_tile, 0);
-          wmma::fill_fragment(output_fragment, 0.0f);
           wmma::mma_sync(
               output_fragment,
               probability_fragment,
               value_fragment,
               output_fragment);
-          wmma::store_matrix_sync(
-              shared.tile_output,
-              output_fragment,
-              0,
-              wmma::mem_row_major);
-          __syncthreads();
-
-#pragma unroll
-          for (int quarter = 0; quarter < 4; ++quarter) {
-            const int row = lane / 16 + quarter * 4;
-            const int column = lane % 16;
-            if (row < active_rows) {
-              const int output_index =
-                  row * kHeadDim + dim_tile * kMmaK + column;
-              const int tile_index = row * kMmaK + column;
-              shared.running_output[output_index] +=
-                  shared.tile_output[tile_index];
-            }
-          }
           __syncthreads();
         }
+
+        wmma::store_matrix_sync(
+            shared.tile_output,
+            output_fragment,
+            0,
+            wmma::mem_row_major);
+        __syncthreads();
+#pragma unroll
+        for (int quarter = 0; quarter < 4; ++quarter) {
+          const int row = lane / 16 + quarter * 4;
+          const int column = lane % 16;
+          if (row < active_rows) {
+            const int output_index =
+                row * kHeadDim + dim_tile * kMmaK + column;
+            const int tile_index = row * kMmaK + column;
+            shared.running_output[output_index] +=
+                shared.tile_output[tile_index];
+          }
+        }
+        __syncthreads();
       }
     }
   }
