@@ -31,6 +31,8 @@
       "source_revision": null,
       "runtime_overlay_sha256": null,
       "status": "unbound historical reference",
+      "version_gap_to_runtime_candidate_commits": 141,
+      "permitted_use": "failure-category prioritization only; no performance or quality gain attribution",
       "eligible_for_latest_candidate_comparison": false
     },
     "m1_52_v5_functional_agent": {
@@ -39,6 +41,14 @@
       "runtime_overlay_sha256": "693b067dc8ffb9fcbe2a758a6e52b4ba4a7fc61e716f91e3fec525e40cf28d46",
       "status": "commit-bound functional and Agent quality baseline",
       "eligible_for_quality_baseline": true
+    },
+    "ifeval_v1_4096_rejected": {
+      "reference": "docs/experiments/evidence/M1_52_IFEVAL_4096_REJECTION_20260725.json",
+      "source_revision": "aee89b44d27fe4a9e94e6a2de7e6dd2fb0adbeab",
+      "runtime_overlay_sha256": "693b067dc8ffb9fcbe2a758a6e52b4ba4a7fc61e716f91e3fec525e40cf28d46",
+      "status": "rejected after 10 of 64 requests; three responses exhausted the 4096-token completion budget",
+      "eligible_for_quality_baseline": false,
+      "eligible_for_performance_baseline": false
     }
   },
   "comparison_policy": {
@@ -65,7 +75,9 @@
     "reasons": [
       "the old platform main result is not source or runtime bound",
       "the runtime candidate is 141 commits beyond local main",
-      "the pinned IFEval instruction-following gate has not run",
+      "the IFEval v1 4096-token probe was rejected and establishes no baseline",
+      "the IFEval v2 8192-token baseline is pending a healthy four-GPU preflight",
+      "GPU0 timed out at torch.cuda.mem_get_info in two post-run preflights",
       "the complete 12-case v5 long-context gate has not run",
       "admission64 has not passed a same-generation A/B",
       "the official performance hard gates have not passed"

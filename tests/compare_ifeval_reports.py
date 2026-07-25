@@ -15,7 +15,7 @@ from typing import Any
 REPORT_SCHEMA = "bi100-ifeval-result-v1"
 COMPARISON_SCHEMA = "bi100-ifeval-comparison-v1"
 EXPECTED_MANIFEST_SHA256 = (
-    "578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5"
+    "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855"
 )
 ALLOWED_SWITCHES = {
     "gdn_cache_policy", "gdn_restore_mode", "fused_prefill",

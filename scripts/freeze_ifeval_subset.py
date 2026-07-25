@@ -258,7 +258,7 @@ def build_manifest(
     return {
         "schema": "bi100-ifeval-manifest-v1",
         "version": 1,
-        "name": "google-ifeval-bi100-stratified-64-v1",
+        "name": "google-ifeval-bi100-stratified-64-v2",
         "source": {
             "dataset": "google/IFEval",
             "author_or_org": "Google Research",
@@ -336,12 +336,13 @@ def build_manifest(
             },
         },
         "request_conversion": {
+            "revision": "bi100-openai-chat-v2-max-tokens-8192",
             "endpoint": "/v1/chat/completions",
             "messages": "one user message containing the source prompt verbatim",
             "stream": False,
             "temperature": 0,
             "seed": 20260725,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "request_order": "selected_keys_in_request_order",
             "chat_template_override": False,
             "thinking_override": False,

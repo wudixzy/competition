@@ -28,12 +28,14 @@ class IFEvalServiceGateTest(unittest.TestCase):
                 "hybrid_kv_startup_gate.py",
                 "compare_bi100_preflights.py",
                 "scan_fatal_log",
+                'unlink "$RUN_ROOT/ifeval.checkpoint.json"',
                 "bi100_stop_process_group"):
             self.assertIn(marker, self.text)
 
     def test_ifeval_runner_uses_fixed_runtime_contract(self):
         self.assertIn("tests/ifeval_quality_api.py", self.text)
         self.assertIn("--runtime-contract", self.text)
+        self.assertIn('--progress "$RUN_ROOT/ifeval_progress.json"', self.text)
         self.assertIn("--gdn-cache-policy", self.text)
         self.assertIn("--kv-eviction-policy", self.text)
         self.assertIn("43200s", self.text)

@@ -1,0 +1,110 @@
+{
+  "schema": "bi100-m1-52-ifeval-4096-rejection-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "runtime_revision": "aee89b44d27fe4a9e94e6a2de7e6dd2fb0adbeab",
+    "runtime_overlay_sha256": "693b067dc8ffb9fcbe2a758a6e52b4ba4a7fc61e716f91e3fec525e40cf28d46",
+    "evaluator_revision": "530deeb9a47548e7621f9c3525ee565d060b8de4",
+    "instance": "ssh-73ca29ba",
+    "run_root": "/tmp/m1-52-ifeval-fine32-direct-530deeb-20260725T0600Z"
+  },
+  "request_contract": {
+    "manifest_sha256": "578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5",
+    "subset_sha256": "bdb2e4ec0b0fd19b89c55ebb9ed49e17361706c923ddedeeab429f669e4bdb78",
+    "max_tokens": 4096,
+    "temperature": 0,
+    "seed": 20260725,
+    "stream": false,
+    "thinking_override": false,
+    "chat_template_override": false
+  },
+  "observation": {
+    "attempted_requests": 10,
+    "http_200_count": 10,
+    "successful_responses": 7,
+    "failed_responses": 3,
+    "failed_ordinals": [4, 5, 9],
+    "failed_public_dataset_keys": [1219, 1392, 1670],
+    "failed_generated_tokens": [4096, 4096, 4096],
+    "failed_requests_reached_completion_budget": true,
+    "fatal_runtime_matches": 0,
+    "response_error_type_persisted": false,
+    "inference": "All failed requests returned HTTP 200 and reached exactly the 4096-token completion cap; the v1 runner then rejected response normalization. The exact safe error type was not persisted before termination.",
+    "raw_service_log_committed": false
+  },
+  "lifecycle": {
+    "overall_rc": 1,
+    "gates": {
+      "runtime_identity": 0,
+      "runtime_contract": 0,
+      "prefix_allocator": 0,
+      "gdn_action_broadcast": 0,
+      "preflight_before": 0,
+      "startup": 0,
+      "startup_contract": 0,
+      "ifeval": 143,
+      "cleanup": 0,
+      "fatal_scan": 0,
+      "preflight_after": 1,
+      "preflight_comparison": 1
+    },
+    "fatal_scan_empty": true,
+    "residual_api_server_processes": 0,
+    "checkpoint": {
+      "mode_before_cleanup": "0600",
+      "bytes_before_cleanup": 77054,
+      "manually_unlinked_without_reading": true,
+      "absent_after_cleanup": true
+    }
+  },
+  "gpu_health": {
+    "preflight_after": {
+      "qualified": false,
+      "gpu0_stage": "mem_get_info",
+      "gpu0_returncode": 124,
+      "gpu1_to_gpu3_qualified": true,
+      "sha256": "d859365d083fab740fc6ea0cceb0df26ccdd9f69c415f9fa40fcc803dbff73e3"
+    },
+    "independent_recovery_preflight": {
+      "qualified": false,
+      "gpu0_stage": "mem_get_info",
+      "gpu0_returncode": 124,
+      "gpu1_to_gpu3_qualified": true,
+      "sha256": "d859365d083fab740fc6ea0cceb0df26ccdd9f69c415f9fa40fcc803dbff73e3"
+    },
+    "v2_run_authorized_on_current_health": false
+  },
+  "artifact_sha256": {
+    "status.json": "21b3e7a57eeed8ec500854fb458fd51414b7a09e43503145173e4cc2eee6c3a5",
+    "runtime_identity.json": "dd2b97f6e18dd213704df67198298e1566be610c991fc90b5173ba7b1884e7fe",
+    "runtime_contract.json": "8aa60e9ed8fc2e33144aeb54925b294834a2d377c86ec03c945960dfc1e12de7",
+    "startup_contract.json": "1f8c7fe2d375646b765c2642623ab085426e3690b9510e2e47804d167814169e",
+    "preflight_before.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_after.json": "d859365d083fab740fc6ea0cceb0df26ccdd9f69c415f9fa40fcc803dbff73e3",
+    "fatal_scan.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "v2_contract": {
+    "manifest_sha256": "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855",
+    "max_tokens": 8192,
+    "only_request_semantic_change": "max_tokens",
+    "privacy_safe_progress_added": true,
+    "checkpoint_cleanup_gate_added": true,
+    "baseline_run_pending": true
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_prompts": false,
+    "contains_raw_model_outputs": false,
+    "contains_reasoning_text": false,
+    "contains_raw_service_trace": false
+  },
+  "decision": {
+    "v1_baseline_qualified": false,
+    "v1_result_rejected": true,
+    "model_quality_conclusion_authorized": false,
+    "performance_conclusion_authorized": false,
+    "admission64_authorized": false,
+    "main_or_yaml_change_authorized": false
+  }
+}

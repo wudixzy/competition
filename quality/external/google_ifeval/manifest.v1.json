@@ -56,9 +56,9 @@
   },
   "generator": {
     "path": "scripts/freeze_ifeval_subset.py",
-    "sha256": "1b13072e68475edef4a20c8d2302cd75288cd532c444e697ee65c47c5b97bc54"
+    "sha256": "e40e2182d2c958ae9a31d9b2e396a142b086294f1f60065845597d6981e67131"
   },
-  "name": "google-ifeval-bi100-stratified-64-v1",
+  "name": "google-ifeval-bi100-stratified-64-v2",
   "offline_environment": {
     "distribution_artifacts": [
       {
@@ -132,9 +132,10 @@
   "request_conversion": {
     "chat_template_override": false,
     "endpoint": "/v1/chat/completions",
-    "max_tokens": 4096,
+    "max_tokens": 8192,
     "messages": "one user message containing the source prompt verbatim",
     "request_order": "selected_keys_in_request_order",
+    "revision": "bi100-openai-chat-v2-max-tokens-8192",
     "seed": 20260725,
     "stream": false,
     "temperature": 0,

@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXTERNAL_ROOT = ROOT / "quality/external/google_ifeval"
 DEFAULT_MANIFEST = EXTERNAL_ROOT / "manifest.v1.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5"
+    "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855"
 )
 REPORT_SCHEMA = "bi100-ifeval-result-v1"
 REPORT_VERSION = 1
@@ -260,6 +260,38 @@ def write_checkpoint(path: Path, run_id: str, responses: dict[int, Json]) -> Non
     }, mode=0o600)
 
 
+def write_progress(
+    path: Path,
+    run_id: str,
+    selected: int,
+    responses: dict[int, Json],
+    failures: dict[int, Json],
+    last_ordinal: int,
+    report_sha256: str | None = None,
+) -> None:
+    atomic_write(path, {
+        "schema": "bi100-ifeval-progress-v1",
+        "version": 1,
+        "run_id_sha256": run_id,
+        "selected": selected,
+        "attempted": len(responses) + len(failures),
+        "successful": len(responses),
+        "errors": len(failures),
+        "last_ordinal": last_ordinal,
+        "complete": len(responses) + len(failures) == selected,
+        "report_sha256": report_sha256,
+        "failures": [
+            {"key": key, **failures[key]} for key in sorted(failures)
+        ],
+        "privacy": {
+            "contains_credentials": False,
+            "contains_raw_prompts": False,
+            "contains_raw_model_outputs": False,
+            "contains_reasoning_text": False,
+        },
+    })
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="http://127.0.0.1:8000")
@@ -267,6 +299,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--progress", type=Path, required=True)
     parser.add_argument("--timeout-s", type=float, default=900.0)
     parser.add_argument("--explicit-key", type=int, action="append", default=[])
     parser.add_argument("--source-revision", required=True)
@@ -292,10 +325,14 @@ def main() -> int:
     if args.out.exists():
         raise FileExistsError(f"report already exists: {args.out}")
     checkpoint = args.checkpoint.resolve()
+    progress = args.progress.resolve()
     if checkpoint == ROOT or ROOT in checkpoint.parents:
         raise ValueError("raw IFEval checkpoint must remain outside repository")
     if not str(checkpoint).startswith("/tmp/"):
         raise ValueError("raw IFEval checkpoint must use a private /tmp path")
+    if (progress == ROOT or ROOT in progress.parents
+            or not str(progress).startswith("/tmp/")):
+        raise ValueError("IFEval progress must remain under /tmp")
     if args.timeout_s <= 0:
         raise ValueError("timeout must be positive")
     manifest, manifest_sha, all_rows = load_manifest(args.manifest)
@@ -348,6 +385,12 @@ def main() -> int:
     run_id = canonical_sha256(run_contract)
     responses = parse_checkpoint(checkpoint, run_id)
     failures: dict[int, Json] = {}
+    resumed_ordinal = max((
+        ordinal for ordinal, row in enumerate(rows, 1)
+        if row["key"] in responses
+    ), default=0)
+    write_progress(
+        progress, run_id, len(rows), responses, failures, resumed_ordinal)
 
     for ordinal, row in enumerate(rows, 1):
         key = row["key"]
@@ -362,6 +405,8 @@ def main() -> int:
             normalized = normalize_response(body, elapsed)
             responses[key] = normalized
             write_checkpoint(checkpoint, run_id, responses)
+            write_progress(
+                progress, run_id, len(rows), responses, failures, ordinal)
             print(f"[{ordinal}/{len(rows)}] key={key} ok", flush=True)
         except Exception as exc:  # The report records type and digest only.
             message = f"{type(exc).__name__}:{exc}"
@@ -370,6 +415,8 @@ def main() -> int:
                 "error_sha256": hashlib.sha256(
                     message.encode("utf-8")).hexdigest(),
             }
+            write_progress(
+                progress, run_id, len(rows), responses, failures, ordinal)
             print(f"[{ordinal}/{len(rows)}] key={key} failed", flush=True)
 
     scored_rows = [row for row in rows if row["key"] in responses]
@@ -467,6 +514,10 @@ def main() -> int:
     }
     atomic_write(args.out, report)
     checkpoint.unlink(missing_ok=True)
+    write_progress(
+        progress, run_id, len(rows), responses, failures, len(rows),
+        report_sha256=sha256(args.out),
+    )
     print(json.dumps({
         "out": str(args.out),
         "qualified": report["qualified"],

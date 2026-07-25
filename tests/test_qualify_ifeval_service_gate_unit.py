@@ -57,6 +57,7 @@ class QualifyIFEvalServiceGateTest(unittest.TestCase):
         self._write("ifeval_report.json", {
             "schema": MODULE.REPORT_SCHEMA,
             "version": 1,
+            "run_id_sha256": "c" * 64,
             "qualified": True,
             "quality_run_eligible_for_baseline": True,
             "promotion_authorized": False,
@@ -84,6 +85,26 @@ class QualifyIFEvalServiceGateTest(unittest.TestCase):
                 "checkpoint_deleted": True,
             },
         })
+        report_sha = MODULE.sha256(self.run / "ifeval_report.json")
+        self._write("ifeval_progress.json", {
+            "schema": "bi100-ifeval-progress-v1",
+            "version": 1,
+            "run_id_sha256": "c" * 64,
+            "selected": 64,
+            "attempted": 64,
+            "successful": 64,
+            "errors": 0,
+            "last_ordinal": 64,
+            "complete": True,
+            "report_sha256": report_sha,
+            "failures": [],
+            "privacy": {
+                "contains_credentials": False,
+                "contains_raw_prompts": False,
+                "contains_raw_model_outputs": False,
+                "contains_reasoning_text": False,
+            },
+        })
         artifacts = {
             name: MODULE.sha256(self.run / name)
             for name in MODULE.EXPECTED_ARTIFACTS
@@ -99,7 +120,7 @@ class QualifyIFEvalServiceGateTest(unittest.TestCase):
             "artifacts": artifacts,
             "privacy": {
                 "raw_service_log_outside_repository": True,
-                "raw_checkpoint_deleted_by_runner": True,
+                "raw_checkpoint_absent_after_lifecycle": True,
                 "contains_credentials": False,
             },
         })

@@ -29,7 +29,7 @@ EXPECTED_IFEVAL = {
     "dataset_manifest_path": (
         "quality/external/google_ifeval/manifest.v1.json"),
     "dataset_manifest_sha256": (
-        "578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5"),
+        "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855"),
     "subset_path": "quality/external/google_ifeval/subset.v1.jsonl",
     "subset_sha256": (
         "bdb2e4ec0b0fd19b89c55ebb9ed49e17361706c923ddedeeab429f669e4bdb78"),

@@ -17,17 +17,18 @@ REPORT_SCHEMA = "bi100-ifeval-result-v1"
 INSTALL_SCHEMA = "bi100-ifeval-offline-environment-v1"
 QUALIFICATION_SCHEMA = "bi100-ifeval-service-qualification-v1"
 EXPECTED_MANIFEST_SHA256 = (
-    "578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5"
+    "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855"
 )
 EXPECTED_GATES = (
     "runtime_identity", "runtime_contract", "prefix_allocator",
     "gdn_action_broadcast", "preflight_before", "startup",
     "startup_contract", "ifeval", "cleanup", "fatal_scan",
-    "preflight_after", "preflight_comparison",
+    "checkpoint_cleanup", "preflight_after", "preflight_comparison",
 )
 EXPECTED_ARTIFACTS = (
     "runtime_identity.json", "runtime_contract.json",
     "startup_contract.json", "ifeval_report.json", "fatal_scan.txt",
+    "ifeval_progress.json",
     "preflight_before.json", "preflight_after.json",
     "preflight_comparison.json",
 )
@@ -103,6 +104,7 @@ def qualify(
     report_path = run_root / "ifeval_report.json"
     status = load_json(status_path, reasons)
     report = load_json(report_path, reasons)
+    progress = load_json(run_root / "ifeval_progress.json", reasons)
     install = load_json(install_path, reasons)
 
     if (status.get("schema") != STATUS_SCHEMA
@@ -150,7 +152,8 @@ def qualify(
         reasons.append("raw IFEval checkpoint was retained")
     status_privacy = status.get("privacy") or {}
     if (status_privacy.get("raw_service_log_outside_repository") is not True
-            or status_privacy.get("raw_checkpoint_deleted_by_runner") is not True
+            or status_privacy.get("raw_checkpoint_absent_after_lifecycle")
+            is not True
             or status_privacy.get("contains_credentials") is not False):
         reasons.append("service status privacy contract differs")
 
@@ -195,6 +198,23 @@ def qualify(
             "contains_raw_model_outputs", "contains_reasoning_text"))
             or report_privacy.get("checkpoint_deleted") is not True):
         reasons.append("IFEval report privacy contract differs")
+    if (progress.get("schema") != "bi100-ifeval-progress-v1"
+            or progress.get("version") != 1
+            or progress.get("run_id_sha256") != report.get("run_id_sha256")
+            or progress.get("selected") != 64
+            or progress.get("attempted") != 64
+            or progress.get("successful") != 64
+            or progress.get("errors") != 0
+            or progress.get("last_ordinal") != 64
+            or progress.get("complete") is not True
+            or progress.get("report_sha256") != sha256(report_path)
+            or progress.get("failures") != []):
+        reasons.append("IFEval progress is incomplete or differs")
+    progress_privacy = progress.get("privacy") or {}
+    if any(progress_privacy.get(name) is not False for name in (
+            "contains_credentials", "contains_raw_prompts",
+            "contains_raw_model_outputs", "contains_reasoning_text")):
+        reasons.append("IFEval progress privacy contract differs")
     runtime_contract = report.get("runtime_contract") or {}
     if (runtime_contract.get("file_sha256")
             != artifact_sha256.get("runtime_contract.json")):

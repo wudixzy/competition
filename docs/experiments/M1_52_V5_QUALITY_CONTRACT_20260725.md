@@ -71,14 +71,20 @@ The dataset and evaluator are now frozen on the private experiment branch:
 
 - manifest: `quality/external/google_ifeval/manifest.v1.json`;
 - manifest SHA-256:
-  `578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5`;
+  `07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855`;
 - subset: 64 rows covering all 25 instruction IDs at least four times;
 - subset SHA-256:
   `bdb2e4ec0b0fd19b89c55ebb9ed49e17361706c923ddedeeab429f669e4bdb78`;
 - official evaluator revision:
   `e6890f85757dd84e27ca6df2dd30651dafad28e0`.
 
-This completes ingestion only. The exact `fine32/direct` TP4 baseline still
+The initial TP4 request contract at evaluator commit `530deeb` used a 4096
+completion-token budget. In its first ten HTTP-200 requests, ordinals 4, 5,
+and 9 failed response normalization and each generated exactly 4096 tokens;
+no fatal runtime error was observed. That run is rejected and establishes no
+quality baseline. Because disabling thinking would violate the quality
+contract, request-contract v2 increases only `max_tokens` to 8192 and adds a
+privacy-safe progress artifact. The exact `fine32/direct` TP4 v2 baseline still
 has to execute successfully before the instruction gate is qualified.
 
 ## Validation And Order

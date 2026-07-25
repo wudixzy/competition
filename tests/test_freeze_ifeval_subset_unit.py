@@ -52,7 +52,7 @@ class FreezeIFEvalSubsetTest(unittest.TestCase):
         self.assertEqual(
             hashlib.sha256((EXTERNAL / "manifest.v1.json").read_bytes())
             .hexdigest(),
-            "578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5",
+            "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855",
         )
         self.assertEqual(
             hashlib.sha256((EXTERNAL / "subset.v1.jsonl").read_bytes())

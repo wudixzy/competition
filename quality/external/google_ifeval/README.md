@@ -41,7 +41,7 @@ order.
 - Subset SHA-256:
   `bdb2e4ec0b0fd19b89c55ebb9ed49e17361706c923ddedeeab429f669e4bdb78`
 - Manifest SHA-256:
-  `578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5`
+  `07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855`
 
 Reproduction command:
 
@@ -55,12 +55,22 @@ python3 scripts/freeze_ifeval_subset.py \
 The runner sends each prompt verbatim as one user message. It does not
 override the chat template, tokenizer, thinking behavior, `top_p`, penalties,
 or model structure. It fixes only the deterministic benchmark request fields:
-`temperature=0`, `seed=20260725`, `stream=false`, and `max_tokens=4096`.
+`temperature=0`, `seed=20260725`, `stream=false`, and `max_tokens=8192`.
 
 The committed report contains rule booleans, usage, finish reason, dimensions,
 timings, and response hashes only. Raw responses exist only in a mode-0600
 checkpoint under `/tmp` while a run is incomplete and are deleted when the
-report is written.
+report is written. A separate progress file contains only public dataset keys,
+counts, error types, and error-message hashes; it never contains prompt,
+content, or reasoning text.
+
+The first request-contract revision used `max_tokens=4096`. Its unqualified
+TP4 probe returned HTTP 200 for every attempted request, but each failed
+response consumed exactly all 4096 completion tokens. Because default thinking
+must remain enabled, that budget could prevent a usable final content field.
+No baseline was established from that probe. Contract v2 changes only the
+completion budget to 8192; model, tokenizer, chat template, thinking behavior,
+temperature, seed, request order, dataset, and evaluator rules are unchanged.
 
 Prepare the evaluator dependencies with the target CoreX CPython 3.10 binary.
 The `punkt_tab` archive must already have the revision and SHA-256 above:

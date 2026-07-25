@@ -37,7 +37,7 @@ class IFEvalQualityAPITest(unittest.TestCase):
             "model": "llm",
             "messages": [{
                 "role": "user", "content": self.rows[0]["prompt"]}],
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "temperature": 0,
             "seed": 20260725,
             "stream": False,
@@ -99,6 +99,25 @@ class IFEvalQualityAPITest(unittest.TestCase):
             self.assertEqual(value[1]["content"], "temporary raw output")
             with self.assertRaisesRegex(ValueError, "identity"):
                 MODULE.parse_checkpoint(path, "b" * 64)
+
+    def test_progress_contains_only_safe_failure_metadata(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+            path = Path(temporary) / "progress.json"
+            MODULE.write_progress(
+                path, "a" * 64, 2, {1: {"content": "must not leak"}},
+                {2: {"error_type": "ValueError", "error_sha256": "b" * 64}},
+                2,
+            )
+            value = json.loads(path.read_text(encoding="utf-8"))
+            self.assertTrue(value["complete"])
+            self.assertEqual(value["successful"], 1)
+            self.assertEqual(value["errors"], 1)
+            self.assertEqual(value["failures"], [{
+                "key": 2,
+                "error_type": "ValueError",
+                "error_sha256": "b" * 64,
+            }])
+            self.assertNotIn("must not leak", path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

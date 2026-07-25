@@ -247,15 +247,16 @@ value = {
         "runtime_identity", "runtime_contract", "prefix_allocator",
         "gdn_action_broadcast", "preflight_before", "startup",
         "startup_contract", "ifeval", "cleanup", "fatal_scan",
-        "preflight_after", "preflight_comparison")},
+        "checkpoint_cleanup", "preflight_after", "preflight_comparison")},
     "artifacts": {name: digest(name) for name in (
         "runtime_identity.json", "runtime_contract.json",
         "startup_contract.json", "ifeval_report.json", "fatal_scan.txt",
+        "ifeval_progress.json",
         "preflight_before.json", "preflight_after.json",
         "preflight_comparison.json")},
     "privacy": {
         "raw_service_log_outside_repository": True,
-        "raw_checkpoint_deleted_by_runner": not (root / "ifeval.checkpoint.json").exists(),
+        "raw_checkpoint_absent_after_lifecycle": not (root / "ifeval.checkpoint.json").exists(),
         "contains_credentials": False,
     },
 }
@@ -268,6 +269,7 @@ finish() {
     local primary_rc=$?
     local cleanup_rc=0
     local fatal_rc=0
+    local checkpoint_cleanup_rc=0
     local after_rc=0
     local comparison_rc=0
     local final_rc=$primary_rc
@@ -284,6 +286,12 @@ finish() {
         fatal_rc=$?
     fi
     printf '%s\n' "$cleanup_rc" > "$RUN_ROOT/cleanup.rc"
+    if [[ -e "$RUN_ROOT/ifeval.checkpoint.json" ]]; then
+        unlink "$RUN_ROOT/ifeval.checkpoint.json"
+        checkpoint_cleanup_rc=$?
+    fi
+    printf '%s\n' "$checkpoint_cleanup_rc" \
+        > "$RUN_ROOT/checkpoint_cleanup.rc"
     if [[ "$BEFORE_PREFLIGHT_PASSED" == 1 ]]; then
         run_preflight after
         after_rc=$?
@@ -301,7 +309,8 @@ finish() {
         fi
         printf '%s\n' "$comparison_rc" > "$RUN_ROOT/preflight_comparison.rc"
     fi
-    if [[ $cleanup_rc -ne 0 || $fatal_rc -ne 0 || $after_rc -ne 0 \
+    if [[ $cleanup_rc -ne 0 || $fatal_rc -ne 0 \
+            || $checkpoint_cleanup_rc -ne 0 || $after_rc -ne 0 \
             || $comparison_rc -ne 0 ]]; then
         final_rc=1
     fi
@@ -414,6 +423,7 @@ timeout --signal=TERM --kill-after=30s 43200s \
     --base http://127.0.0.1:8000 --model llm \
     --out "$RUN_ROOT/ifeval_report.json" \
     --checkpoint "$RUN_ROOT/ifeval.checkpoint.json" \
+    --progress "$RUN_ROOT/ifeval_progress.json" \
     --source-revision "$EXPECTED_RUNTIME_REVISION" \
     --runtime-identity "$RUNTIME_IDENTITY" \
     --runtime-overlay-sha256 "$(python3 -c \
