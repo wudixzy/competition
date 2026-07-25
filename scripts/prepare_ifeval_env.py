@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a private offline IFEval environment from committed wheels."""
+"""Build a private offline IFEval environment from committed distributions."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def verify_distributions(manifest: dict) -> list[Path]:
         path = EXTERNAL_ROOT / "wheelhouse" / item["path"]
         if (not path.is_file() or path.stat().st_size != item["bytes"]
                 or sha256(path) != item["sha256"]):
-            raise ValueError(f"IFEval wheel identity differs: {path.name}")
+            raise ValueError(f"IFEval distribution identity differs: {path.name}")
         distributions.append(path)
     return distributions
 
