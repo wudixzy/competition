@@ -1,0 +1,160 @@
+{
+  "schema": "bi100-m1-52-v4-targeted-quality-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "revision": "57574b7f828d2326ca53cf0931352db355136737",
+    "branch": "run/quality-m1-52-v4-57574b7",
+    "instance": "ssh-73ca29ba",
+    "runtime_identity": "bare-host-overlay-v1:c15efcfb170721bab221",
+    "runtime_overlay_sha256": "c15efcfb170721bab221c1688642c9e2d4451e17af6531ee977c9b0239f7ba55",
+    "base_image": "harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3"
+  },
+  "runtime": {
+    "gpu_count": 4,
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144,
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "gdn_cache_policy": "fine32",
+    "gdn_restore_mode": "direct",
+    "fused_prefill": false,
+    "kv_eviction_policy": "lru",
+    "runtime_versions": {
+      "torch": "2.1.0+corex.3.2.3",
+      "transformers": "4.55.3",
+      "vllm": "0.6.3+corex.3.2.3"
+    },
+    "system_site_packages_modified": false
+  },
+  "overlay_reproducibility_note": {
+    "previous_runtime_overlay_sha256": "6a7298f9b4b60fdb4154e446d8a70cffb5a93290fb9bb6f864f97ebf23669fcd",
+    "runtime_file_diff_count": 2,
+    "differing_files": [
+      "transformers-4.55.3.dist-info/RECORD",
+      "transformers-4.55.3.dist-info/direct_url.json"
+    ],
+    "runtime_implementation_files_identical": true,
+    "classification": "pip installation-path metadata only"
+  },
+  "matrix": {
+    "name": "long_context_matrix.v4.json",
+    "sha256": "242670609fc23668607e5c602ab792a041fff7fcba13db7917cf88fc8281b818",
+    "schema": "bi100-long-context-quality-result-v4",
+    "explicit_cases": [
+      "131k_reasoning_recall",
+      "235k_agent_large_output_budget"
+    ],
+    "selected_total": 2,
+    "passed": 1,
+    "failed": 1,
+    "pass_rate": 0.5,
+    "wall_s": 1168.0716281980276,
+    "complete": true,
+    "qualified": false,
+    "quality_run_eligible_for_baseline": false
+  },
+  "cases": [
+    {
+      "id": "131k_reasoning_recall",
+      "status": "fail",
+      "elapsed_s": 340.94274808466434,
+      "request_count": 1,
+      "error_code": "long-context reasoning marker or arithmetic answer differs",
+      "http_status": 200,
+      "prompt_tokens": 131000,
+      "cached_tokens": 0,
+      "completion_tokens": 696,
+      "max_tokens": 1024,
+      "finish_reason": "stop",
+      "content_length": 419,
+      "reasoning_length": 1695,
+      "protocol_validated": true
+    },
+    {
+      "id": "235k_agent_large_output_budget",
+      "status": "pass",
+      "elapsed_s": 827.125559873879,
+      "request_count": 2,
+      "http_statuses": [200, 200],
+      "prompt_tokens": [235000, 235000],
+      "cached_tokens": [0, 234992],
+      "completion_tokens": [603, 603],
+      "finish_reasons": ["tool_calls", "tool_calls"],
+      "content_lengths": [168, 168],
+      "reasoning_lengths": [1886, 1886],
+      "tool_call_counts": [1, 1],
+      "tool_argument_json_types": ["dict", "dict"],
+      "tool_count": 92,
+      "cold_warm_exact": true,
+      "natural_finish_before_max_tokens": true
+    }
+  ],
+  "diagnosis": {
+    "131k_reasoning_recall": {
+      "classification": "quality-rule-failure-needs-safe-subrule-diagnostics",
+      "budget_exhaustion": false,
+      "service_or_protocol_failure": false,
+      "evidence": "the response naturally stopped at 696 of 1024 tokens with nonempty separated reasoning and final content, but final content was not exactly the required answer",
+      "unknown_without_raw_output": "whether the expected answer was present with extra prose or a marker/arithmetic sub-rule was wrong",
+      "next_action": "record privacy-safe boolean marker, arithmetic, order, containment, and exact-match facts and rerun only this case without changing the request or pass threshold"
+    },
+    "235k_agent_large_output_budget": {
+      "classification": "v4-contract-repair-confirmed",
+      "evidence": "cold and warm requests produced the same protocol-valid automatic tool call, exact JSON object arguments, separated reasoning, a natural tool_calls finish, and a 234992-token effective warm hit"
+    }
+  },
+  "version_separation": {
+    "platform_main_reference": "docs/experiments/evidence/PLATFORM_MAIN_REFERENCE_20260724.json",
+    "platform_main_source_revision_known": false,
+    "direct_comparison_to_platform_main_authorized": false,
+    "reason": "the platform main result is unbound and substantially predates this source and quality contract"
+  },
+  "lifecycle": {
+    "overall_rc": 1,
+    "quality_rc": 1,
+    "runtime_identity_rc": 0,
+    "runtime_contract_rc": 0,
+    "prefix_allocator_rc": 0,
+    "gdn_action_broadcast_rc": 0,
+    "preflight_before_rc": 0,
+    "startup_rc": 0,
+    "startup_contract_rc": 0,
+    "cleanup_rc": 0,
+    "fatal_scan_rc": 0,
+    "preflight_after_rc": 0,
+    "preflight_comparison_rc": 0,
+    "fatal_scan_empty": true,
+    "residual_api_server_processes": 0,
+    "ipv4_port_8000_free": true,
+    "free_memory_drop_bytes": [0, 0, 0, 0]
+  },
+  "artifact_sha256": {
+    "quality_report.json": "ae7e5d65a194f9e2a08159b911a4a73b02939c308ca885070bec0587e1cd2637",
+    "status.json": "5dc67b41fc414388555bf77ef059d8d39cbadc5aa33f1d6dd993be8abb86f71b",
+    "runtime_contract.json": "246b53baf329851c9bf181c944fa65e28686ba8bee90fdfd2ecdc782ee5cd3d5",
+    "runtime_identity.json": "efbd1ee651234154f5339f403c91e78b2fcb6b7573cf889710f907a3c98ace46",
+    "startup_contract.json": "cbc4fca47abb421d80941a48bcd8095f6d41727fa0235825b36a10331afbe823",
+    "preflight_before.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_after.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_comparison.json": "1d529bc179ed4cad258d017f7a39c9788fbe3bbb99289b47ef70d2e8789416fe",
+    "fatal_scan.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_tool_names": false,
+    "contains_tool_argument_values": false,
+    "raw_service_log_committed": false
+  },
+  "decision": {
+    "v4_targeted_gate_qualified": false,
+    "eligible_as_quality_baseline": false,
+    "full_functional_gate_authorized": false,
+    "full_long_context_gate_authorized": false,
+    "admission64_authorized": false,
+    "performance_score_established": false,
+    "overall_promotion_authorized": false,
+    "main_or_yaml_change_authorized": false
+  }
+}
