@@ -51,6 +51,12 @@ class M155QueryTiledSourceUnitTest(unittest.TestCase):
         self.assertIn(
             "phase == 0 ? context_len : last_query", SOURCE)
 
+    def test_pv_uses_one_fixed_hierarchical_reduction(self):
+        self.assertIn("constexpr int kPvReductionSplits = 4;", SOURCE)
+        self.assertIn("kKeyTilesPerPvSplit", SOURCE)
+        self.assertIn("float partial_output[", SOURCE)
+        self.assertIn("__fadd_rn(left, right)", SOURCE)
+
     def test_no_full_query_global_intermediates(self):
         self.assertNotIn("split_output", SOURCE)
         self.assertNotIn("converted_query", SOURCE)
