@@ -362,6 +362,54 @@ def _finite(value: Any) -> bool:
     return True
 
 
+def _tool_call_structure(message: Json) -> Json:
+    calls = message.get("tool_calls")
+    if not isinstance(calls, list):
+        return {
+            "container_type": type(calls).__name__,
+            "count": None,
+            "calls": [],
+        }
+    structures = []
+    for call in calls:
+        function = call.get("function") if isinstance(call, dict) else None
+        name = function.get("name") if isinstance(function, dict) else None
+        arguments = (
+            function.get("arguments") if isinstance(function, dict) else None)
+        structure: Json = {
+            "call_type": type(call).__name__,
+            "function_type": type(function).__name__,
+            "name_sha256": (
+                hashlib.sha256(name.encode("utf-8")).hexdigest()
+                if isinstance(name, str) else None),
+            "arguments_type": type(arguments).__name__,
+        }
+        if isinstance(arguments, str):
+            stripped = arguments.strip()
+            structure.update({
+                "arguments_length": len(arguments),
+                "arguments_sha256": hashlib.sha256(
+                    arguments.encode("utf-8")).hexdigest(),
+                "starts_object": stripped.startswith("{"),
+                "ends_object": stripped.endswith("}"),
+                "contains_tool_call_tag": "<tool_call>" in arguments,
+                "contains_function_prefix": "<function=" in arguments,
+                "contains_code_fence": "```" in arguments,
+            })
+            try:
+                decoded = json.loads(arguments)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                structure["json_type"] = "invalid"
+            else:
+                structure["json_type"] = type(decoded).__name__
+        structures.append(structure)
+    return {
+        "container_type": "list",
+        "count": len(calls),
+        "calls": structures,
+    }
+
+
 def _post(
     context: Context,
     payload: Json,
@@ -395,8 +443,9 @@ def _post(
     choice = data["choices"][0]
     require(choice.get("finish_reason") in quality.ALLOWED_FINISH_REASONS,
             "matrix response has no terminal finish_reason")
-    normalized = quality._normalized_response(data)
     message = quality._message(data)
+    content = message.get("content")
+    reasoning = quality._reasoning(message)
     first_token_sha256 = None
     logprobs = choice.get("logprobs") or {}
     logprob_content = logprobs.get("content") or []
@@ -407,7 +456,7 @@ def _post(
     if payload.get("logprobs"):
         require(first_token_sha256 is not None,
                 "next-token gate received no first-token logprob")
-    summary = {
+    summary: Json = {
         "status": result[0],
         "model": data["model"],
         "local_prompt_tokens": target_tokens,
@@ -416,18 +465,28 @@ def _post(
         "completion_tokens": usage["completion_tokens"],
         "total_tokens": data["usage"]["total_tokens"],
         "finish_reason": choice.get("finish_reason"),
-        "semantic_output_sha256": quality._sha256_json(normalized),
-        "content_sha256": quality._sha256_json(message.get("content")),
-        "reasoning_sha256": quality._sha256_json(
-            quality._reasoning(message)),
-        "tool_calls_sha256": quality._sha256_json(
-            quality._normalized_tool_calls(message)),
+        "content_sha256": quality._sha256_json(content),
+        "content_length": len(content) if isinstance(content, str) else 0,
+        "reasoning_sha256": quality._sha256_json(reasoning),
+        "reasoning_length": len(reasoning),
+        "tool_call_structure": _tool_call_structure(message),
         "first_generated_token_sha256": first_token_sha256,
         "request_contract_sha256": request_contract_sha256,
         "token_accounting": token_accounting,
-        "protocol_validated": True,
+        "protocol_validated": False,
         "elapsed_s": round(elapsed, 6),
     }
+    try:
+        normalized = quality._normalized_response(data)
+        normalized_tools = quality._normalized_tool_calls(message)
+    except Exception:
+        context.record_request(summary)
+        raise
+    summary.update({
+        "semantic_output_sha256": quality._sha256_json(normalized),
+        "tool_calls_sha256": quality._sha256_json(normalized_tools),
+        "protocol_validated": True,
+    })
     context.record_request(summary)
     return data, summary
 

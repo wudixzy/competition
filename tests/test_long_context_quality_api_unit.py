@@ -79,6 +79,41 @@ class FakeClient:
         }
 
 
+class InvalidToolClient:
+
+    def post(self, payload, timeout=1):
+        prompt_tokens = payload["_test_prompt_tokens"]
+        return 200, {
+            "id": "chatcmpl-matrix-invalid-tool",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "llm",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "",
+                    "tool_calls": [{
+                        "id": "call-invalid",
+                        "type": "function",
+                        "function": {
+                            "name": "private_tool_name",
+                            "arguments": "private-not-json-value",
+                        },
+                    }],
+                },
+            }],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": 2,
+                "total_tokens": prompt_tokens + 2,
+                "prompt_tokens_details": {"cached_tokens": 0},
+            },
+        }
+
+
 class LongContextQualityApiTest(unittest.TestCase):
 
     @classmethod
@@ -217,6 +252,34 @@ class LongContextQualityApiTest(unittest.TestCase):
             observation["facts"]
             ["privacy_safe_requests_captured_before_failure"], 1)
         self.assertEqual(observation["construction"], [])
+
+    def test_invalid_tool_arguments_retain_only_structural_diagnostics(self):
+        context = MODULE.Context(
+            InvalidToolClient(), FakeTokenizer(), 1,
+            served_model_name="llm", template_kwargs_mode="direct")
+        context.begin_case()
+        payload = {
+            "_test_prompt_tokens": 10,
+            "model": "llm",
+            "messages": [{"role": "user", "content": "test"}],
+            "max_tokens": 4,
+        }
+
+        with self.assertRaisesRegex(
+                MODULE.quality.CaseFailure,
+                "tool arguments are not valid JSON"):
+            MODULE._post(context, payload, 10)
+
+        observation = context.failure_observation()
+        self.assertEqual(len(observation["requests"]), 1)
+        summary = observation["requests"][0]
+        structure = summary["tool_call_structure"]["calls"][0]
+        self.assertEqual(structure["json_type"], "invalid")
+        self.assertEqual(structure["arguments_length"], 22)
+        self.assertFalse(summary["protocol_validated"])
+        serialized = json.dumps(observation, sort_keys=True)
+        self.assertNotIn("private-not-json-value", serialized)
+        self.assertNotIn("private_tool_name", serialized)
 
     def test_matrix_file_hash_cannot_be_overridden(self):
         value = json.loads((
