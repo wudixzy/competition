@@ -1,0 +1,160 @@
+{
+  "schema": "bi100-m1-52-v3-targeted-quality-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "revision": "6dfdab10524d71435dd5d60d2ac80135237e5ccf",
+    "branch": "run/quality-m1-52-6dfdab1",
+    "instance": "ssh-73ca29ba",
+    "runtime_identity": "bare-host-overlay-v1:6a7298f9b4b60fdb4154",
+    "runtime_overlay_sha256": "6a7298f9b4b60fdb4154e446d8a70cffb5a93290fb9bb6f864f97ebf23669fcd",
+    "base_image": "harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3"
+  },
+  "runtime": {
+    "gpu_count": 4,
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144,
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "gdn_cache_policy": "fine32",
+    "gdn_restore_mode": "direct",
+    "fused_prefill": false,
+    "kv_eviction_policy": "lru",
+    "observed_gpu_blocks": 67512,
+    "observed_gpu_token_capacity": 1080192
+  },
+  "matrix": {
+    "name": "long_context_matrix.v3.json",
+    "sha256": "a968fbbc37bf2e03b14fcf8cdb4df005e1956b4a93a23f62661860d523a85680",
+    "schema": "bi100-long-context-quality-result-v3",
+    "explicit_cases": [
+      "65k_multiturn_large_tools",
+      "131k_reasoning_recall",
+      "235k_agent_large_output_budget"
+    ],
+    "selected_total": 3,
+    "passed": 1,
+    "failed": 2,
+    "pass_rate": 0.3333333333333333,
+    "wall_s": 1236.5413236506283,
+    "complete": true,
+    "qualified": false,
+    "quality_run_eligible_for_baseline": false
+  },
+  "cases": [
+    {
+      "id": "65k_multiturn_large_tools",
+      "status": "pass",
+      "elapsed_s": 111.71884528174996,
+      "request_count": 2,
+      "cold_cached_tokens": 0,
+      "warm_cached_tokens": 65520,
+      "completion_tokens": 13,
+      "finish_reason": "tool_calls",
+      "tool_count": 92,
+      "exact_tool_rule_passed": true,
+      "cold_warm_exact": true
+    },
+    {
+      "id": "131k_reasoning_recall",
+      "status": "fail",
+      "elapsed_s": 308.1569263525307,
+      "request_count": 1,
+      "error_code": "long-context reasoning marker or arithmetic answer differs",
+      "http_status": 200,
+      "prompt_tokens": 131000,
+      "cached_tokens": 0,
+      "completion_tokens": 512,
+      "max_tokens": 512,
+      "finish_reason": "length",
+      "content_length": 0,
+      "reasoning_length": 1553
+    },
+    {
+      "id": "235k_agent_large_output_budget",
+      "status": "fail",
+      "elapsed_s": 816.6595624908805,
+      "request_count": 2,
+      "error_code": "forced tool response contains unexpected content",
+      "http_statuses": [200, 200],
+      "prompt_tokens": [235000, 235000],
+      "cached_tokens": [0, 234992],
+      "completion_tokens": [603, 603],
+      "finish_reasons": ["tool_calls", "tool_calls"],
+      "content_lengths": [168, 168],
+      "reasoning_lengths": [1886, 1886],
+      "tool_call_counts": [1, 1],
+      "tool_argument_json_types": ["dict", "dict"]
+    }
+  ],
+  "diagnosis": {
+    "65k_multiturn_large_tools": {
+      "classification": "contract-repair-confirmed",
+      "evidence": "the exact key-only target schema, tool arguments, warm cache accounting, and cold/warm response all passed"
+    },
+    "131k_reasoning_recall": {
+      "classification": "test-output-budget-exhausted",
+      "evidence": "the request returned HTTP 200 and exactly reached its 512-token cap entirely in separated reasoning before final content",
+      "repair": "matrix v4 uses a 1024-token budget and requires finish_reason=stop before the cap"
+    },
+    "235k_agent_large_output_budget": {
+      "classification": "test-tool-content-contract-too-strict",
+      "evidence": "both cold and warm requests returned one structurally valid JSON tool call with natural tool_calls finish, but the automatic tool response also contained assistant content",
+      "repair": "matrix v4 permits optional protocol-valid string content only for this automatic Agent case while retaining exact tool arguments and cold/warm equality"
+    }
+  },
+  "version_separation": {
+    "platform_main_reference": "docs/experiments/evidence/PLATFORM_MAIN_REFERENCE_20260724.json",
+    "platform_main_source_revision_known": false,
+    "direct_comparison_to_platform_main_authorized": false,
+    "reason": "the platform main result is unbound and predates many source, harness, and runtime-overlay revisions"
+  },
+  "lifecycle": {
+    "overall_rc": 1,
+    "quality_rc": 1,
+    "runtime_identity_rc": 0,
+    "runtime_contract_rc": 0,
+    "prefix_allocator_rc": 0,
+    "gdn_action_broadcast_rc": 0,
+    "preflight_before_rc": 0,
+    "startup_rc": 0,
+    "startup_contract_rc": 0,
+    "cleanup_rc": 0,
+    "fatal_scan_rc": 0,
+    "preflight_after_rc": 0,
+    "preflight_comparison_rc": 0,
+    "fatal_scan_empty": true,
+    "residual_api_server_processes": 0,
+    "port_8000_listeners_after_cleanup": 0,
+    "free_memory_drop_bytes": [0, 0, 0, 0]
+  },
+  "artifact_sha256": {
+    "quality_report.json": "cb1d6540a812175c73a7232a35f18bfd3a6e287fb52e8ec7d8b6c1f2fc8e1294",
+    "status.json": "46396af7060675a9647a43a20ee9d53b2673bd7a40f886b5721ca0c51b3623ce",
+    "runtime_contract.json": "a74212a0270dea5f3ec5b02aec1614ff7300759887b5ab187df0753641294c1a",
+    "runtime_identity.json": "a235dad337a6366182d7548ae303ec80277c75204b4d68e903031b50041c767b",
+    "startup_contract.json": "a1d87aad40d9c65b174eaef1957736776288e69ad3504a309031b4ef6e81d3bb",
+    "preflight_before.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_after.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_comparison.json": "1d529bc179ed4cad258d017f7a39c9788fbe3bbb99289b47ef70d2e8789416fe",
+    "fatal_scan.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_tool_names": false,
+    "contains_tool_argument_values": false,
+    "raw_service_log_committed": false
+  },
+  "decision": {
+    "v3_targeted_gate_qualified": false,
+    "eligible_as_quality_baseline": false,
+    "v4_targeted_rerun_required": true,
+    "functional_gate_required_after_targeted_pass": true,
+    "full_long_context_gate_required_after_targeted_pass": true,
+    "admission64_authorized": false,
+    "performance_score_established": false,
+    "overall_promotion_authorized": false,
+    "main_or_yaml_change_authorized": false
+  }
+}
