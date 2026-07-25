@@ -1,0 +1,319 @@
+{
+  "schema": "bi100-m1-53-three-gpu-component-gates-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "revision": "fbb37b2ffe42e144f55c584268c9e87adec39a9b",
+    "tree": "1788d561fb2e4c49c1291edc244ddeda624d1c0b",
+    "branch": "fix/M1-53-overlay-repro-20260725",
+    "parent_revision": "5bb85360355be1a883f2785c17e991c8ebe85809",
+    "instance": "ssh-73ca29ba"
+  },
+  "scope": {
+    "execution_mode": "bare-host component gates",
+    "physical_gpus_used": [
+      1,
+      2,
+      3
+    ],
+    "unavailable_physical_gpus": [
+      0
+    ],
+    "available_gpu_count": 3,
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "model_weights_loaded": false,
+    "model_service_started": false,
+    "api_requests": 0,
+    "tp3_model_service_valid": false,
+    "tp3_invalid_reason": "16 global query heads are not divisible by tensor parallel size 3",
+    "tp4_service_or_performance_conclusion_allowed": false
+  },
+  "runtime_reproducibility": {
+    "qualified": true,
+    "install_count": 2,
+    "install_reports_qualified": [
+      true,
+      true
+    ],
+    "source_revisions": [
+      "fbb37b2ffe42e144f55c584268c9e87adec39a9b",
+      "fbb37b2ffe42e144f55c584268c9e87adec39a9b"
+    ],
+    "runtime_roots": [
+      "/root/competition-three-gpu-runtime-fbb37b2-a",
+      "/root/competition-three-gpu-runtime-fbb37b2-b"
+    ],
+    "runtime_tree_sha256": [
+      "75b3c665a9767968628aecf1d15d488a89884327c73eacdfded5a55a1bdb42f1",
+      "75b3c665a9767968628aecf1d15d488a89884327c73eacdfded5a55a1bdb42f1"
+    ],
+    "site_packages_diff_rc": 0,
+    "site_packages_differing_files": 0,
+    "system_site_packages_modified": false,
+    "offline_metadata_normalizer_sha256": "d54d89bb15df1be93bbc8447e43b080402629f217305ea8941c81154bce5c47a",
+    "versions": {
+      "torch": "2.1.0+corex.3.2.3",
+      "transformers": "4.55.3",
+      "vllm": "0.6.3+corex.3.2.3"
+    },
+    "parent_runtime": {
+      "source_revision": "5bb85360355be1a883f2785c17e991c8ebe85809",
+      "runtime_tree_sha256": "8484a837402f9608937c7dc33f2df35cc4f3491366502089a6bbfb1013b614c0",
+      "implementation_diff_rc_excluding_dist_info_provenance": 0,
+      "implementation_differing_files": 0,
+      "excluded_metadata": [
+        "transformers-4.55.3.dist-info/direct_url.json",
+        "transformers-4.55.3.dist-info/RECORD"
+      ]
+    }
+  },
+  "gpu_health_after_all_gates": {
+    "ok": true,
+    "gpus": [
+      1,
+      2,
+      3
+    ],
+    "device": "Iluvatar BI-V100",
+    "device_capability": [
+      7,
+      0
+    ],
+    "free_bytes": [
+      34057748480,
+      34057748480,
+      34057748480
+    ],
+    "total_bytes": [
+      34057748480,
+      34057748480,
+      34057748480
+    ],
+    "matmul_checksum": [
+      1073741824.0,
+      1073741824.0,
+      1073741824.0
+    ],
+    "residual_component_or_service_processes": 0
+  },
+  "tp4_rank_local_qgkv_loader": {
+    "qualified": true,
+    "uses_synthetic_fixed_seed_weights": true,
+    "tensor_parallel_world_size": 4,
+    "assignments": [
+      {
+        "tp_rank": 0,
+        "physical_gpu": 1
+      },
+      {
+        "tp_rank": 1,
+        "physical_gpu": 2
+      },
+      {
+        "tp_rank": 2,
+        "physical_gpu": 3
+      },
+      {
+        "tp_rank": 3,
+        "physical_gpu": 1
+      }
+    ],
+    "loaded_segments_per_rank": 3,
+    "all_loaded": true,
+    "all_weight_segments_exact": true,
+    "all_output_segments_exact": true,
+    "max_abs": 0.0
+  },
+  "packed_qgkv_microbenchmark": {
+    "qualified": true,
+    "fixed_grid": {
+      "tokens": [
+        1,
+        64
+      ],
+      "warmup": 30,
+      "iterations": 200,
+      "repeats": 9,
+      "seed": 20260715,
+      "dtype": "float16",
+      "hidden_size": 2048,
+      "rank_local_output_size": 3072
+    },
+    "results": [
+      {
+        "physical_gpu": 1,
+        "tokens": 1,
+        "exact": true,
+        "max_abs": 0.0,
+        "separate_median_ms": 0.051673613488674164,
+        "packed_median_ms": 0.027249008417129517,
+        "speedup": 1.8963483990922265
+      },
+      {
+        "physical_gpu": 1,
+        "tokens": 64,
+        "exact": true,
+        "max_abs": 0.0,
+        "separate_median_ms": 0.09342323988676071,
+        "packed_median_ms": 0.06602510809898376,
+        "speedup": 1.414965345406207
+      },
+      {
+        "physical_gpu": 2,
+        "tokens": 1,
+        "exact": true,
+        "max_abs": 0.0,
+        "separate_median_ms": 0.05401762202382088,
+        "packed_median_ms": 0.02778187394142151,
+        "speedup": 1.9443476756721965
+      },
+      {
+        "physical_gpu": 2,
+        "tokens": 64,
+        "exact": true,
+        "max_abs": 0.0,
+        "separate_median_ms": 0.09677689522504807,
+        "packed_median_ms": 0.06803154945373535,
+        "speedup": 1.4225296351784682
+      },
+      {
+        "physical_gpu": 3,
+        "tokens": 1,
+        "exact": true,
+        "max_abs": 0.0,
+        "separate_median_ms": 0.05165658891201019,
+        "packed_median_ms": 0.027284901589155197,
+        "speedup": 1.893229804887473
+      },
+      {
+        "physical_gpu": 3,
+        "tokens": 64,
+        "exact": true,
+        "max_abs": 0.0,
+        "separate_median_ms": 0.09361550211906433,
+        "packed_median_ms": 0.06633810698986053,
+        "speedup": 1.4111874210304647
+      }
+    ],
+    "speedup_ranges": {
+      "tokens_1": [
+        1.893229804887473,
+        1.9443476756721965
+      ],
+      "tokens_64": [
+        1.4111874210304647,
+        1.4225296351784682
+      ]
+    },
+    "parameter_scan_performed": false
+  },
+  "three_rank_communication": {
+    "qualified": true,
+    "nccl_preflight": {
+      "ok": true,
+      "physical_gpus": [
+        1,
+        2,
+        3
+      ],
+      "rank_values": [
+        6.0,
+        6.0,
+        6.0
+      ],
+      "expected_sum": 6.0,
+      "timed_out_ranks": []
+    },
+    "vllm_group_preflight": {
+      "ok": true,
+      "cuda_visible_devices": "1,2,3",
+      "logical_gpus_in_report": [
+        0,
+        1,
+        2
+      ],
+      "rank_values": [
+        6.0,
+        6.0,
+        6.0
+      ],
+      "last_stage": "collectives_done",
+      "timed_out_ranks": []
+    },
+    "ixformer_allreduce": {
+      "ok": true,
+      "mode": "ixformer_nccl",
+      "ipc_initiated": false,
+      "parity_max_abs": 0.0,
+      "rank_median_ms_ranges": {
+        "2048": [
+          0.1603708416223526,
+          0.16078397631645203
+        ],
+        "8192": [
+          0.15900082886219025,
+          0.15933427959680557
+        ],
+        "65536": [
+          0.1799585297703743,
+          0.18065255135297775
+        ]
+      }
+    }
+  },
+  "quality_status": {
+    "model_output_regression_run": false,
+    "functional_api_gate_run": false,
+    "long_context_gate_run": false,
+    "tool_calling_gate_run": false,
+    "reasoning_gate_run": false,
+    "multimodal_gate_run": false,
+    "model_capability_non_regression_established": false,
+    "reason": "three healthy GPUs cannot run the model's required TP4 topology",
+    "runtime_implementation_change_vs_parent": false,
+    "runtime_change_classification": "offline distribution provenance metadata only"
+  },
+  "local_validation": {
+    "unit_tests_expected_after_evidence_commit": 649,
+    "skipped": 25,
+    "failures": 0,
+    "submission_preflight_checks": 9,
+    "submission_preflight_failures": 0
+  },
+  "artifact_sha256": {
+    "install-a.json": "717a20c01f3ad01b1ba0ee93f04ddaaf14e3ad5abf911615c115b395c68dc9ab",
+    "install-b.json": "36ae4bd94c1d0358e297d838ebd9e82ddbba7b00f608c3a99d6ec40db0ca5bd5",
+    "ixformer-nccl-fbb37b2.json": "2757375e8f110c6810a8e4f2445c4717ebc6ceb67c173f4b14728f54c7c92459",
+    "nccl-preflight-fbb37b2.json": "9f8c5d7655fb46aa5b8414fa74bec73ed14d4d58af0e7c7d00b11b115269868b",
+    "post-all-preflight.json": "e2c551d0384741e2492205147230353aaac6331e92d9ad2a654a033e7a9f8493",
+    "post-qgkv-preflight.json": "e2c551d0384741e2492205147230353aaac6331e92d9ad2a654a033e7a9f8493",
+    "qgkv-bench-gpu1.json": "25d3998040dcafa3d8499284c9ea4232958da16580ea7ab899fe2af70cced85e",
+    "qgkv-bench-gpu2.json": "6322907aa5d9e57bf0a10a2119b5c94b8fa1eb1c8cbbd4806ec13309d9dfad6b",
+    "qgkv-bench-gpu3.json": "1e664eea2730c34f89876ffbfe2278ab9e233edcb38fc377b721bedbed3fdcbb",
+    "qgkv-loader-rank0-gpu1.json": "f5afb0ede2e0d97ba14c6d81c280bb22b80ec264bdb1fa49da0a63da597fdd8a",
+    "qgkv-loader-rank1-gpu2.json": "f15d4cf2a4d012d9e0d167b6b98843ca96858230108fc34cc210e21e408d72f0",
+    "qgkv-loader-rank2-gpu3.json": "a51616b7f48e935dffebdf6de8392c65131164df48fb9a8765e32ac4bbfc327a",
+    "qgkv-loader-rank3-gpu1.json": "0b1cf2d9d8ee3a891c0eb825e484289c4404b6bd7690b1f7c47ca9f44a245b2c",
+    "vllm-groups-fbb37b2.json": "54f18d9e8e9c948def436a0a4b2fd910071670be134e57d1368e82fbbdd118be"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_requests": false,
+    "contains_model_outputs": false,
+    "contains_model_weights": false,
+    "raw_logs_committed": false,
+    "raw_artifacts_committed": false
+  },
+  "decision": {
+    "runtime_reproducibility_fix_qualified": true,
+    "qgkv_rank_local_exactness_qualified": true,
+    "qgkv_single_gpu_microbenchmark_qualified": true,
+    "three_rank_communication_qualified": true,
+    "tp4_service_ab_required": true,
+    "tp4_quality_gates_required": true,
+    "tp4_performance_claim_established": false,
+    "model_quality_non_regression_established": false,
+    "overall_candidate_promotion_authorized": false,
+    "main_or_yaml_change_authorized": false
+  }
+}
