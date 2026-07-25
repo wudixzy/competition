@@ -1,0 +1,126 @@
+{
+  "schema": "bi100-m1-51-long-context-quality-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "revision": "8c00ba6c6a916b68d1d020330ccf0e4d7fb0800c",
+    "branch": "run/quality-m1-51-8c00ba6",
+    "instance": "ssh-73ca29ba",
+    "runtime_identity": "bare-host-overlay-v1:373d5d28818b8c7b42f0",
+    "runtime_overlay_sha256": "373d5d28818b8c7b42f0a169d6eac8649fc7162a4d4641e615bde166ac29a9b0",
+    "base_image": "harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3"
+  },
+  "runtime": {
+    "gpu_count": 4,
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144,
+    "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "tokenizer_artifact_set_sha256": "48722960152a0db89e6d98e3d48558d2ffb072a5267b24a347d4c4bea3c08ae2",
+    "gdn_cache_policy": "fine32",
+    "gdn_restore_mode": "direct",
+    "fused_prefill": false,
+    "kv_eviction_policy": "lru",
+    "hybrid_kv_accounting": "full_attention",
+    "observed_gpu_blocks": 67512,
+    "observed_gpu_token_capacity": 1080192
+  },
+  "matrix": {
+    "name": "long_context_matrix.v2.json",
+    "sha256": "3217ec047f7b78af6747269c3f85baed6bfdd86c6527aca6335dbfa7d9f0452b",
+    "seed": 20260724,
+    "total": 12,
+    "passed": 9,
+    "failed": 3,
+    "pass_rate": 0.75,
+    "wall_s": 3652.4162627086043,
+    "qualified": false,
+    "quality_run_eligible_for_baseline": false
+  },
+  "cases": [
+    {"id": "short_basic_recall", "status": "pass", "elapsed_s": 6.600902, "request_count": 1},
+    {"id": "4k_cold_warm_recall", "status": "pass", "elapsed_s": 9.353013, "request_count": 2},
+    {"id": "32k_partial_branch", "status": "pass", "elapsed_s": 54.674673, "request_count": 3},
+    {"id": "32k_multimodal_isolation", "status": "pass", "elapsed_s": 105.657654, "request_count": 3},
+    {"id": "65k_multiturn_large_tools", "status": "fail", "elapsed_s": 112.821588, "request_count": 2, "error_code": "forced tool argument keys differ: expected=key;actual=key,ordinal"},
+    {"id": "65k_long_tool_result", "status": "pass", "elapsed_s": 91.302299, "request_count": 2},
+    {"id": "65k_interleaved_sessions", "status": "pass", "elapsed_s": 185.184521, "request_count": 4},
+    {"id": "131k_cold_warm_recall", "status": "pass", "elapsed_s": 304.314135, "request_count": 2},
+    {"id": "131k_reasoning_recall", "status": "fail", "elapsed_s": 282.571703, "request_count": 1, "error_code": "long-context reasoning marker recall failed"},
+    {"id": "235k_agent_large_output_budget", "status": "fail", "elapsed_s": 560.844297, "request_count": 0, "error_code": "tool arguments are not valid JSON"},
+    {"id": "235k_partial_branch", "status": "pass", "elapsed_s": 600.508686, "request_count": 4},
+    {"id": "near_262k_capacity", "status": "pass", "elapsed_s": 1338.550825, "request_count": 3}
+  ],
+  "diagnosis": {
+    "65k_multiturn_large_tools": {
+      "classification": "test-contract-contradiction",
+      "evidence": "the target schema permits optional ordinal while the validator rejects every key except key",
+      "next_action": "make the target schema and exact expected arguments identical"
+    },
+    "131k_reasoning_recall": {
+      "classification": "test-contract-review-required",
+      "evidence": "the final arithmetic answer check passed first; only verbatim markers inside reasoning_content failed",
+      "next_action": "move marker recall to externally observable final content while independently requiring a nonempty reasoning/content split"
+    },
+    "235k_agent_large_output_budget": {
+      "classification": "serving-and-test-mode incompatibility",
+      "evidence": "M1-51 XML fallback did not recover valid arguments; named tool choice uses guided JSON while thinking mode classifies output without a closing think delimiter as reasoning",
+      "evidence_type": "code-path inference requiring a privacy-safe structural diagnostic",
+      "next_action": "classify valid guided JSON before reasoning fallback and use auto tool choice for the combined reasoning-plus-tool Agent gate"
+    }
+  },
+  "regression_observation": {
+    "baseline_source_revision": "62b8b83dccf3106e9a10ddabc016fb60ed19fc6e",
+    "baseline_passed": 9,
+    "baseline_failed": 3,
+    "same_failed_case_ids": true,
+    "passing_case_capabilities_preserved": true,
+    "functional_gate_separately_qualified": true,
+    "performance_comparison_authorized": false
+  },
+  "lifecycle": {
+    "overall_rc": 1,
+    "quality_rc": 1,
+    "runtime_identity_rc": 0,
+    "runtime_contract_rc": 0,
+    "prefix_allocator_rc": 0,
+    "gdn_action_broadcast_rc": 0,
+    "preflight_before_rc": 0,
+    "startup_rc": 0,
+    "startup_contract_rc": 0,
+    "cleanup_rc": 0,
+    "fatal_scan_rc": 0,
+    "preflight_after_rc": 0,
+    "preflight_comparison_rc": 0,
+    "fatal_scan_empty": true,
+    "residual_api_server_processes": 0,
+    "port_8000_listeners_after_cleanup": 0,
+    "free_memory_drop_bytes": [0, 0, 0, 0]
+  },
+  "artifact_sha256": {
+    "quality_report.json": "365f8eb8724b7b2132d637aca001f8e2822a1a12577866962b45ba3988e39ea5",
+    "status.json": "e36d68220bf70b0f1f59c15fba9910f14bf2a147d5bc1da457ee674840999687",
+    "runtime_contract.json": "ba0b26858dec1f06e5b4008ae8b480d29d89302863e031e10194abbb1ed5b578",
+    "runtime_identity.json": "e0adeed4e83442f7a8f92f7dda48fdbe993064e4358fda585e4381ca441787b3",
+    "startup_contract.json": "ddad4043405f7d70719323531c2a47970ac4a223a0a83265414d73ee087f539c",
+    "preflight_before.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_after.json": "67cd07e22428b6aa2e308b2494739c8e6022428501257f2e949734bba8ef4794",
+    "preflight_comparison.json": "1d529bc179ed4cad258d017f7a39c9788fbe3bbb99289b47ef70d2e8789416fe",
+    "fatal_scan.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_tool_argument_values": false,
+    "raw_service_log_committed": false
+  },
+  "decision": {
+    "functional_gate_qualified": true,
+    "long_context_gate_qualified": false,
+    "m1_51_qualified": false,
+    "admission64_authorized": false,
+    "performance_score_established": false,
+    "overall_promotion_authorized": false,
+    "main_or_yaml_change_authorized": false
+  }
+}
