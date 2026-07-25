@@ -1,0 +1,133 @@
+{
+  "schema": "bi100-m1-54-attested-881-cache-baseline-v1",
+  "version": 1,
+  "captured_date": "2026-07-25",
+  "source": {
+    "revision": "382a28d663834c1026eccd2a68d73564dfccf7e9",
+    "tree": "194ca5c7dfaa79e9163e975433e44c5c5a7456b5",
+    "branch": "fix/M1-54-attested-881-baseline-20260725",
+    "parent_revision": "2ac9014a39f3826d99910a9244864d4173c92cbf"
+  },
+  "problem": {
+    "legacy_baseline_fields": [
+      "run_id",
+      "trace_session_sha256",
+      "cache_tps",
+      "weighted_score",
+      "output_tps_p10",
+      "success_rate"
+    ],
+    "legacy_baseline_bound_source_revision": false,
+    "legacy_baseline_bound_runtime_overlay": false,
+    "legacy_baseline_bound_tp4_contract": false,
+    "legacy_baseline_bound_workload_manifest": false,
+    "legacy_baseline_bound_request_order": false,
+    "legacy_weighted_score_recomputed": false,
+    "false_qualification_risk": true
+  },
+  "implementation": {
+    "baseline_contract_schema": "bi100-prefix-cache-baseline-contract-v1",
+    "workload_manifest_schema": "bi100-private-881-workload-manifest-v1",
+    "fixed_request_count": 881,
+    "fixed_trace_version": 4,
+    "fixed_block_size": 16,
+    "fixed_gpu_count": 4,
+    "fixed_tensor_parallel_size": 4,
+    "fixed_max_model_len": 262144,
+    "fixed_control_policy": {
+      "gdn_cache_policy": "fine32",
+      "gdn_restore_mode": "direct",
+      "kv_eviction_policy": "lru",
+      "fused_prefill": false
+    },
+    "base_image": "harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3",
+    "legacy_diagnostic_compatibility": true,
+    "legacy_qualification_allowed": false,
+    "weighted_score_recomputed": true,
+    "trace_log_order_bound": true,
+    "request_order_bound": true,
+    "runtime_contract_embedded_and_hashed": true,
+    "workload_manifest_embedded_and_hashed": true,
+    "metrics_source_artifact_hashed": true,
+    "raw_requests_or_outputs_embedded": false
+  },
+  "offline_decision_scope": {
+    "scope": "offline_cache_phase_gate_only",
+    "projection_model": "per_request_residual_prefill_directional_v1",
+    "fixed_frontend_or_scheduler_intercept_measured": false,
+    "projection_may_be_optimistic": true,
+    "requires_tp4_same_generation_service_ab": true,
+    "requires_quality_non_regression_gates": true,
+    "main_or_yaml_change_authorized": false,
+    "default_policy_change_authorized": false,
+    "official_score_claim_authorized": false
+  },
+  "three_gpu_status": {
+    "last_attested_evidence": "docs/experiments/evidence/M1_53_THREE_GPU_COMPONENT_GATES_20260725.json",
+    "last_attested_healthy_physical_gpus": [
+      1,
+      2,
+      3
+    ],
+    "tp3_service_valid": false,
+    "tp3_invalid_reason": "16 global query heads are not divisible by tensor parallel size 3",
+    "m1_54_model_service_started": false,
+    "m1_54_api_requests": 0,
+    "m1_54_new_gpu_performance_claim": false,
+    "current_remote_check": {
+      "endpoint_reached": true,
+      "ssh_rc": 255,
+      "authentication_result": "public key rejected",
+      "gpu_health_reverified": false,
+      "interpreted_as_gpu_failure": false
+    }
+  },
+  "negative_gates": {
+    "legacy_baseline_in_qualification_mode": "rejected",
+    "runtime_source_revision_drift": "rejected",
+    "runtime_overlay_or_contract_drift": "rejected",
+    "non_tp4_or_non_262144_runtime": "rejected",
+    "candidate_policy_as_control": "rejected",
+    "workload_request_order_drift": "rejected",
+    "trace_record_or_log_order_drift": "rejected",
+    "metrics_count_or_success_rate_drift": "rejected",
+    "weighted_score_formula_drift": "rejected",
+    "missing_same_run_attestation": "rejected",
+    "credential_markers": "rejected"
+  },
+  "validation": {
+    "targeted_unit_tests": 32,
+    "full_unit_tests": 660,
+    "skipped": 25,
+    "failures": 0,
+    "python_syntax": "passed",
+    "builder_round_trip": "passed",
+    "submission_preflight_checks": 9,
+    "submission_preflight_failures": 0,
+    "sensitive_artifact_scan": "passed"
+  },
+  "artifact_sha256": {
+    "scripts/analyze_prefix_cache_trace.py": "b384861757b0fe96260e317e3e767e029be89f04409ca17fe122878537c697c5",
+    "scripts/prefix_cache_baseline_contract.py": "f4d844cb9c1c801e59b798eec7c600c912bc4b6cdd33d049aa24ef1659802372",
+    "tests/build_prefix_cache_workload_manifest.py": "02feb24c0cb7dc7601e9cd1b91f6af53bbee2b86f18a14f77aa77541ebea80b4",
+    "tests/build_prefix_cache_baseline_contract.py": "eb7f71760bd4e62834185d130ec79a085955d51dda16c6c1271b49d65bd4714d",
+    "tests/test_analyze_prefix_cache_trace_unit.py": "fec7ce5179f645704b7085dcec9440452575410091a6f15f5be74d874e10a81a",
+    "tests/test_prefix_cache_baseline_contract_unit.py": "3811efacfd9ef6fce5295452df76e2cf7b6efcc3c3bd7a3b1369dac87329738e"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_requests": false,
+    "contains_model_outputs": false,
+    "contains_model_weights": false,
+    "contains_restricted_881_snapshot": false,
+    "repository_visibility_changed": false
+  },
+  "decision": {
+    "evidence_binding_fix_qualified": true,
+    "three_gpu_component_evidence_reused": true,
+    "new_model_quality_result_established": false,
+    "new_end_to_end_performance_result_established": false,
+    "cache_candidate_promoted": false,
+    "main_or_yaml_change_authorized": false
+  }
+}

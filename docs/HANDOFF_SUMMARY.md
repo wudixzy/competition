@@ -1,5 +1,24 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-25 M1-54 881 缓存基线证据合同
+
+- 私有实验分支 `fix/M1-54-attested-881-baseline-20260725` 的实现提交为
+  `382a28d`。它修复了缓存 trace 分析器只绑定少量聚合数值、可能错配旧
+  runtime/数据集指标的证据漏洞。
+- 显式 `--qualification-trace` 现在必须提供严格的 attested baseline contract，
+  同时绑定源码、overlay、固定 TP4/262144 服务合同、`fine32/direct/lru` 控制
+  策略、881 workload manifest、请求顺序、trace records/log SHA 和 metrics
+  原始制品。weighted score 会按固定公式重新计算。
+- 旧弱 metrics JSON 仍可用于非资格诊断，但资格模式会 fail-closed。M1-41/M1-49
+  合成 proxy 和未绑定的 ModelHub `main` 聚合结果不能被提升为 881 资格证据。
+- 离线报告固定标记 `main_or_yaml_change_authorized=false` 和
+  `official_score_claim_authorized=false`。即使 offline phase gate 通过，也必须
+  再做同代 TP4 service A/B、完整质量、长上下文和稳定性门禁。
+- 三卡不能运行 16 query-head 模型的 TP3 服务，本轮没有新增端到端性能或模型
+  能力结论。当前 SSH 端点可达但本地 key 被实例拒绝，未重新认证 GPU 状态。
+- 本地完整回归为 660 项、跳过 25、失败 0，submission preflight `9/9`。详情见
+  `docs/experiments/M1_54_ATTESTED_881_CACHE_BASELINE_20260725.md`。
+
 ## 2026-07-25 当前提交绑定的功能与 Agent 基线
 
 - 平台 `main` 的 881 请求聚合结果没有源码、镜像或 overlay 身份，只保留为历史

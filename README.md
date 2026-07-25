@@ -6,6 +6,13 @@
 [`docs/QUALITY_NON_REGRESSION_GATE_20260724.md`](docs/QUALITY_NON_REGRESSION_GATE_20260724.md)。
 固定 TP4 基线/候选质量实验使用 `scripts/run_quality_service_gate.sh`；该
 harness 不修改正式 YAML、默认优化开关或仓库可见性。
+完整 881 请求缓存离线分析必须先用
+`tests/build_prefix_cache_workload_manifest.py` 和
+`tests/build_prefix_cache_baseline_contract.py` 绑定 runtime、请求顺序、trace
+及 metrics 原始制品，再向 `scripts/analyze_prefix_cache_trace.py` 传入
+`--qualification-trace --baseline-contract ...`。该离线结果只可解锁 TP4 A/B，
+不能单独授权 `main`、正式 YAML 或官方分数声明。合同说明见
+[`docs/experiments/M1_54_ATTESTED_881_CACHE_BASELINE_20260725.md`](docs/experiments/M1_54_ATTESTED_881_CACHE_BASELINE_20260725.md)。
 
 自 2026-07-20 起，天垓100 v1.2.3 基础镜像必须使用
 `harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3`。
