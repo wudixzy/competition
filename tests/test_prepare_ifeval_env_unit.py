@@ -17,11 +17,11 @@ SPEC.loader.exec_module(MODULE)
 
 class PrepareIFEvalEnvironmentTest(unittest.TestCase):
 
-    def test_manifest_and_all_wheels_validate(self):
+    def test_manifest_and_all_distributions_validate(self):
         manifest = MODULE.load_manifest(MODULE.DEFAULT_MANIFEST)
-        wheels = MODULE.verify_wheels(manifest)
-        self.assertEqual(len(wheels), 10)
-        self.assertTrue(all(path.is_file() for path in wheels))
+        distributions = MODULE.verify_distributions(manifest)
+        self.assertEqual(len(distributions), 10)
+        self.assertTrue(all(path.is_file() for path in distributions))
 
     def test_extracts_only_four_english_punkt_files(self):
         with tempfile.TemporaryDirectory() as temporary:

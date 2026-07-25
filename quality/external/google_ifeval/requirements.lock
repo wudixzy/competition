@@ -1,5 +1,5 @@
 # Offline Python 3.10/x86_64 evaluator environment.
-# Every wheel is committed under wheelhouse and verified by manifest.v1.json.
+# Every distribution is committed under wheelhouse and verified by manifest.
 absl-py==2.5.0
 click==8.4.2
 defusedxml==0.7.1

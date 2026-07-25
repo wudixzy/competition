@@ -13,8 +13,10 @@ proxy.
 - The source dataset, dataset card, evaluator source, upstream README, and
   Google Research license are committed because their licenses permit
   redistribution and their combined size is small.
-- Python wheels are fixed for CPython 3.10 on x86_64. Each wheel retains its
-  upstream metadata and license files.
+- Python distribution artifacts are fixed for CPython 3.10 on x86_64. Wheels
+  retain their upstream metadata and license files. `langdetect` is bound to
+  its PyPI source archive and built inside the isolated target so the gate does
+  not depend on a machine-specific, locally produced wheel.
 - NLTK `punkt_tab` is not committed because the pinned `nltk_data` index does
   not state a redistribution license. Before a run, download revision
   `4f15a3d89eefe9748ec1c05be495d91289197155` from the URL in
@@ -39,7 +41,7 @@ order.
 - Subset SHA-256:
   `bdb2e4ec0b0fd19b89c55ebb9ed49e17361706c923ddedeeab429f669e4bdb78`
 - Manifest SHA-256:
-  `8ac44a97a6f569056415deedb8a59cbc815cbad6577cbb2e713016864cc7f0fa`
+  `578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5`
 
 Reproduction command:
 

@@ -56,21 +56,11 @@
   },
   "generator": {
     "path": "scripts/freeze_ifeval_subset.py",
-    "sha256": "5659da7db47f6127dbdb87eed3dc6a00edadf682a5cf90a42560110281f3bf53"
+    "sha256": "1b13072e68475edef4a20c8d2302cd75288cd532c444e697ee65c47c5b97bc54"
   },
   "name": "google-ifeval-bi100-stratified-64-v1",
   "offline_environment": {
-    "nltk_punkt_tab": {
-      "archive_sha256": "e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106",
-      "license": "not stated in pinned nltk_data index",
-      "prestage_required": true,
-      "redistribution_allowed": false,
-      "repository_snapshot": false,
-      "revision": "4f15a3d89eefe9748ec1c05be495d91289197155",
-      "source_url": "https://raw.githubusercontent.com/nltk/nltk_data/4f15a3d89eefe9748ec1c05be495d91289197155/packages/tokenizers/punkt_tab.zip"
-    },
-    "python": "CPython 3.10 x86_64",
-    "wheelhouse": [
+    "distribution_artifacts": [
       {
         "bytes": 137410,
         "path": "absl_py-2.5.0-py3-none-any.whl",
@@ -97,9 +87,9 @@
         "sha256": "5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713"
       },
       {
-        "bytes": 993331,
-        "path": "langdetect-1.0.9-py3-none-any.whl",
-        "sha256": "6d210293b1de2d92ab82fb82f8275eb294a33e0d0d54a03b6723d6e8bfe35af3"
+        "bytes": 981474,
+        "path": "langdetect-1.0.9.tar.gz",
+        "sha256": "cbc1fef89f8d062739774bd51eda3da3274006b3661d199c2655f6b3f6d605a0"
       },
       {
         "bytes": 1716144,
@@ -121,7 +111,17 @@
         "path": "tqdm-4.69.1-py3-none-any.whl",
         "sha256": "0a654b96f7a2660cceb615b56f307ec2bef96c515409014a429a561981ab52b4"
       }
-    ]
+    ],
+    "nltk_punkt_tab": {
+      "archive_sha256": "e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106",
+      "license": "not stated in pinned nltk_data index",
+      "prestage_required": true,
+      "redistribution_allowed": false,
+      "repository_snapshot": false,
+      "revision": "4f15a3d89eefe9748ec1c05be495d91289197155",
+      "source_url": "https://raw.githubusercontent.com/nltk/nltk_data/4f15a3d89eefe9748ec1c05be495d91289197155/packages/tokenizers/punkt_tab.zip"
+    },
+    "python": "CPython 3.10 x86_64"
   },
   "privacy": {
     "contains_credentials": false,

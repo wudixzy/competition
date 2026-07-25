@@ -52,7 +52,7 @@ class FreezeIFEvalSubsetTest(unittest.TestCase):
         self.assertEqual(
             hashlib.sha256((EXTERNAL / "manifest.v1.json").read_bytes())
             .hexdigest(),
-            "8ac44a97a6f569056415deedb8a59cbc815cbad6577cbb2e713016864cc7f0fa",
+            "578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5",
         )
         self.assertEqual(
             hashlib.sha256((EXTERNAL / "subset.v1.jsonl").read_bytes())
@@ -63,7 +63,7 @@ class FreezeIFEvalSubsetTest(unittest.TestCase):
             self.manifest["evaluator"]
             ["dataset_difference_from_evaluator_repo"]["selected"])
 
-    def test_evaluator_and_offline_wheels_match_manifest(self):
+    def test_evaluator_and_offline_distributions_match_manifest(self):
         evaluator = self.manifest["evaluator"]
         self.assertEqual(
             evaluator["revision"],
@@ -71,7 +71,8 @@ class FreezeIFEvalSubsetTest(unittest.TestCase):
         )
         for group, prefix in (
                 (evaluator["vendored_files"], EXTERNAL),
-                (self.manifest["offline_environment"]["wheelhouse"],
+                (self.manifest["offline_environment"]
+                 ["distribution_artifacts"],
                  EXTERNAL / "wheelhouse")):
             for item in group:
                 path = prefix / item["path"]

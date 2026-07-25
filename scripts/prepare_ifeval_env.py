@@ -36,15 +36,15 @@ def load_manifest(path: Path) -> dict:
     return value
 
 
-def verify_wheels(manifest: dict) -> list[Path]:
-    wheels = []
-    for item in manifest["offline_environment"]["wheelhouse"]:
+def verify_distributions(manifest: dict) -> list[Path]:
+    distributions = []
+    for item in manifest["offline_environment"]["distribution_artifacts"]:
         path = EXTERNAL_ROOT / "wheelhouse" / item["path"]
         if (not path.is_file() or path.stat().st_size != item["bytes"]
                 or sha256(path) != item["sha256"]):
             raise ValueError(f"IFEval wheel identity differs: {path.name}")
-        wheels.append(path)
-    return wheels
+        distributions.append(path)
+    return distributions
 
 
 def extract_english_punkt(archive: Path, destination: Path) -> None:
@@ -85,7 +85,7 @@ def main() -> int:
     if (not args.punkt_tab_archive.is_file()
             or sha256(args.punkt_tab_archive) != resource["archive_sha256"]):
         raise ValueError("pinned punkt_tab archive identity differs")
-    wheels = verify_wheels(manifest)
+    distributions = verify_distributions(manifest)
 
     args.target.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(
@@ -94,8 +94,9 @@ def main() -> int:
         site = staging / "site-packages"
         subprocess.run([
             sys.executable, "-m", "pip", "install", "--no-index",
-            "--no-deps", "--target", str(site),
-            *(str(path) for path in wheels),
+            "--no-deps", "--no-build-isolation", "--no-cache-dir",
+            "--target", str(site),
+            *(str(path) for path in distributions),
         ], check=True)
         extract_english_punkt(args.punkt_tab_archive, staging)
         environment = os.environ.copy()
@@ -117,8 +118,8 @@ def main() -> int:
             "python": ".".join(map(str, sys.version_info[:3])),
             "system_site_packages_modified": False,
             "punkt_tab_archive_sha256": sha256(args.punkt_tab_archive),
-            "wheel_sha256": {
-                path.name: sha256(path) for path in wheels
+            "distribution_sha256": {
+                path.name: sha256(path) for path in distributions
             },
         }
         (staging / "install.json").write_text(

@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXTERNAL_ROOT = ROOT / "quality/external/google_ifeval"
 DEFAULT_MANIFEST = EXTERNAL_ROOT / "manifest.v1.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "8ac44a97a6f569056415deedb8a59cbc815cbad6577cbb2e713016864cc7f0fa"
+    "578e2233c4a02a06fb35987cebc19fb9f490c06f4949a78d3fdd284c232545c5"
 )
 REPORT_SCHEMA = "bi100-ifeval-result-v1"
 REPORT_VERSION = 1

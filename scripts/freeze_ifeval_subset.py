@@ -106,9 +106,9 @@ WHEELS = {
         309071,
         "5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713",
     ),
-    "langdetect-1.0.9-py3-none-any.whl": (
-        993331,
-        "6d210293b1de2d92ab82fb82f8275eb294a33e0d0d54a03b6723d6e8bfe35af3",
+    "langdetect-1.0.9.tar.gz": (
+        981474,
+        "cbc1fef89f8d062739774bd51eda3da3274006b3661d199c2655f6b3f6d605a0",
     ),
     "nltk-3.10.0-py3-none-any.whl": (
         1716144,
@@ -317,7 +317,7 @@ def build_manifest(
         },
         "offline_environment": {
             "python": "CPython 3.10 x86_64",
-            "wheelhouse": verified_files(
+            "distribution_artifacts": verified_files(
                 external_root / "wheelhouse", WHEELS),
             "nltk_punkt_tab": {
                 "repository_snapshot": False,

@@ -1,2 +1,3 @@
 quality/external/google_ifeval/** -whitespace
 quality/external/google_ifeval/wheelhouse/*.whl binary
+quality/external/google_ifeval/wheelhouse/*.tar.gz binary
