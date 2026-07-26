@@ -2,13 +2,13 @@
 
 ## Conclusion
 
-The non-default block-major CPU KV path passed its first real CoreX
-`CacheEngine` integration gate on physical GPU1. A fixed 1,025-block transfer
-crossed three 512-block chunks through the patched
+The non-default block-major CPU KV path passed the same fixed real CoreX
+`CacheEngine` integration gate on physical GPU1, GPU2, and GPU3. On every card,
+a 1,025-block transfer crossed three 512-block chunks through the patched
 `CacheEngine.swap_out/swap_in` methods and restored all ten layer tensors
 byte-for-byte. Same-GPU-slot victim preservation and replacement, invalid-map
 zero-write behavior, strict selectors, pinned memory, and compatibility views
-also passed.
+also passed on all three cards.
 
 This qualifies the integration for a healthy TP4 service gate. It does not
 qualify model capability, 262144 capacity, end-to-end performance, the official
@@ -70,31 +70,35 @@ the second.
 
 ## Gate Result
 
-| Check | Result |
-|---|---:|
-| GPU / CPU blocks | 1,025 / 1,536 |
-| CPU pool | `[1536, 10, 2, 4096]`, pinned |
-| Compatibility views | 10 x `[2, 1536, 4096]` |
-| Allocation | 262.476 ms |
-| D2H + H2D round trip | 72.525 ms |
-| Round-trip byte exact | pass |
-| Same-slot victim/request | pass / pass |
-| Invalid mapping fail-fast / zero-write | pass / pass |
-| Default off / invalid selector fail-fast | pass / pass |
-| Fatal, OOM, Gloo, worker loss, traceback | none |
+| Check | GPU1 | GPU2 | GPU3 |
+|---|---:|---:|---:|
+| GPU / CPU blocks | 1,025 / 1,536 | 1,025 / 1,536 | 1,025 / 1,536 |
+| CPU pool | `[1536,10,2,4096]` | `[1536,10,2,4096]` | `[1536,10,2,4096]` |
+| Allocation | 262.476 ms | 263.765 ms | 266.440 ms |
+| D2H + H2D round trip | 72.525 ms | 73.943 ms | 76.314 ms |
+| Round-trip byte exact | pass | pass | pass |
+| Same-slot victim/request | pass / pass | pass / pass | pass / pass |
+| Invalid mapping fail-fast / zero-write | pass / pass | pass / pass | pass / pass |
+| Default off / invalid selector fail-fast | pass / pass | pass / pass | pass / pass |
+| Fatal, OOM, Gloo, worker loss, traceback | none | none | none |
 
-The reported `335,708,672` GPU bytes include the 1,025-block synthetic GPU KV
-fixture and both staging buffers. The production candidate's incremental GPU
-allocation is the two fixed staging buffers, `167,772,160` bytes per rank. TP4
-startup must measure its actual effect on reported GPU block capacity.
+Every card reported `335,708,672` allocated GPU bytes, including the
+1,025-block synthetic GPU KV fixture and both staging buffers. The production
+candidate's incremental GPU allocation is the two fixed staging buffers,
+`167,772,160` bytes per rank. TP4 startup must measure its actual effect on
+reported GPU block capacity.
 
-The 72.525 ms round-trip is a correctness smoke, not a performance comparison.
-M1-56 remains the performance evidence for the data plane.
+These round-trip measurements are correctness smokes, not a performance
+comparison. M1-56 remains the performance evidence for the data plane.
 
-Raw evidence:
-`docs/experiments/evidence/M1_57_CACHE_ENGINE_INTEGRATION_GPU1_20260726.json`
-with SHA-256
-`c66dd831a0b96f1b5691a26cd8f301498d5cdc89060941c33732150204a87a95`.
+Raw evidence and SHA-256:
+
+- GPU1: `docs/experiments/evidence/M1_57_CACHE_ENGINE_INTEGRATION_GPU1_20260726.json`,
+  `c66dd831a0b96f1b5691a26cd8f301498d5cdc89060941c33732150204a87a95`;
+- GPU2: `docs/experiments/evidence/M1_57_CACHE_ENGINE_INTEGRATION_GPU2_20260726.json`,
+  `7672b1d532ab3c6daf8d7fd97c80d94536764b129cfdd940a76de6f32b01a005`;
+- GPU3: `docs/experiments/evidence/M1_57_CACHE_ENGINE_INTEGRATION_GPU3_20260726.json`,
+  `0239a37aa4c0d355a9fe2726f7a97114e84ea58be3685bcbaf5d45366858a383`.
 
 ## Remaining TP4 Gates
 

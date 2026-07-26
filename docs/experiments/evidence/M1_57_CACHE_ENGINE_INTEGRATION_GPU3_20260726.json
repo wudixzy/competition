@@ -1,0 +1,90 @@
+{
+  "allocation_elapsed_ms": 266.4402239024639,
+  "attention_layers": 10,
+  "bytes_per_block": 163840,
+  "cpu_blocks": 1536,
+  "cpu_null_block_zero": true,
+  "cpu_pool_pinned": true,
+  "cpu_pool_shape": [
+    1536,
+    10,
+    2,
+    4096
+  ],
+  "default_selector_off": true,
+  "device": "cuda:0",
+  "device_name": "Iluvatar BI-V100",
+  "experiment": "M1-57-block-major-cache-engine",
+  "extension_sha256": "7e2aafd8dc755b0ee16c3b9bb812b95548fc042bbaa840dd9db7d2c51a10474c",
+  "extension_sha_exact": true,
+  "gate": {
+    "qualified": true,
+    "reasons": []
+  },
+  "gpu_blocks": 1025,
+  "gpu_memory_allocated_bytes": 335708672,
+  "instance": "ssh-73ca29ba-gpu3",
+  "invalid_mapping_fail_fast": true,
+  "invalid_mapping_zero_write": true,
+  "invalid_selector_fail_fast": true,
+  "layer_view_shapes": [
+    [
+      2,
+      1536,
+      4096
+    ],
+    [
+      2,
+      1536,
+      4096
+    ],
+    [
+      2,
+      1536,
+      4096
+    ],
+    [
+      2,
+      1536,
+      4096
+    ],
+    [
+      2,
+      1536,
+      4096
+    ],
+    [
+      2,
+      1536,
+      4096
+    ],
+    [
+      2,
+      1536,
+      4096
+    ],
+    [
+      2,
+      1536,
+      4096
+    ],
+    [
+      2,
+      1536,
+      4096
+    ],
+    [
+      2,
+      1536,
+      4096
+    ]
+  ],
+  "round_trip_byte_exact": true,
+  "round_trip_elapsed_ms": 76.3135626912117,
+  "same_slot_preserved_victim_exact": true,
+  "same_slot_promoted_request_exact": true,
+  "schema": "bi100-m1-57-cache-engine-integration-v1",
+  "source_revision": "6ad5ffe",
+  "torch_version": "2.1.0",
+  "unique_block_signatures": true
+}

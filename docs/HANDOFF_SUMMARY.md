@@ -1628,18 +1628,20 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 
 ## 2026-07-26 M1-57 非默认 CacheEngine 接入
 
-- 私有分支 `exp/M1-57-block-major-cache-engine-20260726@6ad5ffe` 将 M1-56
-  扩展接入真实 vendor `CacheEngine`，但 `BI100_BLOCK_MAJOR_CPU_KV` 严格
-  默认关闭，正式 YAML、`main` 和请求语义未改变。
+- 私有分支 `exp/M1-57-block-major-cache-engine-20260726` 的实现 revision
+  `4263344` 和固定 harness revision `6ad5ffe` 将 M1-56 扩展接入真实
+  vendor `CacheEngine`，但 `BI100_BLOCK_MAJOR_CPU_KV` 严格默认关闭，
+  正式 YAML、`main` 和请求语义未改变。
 - CPU canonical pool 改为 `[cpu_blocks,10,2,4096]`，通过十个非 owning view
   保留公开层形状；CPU block 容量和每块字节不变。每 rank 固定增加两个
   80 MiB GPU staging 和两个 80 MiB pinned CPU staging。
 - 映射在任何写入前检查 CPU/int64/shape/range/source-destination uniqueness，
   GPU 内核再做 bounds defense。错误映射必须 fail-fast 且 CPU slot 零写入。
 - 真实 CoreX CacheEngine 的首次 patch 为 3/3 applied，第二次 3/3 skipped；
-  系统 site-packages 未修改。GPU1 固定 1,025-block 三 chunk smoke 的完整
-  round trip、同槽位 victim/request、严格 selector、pinned pool 全部通过，
-  无 fatal/OOM/Gloo/worker loss/traceback。
+  系统 site-packages 未修改。物理 GPU1/2/3 固定 1,025-block 三 chunk smoke
+  的完整 round trip、同槽位 victim/request、严格 selector、pinned pool
+  全部通过；三卡分别耗时 `72.525/73.943/76.314 ms`，无
+  fatal/OOM/Gloo/worker loss/traceback。
 - 该最小 overlay 只建立组件接线资格，不是完整模型 runtime。健康 TP4 仍需
   测实际 GPU block 容量、pressure、cold/warm token、262144、完整能力和
   端到端指标；通过前不得晋升 `main` 或 YAML。
