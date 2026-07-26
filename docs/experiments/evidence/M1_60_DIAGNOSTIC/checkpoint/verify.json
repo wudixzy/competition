@@ -1,0 +1,24 @@
+{
+  "checkpoint": "/root/shared-storage/models/Qwen/Qwen3.6-35B-A3B-diagnostic-4L-real",
+  "cycle_count": 1,
+  "full_hash_checked": true,
+  "layer_count": 4,
+  "layer_types": [
+    "linear_attention",
+    "linear_attention",
+    "linear_attention",
+    "full_attention"
+  ],
+  "mtp_weight_count": 19,
+  "production_promotion_authorized": false,
+  "qualified": true,
+  "schema": "qwen36-diagnostic-checkpoint-verification-v1",
+  "shard_count": 5,
+  "source": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+  "source_payload_bytes_compared": true,
+  "tensor_contract_preserved": true,
+  "version": 1,
+  "visual_weight_count": 333,
+  "weight_count": 424,
+  "weight_payload_bytes": 11345363552
+}

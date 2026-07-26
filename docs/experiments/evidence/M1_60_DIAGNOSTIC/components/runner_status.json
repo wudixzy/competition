@@ -1,0 +1,11 @@
+{
+  "instance": "ssh-73ca29ba",
+  "last_stage": "qualification",
+  "physical_gpu": 3,
+  "production_promotion_authorized": false,
+  "returncode": 6,
+  "schema": "qwen36-diagnostic-component-runner-v1",
+  "source_branch": "exp/M1-60-qwen36-diagnostic-checkpoint-20260727",
+  "source_revision": "eecbf87b279f83a4af52fc28c80d2e2bf2c4eb6e",
+  "version": 1
+}

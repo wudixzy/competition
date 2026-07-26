@@ -1,0 +1,60 @@
+{
+  "device": "Iluvatar BI-V100",
+  "config": {
+    "packed_extension": "/root/m1-60-runtime-eecbf87/site-packages/vllm/corex_gdn_packed_decode.so",
+    "beta_decay_extension": "/root/m1-60-runtime-eecbf87/site-packages/vllm/corex_gdn_beta_decay.so",
+    "qk_map_extension": "/root/m1-60-runtime-eecbf87/site-packages/vllm/corex_gdn_qk_map.so",
+    "device": "cuda:0",
+    "warmup": 50,
+    "iterations": 500,
+    "repeats": 9,
+    "sequence_steps": 1000,
+    "seed": 20260716,
+    "out": "/root/m1-60-qwen36-diagnostic-results/components-gpu3-eecbf87/gdn.json",
+    "shape": [
+      1,
+      4,
+      8,
+      128
+    ]
+  },
+  "sequence": {
+    "steps": 1000,
+    "finite_steps": 1000,
+    "output_max_abs": 6.475299596786499e-05,
+    "output_mean_abs": 1.4639908780793575e-06,
+    "output_relative_l2": 0.0004905627467483696,
+    "output_max_step_relative_l2": 0.0014234881203532533,
+    "state_max_abs": 0.00044092535972595215,
+    "state_mean_abs": 1.2444526873878203e-05,
+    "state_relative_l2": 0.0003360333253257255
+  },
+  "performance": {
+    "current_median_ms": 0.1750909760594368,
+    "candidate_median_ms": 0.03404119610786438,
+    "speedup": 5.14350246403317,
+    "current_trials_ms": [
+      0.17424814403057098,
+      0.17454469203948975,
+      0.1750909760594368,
+      0.1760575994849205,
+      0.17478031665086746,
+      0.1752261444926262,
+      0.18152055889368057,
+      0.17463457584381104,
+      0.17516185343265533
+    ],
+    "candidate_trials_ms": [
+      0.03412280231714249,
+      0.034164510667324066,
+      0.03412850201129913,
+      0.03406421095132828,
+      0.03404119610786438,
+      0.034039199352264404,
+      0.03392833471298218,
+      0.033903568983078,
+      0.0340268537402153
+    ]
+  },
+  "ok": false
+}

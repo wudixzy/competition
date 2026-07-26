@@ -1,0 +1,149 @@
+{
+  "api": {
+    "case_count": 7,
+    "case_names": [
+      "models_262144_contract",
+      "deterministic_replay",
+      "tool_message_surface",
+      "reasoning_surface",
+      "structured_output_surface",
+      "multimodal_surface",
+      "invalid_empty_messages_400"
+    ],
+    "response_evidence_exact_across_tp": true
+  },
+  "checkpoint": {
+    "config_sha256": "875480d717116279da8713b67668e8551612715fda8d2fc77ab4cb1d2bcd542a",
+    "identical_across_tp": true,
+    "index_sha256": "0c019b0107406e328c4aa277b11966ae3b19dd98b30efe2db6109ec42d6e27f4",
+    "shard_count": 5,
+    "shard_sha256": [
+      "adee7bcb930aed22e0677e58d4873b48dadb1ed8001cb5c6a0487286eadb3478",
+      "88f2dfd2b9e73e4b70be533dbf61bcfa3c9a0003758900fcbc9d9b96f5751d4b",
+      "8f7d72178d3f4431864978e5bcfa4c6cb1c204bc00590644d90bb19d6d522eeb",
+      "5d8d072f75f702330962bd5deb5dc3e75123db36efb1c9b90cb5c26d68277017",
+      "cc10d145775ba53ab74f676a13282ccf53480aed9acddb079865e27e16af355b"
+    ],
+    "source_payload_bytes_compared": true,
+    "tensor_contract": {
+      "attn_output_gate": true,
+      "dtype": "bfloat16",
+      "full_attention_interval": 4,
+      "head_dim": 256,
+      "hidden_size": 2048,
+      "linear_conv_kernel_dim": 4,
+      "linear_key_head_dim": 128,
+      "linear_num_key_heads": 16,
+      "linear_num_value_heads": 32,
+      "linear_value_head_dim": 128,
+      "mamba_ssm_dtype": "float32",
+      "max_position_embeddings": 262144,
+      "model_type": "qwen3_5_moe_text",
+      "moe_intermediate_size": 512,
+      "mtp_num_hidden_layers": 1,
+      "num_attention_heads": 16,
+      "num_experts": 256,
+      "num_experts_per_tok": 8,
+      "num_key_value_heads": 2,
+      "shared_expert_intermediate_size": 512
+    },
+    "weight_payload_bytes": 11345363552
+  },
+  "distributed": {
+    "gdn_action_broadcast_qualified": true,
+    "missing_restore_fail_fast_source_attested": true,
+    "tp2_nccl_qualified": true
+  },
+  "evidence_sha256": {
+    "checkpoint_verify": "144cb8f62fd81de55e737822ac11b30f3ef9eeff4f09b41a65497c8a3da770d3",
+    "gdn_broadcast": "66fffe47e9fd68b1212be6140c8c4888a4e7dee8648690f0f89495cd84870b71",
+    "tp1_api": "7e8690b9b55b1532b5ef9da092de2bd964c67bea19a26264759082a8a0ff5678",
+    "tp1_manifest": "e21986a5d6e4e3133dd7d98bf1fa8aef807e7947dcfe2e313d0f2014378ef8ca",
+    "tp1_prefix": "d005abee3e7f7ee0819b6c979f23da6a1e0e677a264281d7d4f1f17f2e4f2897",
+    "tp1_preflight_after": "3eb6bfef025420a0e53901669ebafc17c823025a426481851832d7014c7a427a",
+    "tp1_preflight_before": "3eb6bfef025420a0e53901669ebafc17c823025a426481851832d7014c7a427a",
+    "tp1_runtime": "438d1246c8de11264bd80f7708b8f0c968c1e3fc97d1268f395d9c1c1c94a36b",
+    "tp1_status": "91562f7b4a4c80cd673f3f80485c613b186aba880c8afa6a282ccbada9dfa66f",
+    "tp2_api": "29df0910aae5a25334b06d0da73e714aa33c712c9509f7565c91b47cffeb49a9",
+    "tp2_manifest": "91a3fe34428f253e52467b1c90c088e10e0c02efa9191916ded9cf81ff77c5b1",
+    "tp2_nccl": "78734480f3a49d421a2e86c3b3745faa3febbf60657dfe5585c6c414f02193bb",
+    "tp2_prefix": "394cf58cf27e439f8df4eb089edd25bd0b46b724802da83fe891f0268fd91900",
+    "tp2_preflight_after": "11745a4deb59cfc2df7af06fffffedbc7f91d14c2344c61a6ecb5ebd85f85ed4",
+    "tp2_preflight_before": "11745a4deb59cfc2df7af06fffffedbc7f91d14c2344c61a6ecb5ebd85f85ed4",
+    "tp2_runtime": "f2c92842f9b0ffc1f1d4c9e32c011e046ea0e26d80426b33fe3c6ce5d828a704",
+    "tp2_status": "f52080cef0d5cd44d79de745493db40cc068d9133a5cd34d9ccb5161ba5ef904"
+  },
+  "full_model_tp4_evaluated": false,
+  "gpu_health": {
+    "tp1": {
+      "free_bytes": {
+        "3": {
+          "after": 34057748480,
+          "before": 34057748480
+        }
+      },
+      "physical_gpus": [
+        3
+      ]
+    },
+    "tp2": {
+      "free_bytes": {
+        "1": {
+          "after": 34057748480,
+          "before": 34057748480
+        },
+        "2": {
+          "after": 34057748480,
+          "before": 34057748480
+        }
+      },
+      "physical_gpus": [
+        1,
+        2
+      ]
+    }
+  },
+  "official_performance_evaluated": false,
+  "prefix_cache": {
+    "cold_partial_warm_sha256": {
+      "tp1": "3bc63c8024f15fbed6473820347b78895f39fca936a30dd810ab22b9e1ebc98c",
+      "tp2": "3bc63c8024f15fbed6473820347b78895f39fca936a30dd810ab22b9e1ebc98c"
+    },
+    "exact_across_tp": true,
+    "partial_cached_tokens": 8176,
+    "warm_cached_tokens": 11600
+  },
+  "production_promotion_authorized": false,
+  "qualified": true,
+  "reasons": [],
+  "runtime": {
+    "identical_across_tp": true,
+    "source_revisions": [
+      "cb929a095803ccdacc0e9c78ddfec329932e5fff",
+      "eecbf87b279f83a4af52fc28c80d2e2bf2c4eb6e"
+    ],
+    "tree_sha256": "1791f189c9ab2079e80d7900a94224e099c82bcea5872c881a26d84dc2abf6cf"
+  },
+  "schema": "qwen36-diagnostic-service-pair-v1",
+  "scope": "real-weight four-layer diagnostic model, TP1 and TP2",
+  "semantic_quality_evaluated": false,
+  "services": {
+    "tp1": {
+      "config_sha256": "875480d717116279da8713b67668e8551612715fda8d2fc77ab4cb1d2bcd542a",
+      "index_sha256": "0c019b0107406e328c4aa277b11966ae3b19dd98b30efe2db6109ec42d6e27f4",
+      "layer_trace_count": 4,
+      "max_model_len": 262144,
+      "runtime_install_sha256": "438d1246c8de11264bd80f7708b8f0c968c1e3fc97d1268f395d9c1c1c94a36b",
+      "source_revision": "cb929a095803ccdacc0e9c78ddfec329932e5fff"
+    },
+    "tp2": {
+      "config_sha256": "875480d717116279da8713b67668e8551612715fda8d2fc77ab4cb1d2bcd542a",
+      "index_sha256": "0c019b0107406e328c4aa277b11966ae3b19dd98b30efe2db6109ec42d6e27f4",
+      "layer_trace_count": 8,
+      "max_model_len": 262144,
+      "runtime_install_sha256": "f2c92842f9b0ffc1f1d4c9e32c011e046ea0e26d80426b33fe3c6ce5d828a704",
+      "source_revision": "eecbf87b279f83a4af52fc28c80d2e2bf2c4eb6e"
+    }
+  },
+  "version": 1
+}

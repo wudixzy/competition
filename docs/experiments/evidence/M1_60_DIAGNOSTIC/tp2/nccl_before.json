@@ -1,0 +1,22 @@
+{
+  "expected_sum": 3.0,
+  "init_method": "tcp://127.0.0.1:48039",
+  "ok": true,
+  "results": [
+    {
+      "exitcode": 0,
+      "gpu": 1,
+      "ok": true,
+      "rank": 0,
+      "value": 3.0
+    },
+    {
+      "exitcode": 0,
+      "gpu": 2,
+      "ok": true,
+      "rank": 1,
+      "value": 3.0
+    }
+  ],
+  "timed_out_ranks": []
+}

@@ -1,5 +1,28 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-27 M1-60 真实权重缩层诊断模型
+
+- 私有分支 `exp/M1-60-qwen36-diagnostic-checkpoint-20260727` 已建立可重复的
+  4 层真实权重诊断 checkpoint：保留一个完整 `3 GDN + 1 full attention`
+  周期、完整视觉塔、MTP、256 experts/top-8/shared expert、BF16 权重和
+  262144 配置。5 个分片共 `11,345,363,552` 字节，已与源模型逐 tensor
+  比较 payload，配置、索引和权重均通过。
+- TP1/GPU3 与 TP2/GPU1,2 服务门禁均通过。两者使用字节相同的 checkpoint
+  和相同 runtime tree，7 个 API 结构门禁、reasoning、tool、structured output、
+  多模态、预期非法请求 `400`、partial/warm prefix 和所有生成摘要跨 TP 完全
+  一致；TP2 NCCL、层路径 trace、fatal 扫描和前后显存清理均通过。
+- TP4 rank-local QGKV、32K/65K/131K/235K paged KV 和 CacheEngine 正确性
+  通过。paged gather+attention 在固定网格为 `1.449x-2.541x`，但这只是组件
+  结果，不能冒充服务 TTFT。
+- 新的 `relative L2 <= 1e-5` 门槛拒绝现有生产 MoE/GDN 内核：MoE staged
+  endpoint/500-step 为约 `3.51e-4/3.34e-4`；GDN output/state 为约
+  `4.91e-4/3.36e-4`。两者虽分别达到约 `6.07x/2.99x` 和 `5.14x` 的组件
+  加速，仍不得用性能覆盖数值失败。
+- 诊断 harness 可以继续用于 loader、缓存、TP 通信和接口回归，但缩层输出不
+  代表模型能力。本轮未修改 `main`、正式 YAML、默认开关或仓库可见性。完整
+  命令、证据和下一步见
+  `docs/experiments/M1_60_QWEN36_DIAGNOSTIC_MODEL_20260727.md`。
+
 ## 2026-07-27 平台 4xx 归因门禁
 
 - 平台日志在 2026-07-26T16:59:30 连续出现一次 Chat Completions 400 和一次

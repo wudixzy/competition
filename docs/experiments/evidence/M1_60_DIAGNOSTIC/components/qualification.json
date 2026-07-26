@@ -1,0 +1,121 @@
+{
+  "cache_engine": {
+    "failed_checks": [],
+    "qualified": true
+  },
+  "evidence_sha256": {
+    "cache_engine.json": "0e2389dca0dceb044b54ef8a7ce0952b4264cd951108bac5697972f19c87d4b2",
+    "gdn.json": "b1e8e5183702a59f1c50506f82efa67987de248355c381c83fc3747ab47e6322",
+    "moe.json": "6ed4b4850b79f68bfed484a1639857ffbbc563c5beb89f40a493f2e1671d160c",
+    "paged_kv.json": "745cad84641c5e8b582579645c035488cf6006f3811dc918f772d6674e778c98",
+    "preflight_after.json": "3eb6bfef025420a0e53901669ebafc17c823025a426481851832d7014c7a427a",
+    "preflight_before.json": "3eb6bfef025420a0e53901669ebafc17c823025a426481851832d7014c7a427a",
+    "qgkv_rank0.json": "f5afb0ede2e0d97ba14c6d81c280bb22b80ec264bdb1fa49da0a63da597fdd8a",
+    "qgkv_rank1.json": "f15d4cf2a4d012d9e0d167b6b98843ca96858230108fc34cc210e21e408d72f0",
+    "qgkv_rank2.json": "a51616b7f48e935dffebdf6de8392c65131164df48fb9a8765e32ac4bbfc327a",
+    "qgkv_rank3.json": "0b1cf2d9d8ee3a891c0eb825e484289c4404b6bd7690b1f7c47ca9f44a245b2c",
+    "runtime_identity.json": "6855fe2c713fa50c14129c2148bf59e2d80963c2434dfe88e132232dd5bdad56"
+  },
+  "fatal_scan": {
+    "hits": [],
+    "log_sha256": {
+      "cache_engine.stderr": "4a86804ad79e8b63db42e7a7ccaa903345d61bfda692f7be368956226063e626",
+      "cache_engine.stdout": "a8eaf628fdb282bdbdc95faf5f517774f317db84d19a6db40b71d304b0931cc6",
+      "gdn.stderr": "68bb2572890eeedcb9c5967027b77cf7ec56857ac08e9cec53adca31892e767c",
+      "gdn.stdout": "b1e8e5183702a59f1c50506f82efa67987de248355c381c83fc3747ab47e6322",
+      "moe.stderr": "17df0d4192b675a2ded9c93d3ff559908cb469c10f08c77b1579dbcb963c3cf5",
+      "moe.stdout": "cd9f4d3f2cfb4a9744629e11a569dd4035509d185a89485ed0fe1b6eb28ac98a",
+      "paged_kv.stderr": "68bb2572890eeedcb9c5967027b77cf7ec56857ac08e9cec53adca31892e767c",
+      "paged_kv.stdout": "745cad84641c5e8b582579645c035488cf6006f3811dc918f772d6674e778c98",
+      "preflight_after.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "preflight_after.stdout": "518e3f588ca62b36bd0a333b85b7e592fba8f8a99c6c1cd0e078eb6c3a8ecc06",
+      "preflight_before.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "preflight_before.stdout": "518e3f588ca62b36bd0a333b85b7e592fba8f8a99c6c1cd0e078eb6c3a8ecc06",
+      "qgkv_rank0.stderr": "6042de3fb7025ff0fdebc3f66bb0ea02a2cac69951cc60a606a4d5e76502c508",
+      "qgkv_rank0.stdout": "65900362df4696d65587c7027f1f21fcfaeaca7182db9b6ba436d9d09c754f5d",
+      "qgkv_rank1.stderr": "97674dfe0870a6f4067c4107c03dc41126f6084754c0f5e07f9e72be4f9e862c",
+      "qgkv_rank1.stdout": "8e926708744b98678a8c52a16022ff7e54567586d22949fddb47c315ede1bbb7",
+      "qgkv_rank2.stderr": "50300a2e275c779409734e046ebe317b90b7063b95f3858cb4140600f5e6f2d2",
+      "qgkv_rank2.stdout": "4bde085e123c55f038900b2aac0ad747aeaae77b143b9c56aab7f646bdafacc3",
+      "qgkv_rank3.stderr": "8670b9f49e5d393914ec343f996fa584ab63676609894fddd7b1dce7676b3c57",
+      "qgkv_rank3.stdout": "80593a5e4a8474281b18c47f7c2eb18f9edc368107c2baf04f86d7d874b6441f",
+      "runtime_identity.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "runtime_identity.stdout": "6855fe2c713fa50c14129c2148bf59e2d80963c2434dfe88e132232dd5bdad56"
+    }
+  },
+  "full_model_tp4_evaluated": false,
+  "gdn": {
+    "candidate_median_ms": 0.03404119610786438,
+    "output_relative_l2": 0.0004905627467483696,
+    "speedup": 5.14350246403317,
+    "state_relative_l2": 0.0003360333253257255
+  },
+  "gpu_health": {
+    "after_free_bytes": 34057748480,
+    "before_free_bytes": 34057748480,
+    "memory_drop_bytes": 0,
+    "memory_drop_limit_bytes": 1073741824
+  },
+  "instance": "ssh-73ca29ba",
+  "moe": {
+    "extension_capabilities": {
+      "w13": true,
+      "w13_silu": false,
+      "w2_reduce": true
+    },
+    "fixed_speedup": 6.0729138420012125,
+    "relative_l2": {
+      "direct_w13": 7.302385808114692e-06,
+      "direct_w2_reduce": 0.0003504208346794393,
+      "staged": 0.0003511399470667774,
+      "staged_sequence": 0.0003336317991334769
+    },
+    "routed_speedup": 2.9900058711867845
+  },
+  "paged_kv": {
+    "all_exact": true,
+    "lengths": [
+      32768,
+      65536,
+      131072,
+      235000
+    ]
+  },
+  "physical_gpu": 3,
+  "production_promotion_authorized": false,
+  "qgkv": {
+    "all_exact": true,
+    "tp_ranks": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  "qualified": false,
+  "reasons": [
+    "MoE direct_w2_reduce relative L2 exceeds 1e-05: 0.000350421",
+    "MoE staged relative L2 exceeds 1e-05: 0.00035114",
+    "MoE staged sequence relative L2 exceeds 1e-05: 0.000333632",
+    "GDN output relative L2 exceeds 1e-05: 0.000490563",
+    "GDN state relative L2 exceeds 1e-05: 0.000336033",
+    "GDN benchmark did not pass its internal gate"
+  ],
+  "runtime": {
+    "qualified": true,
+    "runtime_tree_sha256": "1791f189c9ab2079e80d7900a94224e099c82bcea5872c881a26d84dc2abf6cf"
+  },
+  "schema": "qwen36-diagnostic-component-gate-v1",
+  "scope": "single-GPU structural and TP4-rank-local component probes",
+  "semantic_quality_evaluated": false,
+  "source_branch": "exp/M1-60-qwen36-diagnostic-checkpoint-20260727",
+  "source_revision": "eecbf87b279f83a4af52fc28c80d2e2bf2c4eb6e",
+  "thresholds": {
+    "gdn_candidate_median_ms_max": 0.11,
+    "gdn_speedup_min": 1.5,
+    "moe_fixed_speedup_min": 1.5,
+    "moe_routed_speedup_min": 1.25,
+    "relative_l2_max": 1e-05
+  },
+  "version": 1
+}

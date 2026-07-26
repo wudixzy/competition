@@ -4,6 +4,10 @@
 [`docs/HANDOFF_SUMMARY.md`](docs/HANDOFF_SUMMARY.md)。
 模型能力、缓存正确性和长上下文非回退门禁见
 [`docs/QUALITY_NON_REGRESSION_GATE_20260724.md`](docs/QUALITY_NON_REGRESSION_GATE_20260724.md)。
+三卡环境中的真实权重 4 层诊断 checkpoint、TP1/TP2 服务和 TP4 rank-local
+组件结果见
+[`docs/experiments/M1_60_QWEN36_DIAGNOSTIC_MODEL_20260727.md`](docs/experiments/M1_60_QWEN36_DIAGNOSTIC_MODEL_20260727.md)；
+该模型只用于工程验证，不代表完整模型质量或正式性能。
 固定 TP4 基线/候选质量实验使用 `scripts/run_quality_service_gate.sh`；该
 harness 不修改正式 YAML、默认优化开关或仓库可见性。
 完整 881 请求缓存离线分析必须先用

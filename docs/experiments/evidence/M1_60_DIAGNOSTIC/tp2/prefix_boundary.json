@@ -1,0 +1,31 @@
+{
+  "block_context_len": 11296,
+  "prefix_query_len": 320,
+  "min_partial_cached_tokens": 8176,
+  "shared_tokens_before_block_rounding": 11309,
+  "target_prompt_tokens": 11617,
+  "primer": {
+    "prompt_tokens": 11704,
+    "cached_tokens": 0,
+    "completion_tokens": 1,
+    "finish_reason": "length",
+    "message_sha256": "3bc63c8024f15fbed6473820347b78895f39fca936a30dd810ab22b9e1ebc98c",
+    "elapsed_s": 1.721
+  },
+  "partial_cache": {
+    "prompt_tokens": 11617,
+    "cached_tokens": 8176,
+    "completion_tokens": 1,
+    "finish_reason": "length",
+    "message_sha256": "3bc63c8024f15fbed6473820347b78895f39fca936a30dd810ab22b9e1ebc98c",
+    "elapsed_s": 0.873
+  },
+  "warm_cache": {
+    "prompt_tokens": 11617,
+    "cached_tokens": 11600,
+    "completion_tokens": 1,
+    "finish_reason": "length",
+    "message_sha256": "3bc63c8024f15fbed6473820347b78895f39fca936a30dd810ab22b9e1ebc98c",
+    "elapsed_s": 0.548
+  }
+}

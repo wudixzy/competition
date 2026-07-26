@@ -1,0 +1,56 @@
+{
+  "api_summary": {
+    "case_count": 7,
+    "qualified": true
+  },
+  "artifact_sha256": {
+    "api_gate.json": "29df0910aae5a25334b06d0da73e714aa33c712c9509f7565c91b47cffeb49a9",
+    "checkpoint_verify.json": "1ad2cfc93d1c4b3160895aaf400b926e5467db2b285a92736bdfd8b2227de2e5",
+    "gdn_action_broadcast.json": "66fffe47e9fd68b1212be6140c8c4888a4e7dee8648690f0f89495cd84870b71",
+    "nccl_before.json": "78734480f3a49d421a2e86c3b3745faa3febbf60657dfe5585c6c414f02193bb",
+    "prefix_boundary.json": "394cf58cf27e439f8df4eb089edd25bd0b46b724802da83fe891f0268fd91900",
+    "preflight_after.json": "11745a4deb59cfc2df7af06fffffedbc7f91d14c2344c61a6ecb5ebd85f85ed4",
+    "preflight_before.json": "11745a4deb59cfc2df7af06fffffedbc7f91d14c2344c61a6ecb5ebd85f85ed4",
+    "server.log": "1d4d6cf7368eb5d21213dd516c4abcd73a6809634f9856a752ae3e59c4c9ae1d"
+  },
+  "gates": {
+    "api": 0,
+    "fatal_scan": 0,
+    "layer_trace": 0,
+    "prefix_boundary": 0,
+    "preflight_after": 0
+  },
+  "layer_trace_count": 8,
+  "prefix_summary": {
+    "partial_cached_tokens": 8176,
+    "warm_cached_tokens": 11600
+  },
+  "production_promotion_authorized": false,
+  "qualified": true,
+  "runtime_identity": {
+    "diagnostic_config_sha256": "875480d717116279da8713b67668e8551612715fda8d2fc77ab4cb1d2bcd542a",
+    "diagnostic_index_sha256": "0c019b0107406e328c4aa277b11966ae3b19dd98b30efe2db6109ec42d6e27f4",
+    "diagnostic_manifest_sha256": "91a3fe34428f253e52467b1c90c088e10e0c02efa9191916ded9cf81ff77c5b1",
+    "diagnostic_model": "/root/shared-storage/models/Qwen/Qwen3.6-35B-A3B-diagnostic-4L-real",
+    "instance": "ssh-73ca29ba",
+    "max_model_len": 262144,
+    "physical_gpus": [
+      "1",
+      "2"
+    ],
+    "production_promotion_authorized": false,
+    "runtime_install_report": "/root/m1-60-runtime-eecbf87/install.json",
+    "runtime_install_sha256": "f2c92842f9b0ffc1f1d4c9e32c011e046ea0e26d80426b33fe3c6ce5d828a704",
+    "runtime_site_packages": "/root/m1-60-runtime-eecbf87/site-packages",
+    "schema": "qwen36-diagnostic-runtime-identity-v1",
+    "semantic_quality_evaluated": false,
+    "source_branch": "exp/M1-60-qwen36-diagnostic-checkpoint-20260727",
+    "source_model": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+    "source_revision": "eecbf87b279f83a4af52fc28c80d2e2bf2c4eb6e",
+    "tensor_parallel_size": 2,
+    "version": 1
+  },
+  "schema": "qwen36-diagnostic-service-gate-v1",
+  "semantic_quality_evaluated": false,
+  "version": 1
+}
