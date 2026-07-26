@@ -1661,3 +1661,12 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 - 本地完整单测 `707/707`、跳过 25，submission preflight `9/9`；正式
   29 argv、3 env、YAML、默认 selector 和 `main` 均未改变。当前三卡不支持
   TP3 模型运行，因此 TP4 启动、262144、能力正确性和端到端收益仍未验证。
+- 固定 TP4 A/B harness 已准备：两臂均启用 full-attention、CPU content
+  cache、admission64/direct，唯一差异是 block-major selector。每臂使用
+  `65,536` target、9 个 `135,040` pressure、8-token greedy 输出；跨臂必须
+  逐请求保持消息摘要、finish reason、prompt/cached/completion tokens 完全
+  一致，恢复请求至少 `1.20x`，冷和纯 GPU-warm 聚合回退均不超过 2%。
+- harness 还要求三阶段四卡 preflight、hash-bound runtime、每 rank 1024-block
+  reserve marker 和 fatal/OOM/Gloo/NCCL/worker-loss 扫描，且拒绝覆盖已有结果。
+  它尚未运行；当前分支完整单测 `716/716`、跳过 25，preflight `9/9`。
+  即使通过也不能替代完整功能、能力、长上下文和正式性能门禁。
