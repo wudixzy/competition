@@ -67,6 +67,9 @@ required=(
     vllm/core/block_manager_v2.py
     qwen3_6_scripts/patch_ops.sh
     qwen3_6_scripts/patch_utils.py
+    qwen3_6_scripts/block_major_kv_cache.py
+    qwen3_6_scripts/patch_block_major_cache_engine.py
+    qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/corex_block_major_kv_transfer.so
     qwen3_6_scripts/patch_xformers_profile.py
     scripts/normalize_offline_distribution.py
 )
@@ -250,6 +253,17 @@ checks = {
         root / "qwen3_6_scripts/bi100_profile.py",
         vllm_root / "bi100_profile.py",
     ),
+    "block_major_kv_cache": (
+        root / "qwen3_6_scripts/block_major_kv_cache.py",
+        vllm_root / "block_major_kv_cache.py",
+    ),
+    "block_major_kv_extension": (
+        root / (
+            "qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/"
+            "corex_block_major_kv_transfer.so"
+        ),
+        vllm_root / "corex_block_major_kv_transfer.so",
+    ),
     "paged_attention": (
         root / "qwen3_6_scripts/paged_attn.py",
         vllm_root / "attention/ops/paged_attn.py",
@@ -385,6 +399,18 @@ startup_profile_guard_patch = (
     and 'os.environ["BI100_IN_STARTUP_PROFILE"] = "1"' in worker_text
 )
 qualified = qualified and startup_profile_guard_patch
+cache_engine = vllm_root / "worker/cache_engine.py"
+cache_engine_text = cache_engine.read_text(encoding="utf-8")
+block_major_cache_engine_patch = all(
+    fragment in cache_engine_text
+    for fragment in (
+        "from vllm.block_major_kv_cache import",
+        "self._bi100_block_major_cpu_kv = None",
+        "self._bi100_block_major_cpu_kv.swap_in",
+        "self._bi100_block_major_cpu_kv.swap_out",
+    )
+)
+qualified = qualified and block_major_cache_engine_patch
 versions = {
     name: importlib.metadata.version(name)
     for name in ("torch", "transformers", "vllm")
@@ -412,8 +438,10 @@ report = {
         root / "scripts/normalize_offline_distribution.py"),
     "model_runner_sha256": digest(model_runner),
     "worker_sha256": digest(worker),
+    "cache_engine_sha256": digest(cache_engine),
     "profile_attention_layer_patch": profile_patch_present,
     "startup_profile_guard_patch": startup_profile_guard_patch,
+    "block_major_cache_engine_patch": block_major_cache_engine_patch,
 }
 rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
 output.write_text(rendered, encoding="utf-8")

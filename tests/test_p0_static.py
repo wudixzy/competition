@@ -531,17 +531,9 @@ class P0StaticCoverageTest(unittest.TestCase):
         installer = read("qwen3_6_scripts/install_prebuilt_corex.sh")
         manifest = read(
             "qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/SHA256SUMS")
+        from tests.submission_preflight import PREBUILT_COREX_SHA256
         artifacts = [
-            "corex_attn_head_rms_norm.so",
-            "corex_gdn_beta_decay.so",
-            "corex_gdn_causal_conv.so",
-            "corex_gdn_gated_norm.so",
-            "corex_gdn_packed_decode.so",
-            "corex_gdn_qk_map.so",
-            "corex_moe_direct_routed.so",
-            "corex_moe_exact_reduce.so",
-            "corex_moe_weight_gather.so",
-            "corex_paged_kv_gather.so",
+            line.split()[1] for line in manifest.splitlines()
         ]
         self.assertIn("bash ./install_prebuilt_corex.sh", patch_ops)
         self.assertNotIn("build_corex_", patch_ops)
@@ -550,9 +542,8 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertNotIn("torch.ops.load_library", installer)
         self.assertIn('header[:4] != b"\\x7fELF"', installer)
         self.assertIn("machine != 62", installer)
-        self.assertEqual(len(manifest.splitlines()), len(artifacts))
-        for artifact in artifacts:
-            self.assertIn(artifact, manifest)
+        self.assertEqual(
+            set(artifacts), set(PREBUILT_COREX_SHA256))
 
     def test_patch_ops_uses_offline_transformers_wheel_and_metadata_gate(self):
         src = read("qwen3_6_scripts/patch_ops.sh")

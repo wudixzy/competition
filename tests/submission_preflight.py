@@ -20,6 +20,8 @@ PREBUILT_COREX_DIR = Path(
 PREBUILT_COREX_SHA256 = {
     "corex_attn_head_rms_norm.so":
         "534019b3c2ad2d2c65492b01a975874ee440026eda2e8666bc3c1dc8a0a0a6f6",
+    "corex_block_major_kv_transfer.so":
+        "7e2aafd8dc755b0ee16c3b9bb812b95548fc042bbaa840dd9db7d2c51a10474c",
     "corex_gdn_beta_decay.so":
         "1856c86e3100415061aa698a48bdeff3fe785994b45b4e72a42cd9158552a7d8",
     "corex_gdn_causal_conv.so":
@@ -88,6 +90,8 @@ DIAGNOSTIC_ENV = {
     "BI100_MOE_COREX_THREE_BUCKET",
     "BI100_KV_EVICTION_POLICY",
     "BI100_CPU_KV_OFFLOAD",
+    "BI100_BLOCK_MAJOR_CPU_KV",
+    "BI100_BLOCK_MAJOR_CPU_KV_TRACE",
 }
 
 
