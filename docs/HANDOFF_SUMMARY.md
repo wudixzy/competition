@@ -1609,3 +1609,19 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
   因此不具备晋升资格。
 - ModelHub push 最近一次返回认证失败，已按纪律停止所有 push 重试；本地提交保留，
   等凭据由用户修复后再同时推送私有 ModelHub/GitHub 远端。
+
+## 2026-07-26 M1-56 块主序 KV 数据面
+
+- 私有实验分支 `exp/M1-56-block-major-kv-data-plane-20260726@739adf0`
+  实现固定 Qwen TP4 rank shape 的 block-major CPU KV 数据面；实验扩展与运行时
+  隔离，没有进入 `patch_ops.sh`、prebuilt、正式 YAML 或 `main`。
+- 单缓冲主方案因 CPU scatter/gather 串行成本未达到每张卡双向 `4x` 而失败。
+  审查同时发现旧测试值每 1009 块重复，故其 exact 结论不足以证明逻辑块映射。
+- 唯一固定双缓冲备选加入每块唯一有限 FP16 签名、GPU 块号越界 fail-fast、
+  随机/置换映射 byte-exact、组件级同槽位顺序和 timing consistency 门禁。
+- `ssh-73ca29ba` 物理 GPU1/2/3 并发运行中，65K/131K 的 D2H 最低为
+  `4.095x`，H2D 最低为 `5.300x`；三卡全部 qualified，未发现 fatal、OOM、
+  Gloo reset 或 worker loss。
+- 该结论只解锁非默认 `CacheEngine` 生产接入准备，不代表模型端到端收益或能力。
+  健康 TP4 仍需完成容量、swap pressure、cold/warm token 一致性、完整质量和
+  端到端 A/B；在此之前不得修改 `main`、`computility-run.yaml` 或默认开关。

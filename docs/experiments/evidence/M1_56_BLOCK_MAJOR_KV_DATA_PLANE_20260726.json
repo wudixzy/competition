@@ -1,0 +1,125 @@
+{
+  "schema": "bi100-m1-56-block-major-kv-data-plane-v1",
+  "experiment": "M1-56 block-major KV data plane",
+  "date": "2026-07-26",
+  "branch": "exp/M1-56-block-major-kv-data-plane-20260726",
+  "candidate_revision": "739adf0",
+  "instance": "ssh-73ca29ba",
+  "physical_gpus": [
+    1,
+    2,
+    3
+  ],
+  "runtime": {
+    "device": "Iluvatar BI-V100",
+    "torch": "2.1.0",
+    "extension_sha256": "7e2aafd8dc755b0ee16c3b9bb812b95548fc042bbaa840dd9db7d2c51a10474c",
+    "vendor_baseline": "ixformer.functions.vllm_swap_blocks",
+    "attention_layers": 10,
+    "kv_planes": 2,
+    "elements_per_plane_block": 4096,
+    "block_size": 16,
+    "dtype": "float16"
+  },
+  "fixed_contract": {
+    "pipeline": "double",
+    "staging_blocks": 512,
+    "staging_buffer_count": 2,
+    "staging_bytes_per_rank": 167772160,
+    "measured_token_counts": [
+      8192,
+      8208,
+      65536,
+      131072
+    ],
+    "qualifying_token_counts": [
+      65536,
+      131072
+    ],
+    "required_speedup_each_direction": 4.0,
+    "concurrent_three_gpu_run": true,
+    "parameter_scan": false
+  },
+  "primary_single_buffer": {
+    "revision": "006d594",
+    "qualified": false,
+    "reason": "CPU row scatter and gather prevented every card from reaching 4x in both directions",
+    "review_caveat": "The original repeating test pattern did not establish unique per-block exactness. Revision 739adf0 replaced it with unique finite FP16 signatures before the qualifying run.",
+    "speedups": {
+      "gpu1": {
+        "65536_d2h": 3.207,
+        "65536_h2d": 4.012,
+        "131072_d2h": 2.624,
+        "131072_h2d": 4.372
+      },
+      "gpu2": {
+        "65536_d2h": 4.054,
+        "65536_h2d": 4.248,
+        "131072_d2h": 2.539,
+        "131072_h2d": 3.921
+      },
+      "gpu3": {
+        "65536_d2h": 3.973,
+        "65536_h2d": 4.606,
+        "131072_d2h": 2.67,
+        "131072_h2d": 3.944
+      }
+    }
+  },
+  "fixed_double_buffer_alternative": {
+    "qualified": true,
+    "all_cases_byte_exact": true,
+    "all_invalid_gpu_mappings_fail_fast": true,
+    "all_block_signatures_unique": true,
+    "all_component_same_slot_checks_exact": true,
+    "fatal_oom_gloo_worker_loss_found": false,
+    "speedups": {
+      "gpu1": {
+        "65536_d2h": 4.439532697541895,
+        "65536_h2d": 5.335112171175559,
+        "131072_d2h": 4.094532433394804,
+        "131072_h2d": 5.38774055738394
+      },
+      "gpu2": {
+        "65536_d2h": 4.349573705046992,
+        "65536_h2d": 5.300011122367147,
+        "131072_d2h": 4.244034136347796,
+        "131072_h2d": 5.37481491128847
+      },
+      "gpu3": {
+        "65536_d2h": 4.547384116608322,
+        "65536_h2d": 6.022996080004588,
+        "131072_d2h": 4.500011851020017,
+        "131072_h2d": 5.847466149374624
+      }
+    }
+  },
+  "raw_evidence": [
+    {
+      "path": "M1_56_BLOCK_MAJOR_KV_GPU1_20260726.json",
+      "sha256": "fada7b4281479d0c3797edc7d365784b838db3fa3849408a524529111b771940"
+    },
+    {
+      "path": "M1_56_BLOCK_MAJOR_KV_GPU2_20260726.json",
+      "sha256": "4538bf19e9daccb5a8b818cdcf6bc8cd9063d2edf4075d6b66451c8cdb2c7f9f"
+    },
+    {
+      "path": "M1_56_BLOCK_MAJOR_KV_GPU3_20260726.json",
+      "sha256": "cb6873ec37edc73324a0d3672641e91bf34cbd85ace271d808f53b6fd12a30ee"
+    }
+  ],
+  "local_validation": {
+    "unit_tests_passed": 691,
+    "unit_tests_skipped": 25,
+    "submission_preflight": "9/9"
+  },
+  "decision": {
+    "component_gate": "qualified",
+    "production_runtime": "not integrated",
+    "model_quality": "not evaluated by this component benchmark",
+    "end_to_end_performance": "not evaluated by this component benchmark",
+    "main_updated": false,
+    "computility_run_updated": false,
+    "next_gate": "non-default CacheEngine integration followed by healthy TP4 capacity, cold-warm exactness, quality, and end-to-end A/B"
+  }
+}

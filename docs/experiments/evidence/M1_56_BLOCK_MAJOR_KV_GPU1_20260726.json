@@ -1,0 +1,259 @@
+{
+  "attention_layers": 10,
+  "block_size": 16,
+  "cases": {
+    "131072": {
+      "baseline_d2h_median_ms": 944.8920637369156,
+      "baseline_d2h_trials_ms": [
+        943.912435323,
+        944.8920637369156,
+        945.8043351769447
+      ],
+      "baseline_h2d_median_ms": 1223.7686924636364,
+      "baseline_h2d_trials_ms": [
+        1172.0077879726887,
+        1223.7686924636364,
+        1282.4530191719532
+      ],
+      "block_count": 8192,
+      "bytes_per_direction": 1342177280,
+      "candidate_components_ms": {
+        "d2h_cpu_scatter": 149.43619817495346,
+        "d2h_dma": 52.80644819140434,
+        "d2h_pack": 19.42671090364456,
+        "h2d_cpu_gather": 153.4995697438717,
+        "h2d_dma": 48.69059473276138,
+        "h2d_gpu_scatter": 18.67370679974556
+      },
+      "candidate_d2h_median_ms": 230.7703271508217,
+      "candidate_d2h_trials_ms": [
+        244.53699216246605,
+        230.7703271508217,
+        227.4051047861576
+      ],
+      "candidate_h2d_median_ms": 227.14078426361084,
+      "candidate_h2d_trials_ms": [
+        228.07039320468903,
+        227.14078426361084,
+        221.19882702827454
+      ],
+      "chunk_blocks": 512,
+      "chunk_count": 16,
+      "component_same_gpu_slot_order_exact": true,
+      "d2h_exact": true,
+      "d2h_speedup": 4.09451282321654,
+      "final_chunk_blocks": 512,
+      "h2d_exact": true,
+      "h2d_speedup": 5.387710077831631,
+      "invalid_gpu_mapping_fail_fast": true,
+      "mapping_destination_unique": true,
+      "mapping_seed": 20260729,
+      "mapping_source_unique": true,
+      "pipeline": "double",
+      "same_slot_details": {
+        "preserved_cpu_slot": 285,
+        "preserved_victim_exact": true,
+        "promoted_request_exact": true,
+        "requested_cpu_slot": 6012,
+        "requested_source_gpu_block": 7488,
+        "scope": "component_call_order_only",
+        "victim_gpu_block": 5692
+      },
+      "staging_buffer_count": 2,
+      "token_count": 131072,
+      "unique_block_signatures": true
+    },
+    "65536": {
+      "baseline_d2h_median_ms": 476.5556566417217,
+      "baseline_d2h_trials_ms": [
+        472.89712727069855,
+        476.5556566417217,
+        502.4401284754276
+      ],
+      "baseline_h2d_median_ms": 588.5507613420486,
+      "baseline_h2d_trials_ms": [
+        582.9820930957794,
+        613.164160400629,
+        588.5507613420486
+      ],
+      "block_count": 4096,
+      "bytes_per_direction": 671088640,
+      "candidate_components_ms": {
+        "d2h_cpu_scatter": 70.69063931703568,
+        "d2h_dma": 23.783117532730103,
+        "d2h_pack": 9.793657809495926,
+        "h2d_cpu_gather": 66.22390449047089,
+        "h2d_dma": 24.344027042388916,
+        "h2d_gpu_scatter": 9.359866380691528
+      },
+      "candidate_d2h_median_ms": 107.34384134411812,
+      "candidate_d2h_trials_ms": [
+        109.13768038153648,
+        105.02663627266884,
+        107.34384134411812
+      ],
+      "candidate_h2d_median_ms": 110.31635105609894,
+      "candidate_h2d_trials_ms": [
+        110.31635105609894,
+        125.39839372038841,
+        108.59058424830437
+      ],
+      "chunk_blocks": 512,
+      "chunk_count": 8,
+      "component_same_gpu_slot_order_exact": true,
+      "d2h_exact": true,
+      "d2h_speedup": 4.439524901237704,
+      "final_chunk_blocks": 512,
+      "h2d_exact": true,
+      "h2d_speedup": 5.33511810087658,
+      "invalid_gpu_mapping_fail_fast": true,
+      "mapping_destination_unique": true,
+      "mapping_seed": 20260728,
+      "mapping_source_unique": true,
+      "pipeline": "double",
+      "same_slot_details": {
+        "preserved_cpu_slot": 2913,
+        "preserved_victim_exact": true,
+        "promoted_request_exact": true,
+        "requested_cpu_slot": 3297,
+        "requested_source_gpu_block": 705,
+        "scope": "component_call_order_only",
+        "victim_gpu_block": 1818
+      },
+      "staging_buffer_count": 2,
+      "token_count": 65536,
+      "unique_block_signatures": true
+    },
+    "8192": {
+      "baseline_d2h_median_ms": 59.50823798775673,
+      "baseline_d2h_trials_ms": [
+        59.50823798775673
+      ],
+      "baseline_h2d_median_ms": 69.90501657128334,
+      "baseline_h2d_trials_ms": [
+        69.90501657128334
+      ],
+      "block_count": 512,
+      "bytes_per_direction": 83886080,
+      "candidate_components_ms": {
+        "d2h_cpu_scatter": 8.92455130815506,
+        "d2h_dma": 3.1126588582992554,
+        "d2h_pack": 1.248970627784729,
+        "h2d_cpu_gather": 8.857149630784988,
+        "h2d_dma": 3.1571872532367706,
+        "h2d_gpu_scatter": 1.211799681186676
+      },
+      "candidate_d2h_median_ms": 14.969713985919952,
+      "candidate_d2h_trials_ms": [
+        14.969713985919952
+      ],
+      "candidate_h2d_median_ms": 13.171769678592682,
+      "candidate_h2d_trials_ms": [
+        13.171769678592682
+      ],
+      "chunk_blocks": 512,
+      "chunk_count": 1,
+      "component_same_gpu_slot_order_exact": true,
+      "d2h_exact": true,
+      "d2h_speedup": 3.9752421484958447,
+      "final_chunk_blocks": 512,
+      "h2d_exact": true,
+      "h2d_speedup": 5.307184856481049,
+      "invalid_gpu_mapping_fail_fast": true,
+      "mapping_destination_unique": true,
+      "mapping_seed": 20260726,
+      "mapping_source_unique": true,
+      "pipeline": "double",
+      "same_slot_details": {
+        "preserved_cpu_slot": 8,
+        "preserved_victim_exact": true,
+        "promoted_request_exact": true,
+        "requested_cpu_slot": 189,
+        "requested_source_gpu_block": 21,
+        "scope": "component_call_order_only",
+        "victim_gpu_block": 437
+      },
+      "staging_buffer_count": 2,
+      "token_count": 8192,
+      "unique_block_signatures": true
+    },
+    "8208": {
+      "baseline_d2h_median_ms": 59.03555452823639,
+      "baseline_d2h_trials_ms": [
+        59.03555452823639
+      ],
+      "baseline_h2d_median_ms": 70.11356949806213,
+      "baseline_h2d_trials_ms": [
+        70.11356949806213
+      ],
+      "block_count": 513,
+      "bytes_per_direction": 84049920,
+      "candidate_components_ms": {
+        "d2h_cpu_scatter": 9.1787651181221,
+        "d2h_dma": 3.305092453956604,
+        "d2h_pack": 1.2808404862880707,
+        "h2d_cpu_gather": 8.717857301235199,
+        "h2d_dma": 3.124278038740158,
+        "h2d_gpu_scatter": 1.2394040822982788
+      },
+      "candidate_d2h_median_ms": 15.265185385942459,
+      "candidate_d2h_trials_ms": [
+        15.265185385942459
+      ],
+      "candidate_h2d_median_ms": 13.758443295955658,
+      "candidate_h2d_trials_ms": [
+        13.758443295955658
+      ],
+      "chunk_blocks": 512,
+      "chunk_count": 2,
+      "component_same_gpu_slot_order_exact": true,
+      "d2h_exact": true,
+      "d2h_speedup": 3.867332956375465,
+      "final_chunk_blocks": 1,
+      "h2d_exact": true,
+      "h2d_speedup": 5.096039427561712,
+      "invalid_gpu_mapping_fail_fast": true,
+      "mapping_destination_unique": true,
+      "mapping_seed": 20260727,
+      "mapping_source_unique": true,
+      "pipeline": "double",
+      "same_slot_details": {
+        "preserved_cpu_slot": 67,
+        "preserved_victim_exact": true,
+        "promoted_request_exact": true,
+        "requested_cpu_slot": 449,
+        "requested_source_gpu_block": 110,
+        "scope": "component_call_order_only",
+        "victim_gpu_block": 144
+      },
+      "staging_buffer_count": 2,
+      "token_count": 8208,
+      "unique_block_signatures": true
+    }
+  },
+  "device": "cuda:0",
+  "device_name": "Iluvatar BI-V100",
+  "elements_per_plane_block": 4096,
+  "experiment": "M1-56-block-major-kv-data-plane",
+  "extension_isolated_from_runtime": true,
+  "extension_sha256": "7e2aafd8dc755b0ee16c3b9bb812b95548fc042bbaa840dd9db7d2c51a10474c",
+  "fixed_seed": 20260726,
+  "gate": {
+    "qualified": true,
+    "reasons": [],
+    "smoke_passed": null
+  },
+  "instance": "ssh-73ca29ba-gpu1",
+  "kv_planes": 2,
+  "mode": "gate",
+  "pipeline": "double",
+  "required_speedup": 4.0,
+  "schema_version": 1,
+  "source_revision": "739adf0",
+  "staging_blocks": 512,
+  "staging_buffer_count": 2,
+  "staging_bytes": 167772160,
+  "torch_num_threads": 1,
+  "torch_version": "2.1.0",
+  "vendor_swap": "ixformer.functions.vllm_swap_blocks"
+}
