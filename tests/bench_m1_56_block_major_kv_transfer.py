@@ -40,6 +40,14 @@ def bytes_for_tokens(token_count: int) -> int:
     return blocks_for_tokens(token_count) * bytes_per_block_per_rank()
 
 
+def staging_buffer_count(pipeline: str) -> int:
+    if pipeline == "single":
+        return 1
+    if pipeline == "double":
+        return 2
+    raise ValueError(f"unknown transfer pipeline: {pipeline}")
+
+
 def mapping_chunks(source: Sequence[int],
                    destination: Sequence[int],
                    chunk_blocks: int = STAGING_BLOCKS,
@@ -87,9 +95,15 @@ def evaluate_gate(report: dict[str, Any]) -> dict[str, Any]:
             reasons.append(f"case {token_count} D2H is not byte-exact")
         if case.get("h2d_exact") is not True:
             reasons.append(f"case {token_count} H2D is not byte-exact")
-        if case.get("same_gpu_slot_order_exact") is not True:
+        if case.get("component_same_gpu_slot_order_exact") is not True:
             reasons.append(
-                f"case {token_count} same-GPU-slot ordering failed")
+                f"case {token_count} component same-GPU-slot ordering failed")
+        if case.get("invalid_gpu_mapping_fail_fast") is not True:
+            reasons.append(
+                f"case {token_count} invalid GPU mapping did not fail fast")
+        if case.get("unique_block_signatures") is not True:
+            reasons.append(
+                f"case {token_count} block signatures are not unique")
 
     if report.get("mode") == "smoke":
         return {
@@ -125,6 +139,28 @@ def evaluate_gate(report: dict[str, Any]) -> dict[str, Any]:
                 if not _finite_positive(components.get(field)):
                     reasons.append(
                         f"case {token_count} has invalid component {field}")
+            component_groups = {
+                "d2h": (
+                    "d2h_pack", "d2h_dma", "d2h_cpu_scatter"),
+                "h2d": (
+                    "h2d_cpu_gather", "h2d_dma",
+                    "h2d_gpu_scatter"),
+            }
+            for direction, fields in component_groups.items():
+                values = [components.get(field) for field in fields]
+                complete = case.get(
+                    f"candidate_{direction}_median_ms")
+                if (not all(_finite_positive(value) for value in values)
+                        or not _finite_positive(complete)):
+                    continue
+                component_sum = sum(values)
+                lower_bound = max(values) * 0.75
+                upper_bound = component_sum * 1.5
+                if not lower_bound <= complete <= upper_bound:
+                    reasons.append(
+                        f"case {token_count} {direction} complete time "
+                        f"{complete:.3f} ms is inconsistent with components "
+                        f"[{lower_bound:.3f}, {upper_bound:.3f}] ms")
 
     if report.get("extension_isolated_from_runtime") is not True:
         reasons.append("experimental extension is not isolated from runtime")
@@ -208,7 +244,7 @@ def _build_candidate_chunks(torch: Any, source: Any, destination: Any,
     return result
 
 
-def _fill_gpu_cache(torch: Any, gpu_cache: list[Any]) -> None:
+def _fill_gpu_cache(torch: Any, gpu_cache: list[Any]) -> bool:
     base = torch.arange(
         gpu_cache[0].numel(),
         dtype=torch.int32,
@@ -221,7 +257,31 @@ def _fill_gpu_cache(torch: Any, gpu_cache: list[Any]) -> None:
         tensor.copy_(base_half)
         tensor.add_(layer * 37)
         tensor[1].add_(19)
+    num_blocks = gpu_cache[0].shape[1]
+    low = torch.tensor(
+        [block % 256 for block in range(num_blocks)],
+        dtype=torch.float16,
+        device=gpu_cache[0].device,
+    )
+    high = torch.tensor(
+        [block // 256 for block in range(num_blocks)],
+        dtype=torch.float16,
+        device=gpu_cache[0].device,
+    )
+    for layer, tensor in enumerate(gpu_cache):
+        tensor[:, :, 0].copy_(low)
+        tensor[:, :, 1].copy_(high)
+        tensor[:, :, 2].fill_(layer)
+        tensor[0, :, 3].zero_()
+        tensor[1, :, 3].fill_(1)
+    encoded = (
+        gpu_cache[0][0, :, 0].to(dtype=torch.int32)
+        + 256 * gpu_cache[0][0, :, 1].to(dtype=torch.int32))
+    unique = encoded.equal(
+        torch.arange(
+            num_blocks, dtype=torch.int32, device=gpu_cache[0].device))
     del base_half
+    return bool(unique)
 
 
 def _full_d2h_exact(torch: Any, gpu_cache: list[Any],
@@ -250,6 +310,7 @@ def _full_h2d_exact(torch: Any, gpu_cache: list[Any],
 
 def _run_case(torch: Any, extension: Any, device: Any, token_count: int,
               measured_cycles: int, seed: int,
+              pipeline: str,
               vendor_name: str, vendor_swap: Callable[..., None],
               ) -> dict[str, Any]:
     num_blocks = blocks_for_tokens(token_count)
@@ -258,7 +319,9 @@ def _run_case(torch: Any, extension: Any, device: Any, token_count: int,
         torch.empty(cache_shape, dtype=torch.float16, device=device)
         for _ in range(NUM_ATTENTION_LAYERS)
     ]
-    _fill_gpu_cache(torch, gpu_cache)
+    unique_block_signatures = _fill_gpu_cache(torch, gpu_cache)
+    if not unique_block_signatures:
+        raise RuntimeError("block signatures are not unique")
     baseline_cpu = [
         torch.empty(
             cache_shape, dtype=torch.float16, device="cpu", pin_memory=True)
@@ -271,17 +334,28 @@ def _run_case(torch: Any, extension: Any, device: Any, token_count: int,
         device="cpu",
         pin_memory=True,
     )
-    cpu_staging = torch.empty(
-        (STAGING_BLOCKS, NUM_ATTENTION_LAYERS, KV_PLANES,
-         ELEMENTS_PER_PLANE_BLOCK),
-        dtype=torch.float16,
-        device="cpu",
-        pin_memory=True,
-    )
-    gpu_staging = torch.empty_like(cpu_staging, device=device)
+    buffer_count = staging_buffer_count(pipeline)
+    cpu_staging = [
+        torch.empty(
+            (STAGING_BLOCKS, NUM_ATTENTION_LAYERS, KV_PLANES,
+             ELEMENTS_PER_PLANE_BLOCK),
+            dtype=torch.float16,
+            device="cpu",
+            pin_memory=True,
+        )
+        for _ in range(buffer_count)
+    ]
+    gpu_staging = [
+        torch.empty_like(staging, device=device) for staging in cpu_staging
+    ]
+    transfer_events = [
+        torch.cuda.Event(enable_timing=False) for _ in range(buffer_count)
+    ]
+    transfer_error = torch.zeros(1, dtype=torch.int32, device=device)
     if not all(tensor.is_pinned() for tensor in baseline_cpu):
         raise RuntimeError("baseline CPU cache is not pinned")
-    if not candidate_cpu.is_pinned() or not cpu_staging.is_pinned():
+    if (not candidate_cpu.is_pinned()
+            or not all(staging.is_pinned() for staging in cpu_staging)):
         raise RuntimeError("candidate CPU pool or staging is not pinned")
 
     source, destination = _case_mapping(torch, num_blocks, seed)
@@ -294,6 +368,12 @@ def _run_case(torch: Any, extension: Any, device: Any, token_count: int,
     h2d_chunks = _build_candidate_chunks(
         torch, destination, source, device)
     synchronize = lambda: torch.cuda.synchronize(device)
+
+    def clear_transfer_error() -> None:
+        transfer_error.zero_()
+
+    def check_transfer_error() -> None:
+        extension.check_error(transfer_error)
 
     def baseline_swap_all(src: list[Any], dst: list[Any],
                           mapping: Any, legacy_mapping: dict[int, int]) -> None:
@@ -316,66 +396,114 @@ def _run_case(torch: Any, extension: Any, device: Any, token_count: int,
             baseline_cpu, gpu_cache, h2d_mapping, h2d_legacy)
 
     def candidate_d2h() -> None:
-        for chunk in d2h_chunks:
+        if pipeline == "single":
+            clear_transfer_error()
+            for chunk in d2h_chunks:
+                count = chunk["count"]
+                extension.pack(
+                    gpu_cache, chunk["source_gpu"], gpu_staging[0],
+                    transfer_error, count)
+                cpu_staging[0][:count].copy_(
+                    gpu_staging[0][:count], non_blocking=True)
+                synchronize()
+                extension.cpu_scatter(
+                    cpu_staging[0], candidate_cpu,
+                    chunk["destination_cpu"], count)
+            check_transfer_error()
+            return
+
+        clear_transfer_error()
+        pending: tuple[int, dict[str, Any]] | None = None
+        for index, chunk in enumerate(d2h_chunks):
+            slot = index % buffer_count
             count = chunk["count"]
             extension.pack(
-                gpu_cache, chunk["source_gpu"], gpu_staging, count)
-            cpu_staging[:count].copy_(
-                gpu_staging[:count], non_blocking=True)
-            synchronize()
+                gpu_cache, chunk["source_gpu"], gpu_staging[slot],
+                transfer_error, count)
+            cpu_staging[slot][:count].copy_(
+                gpu_staging[slot][:count], non_blocking=True)
+            transfer_events[slot].record()
+            if pending is not None:
+                pending_slot, pending_chunk = pending
+                transfer_events[pending_slot].synchronize()
+                extension.cpu_scatter(
+                    cpu_staging[pending_slot], candidate_cpu,
+                    pending_chunk["destination_cpu"],
+                    pending_chunk["count"])
+            pending = (slot, chunk)
+        if pending is not None:
+            pending_slot, pending_chunk = pending
+            transfer_events[pending_slot].synchronize()
             extension.cpu_scatter(
-                cpu_staging, candidate_cpu,
-                chunk["destination_cpu"], count)
+                cpu_staging[pending_slot], candidate_cpu,
+                pending_chunk["destination_cpu"], pending_chunk["count"])
+        check_transfer_error()
 
     def candidate_h2d() -> None:
-        for chunk in h2d_chunks:
+        clear_transfer_error()
+        for index, chunk in enumerate(h2d_chunks):
+            slot = index % buffer_count
             count = chunk["count"]
+            if pipeline == "double" and index >= buffer_count:
+                transfer_events[slot].synchronize()
             extension.cpu_gather(
-                candidate_cpu, chunk["source_cpu"], cpu_staging, count)
-            gpu_staging[:count].copy_(
-                cpu_staging[:count], non_blocking=True)
+                candidate_cpu, chunk["source_cpu"],
+                cpu_staging[slot], count)
+            gpu_staging[slot][:count].copy_(
+                cpu_staging[slot][:count], non_blocking=True)
             extension.scatter(
-                gpu_staging, chunk["destination_gpu"], gpu_cache, count)
-            synchronize()
+                gpu_staging[slot], chunk["destination_gpu"],
+                gpu_cache, transfer_error, count)
+            if pipeline == "double":
+                transfer_events[slot].record()
+            else:
+                synchronize()
+        synchronize()
+        check_transfer_error()
 
     def pack_component() -> None:
+        clear_transfer_error()
         for chunk in d2h_chunks:
             extension.pack(
-                gpu_cache, chunk["source_gpu"], gpu_staging, chunk["count"])
+                gpu_cache, chunk["source_gpu"],
+                gpu_staging[0], transfer_error, chunk["count"])
             synchronize()
+        check_transfer_error()
 
     def d2h_dma_component() -> None:
         for chunk in d2h_chunks:
             count = chunk["count"]
-            cpu_staging[:count].copy_(
-                gpu_staging[:count], non_blocking=True)
+            cpu_staging[0][:count].copy_(
+                gpu_staging[0][:count], non_blocking=True)
             synchronize()
 
     def cpu_scatter_component() -> None:
         for chunk in d2h_chunks:
             extension.cpu_scatter(
-                cpu_staging, candidate_cpu,
+                cpu_staging[0], candidate_cpu,
                 chunk["destination_cpu"], chunk["count"])
 
     def cpu_gather_component() -> None:
         for chunk in h2d_chunks:
             extension.cpu_gather(
                 candidate_cpu, chunk["source_cpu"],
-                cpu_staging, chunk["count"])
+                cpu_staging[0], chunk["count"])
 
     def h2d_dma_component() -> None:
         for chunk in h2d_chunks:
             count = chunk["count"]
-            gpu_staging[:count].copy_(
-                cpu_staging[:count], non_blocking=True)
+            gpu_staging[0][:count].copy_(
+                cpu_staging[0][:count], non_blocking=True)
             synchronize()
 
     def scatter_component() -> None:
+        clear_transfer_error()
         for chunk in h2d_chunks:
             extension.scatter(
-                gpu_staging, chunk["destination_gpu"],
-                gpu_cache, chunk["count"])
+                gpu_staging[0], chunk["destination_gpu"],
+                gpu_cache, transfer_error, chunk["count"])
             synchronize()
+        check_transfer_error()
 
     baseline_d2h_ms, baseline_d2h_trials = _median_trials(
         baseline_d2h, synchronize, measured_cycles)
@@ -432,20 +560,28 @@ def _run_case(torch: Any, extension: Any, device: Any, token_count: int,
         device,
     )
     d2h_chunk = same_slot_d2h[0]
+    clear_transfer_error()
     extension.pack(
-        gpu_cache, d2h_chunk["source_gpu"], gpu_staging, 1)
-    cpu_staging[:1].copy_(gpu_staging[:1], non_blocking=True)
+        gpu_cache, d2h_chunk["source_gpu"], gpu_staging[0],
+        transfer_error, 1)
+    cpu_staging[0][:1].copy_(
+        gpu_staging[0][:1], non_blocking=True)
     synchronize()
+    check_transfer_error()
     extension.cpu_scatter(
-        cpu_staging, candidate_cpu,
+        cpu_staging[0], candidate_cpu,
         d2h_chunk["destination_cpu"], 1)
     h2d_chunk = same_slot_h2d[0]
     extension.cpu_gather(
-        candidate_cpu, h2d_chunk["source_cpu"], cpu_staging, 1)
-    gpu_staging[:1].copy_(cpu_staging[:1], non_blocking=True)
+        candidate_cpu, h2d_chunk["source_cpu"], cpu_staging[0], 1)
+    gpu_staging[0][:1].copy_(
+        cpu_staging[0][:1], non_blocking=True)
+    clear_transfer_error()
     extension.scatter(
-        gpu_staging, h2d_chunk["destination_gpu"], gpu_cache, 1)
+        gpu_staging[0], h2d_chunk["destination_gpu"], gpu_cache,
+        transfer_error, 1)
     synchronize()
+    check_transfer_error()
     preserved_exact = candidate_cpu[preserved_cpu].equal(expected_victim)
     promoted = torch.stack([
         gpu_cache[layer][:, victim_gpu, :]
@@ -454,12 +590,27 @@ def _run_case(torch: Any, extension: Any, device: Any, token_count: int,
     requested_exact = promoted.equal(expected_requested)
     same_slot_exact = preserved_exact and requested_exact
 
+    invalid_gpu_mapping_fail_fast = False
+    invalid_ids = torch.tensor(
+        [num_blocks, -1], dtype=torch.int32, device=device)
+    clear_transfer_error()
+    extension.pack(
+        gpu_cache, invalid_ids, gpu_staging[0], transfer_error, 2)
+    synchronize()
+    try:
+        check_transfer_error()
+    except RuntimeError as exc:
+        invalid_gpu_mapping_fail_fast = (
+            "out-of-range id" in str(exc))
+
     byte_count = bytes_for_tokens(token_count)
     return {
         "token_count": token_count,
         "block_count": num_blocks,
         "bytes_per_direction": byte_count,
         "mapping_seed": seed,
+        "pipeline": pipeline,
+        "staging_buffer_count": buffer_count,
         "mapping_source_unique": source.unique().numel() == num_blocks,
         "mapping_destination_unique": (
             destination.unique().numel() == num_blocks),
@@ -479,8 +630,11 @@ def _run_case(torch: Any, extension: Any, device: Any, token_count: int,
         "candidate_components_ms": component_ms,
         "d2h_exact": d2h_exact,
         "h2d_exact": h2d_exact,
-        "same_gpu_slot_order_exact": same_slot_exact,
+        "unique_block_signatures": unique_block_signatures,
+        "invalid_gpu_mapping_fail_fast": invalid_gpu_mapping_fail_fast,
+        "component_same_gpu_slot_order_exact": same_slot_exact,
         "same_slot_details": {
+            "scope": "component_call_order_only",
             "victim_gpu_block": victim_gpu,
             "requested_source_gpu_block": requested_gpu,
             "preserved_cpu_slot": preserved_cpu,
@@ -502,6 +656,8 @@ def main() -> int:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--instance", required=True)
+    parser.add_argument(
+        "--pipeline", choices=("single", "double"), default="single")
     args = parser.parse_args()
 
     import torch
@@ -542,7 +698,11 @@ def main() -> int:
         "elements_per_plane_block": ELEMENTS_PER_PLANE_BLOCK,
         "block_size": BLOCK_SIZE,
         "staging_blocks": STAGING_BLOCKS,
-        "staging_bytes": STAGING_BLOCKS * bytes_per_block_per_rank(),
+        "pipeline": args.pipeline,
+        "staging_buffer_count": staging_buffer_count(args.pipeline),
+        "staging_bytes": (
+            staging_buffer_count(args.pipeline) * STAGING_BLOCKS
+            * bytes_per_block_per_rank()),
         "required_speedup": REQUIRED_SPEEDUP,
         "extension_isolated_from_runtime": True,
         "cases": {},
@@ -559,6 +719,7 @@ def main() -> int:
                 token_count=token_count,
                 measured_cycles=measured_cycles,
                 seed=FIXED_SEED + index,
+                pipeline=args.pipeline,
                 vendor_name=vendor_name,
                 vendor_swap=vendor_swap,
             )

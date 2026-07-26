@@ -32,9 +32,13 @@ def qualified_report():
         cases[str(token_count)] = {
             "d2h_exact": True,
             "h2d_exact": True,
-            "same_gpu_slot_order_exact": True,
+            "component_same_gpu_slot_order_exact": True,
+            "invalid_gpu_mapping_fail_fast": True,
+            "unique_block_signatures": True,
             "d2h_speedup": 4.25,
             "h2d_speedup": 5.5,
+            "candidate_d2h_median_ms": 4.0,
+            "candidate_h2d_median_ms": 4.0,
             "candidate_components_ms": {
                 "d2h_pack": 1.0,
                 "d2h_dma": 2.0,
@@ -59,6 +63,10 @@ class M156BlockMajorTransferUnitTests(unittest.TestCase):
         self.assertEqual(MODULE.bytes_per_block_per_rank(), 163840)
         self.assertEqual(MODULE.bytes_for_tokens(65536), 671088640)
         self.assertEqual(MODULE.STAGING_BLOCKS, 512)
+        self.assertEqual(MODULE.staging_buffer_count("single"), 1)
+        self.assertEqual(MODULE.staging_buffer_count("double"), 2)
+        with self.assertRaisesRegex(ValueError, "unknown transfer pipeline"):
+            MODULE.staging_buffer_count("triple")
 
     def test_mapping_chunks_cover_512_and_513_boundaries(self):
         chunks = MODULE.mapping_chunks(list(range(512)), list(range(512)))
@@ -90,6 +98,15 @@ class M156BlockMajorTransferUnitTests(unittest.TestCase):
         self.assertTrue(any("H2D is not byte-exact"
                             in reason for reason in result["reasons"]))
 
+    def test_component_timing_inconsistency_fails_closed(self):
+        report = qualified_report()
+        report["cases"]["65536"]["candidate_d2h_median_ms"] = 100.0
+        result = MODULE.evaluate_gate(report)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "d2h complete time" in reason
+            for reason in result["reasons"]))
+
     def test_smoke_cannot_qualify(self):
         report = qualified_report()
         report["mode"] = "smoke"
@@ -106,10 +123,22 @@ class M156BlockMajorTransferUnitTests(unittest.TestCase):
         self.assertIn("expected exactly ", source)
         self.assertIn("must have shape [2, blocks, 4096]", source)
         self.assertIn("CPU block id out of range", source)
+        self.assertIn("atomicExch(error_flag, 1)", source)
+        self.assertIn(
+            "GPU block mapping contains an out-of-range id", source)
         self.assertIn("C10_CUDA_KERNEL_LAUNCH_CHECK", source)
         self.assertIn("kAttentionLayers = 10", source)
         self.assertIn("kElementsPerPlaneBlock = 4096", source)
         self.assertNotIn("corex_block_major_kv_transfer", PATCH_OPS)
+
+    def test_double_buffer_is_fixed_without_tunable_chunk(self):
+        source = BENCHMARK.read_text()
+        self.assertIn(
+            '"--pipeline", choices=("single", "double")', source)
+        self.assertIn("STAGING_BLOCKS = 512", source)
+        self.assertNotIn("--staging-blocks", source)
+        self.assertIn("unique_block_signatures", source)
+        self.assertIn('"scope": "component_call_order_only"', source)
 
     def test_build_is_fixed_to_corex_ivcore10(self):
         source = BUILD.read_text()
