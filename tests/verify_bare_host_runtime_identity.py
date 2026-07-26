@@ -21,6 +21,11 @@ DIRECT_SOURCE_FILES = {
     "bi100_env": Path("qwen3_6_scripts/bi100_env.py"),
     "vllm_model": Path("qwen3_6_scripts/qwen3_5.py"),
     "bi100_profile": Path("qwen3_6_scripts/bi100_profile.py"),
+    "block_major_kv_cache": Path(
+        "qwen3_6_scripts/block_major_kv_cache.py"),
+    "block_major_kv_extension": Path(
+        "qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/"
+        "corex_block_major_kv_transfer.so"),
     "block_table": Path("vllm/core/block/block_table.py"),
     "chat_utils": Path("qwen3_6_scripts/chat_utils.py"),
     "cli_args": Path("qwen3_6_scripts/cli_args.py"),
@@ -54,7 +59,8 @@ DIRECT_SOURCE_FILES = {
         "qwen3_6_scripts/qwen3_5_moe/__init__.py"),
 }
 GENERATED_FILES = {
-    "block_manager", "cache_trace_outputs", "model_runner", "worker",
+    "block_manager", "cache_engine", "cache_trace_outputs", "model_runner",
+    "worker",
 }
 REQUIRED_FILES = set(DIRECT_SOURCE_FILES) | GENERATED_FILES
 
@@ -108,6 +114,10 @@ def verify(
         reasons.append("runtime install report is not qualified")
     if runtime_install.get("source_tree_clean") is not True:
         reasons.append("runtime install was not built from a clean source tree")
+    if runtime_install.get("block_major_cache_engine_patch") is not True:
+        reasons.append("runtime install lacks the block-major CacheEngine patch")
+    if runtime_install.get("block_major_worker_capacity_patch") is not True:
+        reasons.append("runtime install lacks the block-major capacity patch")
     if runtime_install.get("source_revision") != source_revision:
         reasons.append("runtime install revision differs from current source")
 

@@ -1645,3 +1645,19 @@ grep -E "VLLM_ROOT|TRANSFORMERS_ROOT" build.log
 - 该最小 overlay 只建立组件接线资格，不是完整模型 runtime。健康 TP4 仍需
   测实际 GPU block 容量、pressure、cold/warm token、262144、完整能力和
   端到端指标；通过前不得晋升 `main` 或 YAML。
+
+## 2026-07-26 M1-58 Block-Major 容量计费
+
+- 审查发现 M1-57 的两个固定 GPU staging 在 vLLM 完成显存 profile 和 KV block
+  计算后才分配，导致每 rank `167,772,160` bytes 没有计入
+  `gpu-memory-utilization=0.9`，组件通过仍可能在完整 TP4 启动时 OOM。
+- 新 worker patch 在 selector 开启时固定扣除 `1,024` 个生产 KV block；
+  selector 关闭时 block 数完全不变。候选还必须同时满足
+  `BI100_CPU_KV_OFFLOAD=1`、`BI100_HYBRID_KV_ACCOUNTING=full_attention`
+  和 `163,840` bytes/block，否则启动失败。
+- bare-host runtime identity 现在额外绑定 block-major Python 模块、CoreX
+  扩展、生成后的 CacheEngine/worker 以及两个 patch marker。startup gate
+  可要求每个 TP rank 都给出容量扣减和 cache allocation 报告。
+- 本地完整单测 `707/707`、跳过 25，submission preflight `9/9`；正式
+  29 argv、3 env、YAML、默认 selector 和 `main` 均未改变。当前三卡不支持
+  TP3 模型运行，因此 TP4 启动、262144、能力正确性和端到端收益仍未验证。

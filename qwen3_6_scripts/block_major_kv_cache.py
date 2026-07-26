@@ -13,6 +13,8 @@ logger = init_logger(__name__)
 
 ENABLE_ENV = "BI100_BLOCK_MAJOR_CPU_KV"
 TRACE_ENV = "BI100_BLOCK_MAJOR_CPU_KV_TRACE"
+CPU_OFFLOAD_ENV = "BI100_CPU_KV_OFFLOAD"
+HYBRID_ACCOUNTING_ENV = "BI100_HYBRID_KV_ACCOUNTING"
 NUM_ATTENTION_LAYERS = 10
 KV_PLANES = 2
 ELEMENTS_PER_PLANE_BLOCK = 4096
@@ -21,6 +23,7 @@ STAGING_BUFFER_COUNT = 2
 BYTES_PER_BLOCK = (
     NUM_ATTENTION_LAYERS * KV_PLANES * ELEMENTS_PER_PLANE_BLOCK * 2
 )
+GPU_STAGING_BYTES = STAGING_BLOCKS * STAGING_BUFFER_COUNT * BYTES_PER_BLOCK
 
 
 def _strict_binary_selector(
@@ -46,6 +49,54 @@ def block_major_cpu_kv_trace_enabled(
     environ: Mapping[str, str] | None = None,
 ) -> bool:
     return _strict_binary_selector(TRACE_ENV, environ)
+
+
+def _require_block_major_runtime(
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    source = os.environ if environ is None else environ
+    if source.get(CPU_OFFLOAD_ENV, "0") != "1":
+        raise RuntimeError(
+            f"{ENABLE_ENV}=1 requires {CPU_OFFLOAD_ENV}=1")
+    if source.get(HYBRID_ACCOUNTING_ENV, "legacy40") != "full_attention":
+        raise RuntimeError(
+            f"{ENABLE_ENV}=1 requires "
+            f"{HYBRID_ACCOUNTING_ENV}=full_attention")
+
+
+def reserve_block_major_gpu_blocks(
+    num_gpu_blocks: int,
+    cache_block_size: int,
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    if (not isinstance(num_gpu_blocks, int)
+            or isinstance(num_gpu_blocks, bool)
+            or num_gpu_blocks < 0):
+        raise ValueError("num_gpu_blocks must be a non-negative integer")
+    if not block_major_cpu_kv_enabled(environ):
+        return num_gpu_blocks
+
+    _require_block_major_runtime(environ)
+    if cache_block_size != BYTES_PER_BLOCK:
+        raise RuntimeError(
+            f"{ENABLE_ENV}=1 requires cache block size "
+            f"{BYTES_PER_BLOCK}, got {cache_block_size}")
+    reserved_blocks = (
+        GPU_STAGING_BYTES + cache_block_size - 1
+    ) // cache_block_size
+    remaining_blocks = num_gpu_blocks - reserved_blocks
+    if remaining_blocks <= 0:
+        raise RuntimeError(
+            "block-major GPU staging leaves no usable GPU KV blocks")
+    logger.info(
+        "[BI100 BLOCK KV] capacity reserve blocks=%d bytes=%d "
+        "profiled_blocks=%d usable_blocks=%d",
+        reserved_blocks,
+        GPU_STAGING_BYTES,
+        num_gpu_blocks,
+        remaining_blocks,
+    )
+    return remaining_blocks
 
 
 def validate_block_mapping(
@@ -96,6 +147,8 @@ class BlockMajorCpuKVCache:
         pin_memory: bool,
     ) -> None:
         self._validate_gpu_cache(gpu_cache)
+        if block_major_cpu_kv_enabled():
+            _require_block_major_runtime()
         if num_cpu_blocks <= 0:
             raise RuntimeError(
                 f"{ENABLE_ENV}=1 requires a positive CPU block count")

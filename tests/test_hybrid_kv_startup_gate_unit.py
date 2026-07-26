@@ -22,11 +22,15 @@ def _log(
     configured_layers: int = 10,
     model_path: str = "/model",
     cache_trace: str = "0",
+    cpu_kv_offload: str = "0",
+    block_major_cpu_kv: str = "0",
 ) -> str:
     service_contract = dict(MODULE.FIXED_SERVICE_CONTRACT)
     service_contract.update({
         "accounting": mode,
         "cache_trace": cache_trace,
+        "cpu_kv_offload": cpu_kv_offload,
+        "block_major_cpu_kv": block_major_cpu_kv,
         "model_path": model_path,
         "runtime_site_packages": "system",
     })
@@ -40,12 +44,24 @@ def _log(
         "full_attention_ordinals=3,7,11,15,19,23,27,31,35,39\n"
         for rank in range(4)
     )
+    block_major = ""
+    if block_major_cpu_kv == "1":
+        block_major = "".join(
+            "[BI100 BLOCK KV] capacity reserve "
+            "blocks=1024 bytes=167772160 "
+            "profiled_blocks=68536 usable_blocks=67512\n"
+            f"[BI100 BLOCK KV] enabled device=cuda:{rank} "
+            "gpu_blocks=67512 cpu_blocks=26212 layers=10 "
+            "block_bytes=163840 staging_blocks=512 staging_buffers=2\n"
+            for rank in range(4)
+        )
     return (
         f"[BI100] M1-49 runtime contract; {contract_line}\n"
         "Initializing engine dtype=torch.float16 max_seq_len=262144 "
         "block_size=16 swap_space=4\n"
         f"# GPU blocks: {gpu_blocks}, # CPU blocks: {cpu_blocks}\n"
         + accounting
+        + block_major
     )
 
 
@@ -160,6 +176,48 @@ class HybridKvStartupGateTest(unittest.TestCase):
         self.assertEqual(contract["service"]["cache_trace"], "1")
         self.assertTrue(any(
             "cache_trace" in reason for reason in mismatch_reasons))
+
+    def test_block_major_candidate_contract_and_rank_reports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = pathlib.Path(directory)
+            (model_path / "config.json").write_text(
+                '{}\n', encoding="utf-8")
+            log = _log(
+                model_path=str(model_path),
+                cpu_kv_offload="1",
+                block_major_cpu_kv="1",
+            )
+            contract, reasons = MODULE._runtime_contract(
+                log,
+                model_path,
+                mode="full_attention",
+                max_model_len=262_144,
+                block_size=16,
+                tensor_parallel_size=4,
+                expected_cpu_kv_offload="1",
+                expected_block_major_cpu_kv="1",
+            )
+        layers = ["linear_attention"] * 40
+        for index in FULL_ATTENTION_ORDINALS:
+            layers[index] = "attention"
+        report = MODULE.evaluate(
+            log,
+            mode="full_attention",
+            config_mode="full_attention",
+            layers_block_type=layers,
+            full_attention_ordinals=FULL_ATTENTION_ORDINALS,
+            num_key_value_heads=2,
+            head_dim=256,
+            max_model_len=262_144,
+            block_size=16,
+            tensor_parallel_size=4,
+            runtime_contract=contract,
+            contract_reasons=reasons,
+            block_major_cpu_kv=True,
+        )
+        self.assertTrue(report["qualified"], report)
+        self.assertEqual(len(report["block_major_capacity_reports"]), 4)
+        self.assertEqual(len(report["block_major_cache_reports"]), 4)
 
     def test_invalid_expected_trace_mode_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

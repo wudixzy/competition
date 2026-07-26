@@ -256,6 +256,62 @@ class BlockMajorKVCacheTest(unittest.TestCase):
                         module.ENABLE_ENV: invalid,
                     })
 
+    def test_gpu_capacity_reserve_is_exact_and_default_off(self):
+        profiled_blocks = 67_512
+        self.assertEqual(
+            module.reserve_block_major_gpu_blocks(
+                profiled_blocks,
+                module.BYTES_PER_BLOCK,
+                {},
+            ),
+            profiled_blocks,
+        )
+        candidate = {
+            module.ENABLE_ENV: "1",
+            module.CPU_OFFLOAD_ENV: "1",
+            module.HYBRID_ACCOUNTING_ENV: "full_attention",
+        }
+        self.assertEqual(module.GPU_STAGING_BYTES, 167_772_160)
+        self.assertEqual(
+            module.reserve_block_major_gpu_blocks(
+                profiled_blocks,
+                module.BYTES_PER_BLOCK,
+                candidate,
+            ),
+            profiled_blocks - 1024,
+        )
+
+    def test_gpu_capacity_reserve_fails_closed(self):
+        valid = {
+            module.ENABLE_ENV: "1",
+            module.CPU_OFFLOAD_ENV: "1",
+            module.HYBRID_ACCOUNTING_ENV: "full_attention",
+        }
+        with self.assertRaisesRegex(RuntimeError, "CPU_KV_OFFLOAD=1"):
+            module.reserve_block_major_gpu_blocks(
+                2048,
+                module.BYTES_PER_BLOCK,
+                {**valid, module.CPU_OFFLOAD_ENV: "0"},
+            )
+        with self.assertRaisesRegex(RuntimeError, "full_attention"):
+            module.reserve_block_major_gpu_blocks(
+                2048,
+                module.BYTES_PER_BLOCK,
+                {**valid, module.HYBRID_ACCOUNTING_ENV: "legacy40"},
+            )
+        with self.assertRaisesRegex(RuntimeError, "cache block size"):
+            module.reserve_block_major_gpu_blocks(
+                2048,
+                module.BYTES_PER_BLOCK * 4,
+                valid,
+            )
+        with self.assertRaisesRegex(RuntimeError, "no usable GPU KV blocks"):
+            module.reserve_block_major_gpu_blocks(
+                1024,
+                module.BYTES_PER_BLOCK,
+                valid,
+            )
+
     def test_mapping_validation_returns_columns(self):
         mapping = FakeTensor([[1, 7], [3, 2], [8, 5]])
         source, destination = module.validate_block_mapping(
@@ -351,6 +407,7 @@ class BlockMajorKVCacheTest(unittest.TestCase):
         self.assertEqual(module.BYTES_PER_BLOCK, 163840)
         self.assertEqual(module.STAGING_BLOCKS, 512)
         self.assertEqual(module.STAGING_BUFFER_COUNT, 2)
+        self.assertEqual(module.GPU_STAGING_BYTES, 167772160)
         run_config = (ROOT / "computility-run.yaml").read_text(
             encoding="utf-8")
         self.assertNotIn(module.ENABLE_ENV, run_config)

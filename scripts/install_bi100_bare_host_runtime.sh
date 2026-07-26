@@ -69,6 +69,7 @@ required=(
     qwen3_6_scripts/patch_utils.py
     qwen3_6_scripts/block_major_kv_cache.py
     qwen3_6_scripts/patch_block_major_cache_engine.py
+    qwen3_6_scripts/patch_block_major_worker_capacity.py
     qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/corex_block_major_kv_transfer.so
     qwen3_6_scripts/patch_xformers_profile.py
     scripts/normalize_offline_distribution.py
@@ -367,7 +368,9 @@ checks = {
 }
 model_runner = vllm_root / "worker/model_runner.py"
 worker = vllm_root / "worker/worker.py"
+cache_engine = vllm_root / "worker/cache_engine.py"
 for label, path in {
+        "cache_engine": cache_engine,
         "model_runner": model_runner,
         "worker": worker,
 }.items():
@@ -399,7 +402,15 @@ startup_profile_guard_patch = (
     and 'os.environ["BI100_IN_STARTUP_PROFILE"] = "1"' in worker_text
 )
 qualified = qualified and startup_profile_guard_patch
-cache_engine = vllm_root / "worker/cache_engine.py"
+block_major_worker_capacity_patch = all(
+    fragment in worker_text
+    for fragment in (
+        "from vllm.block_major_kv_cache import "
+        "reserve_block_major_gpu_blocks",
+        "num_gpu_blocks = reserve_block_major_gpu_blocks(",
+    )
+)
+qualified = qualified and block_major_worker_capacity_patch
 cache_engine_text = cache_engine.read_text(encoding="utf-8")
 block_major_cache_engine_patch = all(
     fragment in cache_engine_text
@@ -442,6 +453,8 @@ report = {
     "profile_attention_layer_patch": profile_patch_present,
     "startup_profile_guard_patch": startup_profile_guard_patch,
     "block_major_cache_engine_patch": block_major_cache_engine_patch,
+    "block_major_worker_capacity_patch": (
+        block_major_worker_capacity_patch),
 }
 rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
 output.write_text(rendered, encoding="utf-8")

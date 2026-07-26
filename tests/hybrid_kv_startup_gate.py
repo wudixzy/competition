@@ -22,6 +22,16 @@ EXPECTED_LAYERS = {"legacy40": 40, "full_attention": 10}
 MAX_SEQ_RE = re.compile(r"\bmax_seq_len=(\d+)\b")
 GPU_BLOCK_RE = re.compile(r"# GPU blocks:\s*(\d+)\b")
 CPU_BLOCK_RE = re.compile(r"# CPU blocks:\s*(\d+)\b")
+BLOCK_MAJOR_CAPACITY_RE = re.compile(
+    r"\[BI100 BLOCK KV\] capacity reserve "
+    r"blocks=(\d+) bytes=(\d+) profiled_blocks=(\d+) usable_blocks=(\d+)"
+)
+BLOCK_MAJOR_CACHE_RE = re.compile(
+    r"\[BI100 BLOCK KV\] enabled "
+    r"device=(cuda:\d+) gpu_blocks=(\d+) cpu_blocks=(\d+) "
+    r"layers=(\d+) block_bytes=(\d+) "
+    r"staging_blocks=(\d+) staging_buffers=(\d+)"
+)
 DTYPE_RE = re.compile(r"\bdtype=torch\.(float16|bfloat16|float32)\b")
 BLOCK_SIZE_RE = re.compile(r"\bblock_size=(\d+)\b")
 SWAP_SPACE_RE = re.compile(r"\bswap_space=(\d+(?:\.\d+)?)\b")
@@ -62,6 +72,8 @@ FIXED_SERVICE_CONTRACT = {
     "moe_direct": "1",
     "gdn_packed": "1",
     "cpu_kv_offload": "0",
+    "block_major_cpu_kv": "0",
+    "block_major_cpu_kv_trace": "0",
     "gdn_cache_policy": "admission64",
     "gdn_restore_mode": "direct",
     "cache_trace": "0",
@@ -84,6 +96,7 @@ def evaluate(
     tensor_parallel_size: int,
     runtime_contract: dict[str, Any],
     contract_reasons: list[str] | None = None,
+    block_major_cpu_kv: bool = False,
 ) -> dict[str, Any]:
     reasons = list(contract_reasons or [])
     if mode not in EXPECTED_LAYERS:
@@ -147,6 +160,30 @@ def evaluate(
     max_seq_len = max_seq_values[-1] if max_seq_values else None
     gpu_blocks = gpu_block_values[-1] if gpu_block_values else None
     cpu_blocks = cpu_block_values[-1] if cpu_block_values else None
+    block_major_capacity_reports = [
+        {
+            "reserved_blocks": int(reserved),
+            "reserved_bytes": int(reserved_bytes),
+            "profiled_blocks": int(profiled),
+            "usable_blocks": int(usable),
+        }
+        for reserved, reserved_bytes, profiled, usable
+        in BLOCK_MAJOR_CAPACITY_RE.findall(log_text)
+    ]
+    block_major_cache_reports = [
+        {
+            "device": device,
+            "gpu_blocks": int(report_gpu_blocks),
+            "cpu_blocks": int(report_cpu_blocks),
+            "layers": int(layers),
+            "block_bytes": int(block_bytes),
+            "staging_blocks": int(staging_blocks),
+            "staging_buffers": int(staging_buffers),
+        }
+        for (device, report_gpu_blocks, report_cpu_blocks, layers,
+             block_bytes, staging_blocks, staging_buffers)
+        in BLOCK_MAJOR_CACHE_RE.findall(log_text)
+    ]
     required_gpu_blocks = math.ceil(max_model_len / block_size)
     dtype = dtype_values[-1] if dtype_values else None
     dtype_bytes = DTYPE_BYTES.get(dtype) if dtype is not None else None
@@ -176,6 +213,57 @@ def evaluate(
         reasons.append("CPU block count must be positive")
     if dtype is None:
         reasons.append("startup log is missing model dtype")
+    if block_major_cpu_kv:
+        if len(block_major_capacity_reports) != tensor_parallel_size:
+            reasons.append(
+                "startup log must contain exactly one block-major capacity "
+                f"report per TP rank; got {len(block_major_capacity_reports)}")
+        if len(block_major_cache_reports) != tensor_parallel_size:
+            reasons.append(
+                "startup log must contain exactly one block-major cache "
+                f"report per TP rank; got {len(block_major_cache_reports)}")
+        for index, report in enumerate(block_major_capacity_reports):
+            expected = {
+                "reserved_blocks": 1024,
+                "reserved_bytes": 167_772_160,
+                "profiled_blocks": (
+                    report["usable_blocks"] + 1024),
+                "usable_blocks": report["usable_blocks"],
+            }
+            if report != expected:
+                reasons.append(
+                    f"block-major capacity report {index} differs from "
+                    f"{expected}: {report}")
+            if (gpu_blocks is not None
+                    and report["usable_blocks"] < gpu_blocks):
+                reasons.append(
+                    f"block-major capacity report {index} usable blocks "
+                    f"{report['usable_blocks']} are below final "
+                    f"{gpu_blocks}")
+        if (gpu_blocks is not None and block_major_capacity_reports
+                and min(report["usable_blocks"]
+                        for report in block_major_capacity_reports)
+                != gpu_blocks):
+            reasons.append(
+                "minimum rank-local block-major capacity does not equal "
+                f"final GPU blocks {gpu_blocks}")
+        for index, report in enumerate(block_major_cache_reports):
+            expected = {
+                "device": report["device"],
+                "gpu_blocks": gpu_blocks,
+                "cpu_blocks": cpu_blocks,
+                "layers": 10,
+                "block_bytes": 163_840,
+                "staging_blocks": 512,
+                "staging_buffers": 2,
+            }
+            if report != expected:
+                reasons.append(
+                    f"block-major cache report {index} differs from "
+                    f"{expected}: {report}")
+    elif block_major_capacity_reports or block_major_cache_reports:
+        reasons.append(
+            "block-major runtime reports appeared while selector was disabled")
     if len(accounting_reports) != tensor_parallel_size:
         reasons.append(
             "startup log must contain exactly one hybrid-KV accounting "
@@ -242,6 +330,9 @@ def evaluate(
         "observed_max_seq_len": max_seq_len,
         "observed_gpu_blocks": gpu_blocks,
         "observed_cpu_blocks": cpu_blocks,
+        "block_major_cpu_kv": block_major_cpu_kv,
+        "block_major_capacity_reports": block_major_capacity_reports,
+        "block_major_cache_reports": block_major_cache_reports,
         "observed_gpu_tokens": (
             gpu_blocks * block_size if gpu_blocks is not None else None),
         "qualified": not reasons,
@@ -298,13 +389,24 @@ def _runtime_contract(
     block_size: int,
     tensor_parallel_size: int,
     expected_cache_trace: str = "0",
+    expected_cpu_kv_offload: str = "0",
+    expected_block_major_cpu_kv: str = "0",
+    expected_block_major_cpu_kv_trace: str = "0",
     expected_gdn_cache_policy: str = "admission64",
     expected_gdn_restore_mode: str = "direct",
     expected_fused_prefill: str = "0",
     expected_kv_eviction_policy: str = "lru",
 ) -> tuple[dict[str, Any], list[str]]:
-    if expected_cache_trace not in {"0", "1"}:
-        raise ValueError("expected_cache_trace must be 0 or 1")
+    binary_expectations = {
+        "expected_cache_trace": expected_cache_trace,
+        "expected_cpu_kv_offload": expected_cpu_kv_offload,
+        "expected_block_major_cpu_kv": expected_block_major_cpu_kv,
+        "expected_block_major_cpu_kv_trace": (
+            expected_block_major_cpu_kv_trace),
+    }
+    for name, value in binary_expectations.items():
+        if value not in {"0", "1"}:
+            raise ValueError(f"{name} must be 0 or 1")
     reasons: list[str] = []
     matches = SERVICE_CONTRACT_RE.findall(log_text)
     service: dict[str, str] = {}
@@ -329,6 +431,9 @@ def _runtime_contract(
     expected_service.update({
         "accounting": mode,
         "cache_trace": expected_cache_trace,
+        "cpu_kv_offload": expected_cpu_kv_offload,
+        "block_major_cpu_kv": expected_block_major_cpu_kv,
+        "block_major_cpu_kv_trace": expected_block_major_cpu_kv_trace,
         "gdn_cache_policy": expected_gdn_cache_policy,
         "gdn_restore_mode": expected_gdn_restore_mode,
         "fused_prefill": expected_fused_prefill,
@@ -397,6 +502,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--expected-cache-trace", choices=("0", "1"), default="0")
     parser.add_argument(
+        "--expected-cpu-kv-offload", choices=("0", "1"), default="0")
+    parser.add_argument(
+        "--expected-block-major-cpu-kv",
+        choices=("0", "1"),
+        default="0",
+    )
+    parser.add_argument(
+        "--expected-block-major-cpu-kv-trace",
+        choices=("0", "1"),
+        default="0",
+    )
+    parser.add_argument(
         "--expected-gdn-cache-policy",
         choices=("fine32", "admission64"), default="admission64")
     parser.add_argument(
@@ -432,6 +549,11 @@ def main(argv: list[str] | None = None) -> int:
             block_size=args.block_size,
             tensor_parallel_size=args.tensor_parallel_size,
             expected_cache_trace=args.expected_cache_trace,
+            expected_cpu_kv_offload=args.expected_cpu_kv_offload,
+            expected_block_major_cpu_kv=(
+                args.expected_block_major_cpu_kv),
+            expected_block_major_cpu_kv_trace=(
+                args.expected_block_major_cpu_kv_trace),
             expected_gdn_cache_policy=args.expected_gdn_cache_policy,
             expected_gdn_restore_mode=args.expected_gdn_restore_mode,
             expected_fused_prefill=args.expected_fused_prefill,
@@ -450,6 +572,8 @@ def main(argv: list[str] | None = None) -> int:
             tensor_parallel_size=args.tensor_parallel_size,
             runtime_contract=runtime_contract,
             contract_reasons=contract_reasons,
+            block_major_cpu_kv=(
+                args.expected_block_major_cpu_kv == "1"),
         )
     except Exception as error:
         report = {

@@ -161,6 +161,7 @@ python3 ./patch_model_runner.py
 build_stage "installing executor startup diagnostics"
 python3 ./patch_executor_startup_debug.py
 python3 ./patch_worker_startup_profile_guard.py
+python3 ./patch_block_major_worker_capacity.py
 
 build_stage "installing transformers Qwen3.5 model support"
 cp -r ./qwen3_5 "${TRANSFORMERS_ROOT}/models/"
