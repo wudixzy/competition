@@ -16,6 +16,62 @@ from http import HTTPStatus
 from typing import AsyncIterator, Set
 
 
+def _bi100_field(value, name):
+    if isinstance(value, dict):
+        return value.get(name)
+    return getattr(value, name, None)
+
+
+def _bi100_scalar(value):
+    return getattr(value, "value", value)
+
+
+def _bi100_chat_4xx_reason(message):
+    if message == "messages must contain at least one message":
+        return "empty_messages"
+    if (isinstance(message, str) and message.startswith("n=")
+            and " exceeds max_num_seqs=" in message):
+        return "n_exceeds_max_num_seqs"
+    if message == 'tool_choice = "required" is not supported!':
+        return "unsupported_tool_choice_required"
+    if (isinstance(message, str)
+            and message.startswith('"auto" tool choice requires ')):
+        return "tool_parser_unavailable"
+    return "unclassified_chat_error"
+
+
+def _bi100_chat_request_shape(request):
+    messages = _bi100_field(request, "messages")
+    if not isinstance(messages, (list, tuple)):
+        messages = ()
+    tools = _bi100_field(request, "tools")
+    if not isinstance(tools, (list, tuple)):
+        tools = ()
+
+    system_count = 0
+    has_image = False
+    for message in messages:
+        if _bi100_scalar(_bi100_field(message, "role")) == "system":
+            system_count += 1
+        content = _bi100_field(message, "content")
+        if not isinstance(content, (list, tuple)):
+            continue
+        for part in content:
+            part_type = _bi100_scalar(_bi100_field(part, "type"))
+            if part_type in ("image", "image_url"):
+                has_image = True
+
+    n = _bi100_field(request, "n")
+    return {
+        "message_count": len(messages),
+        "system_count": system_count,
+        "tool_count": len(tools),
+        "has_image": has_image,
+        "stream": bool(_bi100_field(request, "stream")),
+        "n": n if isinstance(n, int) else None,
+    }
+
+
 def _bi100_startup_trace(message: str) -> None:
     if os.getenv("BI100_EXECUTOR_STARTUP_DEBUG") == "1":
         stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -83,6 +139,26 @@ logger = init_logger('vllm.entrypoints.openai.api_server')
 _running_tasks: Set[asyncio.Task] = set()
 
 _bi100_startup_trace("api_server runtime imports complete")
+
+
+def _bi100_log_chat_4xx(request, error) -> None:
+    code = getattr(error, "code", None)
+    if not isinstance(code, int) or not 400 <= code < 500:
+        return
+    shape = _bi100_chat_request_shape(request)
+    reason = _bi100_chat_4xx_reason(getattr(error, "message", None))
+    logger.warning(
+        "[BI100 4XX] endpoint=chat code=%d reason=%s messages=%d "
+        "systems=%d tools=%d image=%d stream=%d n=%s",
+        code,
+        reason,
+        shape["message_count"],
+        shape["system_count"],
+        shape["tool_count"],
+        int(shape["has_image"]),
+        int(shape["stream"]),
+        shape["n"] if shape["n"] is not None else "unset",
+    )
 
 
 @asynccontextmanager
@@ -334,6 +410,7 @@ async def create_chat_completion(request: ChatCompletionRequest,
         request, raw_request)
 
     if isinstance(generator, ErrorResponse):
+        _bi100_log_chat_4xx(request, generator)
         return JSONResponse(content=generator.model_dump(),
                             status_code=generator.code)
 
@@ -448,6 +525,9 @@ def build_app(args: Namespace) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(_, exc):
+        logger.warning(
+            "[BI100 4XX] endpoint=request_validation code=400 "
+            "reason=request_validation")
         chat = app.state.openai_serving_chat
         err = chat.create_error_response(message=str(exc))
         return JSONResponse(err.model_dump(),

@@ -1,5 +1,18 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-27 平台 4xx 归因门禁
+
+- 平台日志在 2026-07-26T16:59:30 连续出现一次 Chat Completions 400 和一次
+  200。仅凭 access log 无法区分预期非法请求、固定 `max_num_seqs=1` 下已知的
+  `n=2` 拒绝，以及 tool、多模态或 chat-template 兼容性失败。
+- 私有诊断分支新增隐私安全的 `[BI100 4XX]` 原因码，只记录固定类别、状态和消息、
+  system、tool、图片、stream、`n` 的计数或布尔形状；不记录正文、图片、tool
+  schema/arguments、异常文本、token 或模型输出。
+- 预期 validation 4xx 和 `n_exceeds_max_num_seqs` 分开统计。任何有效 Agent/881
+  请求的 4xx 或 `unclassified_chat_error` 都阻止晋升，不能再用聚合 400 数判断。
+- 该改动不改变请求校验、采样、chat template、模型、缓存、正式 YAML 或默认开关。
+  详细规则见 `docs/incidents/PLATFORM_4XX_ATTRIBUTION_20260727.md`。
+
 ## 2026-07-25 M1-55 生产形状分页 Prefill 门禁
 
 - 私有分支 `exp/M1-55-production-q-prefill-20260725` 已用
