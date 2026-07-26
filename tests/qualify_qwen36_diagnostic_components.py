@@ -163,6 +163,12 @@ def _check_moe(report: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
     }
     if report.get("shape") != expected_shape:
         reasons.append("MoE probe did not use the TP4 rank-local target shape")
+    capabilities = report.get("extension_capabilities")
+    if not isinstance(capabilities, dict) or not (
+        capabilities.get("w13") is True
+        and capabilities.get("w2_reduce") is True
+    ):
+        reasons.append("MoE production staged extension interfaces are missing")
     numerics = report.get("numerics")
     if not isinstance(numerics, dict):
         reasons.append("MoE numerical report is missing")
@@ -218,6 +224,7 @@ def _check_moe(report: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
     ):
         reasons.append("MoE staged routed speedup is below 1.25x")
     return {
+        "extension_capabilities": capabilities,
         "relative_l2": relative_l2,
         "fixed_speedup": fixed_speedup,
         "routed_speedup": routed_speedup,

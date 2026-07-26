@@ -55,6 +55,11 @@ class Qwen36DiagnosticComponentGateUnitTest(unittest.TestCase):
                 "intermediate": 128,
                 "dtype": "torch.float16",
             },
+            "extension_capabilities": {
+                "w13": True,
+                "w2_reduce": True,
+                "w13_silu": False,
+            },
             "numerics": {
                 name: {"finite": True, "relative_l2": 1.0e-6}
                 for name in ("direct_w13", "direct_w2_reduce", "staged")
@@ -235,6 +240,7 @@ class Qwen36DiagnosticComponentStaticTest(unittest.TestCase):
             ROOT / "tests" / "bench_paged_kv_gather.py"
         ).read_text(encoding="utf-8")
         self.assertIn('"relative_l2"', moe)
+        self.assertIn('hasattr(direct, "w13_silu")', moe)
         self.assertIn('"output_relative_l2"', gdn)
         self.assertIn('"state_relative_l2"', gdn)
         self.assertIn('return 0 if report["ok"] else 1', gdn)

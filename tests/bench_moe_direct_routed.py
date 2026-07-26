@@ -81,6 +81,7 @@ def main() -> int:
     torch.cuda.set_device(device)
     direct = load_extension(
         "corex_moe_direct_routed", args.direct_extension)
+    fused_available = hasattr(direct, "w13_silu")
     gather = load_extension(
         "corex_moe_weight_gather", args.gather_extension)
     reducer = load_extension(
@@ -127,6 +128,8 @@ def main() -> int:
     def fused_from_route(
         states: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor,
     ):
+        if not fused_available:
+            raise RuntimeError("direct extension does not expose w13_silu")
         activated = direct.w13_silu(states, w13, ids)
         return direct.w2_reduce(activated, w2, ids, weights)
 
@@ -139,11 +142,17 @@ def main() -> int:
         selected_w2, reference_activation.unsqueeze(-1)).squeeze(-1)
     reference = reducer.serial_float(reference_expert, weights)
     direct_gate = direct.w13(hidden_states, w13, ids)
-    direct_activation = direct.w13_silu(hidden_states, w13, ids)
     direct_tail = direct.w2_reduce(
         reference_activation, w2, ids, weights)
     staged = staged_from_route(hidden_states, weights, ids)
-    fused = fused_from_route(hidden_states, weights, ids)
+    direct_activation = (
+        direct.w13_silu(hidden_states, w13, ids)
+        if fused_available else None
+    )
+    fused = (
+        fused_from_route(hidden_states, weights, ids)
+        if fused_available else None
+    )
 
     cases = {
         "baseline_gather": lambda: gather.gather(w13, w2, ids),
@@ -155,43 +164,56 @@ def main() -> int:
         "baseline_reduce": lambda: reducer.serial_float(
             reference_expert, weights),
         "direct_w13": lambda: direct.w13(hidden_states, w13, ids),
-        "direct_w13_silu": lambda: direct.w13_silu(
-            hidden_states, w13, ids),
         "direct_w2_reduce": lambda: direct.w2_reduce(
             reference_activation, w2, ids, weights),
         "baseline_fixed": lambda: baseline_from_route(
             hidden_states, weights, ids),
         "staged_fixed": lambda: staged_from_route(
             hidden_states, weights, ids),
-        "fused_fixed": lambda: fused_from_route(
-            hidden_states, weights, ids),
         "baseline_routed": lambda: baseline_from_route(
             hidden_states, *route(router_logits)),
         "staged_routed": lambda: staged_from_route(
             hidden_states, *route(router_logits)),
-        "fused_routed": lambda: fused_from_route(
-            hidden_states, *route(router_logits)),
     }
+    if fused_available:
+        cases.update({
+            "direct_w13_silu": lambda: direct.w13_silu(
+                hidden_states, w13, ids),
+            "fused_fixed": lambda: fused_from_route(
+                hidden_states, weights, ids),
+            "fused_routed": lambda: fused_from_route(
+                hidden_states, *route(router_logits)),
+        })
     timings = {
         name: measure(case, args.warmup, args.iterations, args.repeats)
         for name, case in cases.items()
     }
-    for candidate in ("staged_fixed", "fused_fixed"):
+    for candidate in ("staged_fixed",):
         timings[candidate]["speedup_vs_baseline"] = (
             timings["baseline_fixed"]["median_ms"]
             / timings[candidate]["median_ms"])
-    for candidate in ("staged_routed", "fused_routed"):
+    for candidate in ("staged_routed",):
         timings[candidate]["speedup_vs_baseline"] = (
             timings["baseline_routed"]["median_ms"]
             / timings[candidate]["median_ms"])
+    if fused_available:
+        timings["fused_fixed"]["speedup_vs_baseline"] = (
+            timings["baseline_fixed"]["median_ms"]
+            / timings["fused_fixed"]["median_ms"])
+        timings["fused_routed"]["speedup_vs_baseline"] = (
+            timings["baseline_routed"]["median_ms"]
+            / timings["fused_routed"]["median_ms"])
 
-    max_abs = {"staged": 0.0, "fused": 0.0}
-    mean_abs = {"staged": [], "fused": []}
-    exact_steps = {"staged": 0, "fused": 0}
-    finite_steps = {"staged": 0, "fused": 0}
-    squared_error = {"staged": 0.0, "fused": 0.0}
-    squared_reference = {"staged": 0.0, "fused": 0.0}
-    max_step_relative_l2 = {"staged": 0.0, "fused": 0.0}
+    candidate_names = (
+        ("staged", "fused") if fused_available else ("staged",)
+    )
+    max_abs = {name: 0.0 for name in candidate_names}
+    mean_abs = {name: [] for name in candidate_names}
+    exact_steps = {name: 0 for name in candidate_names}
+    finite_steps = {name: 0 for name in candidate_names}
+    squared_error = {name: 0.0 for name in candidate_names}
+    squared_reference = {name: 0.0 for name in candidate_names}
+    max_step_relative_l2 = {name: 0.0 for name in candidate_names}
     for _ in range(args.sequence_steps):
         step_hidden = torch.randn(
             (1, hidden), device=device, dtype=dtype, generator=generator)
@@ -202,9 +224,10 @@ def main() -> int:
         candidates = {
             "staged": staged_from_route(
                 step_hidden, step_weights, step_ids),
-            "fused": fused_from_route(
-                step_hidden, step_weights, step_ids),
         }
+        if fused_available:
+            candidates["fused"] = fused_from_route(
+                step_hidden, step_weights, step_ids)
         for name, actual in candidates.items():
             actual_fp32 = actual.float()
             expected_fp32 = expected.float()
@@ -240,13 +263,15 @@ def main() -> int:
             "sequence_steps": args.sequence_steps,
             "seed": args.seed,
         },
+        "extension_capabilities": {
+            "w13": hasattr(direct, "w13"),
+            "w2_reduce": hasattr(direct, "w2_reduce"),
+            "w13_silu": fused_available,
+        },
         "numerics": {
             "direct_w13": compare(direct_gate, reference_gate),
-            "direct_w13_silu": compare(
-                direct_activation, reference_activation),
             "direct_w2_reduce": compare(direct_tail, reference),
             "staged": compare(staged, reference),
-            "fused": compare(fused, reference),
         },
         "sequence": {
             name: {
@@ -263,10 +288,14 @@ def main() -> int:
                     min(len(mean_abs[name]) - 1,
                         int(0.99 * (len(mean_abs[name]) - 1)))],
             }
-            for name in ("staged", "fused")
+            for name in candidate_names
         },
         "timings": timings,
     }
+    if fused_available:
+        report["numerics"]["direct_w13_silu"] = compare(
+            direct_activation, reference_activation)
+        report["numerics"]["fused"] = compare(fused, reference)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
