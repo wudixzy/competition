@@ -1731,6 +1731,8 @@ class Qwen3_5DecoderLayer(nn.Module):
         super().__init__()
         self.layer_idx = layer_idx
         self.layer_type = layer_type
+        self._diagnostic_trace_pending = (
+            os.getenv("BI100_DIAGNOSTIC_LAYER_TRACE") == "1")
         self.input_layernorm = GemmaRMSNorm(text_cfg.hidden_size,
                                            eps=text_cfg.rms_norm_eps)
         self.post_attention_layernorm = GemmaRMSNorm(text_cfg.hidden_size,
@@ -1793,6 +1795,18 @@ class Qwen3_5DecoderLayer(nn.Module):
 
         with bi100_timer("layer.moe"):
             hidden_states = self.mlp(hidden_states)
+
+        if self._diagnostic_trace_pending:
+            self._diagnostic_trace_pending = False
+            rank = os.getenv("RANK", os.getenv("LOCAL_RANK", "?"))
+            print(
+                "[BI100 DIAGNOSTIC] "
+                f"rank={rank} layer={self.layer_idx} "
+                f"attention={self.layer_type} "
+                f"mlp={type(self.mlp).__name__} stage=completed",
+                file=sys.stderr,
+                flush=True,
+            )
 
         return hidden_states, residual
 
