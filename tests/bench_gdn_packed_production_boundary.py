@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import math
 import statistics
 import time
 from pathlib import Path
@@ -137,6 +138,9 @@ def main() -> int:
     output_max_abs = 0.0
     output_abs_sum = 0.0
     output_elements = 0
+    output_squared_error = 0.0
+    output_squared_reference = 0.0
+    output_max_step_relative_l2 = 0.0
     finite_steps = 0
     for step in range(args.sequence_steps):
         expected = current(
@@ -145,15 +149,28 @@ def main() -> int:
         actual = candidate(
             candidate_state, sequence_mixed[step], sequence_beta[step],
             sequence_decay[step])
-        difference = (actual - expected).abs()
+        expected_fp32 = expected.float()
+        difference = (actual.float() - expected_fp32).abs()
+        step_squared_error = float(difference.square().sum())
+        step_squared_reference = float(
+            expected_fp32.square().sum())
+        step_relative_l2 = math.sqrt(
+            step_squared_error / max(step_squared_reference, 1.0e-30))
         output_max_abs = max(output_max_abs, float(difference.max()))
         output_abs_sum += float(difference.sum())
         output_elements += difference.numel()
+        output_squared_error += step_squared_error
+        output_squared_reference += step_squared_reference
+        output_max_step_relative_l2 = max(
+            output_max_step_relative_l2, step_relative_l2)
         if (torch.isfinite(actual).all()
                 and torch.isfinite(candidate_state).all()):
             finite_steps += 1
     torch.cuda.synchronize()
     state_difference = (candidate_state - current_state).abs()
+    state_squared_error = float(state_difference.square().sum())
+    state_squared_reference = float(
+        current_state.square().sum())
 
     current_timing_state = initial_state.clone()
     candidate_timing_state = initial_state.clone()
@@ -181,8 +198,16 @@ def main() -> int:
             "finite_steps": finite_steps,
             "output_max_abs": output_max_abs,
             "output_mean_abs": output_abs_sum / output_elements,
+            "output_relative_l2": math.sqrt(
+                output_squared_error
+                / max(output_squared_reference, 1.0e-30)),
+            "output_max_step_relative_l2":
+                output_max_step_relative_l2,
             "state_max_abs": float(state_difference.max()),
             "state_mean_abs": float(state_difference.mean()),
+            "state_relative_l2": math.sqrt(
+                state_squared_error
+                / max(state_squared_reference, 1.0e-30)),
         },
         "performance": {
             "current_median_ms": current_median,
@@ -194,6 +219,8 @@ def main() -> int:
     }
     report["ok"] = bool(
         finite_steps == args.sequence_steps
+        and report["sequence"]["output_relative_l2"] <= 1.0e-5
+        and report["sequence"]["state_relative_l2"] <= 1.0e-5
         and candidate_median <= 0.110
         and current_median / candidate_median >= 1.5)
     args.out.parent.mkdir(parents=True, exist_ok=True)

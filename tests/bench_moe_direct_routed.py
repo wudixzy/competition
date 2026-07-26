@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import math
 import statistics
 import time
 from pathlib import Path
@@ -44,13 +45,19 @@ def measure(case, warmup: int, iterations: int, repeats: int) -> dict:
 
 
 def compare(actual: torch.Tensor, expected: torch.Tensor) -> dict:
-    delta = (actual.float() - expected.float()).abs()
-    denominator = expected.float().abs().clamp_min(1.0e-6)
+    actual_fp32 = actual.float()
+    expected_fp32 = expected.float()
+    delta = (actual_fp32 - expected_fp32).abs()
+    denominator = expected_fp32.abs().clamp_min(1.0e-6)
+    squared_error = float(delta.square().sum())
+    squared_reference = float(expected_fp32.square().sum())
     return {
         "exact": bool(torch.equal(actual, expected)),
         "max_abs": float(delta.max()),
         "mean_abs": float(delta.mean()),
         "max_rel": float((delta / denominator).max()),
+        "relative_l2": math.sqrt(
+            squared_error / max(squared_reference, 1.0e-30)),
         "finite": bool(torch.isfinite(actual).all()),
     }
 
@@ -182,6 +189,9 @@ def main() -> int:
     mean_abs = {"staged": [], "fused": []}
     exact_steps = {"staged": 0, "fused": 0}
     finite_steps = {"staged": 0, "fused": 0}
+    squared_error = {"staged": 0.0, "fused": 0.0}
+    squared_reference = {"staged": 0.0, "fused": 0.0}
+    max_step_relative_l2 = {"staged": 0.0, "fused": 0.0}
     for _ in range(args.sequence_steps):
         step_hidden = torch.randn(
             (1, hidden), device=device, dtype=dtype, generator=generator)
@@ -196,11 +206,22 @@ def main() -> int:
                 step_hidden, step_weights, step_ids),
         }
         for name, actual in candidates.items():
-            delta = (actual.float() - expected.float()).abs()
+            actual_fp32 = actual.float()
+            expected_fp32 = expected.float()
+            delta = (actual_fp32 - expected_fp32).abs()
+            step_squared_error = float(delta.square().sum())
+            step_squared_reference = float(
+                expected_fp32.square().sum())
+            step_relative_l2 = math.sqrt(
+                step_squared_error / max(step_squared_reference, 1.0e-30))
             max_abs[name] = max(max_abs[name], float(delta.max()))
             mean_abs[name].append(float(delta.mean()))
             exact_steps[name] += int(torch.equal(actual, expected))
             finite_steps[name] += int(torch.isfinite(actual).all())
+            squared_error[name] += step_squared_error
+            squared_reference[name] += step_squared_reference
+            max_step_relative_l2[name] = max(
+                max_step_relative_l2[name], step_relative_l2)
 
     report = {
         "device": torch.cuda.get_device_name(device),
@@ -234,6 +255,10 @@ def main() -> int:
                 "finite_steps": finite_steps[name],
                 "max_abs": max_abs[name],
                 "mean_abs": statistics.mean(mean_abs[name]),
+                "relative_l2": math.sqrt(
+                    squared_error[name]
+                    / max(squared_reference[name], 1.0e-30)),
+                "max_step_relative_l2": max_step_relative_l2[name],
                 "p99_mean_abs": sorted(mean_abs[name])[
                     min(len(mean_abs[name]) - 1,
                         int(0.99 * (len(mean_abs[name]) - 1)))],

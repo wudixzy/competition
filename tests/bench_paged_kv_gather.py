@@ -193,10 +193,17 @@ def main() -> int:
         },
         "results": results,
     }
+    report["ok"] = all(
+        result["checks"]["key_exact"]
+        and result["checks"]["value_exact"]
+        and result["checks"]["output_exact"]
+        and result["checks"]["output_max_abs"] == 0.0
+        for result in results.values()
+    )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
-    return 0
+    return 0 if report["ok"] else 1
 
 
 if __name__ == "__main__":
