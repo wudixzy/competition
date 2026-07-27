@@ -1,0 +1,35 @@
+{
+  "component_qualified": false,
+  "design": {
+    "activation": "reference_silu_and_mul",
+    "routed_reduction": "serial_float_exact_reduce",
+    "w13": "direct_selected_expert",
+    "w2": "vendor_bmm"
+  },
+  "full_model_evaluated": false,
+  "limits": {
+    "relative_l2": 1e-05,
+    "saving_ms": 0.02,
+    "sequence_steps": 500,
+    "speedup": 1.25
+  },
+  "observed": {
+    "direct_w13_relative_l2": 7.302385808114692e-06,
+    "fixed_relative_l2": 5.3363504123628175e-05,
+    "fixed_speedup": 1.491931889759309,
+    "routed_saving_ms": 0.0910049304366112,
+    "routed_speedup": 1.3745167330680141,
+    "sequence_exact_steps": 50,
+    "sequence_max_step_relative_l2": 0.00036255365624545093,
+    "sequence_relative_l2": 8.154265433969557e-05
+  },
+  "production_promotion_authorized": false,
+  "reasons": [
+    "hybrid fixed endpoint relative L2 exceeds 1e-5",
+    "hybrid sequence relative_l2 exceeds 1e-5",
+    "hybrid sequence max_step_relative_l2 exceeds 1e-5"
+  ],
+  "schema": "bi100-moe-hybrid-exact-tail-qualification-v1",
+  "semantic_quality_evaluated": false,
+  "version": 1
+}

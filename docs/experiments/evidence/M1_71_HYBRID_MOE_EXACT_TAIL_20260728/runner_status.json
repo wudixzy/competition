@@ -1,0 +1,38 @@
+{
+  "artifact_sha256": {
+    "benchmark": "30dbb674f48e8a1b45a1e2470e6766dde152eb7d64b80e83db07785e61319b7d",
+    "qualification": "661d165d40e44d1961f3bf37bd5507a30b3bf310ce82cf665d3fb17a45e91368",
+    "runtime_pair": "d3f51780093a7e5a621dcce02ae2ed43fac664656ef0651f8a5220e99782ca7c",
+    "service_postflight": "2665d990b2561d511ea32652c72486c8e3b0fc89d1d72790df7547adb6a2fe9d"
+  },
+  "full_model_evaluated": false,
+  "gates": {
+    "benchmark": 0,
+    "cleanup": 0,
+    "fatal_scan": 0,
+    "preflight_after": 0,
+    "preflight_before": 0,
+    "preflight_comparison": 0,
+    "qualification": 1,
+    "runtime_pair": 0,
+    "service_postflight": 0,
+    "timeout_scan": 0
+  },
+  "instance": "ssh-73ca29ba",
+  "last_stage": "qualification",
+  "limits": {
+    "relative_l2": 1e-05,
+    "saving_ms": 0.02,
+    "sequence_steps": 500,
+    "speedup": 1.25
+  },
+  "physical_gpu": 1,
+  "production_promotion_authorized": false,
+  "qualified": false,
+  "returncode": 1,
+  "schema": "bi100-m1-71-moe-hybrid-exact-tail-runner-v1",
+  "semantic_quality_evaluated": false,
+  "source_branch": "",
+  "source_revision": "6b2eac5cabb0d84d7e44bb1edd893c75229026e3",
+  "version": 1
+}
