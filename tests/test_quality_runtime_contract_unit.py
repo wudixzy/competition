@@ -119,6 +119,27 @@ class QualityRuntimeContractTest(unittest.TestCase):
             value["environment"]["BI100_MOE_COREX_DIRECT_ROUTED"], "0")
         self.assertEqual(
             value["environment"]["BI100_GDN_COREX_PACKED_DECODE"], "0")
+        self.assertEqual(
+            value["environment"]["BI100_GDN_COMBINED_QK_NORM"], "0")
+        MODULE.validate_runtime_contract(
+            value, expected(value), require_cache_trace=True)
+
+    def test_combined_qk_profile_enables_only_the_exact_candidate(self):
+        value = contract()
+        value["environment"] = MODULE.service_environment(
+            "/runtime/site-packages",
+            gdn_cache_policy="fine32",
+            gdn_restore_mode="direct",
+            fused_prefill="0",
+            kv_eviction_policy="lru",
+            kernel_profile="strict-reference-combined-qk",
+        )
+        self.assertEqual(
+            value["environment"]["BI100_MOE_COREX_DIRECT_ROUTED"], "0")
+        self.assertEqual(
+            value["environment"]["BI100_GDN_COREX_PACKED_DECODE"], "0")
+        self.assertEqual(
+            value["environment"]["BI100_GDN_COMBINED_QK_NORM"], "1")
         MODULE.validate_runtime_contract(
             value, expected(value), require_cache_trace=True)
 

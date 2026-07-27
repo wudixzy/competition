@@ -23,10 +23,17 @@ KERNEL_PROFILES = {
     "submission": {
         "moe_direct": "1",
         "gdn_packed": "1",
+        "gdn_combined_qk": "0",
     },
     "strict-reference": {
         "moe_direct": "0",
         "gdn_packed": "0",
+        "gdn_combined_qk": "0",
+    },
+    "strict-reference-combined-qk": {
+        "moe_direct": "0",
+        "gdn_packed": "0",
+        "gdn_combined_qk": "1",
     },
 }
 MAX_SEQ_RE = re.compile(r"\bmax_seq_len=(\d+)\b")
@@ -81,6 +88,7 @@ FIXED_SERVICE_CONTRACT = {
     "enable_custom_ipc": "1",
     "moe_direct": "1",
     "gdn_packed": "1",
+    "gdn_combined_qk": "0",
     "cpu_kv_offload": "0",
     "block_major_cpu_kv": "0",
     "block_major_cpu_kv_trace": "0",
@@ -419,8 +427,7 @@ def _runtime_contract(
         if value not in {"0", "1"}:
             raise ValueError(f"{name} must be 0 or 1")
     if expected_kernel_profile not in KERNEL_PROFILES:
-        raise ValueError(
-            "expected_kernel_profile must be submission or strict-reference")
+        raise ValueError("expected_kernel_profile is invalid")
     reasons: list[str] = []
     matches = SERVICE_CONTRACT_RE.findall(log_text)
     service: dict[str, str] = {}

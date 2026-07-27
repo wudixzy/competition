@@ -58,10 +58,17 @@ FIXED_SERVICE_ENVIRONMENT = {
 }
 KERNEL_PROFILES = {
     "submission": {
+        "BI100_GDN_COMBINED_QK_NORM": "0",
         "BI100_GDN_COREX_PACKED_DECODE": "1",
         "BI100_MOE_COREX_DIRECT_ROUTED": "1",
     },
     "strict-reference": {
+        "BI100_GDN_COMBINED_QK_NORM": "0",
+        "BI100_GDN_COREX_PACKED_DECODE": "0",
+        "BI100_MOE_COREX_DIRECT_ROUTED": "0",
+    },
+    "strict-reference-combined-qk": {
+        "BI100_GDN_COMBINED_QK_NORM": "1",
         "BI100_GDN_COREX_PACKED_DECODE": "0",
         "BI100_MOE_COREX_DIRECT_ROUTED": "0",
     },

@@ -336,6 +336,7 @@ class P0StaticCoverageTest(unittest.TestCase):
                 "BI100_GDN_FINITE_CHECK",
                 "BI100_GDN_COREX_BETA_DECAY",
                 "BI100_GDN_COREX_QK_MAP",
+                "BI100_GDN_COMBINED_QK_NORM",
                 "BI100_GDN_COREX_PACKED_DECODE",
                 "BI100_DNN_CHUNK",
                 "BI100_PROFILE",
@@ -682,6 +683,9 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn(
             "export BI100_GDN_COREX_PACKED_DECODE="
             "${BI100_GDN_COREX_PACKED_DECODE:-1}", src)
+        self.assertIn(
+            "export BI100_GDN_COMBINED_QK_NORM="
+            "${BI100_GDN_COMBINED_QK_NORM:-0}", src)
 
     def test_benchmark_defaults_to_evaluator_concurrency(self):
         src = read("tests/bench_perf.py")

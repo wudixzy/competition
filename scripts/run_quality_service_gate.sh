@@ -48,13 +48,20 @@ case "$KERNEL_PROFILE" in
     submission)
         MOE_DIRECT=1
         GDN_PACKED=1
+        GDN_COMBINED_QK=0
         ;;
     strict-reference)
         MOE_DIRECT=0
         GDN_PACKED=0
+        GDN_COMBINED_QK=0
+        ;;
+    strict-reference-combined-qk)
+        MOE_DIRECT=0
+        GDN_PACKED=0
+        GDN_COMBINED_QK=1
         ;;
     *)
-        echo "BI100_QUALITY_KERNEL_PROFILE must be submission or strict-reference" >&2
+        echo "BI100_QUALITY_KERNEL_PROFILE is invalid" >&2
         exit 2
         ;;
 esac
@@ -140,6 +147,7 @@ export BI100_MOE_COREX_EXACT_REDUCE=1
 export BI100_MOE_COREX_WEIGHT_GATHER=1
 export BI100_MOE_FUSED_ACTIVATION=1
 export BI100_GDN_COREX_PACKED_DECODE="$GDN_PACKED"
+export BI100_GDN_COMBINED_QK_NORM="$GDN_COMBINED_QK"
 export BI100_GDN_COREX_BETA_DECAY=1
 export BI100_GDN_COREX_CAUSAL_CONV=1
 export BI100_GDN_COREX_GATED_NORM=1

@@ -210,10 +210,33 @@ class HybridKvStartupGateTest(unittest.TestCase):
         self.assertEqual(reasons, [])
         self.assertEqual(contract["service"]["moe_direct"], "0")
         self.assertEqual(contract["service"]["gdn_packed"], "0")
+        self.assertEqual(contract["service"]["gdn_combined_qk"], "0")
         self.assertTrue(any(
             "moe_direct" in reason for reason in submission_reasons))
         self.assertTrue(any(
             "gdn_packed" in reason for reason in submission_reasons))
+
+    def test_combined_qk_kernel_profile_is_explicit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = pathlib.Path(directory)
+            (model_path / "config.json").write_text(
+                '{}\n', encoding="utf-8")
+            contract, reasons = MODULE._runtime_contract(
+                _log(
+                    model_path=str(model_path),
+                    kernel_profile="strict-reference-combined-qk",
+                ),
+                model_path,
+                mode="full_attention",
+                max_model_len=262_144,
+                block_size=16,
+                tensor_parallel_size=4,
+                expected_kernel_profile="strict-reference-combined-qk",
+            )
+        self.assertEqual(reasons, [])
+        self.assertEqual(contract["service"]["moe_direct"], "0")
+        self.assertEqual(contract["service"]["gdn_packed"], "0")
+        self.assertEqual(contract["service"]["gdn_combined_qk"], "1")
 
     def test_block_major_candidate_contract_and_rank_reports(self):
         with tempfile.TemporaryDirectory() as directory:

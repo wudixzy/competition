@@ -161,6 +161,9 @@ _USE_COREX_GDN_BETA_DECAY = (
 _USE_COREX_GDN_QK_MAP = (
     _corex_gdn_qk_map is not None
     and env_bool("BI100_GDN_COREX_QK_MAP", True))
+_USE_COREX_GDN_COMBINED_QK_NORM = (
+    _USE_COREX_GDN_QK_MAP
+    and env_bool("BI100_GDN_COMBINED_QK_NORM", False))
 _USE_COREX_GDN_PACKED_DECODE = (
     _corex_gdn_packed_decode is not None
     and env_bool("BI100_GDN_COREX_PACKED_DECODE", False))
@@ -1213,8 +1216,27 @@ class GatedDeltaNet(nn.Module):
                     and q_raw.is_contiguous()
                     and k_raw.is_contiguous())
                 if use_corex_qk_map:
+                    use_combined_qk_norm = (
+                        _USE_COREX_GDN_COMBINED_QK_NORM
+                        and num_seqs == 1
+                        and local_num_k == 4
+                        and local_num_v == 8
+                        and packed_mixed_qkv.dtype == torch.float16
+                        and packed_mixed_qkv.shape == (1, 2048)
+                        and packed_mixed_qkv.is_contiguous())
+                    if use_combined_qk_norm:
+                        raw_qk = packed_mixed_qkv.narrow(
+                            1, 0, 2 * local_key_dim).view(
+                                num_seqs, 2 * local_num_k,
+                                self.head_k_dim)
+                        normalized_qk = _l2norm(raw_qk)
+                        normalized_q, normalized_k = torch.split(
+                            normalized_qk, local_num_k, dim=1)
+                    else:
+                        normalized_q = _l2norm(q_raw)
+                        normalized_k = _l2norm(k_raw)
                     qk_mapped = _corex_gdn_qk_map.qk_map(
-                        _l2norm(q_raw), _l2norm(k_raw), local_num_v)
+                        normalized_q, normalized_k, local_num_v)
                     q_t = qk_mapped[0]
                     k_t = qk_mapped[1]
                 else:

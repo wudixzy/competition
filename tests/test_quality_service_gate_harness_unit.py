@@ -50,14 +50,20 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertIn(
             "BI100_QUALITY_KERNEL_PROFILE:-submission", self.source)
         self.assertIn("strict-reference)", self.source)
+        self.assertIn("strict-reference-combined-qk)", self.source)
         self.assertIn("MOE_DIRECT=0", self.source)
         self.assertIn("GDN_PACKED=0", self.source)
+        self.assertIn("GDN_COMBINED_QK=1", self.source)
         self.assertIn(
             'export BI100_MOE_COREX_DIRECT_ROUTED="$MOE_DIRECT"',
             self.source,
         )
         self.assertIn(
             'export BI100_GDN_COREX_PACKED_DECODE="$GDN_PACKED"',
+            self.source,
+        )
+        self.assertIn(
+            'export BI100_GDN_COMBINED_QK_NORM="$GDN_COMBINED_QK"',
             self.source,
         )
         self.assertIn('--kernel-profile "$KERNEL_PROFILE"', self.source)
