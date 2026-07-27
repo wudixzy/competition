@@ -123,6 +123,21 @@ class QualityGateApiTest(unittest.TestCase):
         self.assertEqual(
             len(MODULE._selected_cases(self.manifest, "extended", [])), 53)
 
+    def test_progress_exposes_only_fixed_case_identity(self):
+        case = {
+            "ordinal": 53,
+            "id": "exact_output_truncation",
+            "private_prompt": "must not enter progress",
+        }
+        progress = MODULE._progress("running", 52, case)
+        self.assertEqual(progress, {
+            "state": "running",
+            "completed_cases": 52,
+            "active_ordinal": 53,
+            "active_id": "exact_output_truncation",
+        })
+        self.assertNotIn("private_prompt", json.dumps(progress))
+
     def test_streaming_usage_is_validated_and_only_digest_is_retained(self):
         config = object()
         observation = MODULE._streaming_usage(StreamingClient(), config)

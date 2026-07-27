@@ -1162,6 +1162,19 @@ def _atomic_write(path: Path, value: Json) -> None:
             pass
 
 
+def _progress(state: str, completed: int, case: Json | None = None) -> Json:
+    value: Json = {
+        "state": state,
+        "completed_cases": completed,
+        "active_ordinal": None,
+        "active_id": None,
+    }
+    if case is not None:
+        value["active_ordinal"] = case["ordinal"]
+        value["active_id"] = case["id"]
+    return value
+
+
 def _load_manifest(path: Path) -> tuple[Json, str]:
     payload = path.read_bytes()
     payload_sha = hashlib.sha256(payload).hexdigest()
@@ -1330,6 +1343,7 @@ def main() -> int:
         },
         "summary": {},
         "group_summary": {},
+        "progress": _progress("initialized", 0),
         "cases": results,
     }
     started = time.perf_counter()
@@ -1343,11 +1357,15 @@ def main() -> int:
             "wall_s": time.perf_counter() - started,
             "startup_error": str(error),
         }
+        report["progress"] = _progress("startup_failed", 0)
         _atomic_write(args.out, report)
         return 1
 
     for case in selected:
         case_started = time.perf_counter()
+        report["progress"] = _progress("running", len(results), case)
+        _atomic_write(args.out, report)
+        print(f"[RUN] {case['ordinal']:02d} {case['id']}", flush=True)
         try:
             observation = HANDLERS[case["id"]](client, config)
             skip_reason = observation.pop("_skip_reason", "")
@@ -1391,6 +1409,7 @@ def main() -> int:
             "error_code": error_code,
             "observation": observation,
         })
+        report["progress"] = _progress("between_cases", len(results))
         _atomic_write(args.out, report)
         print(f"[{case_status.upper()}] {case['ordinal']:02d} "
               f"{case['id']}", flush=True)
@@ -1436,6 +1455,7 @@ def main() -> int:
         "wall_s": time.perf_counter() - started,
     }
     report["group_summary"] = groups
+    report["progress"] = _progress("complete", len(results))
     # A separately qualified CoreX baseline comparison is required.
     report["promotion_authorized"] = False
     _atomic_write(args.out, report)
