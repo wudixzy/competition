@@ -524,16 +524,31 @@ def _validate_case_contract(case: Json, report: Json, label: str) -> list[str]:
     if case_id == "reasoning" and not isinstance(
             facts.get("reasoning_present"), bool):
         reasons.append(f"{label}: reasoning presence fact is not boolean")
-    if case_id == "n_1" and facts.get("n") != 1:
-        reasons.append(f"{label}: n=1 fact differs")
+    if case_id == "n_1":
+        if facts.get("n") != 1:
+            reasons.append(f"{label}: n=1 fact differs")
+        for fact in (
+                "choice_indices_exact",
+                "usage_accounted",
+                "deterministic_choices_exact"):
+            if facts.get(fact) is not True:
+                reasons.append(f"{label}: n=1 {fact} fact differs")
     if case_id == "n_2":
         if facts.get("n") != 2:
             reasons.append(f"{label}: n=2 fact differs")
-        if case.get("status") == "skip" and (
-                facts.get("documented_bare_engine_skip") is not True
-                or facts.get("normalized_error") != "n_exceeds_max_num_seqs"
-                or facts.get("post_skip_health") is not True):
-            reasons.append(f"{label}: n=2 skip evidence differs")
+        if case.get("status") == "skip":
+            if (facts.get("documented_bare_engine_skip") is not True
+                    or facts.get("normalized_error")
+                    != "n_exceeds_max_num_seqs"
+                    or facts.get("post_skip_health") is not True):
+                reasons.append(f"{label}: n=2 skip evidence differs")
+        else:
+            for fact in (
+                    "choice_indices_exact",
+                    "usage_accounted",
+                    "deterministic_choices_exact"):
+                if facts.get(fact) is not True:
+                    reasons.append(f"{label}: n=2 {fact} fact differs")
 
     prompt = observation.get("prompt_tokens") or []
     cached = observation.get("cached_tokens") or []
@@ -627,6 +642,39 @@ def _case_map(
         reasons.extend(_validate_case_contract(
             case, report, f"{label}: case {case_id}"))
         result[case_id] = case
+    n1 = result.get("n_1") or {}
+    n2 = result.get("n_2") or {}
+    if n1.get("status") == "pass" and n2.get("status") == "pass":
+        n1_observation = n1.get("observation") or {}
+        n2_observation = n2.get("observation") or {}
+        n1_prompt = n1_observation.get("prompt_tokens")
+        n2_prompt = n2_observation.get("prompt_tokens")
+        if (not isinstance(n1_prompt, list)
+                or not isinstance(n2_prompt, list)
+                or len(n1_prompt) != 1
+                or len(n2_prompt) != 1
+                or not isinstance(n1_prompt[0], int)
+                or isinstance(n1_prompt[0], bool)
+                or n1_prompt[0] <= 0
+                or not isinstance(n2_prompt[0], int)
+                or isinstance(n2_prompt[0], bool)
+                or n1_prompt[0] != n2_prompt[0]):
+            reasons.append(
+                f"{label}: n=2 prompt usage is not counted once")
+        n1_completion = n1_observation.get("completion_tokens")
+        n2_completion = n2_observation.get("completion_tokens")
+        if (not isinstance(n1_completion, list)
+                or not isinstance(n2_completion, list)
+                or len(n1_completion) != 1
+                or len(n2_completion) != 1
+                or not isinstance(n1_completion[0], int)
+                or isinstance(n1_completion[0], bool)
+                or n1_completion[0] <= 0
+                or not isinstance(n2_completion[0], int)
+                or isinstance(n2_completion[0], bool)
+                or n2_completion[0] != 2 * n1_completion[0]):
+            reasons.append(
+                f"{label}: n=2 completion usage is not the sum of choices")
     return result, reasons
 
 

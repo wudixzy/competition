@@ -904,7 +904,22 @@ def _n_case(client: Client, config: RunConfig, n: int) -> Json:
     require(len(choices) == n, "number of choices differs from n")
     for index in range(n):
         _content(data, index)
-    return _observation([result], [_normalized_response(data)], facts={"n": n})
+    normalized = _normalized_response(data)
+    normalized_choices = normalized["choices"]
+    require(all(choice == normalized_choices[0]
+                for choice in normalized_choices[1:]),
+            "fixed greedy n choices differ")
+    usage = data["usage"]
+    require(usage["prompt_tokens"] > 0,
+            "n response prompt usage is empty")
+    require(usage["completion_tokens"] >= n,
+            "n response completion usage is undercounted")
+    return _observation([result], [normalized], facts={
+        "n": n,
+        "choice_indices_exact": True,
+        "usage_accounted": True,
+        "deterministic_choices_exact": True,
+    })
 
 
 def _max_tokens_case(

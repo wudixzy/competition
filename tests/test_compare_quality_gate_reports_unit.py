@@ -95,10 +95,21 @@ def make_report(label: str) -> dict:
         if case_id == "thinking_disabled_top_level":
             facts["request_protocol"] = "top_level"
         if case_id == "n_1":
-            facts["n"] = 1
+            facts.update({
+                "n": 1,
+                "choice_indices_exact": True,
+                "usage_accounted": True,
+                "deterministic_choices_exact": True,
+            })
         if case_id == "n_2":
-            facts["n"] = 2
+            facts.update({
+                "n": 2,
+                "choice_indices_exact": True,
+                "usage_accounted": True,
+                "deterministic_choices_exact": True,
+            })
             finish_reasons = ["stop", "stop"]
+            completion_tokens = [4]
         if case_id in ("streaming_usage", "streaming_sse_usage"):
             facts.update({"chunks": 12, "done": 1, "usage_blocks": 1})
         if case_id == "exact_output_truncation":
@@ -435,6 +446,30 @@ class QualityComparisonTest(unittest.TestCase):
             report["group_summary"]["sampling"]["skipped"] = 1
         result = MODULE.compare_reports(baseline, candidate)
         self.assertTrue(result["qualified"])
+
+    def test_n_two_requires_usage_relationship_and_contract_facts(self):
+        baseline = make_report("baseline")
+        candidate = make_report("candidate")
+        case = next(row for row in candidate["cases"] if row["id"] == "n_2")
+        case["observation"]["prompt_tokens"] = [20]
+        case["observation"]["facts"]["usage_accounted"] = False
+        result = MODULE.compare_reports(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertIn(
+            "candidate: case n_2: n=2 usage_accounted fact differs",
+            result["reasons"])
+        self.assertIn(
+            "candidate: n=2 prompt usage is not counted once",
+            result["reasons"])
+
+        candidate = make_report("candidate")
+        case = next(row for row in candidate["cases"] if row["id"] == "n_2")
+        case["observation"]["completion_tokens"] = [2]
+        result = MODULE.compare_reports(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertIn(
+            "candidate: n=2 completion usage is not the sum of choices",
+            result["reasons"])
 
     def test_rejected_request_cannot_be_forged_as_http_200(self):
         baseline = make_report("baseline")

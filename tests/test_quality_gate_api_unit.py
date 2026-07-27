@@ -66,6 +66,37 @@ class ResponseClient:
         }
 
 
+class NResponseClient:
+
+    def __init__(self, contents=None, completion_tokens=None):
+        self.contents = contents
+        self.completion_tokens = completion_tokens
+        self.payloads = []
+
+    def post(self, payload, timeout=None):
+        self.payloads.append(payload)
+        n = payload["n"]
+        contents = self.contents or ["A"] * n
+        completion_tokens = (
+            n if self.completion_tokens is None else self.completion_tokens)
+        return 200, {
+            "id": "chatcmpl-n-test",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "llm",
+            "choices": [{
+                "index": index,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": contents[index]},
+            } for index in range(n)],
+            "usage": {
+                "prompt_tokens": 3,
+                "completion_tokens": completion_tokens,
+                "total_tokens": 3 + completion_tokens,
+            },
+        }
+
+
 class ErrorClient:
 
     def __init__(self, message="invalid request"):
@@ -356,6 +387,29 @@ class QualityGateApiTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.CaseFailure, "finish naturally"):
             MODULE._max_tokens_case(
                 ResponseClient(finish_reason="length"), object(), 1)
+
+    def test_n_two_requires_exact_deterministic_choices_and_usage(self):
+        client = NResponseClient()
+        observation = MODULE._n_case(client, object(), 2)
+        self.assertEqual(observation["finish_reasons"], ["stop", "stop"])
+        self.assertEqual(observation["completion_tokens"], [2])
+        self.assertEqual(observation["facts"], {
+            "n": 2,
+            "choice_indices_exact": True,
+            "usage_accounted": True,
+            "deterministic_choices_exact": True,
+        })
+        self.assertEqual(client.payloads[0]["temperature"], 0)
+        self.assertIn("seed", client.payloads[0])
+
+        with self.assertRaisesRegex(
+                MODULE.CaseFailure, "fixed greedy n choices differ"):
+            MODULE._n_case(
+                NResponseClient(contents=["A", "B"]), object(), 2)
+        with self.assertRaisesRegex(
+                MODULE.CaseFailure, "completion usage is undercounted"):
+            MODULE._n_case(
+                NResponseClient(completion_tokens=1), object(), 2)
 
     def test_rejected_requests_require_structured_error_and_health(self):
         config = SimpleNamespace(model="llm", endpoint_mode="direct")
