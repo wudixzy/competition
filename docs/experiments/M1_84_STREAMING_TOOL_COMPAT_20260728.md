@@ -62,6 +62,8 @@ The unit gate covers:
 - candidate behavior that accepts both forms with exact deterministic output;
 - fail-closed rejection of non-streaming or streaming output drift;
 - malformed streaming usage rejection;
+- a real loopback HTTP server covering JSON 400 responses, SSE headers,
+  framing, stream reconstruction, and both control/candidate contracts;
 - A/B cross-overlay output stability;
 - diagnostic-runner result propagation;
 - privacy constraints.

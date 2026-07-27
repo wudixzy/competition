@@ -3,8 +3,11 @@ from __future__ import annotations
 import importlib.util
 import json
 import copy
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import sys
+import threading
 import unittest
 from unittest import mock
 
@@ -201,6 +204,120 @@ def attribution() -> dict:
     }
 
 
+@contextmanager
+def fake_http_service(
+    *,
+    strict_false_supported: bool,
+    object_history_supported: bool,
+):
+    request = fake_request(
+        strict_false_supported=strict_false_supported,
+        object_history_supported=object_history_supported,
+    )
+
+    class Handler(BaseHTTPRequestHandler):
+        def _write_json(self, status, value):
+            body = json.dumps(value).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):  # noqa: N802
+            status, value = request(
+                "GET", self.path, timeout_s=1.0)
+            self._write_json(status, value)
+
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length))
+            status, value = request(
+                "POST", self.path, payload, timeout_s=1.0)
+            if status != 200 or payload.get("stream") is not True:
+                self._write_json(status, value)
+                return
+
+            message = value["choices"][0]["message"]
+            finish_reason = value["choices"][0]["finish_reason"]
+            usage = value["usage"]
+            created = 20260728
+            common = {
+                "id": "chatcmpl-m1-84-loopback",
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": "llm",
+            }
+            chunks = [
+                {
+                    **common,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"role": "assistant"},
+                        "finish_reason": None,
+                    }],
+                },
+                {
+                    **common,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": message["content"]},
+                        "finish_reason": None,
+                    }],
+                },
+                {
+                    **common,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": finish_reason,
+                    }],
+                },
+                {
+                    **common,
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": usage["prompt_tokens"],
+                        "completion_tokens": usage["completion_tokens"],
+                        "total_tokens": (
+                            usage["prompt_tokens"]
+                            + usage["completion_tokens"]
+                        ),
+                        "prompt_tokens_details": (
+                            usage.get("prompt_tokens_details") or {}),
+                    },
+                },
+            ]
+            body = b"".join(
+                b"data: "
+                + json.dumps(chunk, separators=(",", ":")).encode("utf-8")
+                + b"\n\n"
+                for chunk in chunks
+            ) + b"data: [DONE]\n\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):  # noqa: A002
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        if thread.is_alive():
+            raise AssertionError("loopback HTTP server did not stop")
+
+
 class Qwen36ToolHttpGateTest(unittest.TestCase):
 
     def test_baseline_reproduces_two_compatibility_400s(self):
@@ -322,6 +439,35 @@ class Qwen36ToolHttpGateTest(unittest.TestCase):
                 "finish_reasons": ["length"],
                 "tool_calls": [],
             })
+
+    def test_real_http_and_sse_loopback_cover_both_arms(self):
+        for strict_supported, object_supported in (
+                (False, False), (True, True)):
+            with self.subTest(
+                    strict_supported=strict_supported,
+                    object_supported=object_supported):
+                with fake_http_service(
+                    strict_false_supported=strict_supported,
+                    object_history_supported=object_supported,
+                ) as base:
+                    report = GATE.run_gate(
+                        base,
+                        Path("/diagnostic-model"),
+                        5.0,
+                        200 if strict_supported else 400,
+                        200 if object_supported else 400,
+                    )
+                self.assertTrue(report["qualified"], report)
+                self.assertEqual(report["case_count"], 13)
+                self.assertTrue(
+                    report["streaming_contract"]["qualified"])
+                self.assertEqual(
+                    report["streaming_contract"][
+                        "successful_sse_count"],
+                    4 if strict_supported else 2,
+                )
+                serialized = json.dumps(report, sort_keys=True)
+                self.assertNotIn("synthetic-tool-output", serialized)
 
     def test_ab_comparison_qualifies_without_promotion(self):
         result = COMPARE.compare(
