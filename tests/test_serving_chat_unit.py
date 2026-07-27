@@ -1,9 +1,10 @@
+import asyncio
 import ast
 import json
 import pathlib
 import types
 import unittest
-from typing import Optional
+from typing import Optional, Union
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SERVING_CHAT = ROOT / "qwen3_6_scripts" / "serving_chat.py"
@@ -12,6 +13,63 @@ CHAT_UTILS = ROOT / "qwen3_6_scripts" / "chat_utils.py"
 CHAT_UTILS_SOURCE = CHAT_UTILS.read_text()
 QWEN_MODEL = ROOT / "qwen3_6_scripts" / "qwen3_5.py"
 QWEN_MODEL_SOURCE = QWEN_MODEL.read_text()
+
+
+class _Copyable:
+
+    def model_copy(self, *, deep=False, update=None):
+        values = dict(self.__dict__)
+        values.update(update or {})
+        return type(self)(**values)
+
+
+class _FakePromptDetails(_Copyable):
+
+    def __init__(self, cached_tokens):
+        self.cached_tokens = cached_tokens
+
+
+class _FakeChoice(_Copyable):
+
+    def __init__(self, index, marker):
+        self.index = index
+        self.marker = marker
+
+
+class _FakeUsageInfo:
+
+    def __init__(
+        self,
+        prompt_tokens=0,
+        completion_tokens=0,
+        total_tokens=0,
+        reasoning_tokens=None,
+        prompt_tokens_details=None,
+    ):
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.total_tokens = total_tokens
+        self.reasoning_tokens = reasoning_tokens
+        self.prompt_tokens_details = prompt_tokens_details
+
+
+class _FakeChatCompletionResponse:
+
+    def __init__(
+        self,
+        model,
+        choices,
+        usage,
+        prompt_logprobs=None,
+        id=None,
+        created=None,
+    ):
+        self.id = id
+        self.created = created
+        self.model = model
+        self.choices = choices
+        self.usage = usage
+        self.prompt_logprobs = prompt_logprobs
 
 
 def _load_serialize_tool_arguments():
@@ -64,6 +122,75 @@ def _load_named_tool_argument_helpers():
     return namespace
 
 
+def _load_sequential_fanout_helpers():
+    tree = ast.parse(SERVING_CHAT.read_text(), filename=str(SERVING_CHAT))
+    names = {
+        "_sequential_greedy_fanout_count",
+        "_merge_sequential_chat_responses",
+    }
+    functions = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in names
+    ]
+    module = ast.Module(body=functions, type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {
+        "List": list,
+        "ChatCompletionRequest": object,
+        "ChatCompletionResponse": _FakeChatCompletionResponse,
+        "UsageInfo": _FakeUsageInfo,
+    }
+    exec(compile(module, str(SERVING_CHAT), "exec"), namespace)
+    return namespace
+
+
+def _load_sequential_fanout_method(merge_responses):
+    tree = ast.parse(SERVING_CHAT.read_text(), filename=str(SERVING_CHAT))
+    class_node = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "OpenAIServingChat")
+    function = next(
+        node for node in class_node.body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name == "_create_sequential_greedy_fanout")
+    module = ast.Module(body=[function], type_ignores=[])
+    ast.fix_missing_locations(module)
+
+    class FakeErrorResponse:
+        pass
+
+    class FakeMetadata:
+
+        def __init__(self, request_id, final_usage_info):
+            self.request_id = request_id
+            self.final_usage_info = final_usage_info
+
+    logger = types.SimpleNamespace(
+        info=lambda *args, **kwargs: None,
+        error=lambda *args, **kwargs: None,
+    )
+    namespace = {
+        "ChatCompletionRequest": object,
+        "Request": object,
+        "Optional": Optional,
+        "Union": Union,
+        "ChatCompletionResponse": _FakeChatCompletionResponse,
+        "ErrorResponse": FakeErrorResponse,
+        "List": list,
+        "random_uuid": lambda: "parent",
+        "time": types.SimpleNamespace(time=lambda: 123),
+        "logger": logger,
+        "RequestResponseMetadata": FakeMetadata,
+        "_merge_sequential_chat_responses": merge_responses,
+    }
+    exec(compile(module, str(SERVING_CHAT), "exec"), namespace)
+    return (
+        namespace["_create_sequential_greedy_fanout"],
+        FakeErrorResponse,
+    )
+
+
 def _load_chat_placeholder_method():
     tree = ast.parse(CHAT_UTILS_SOURCE, filename=str(CHAT_UTILS))
     class_node = next(
@@ -92,6 +219,14 @@ class ServingChatUnitTest(unittest.TestCase):
             helpers["_select_named_tool_arguments"])
         cls.reclassify_named_json = staticmethod(
             helpers["_reclassify_named_guided_json"])
+        fanout = _load_sequential_fanout_helpers()
+        cls.fanout_count = staticmethod(
+            fanout["_sequential_greedy_fanout_count"])
+        cls.merge_fanout = staticmethod(
+            fanout["_merge_sequential_chat_responses"])
+        method, error_type = _load_sequential_fanout_method(cls.merge_fanout)
+        cls.run_fanout = staticmethod(method)
+        cls.fanout_error_type = error_type
 
     def test_tool_arguments_string_is_not_double_json_encoded(self):
         arguments = '{"city": "上海", "unit": "c"}'
@@ -214,6 +349,174 @@ class ServingChatUnitTest(unittest.TestCase):
         ]:
             self.assertLess(
                 guard_pos, SERVING_CHAT_SOURCE.index(later_operation))
+
+    def test_sequential_fanout_is_limited_to_exact_greedy_n2_shape(self):
+        values = {
+            "n": 2,
+            "temperature": 0,
+            "stream": False,
+            "use_beam_search": False,
+            "best_of": None,
+            "prompt_logprobs": None,
+        }
+        request = types.SimpleNamespace(**values)
+        self.assertEqual(self.fanout_count(request, 1), 2)
+        self.assertEqual(self.fanout_count(request, 2), 0)
+
+        rejected = {
+            "n": 3,
+            "temperature": 0.7,
+            "stream": True,
+            "use_beam_search": True,
+            "best_of": 2,
+            "prompt_logprobs": 1,
+        }
+        for field, value in rejected.items():
+            with self.subTest(field=field):
+                variant = dict(values)
+                variant[field] = value
+                self.assertEqual(
+                    self.fanout_count(types.SimpleNamespace(**variant), 1),
+                    0,
+                )
+
+    def test_sequential_fanout_merges_choices_and_usage_once(self):
+        first_details = _FakePromptDetails(cached_tokens=0)
+        responses = [
+            _FakeChatCompletionResponse(
+                model="llm",
+                choices=[_FakeChoice(index=0, marker="first")],
+                usage=_FakeUsageInfo(
+                    prompt_tokens=11,
+                    completion_tokens=2,
+                    total_tokens=13,
+                    reasoning_tokens=1,
+                    prompt_tokens_details=first_details,
+                ),
+                prompt_logprobs=["prompt"],
+            ),
+            _FakeChatCompletionResponse(
+                model="llm",
+                choices=[_FakeChoice(index=0, marker="second")],
+                usage=_FakeUsageInfo(
+                    prompt_tokens=11,
+                    completion_tokens=3,
+                    total_tokens=14,
+                    reasoning_tokens=None,
+                    prompt_tokens_details=_FakePromptDetails(
+                        cached_tokens=11),
+                ),
+                prompt_logprobs=["prompt"],
+            ),
+        ]
+        merged = self.merge_fanout(responses, "chat-parent", 123)
+
+        self.assertEqual(merged.id, "chat-parent")
+        self.assertEqual(merged.created, 123)
+        self.assertEqual(
+            [(choice.index, choice.marker) for choice in merged.choices],
+            [(0, "first"), (1, "second")],
+        )
+        self.assertEqual(merged.usage.prompt_tokens, 11)
+        self.assertEqual(merged.usage.completion_tokens, 5)
+        self.assertEqual(merged.usage.total_tokens, 16)
+        self.assertEqual(merged.usage.reasoning_tokens, 1)
+        self.assertEqual(
+            merged.usage.prompt_tokens_details.cached_tokens, 0)
+        self.assertIsNot(
+            merged.usage.prompt_tokens_details, first_details)
+        self.assertEqual([choice.index for choice in responses[0].choices], [0])
+
+    def test_sequential_fanout_merge_fails_closed_on_contract_drift(self):
+        def response(*, model="llm", prompt=11, completion=2, choices=1):
+            return _FakeChatCompletionResponse(
+                model=model,
+                choices=[
+                    _FakeChoice(index=0, marker=str(index))
+                    for index in range(choices)
+                ],
+                usage=_FakeUsageInfo(
+                    prompt_tokens=prompt,
+                    completion_tokens=completion,
+                    total_tokens=prompt + (completion or 0),
+                ),
+            )
+
+        invalid_pairs = [
+            [response()],
+            [response(), response(model="other")],
+            [response(), response(prompt=12)],
+            [response(), response(completion=None)],
+            [response(), response(choices=2)],
+        ]
+        for pair in invalid_pairs:
+            with self.subTest(pair_size=len(pair)):
+                with self.assertRaises(ValueError):
+                    self.merge_fanout(pair, "chat-parent", 123)
+
+    def test_sequential_fanout_guard_precedes_template_and_is_observable(self):
+        guard = SERVING_CHAT_SOURCE.index(
+            "fanout_count = _sequential_greedy_fanout_count")
+        template = SERVING_CHAT_SOURCE.index("parse_chat_messages_futures(")
+        self.assertLess(guard, template)
+        self.assertIn(
+            "return await self._create_sequential_greedy_fanout(",
+            SERVING_CHAT_SOURCE,
+        )
+        self.assertIn('update={"n": 1}', SERVING_CHAT_SOURCE)
+        self.assertIn("[BI100 N_FANOUT]", SERVING_CHAT_SOURCE)
+
+    def test_sequential_fanout_runs_two_n1_children_and_restores_metadata(self):
+        class FakeRequest:
+
+            def __init__(self, n):
+                self.n = n
+
+            def model_copy(self, *, deep=False, update=None):
+                return FakeRequest((update or {}).get("n", self.n))
+
+        def response(marker, completion):
+            return _FakeChatCompletionResponse(
+                model="llm",
+                choices=[_FakeChoice(index=0, marker=marker)],
+                usage=_FakeUsageInfo(
+                    prompt_tokens=11,
+                    completion_tokens=completion,
+                    total_tokens=11 + completion,
+                ),
+            )
+
+        class FakeServing:
+
+            def __init__(self, responses):
+                self.responses = list(responses)
+                self.child_ns = []
+
+            async def create_chat_completion(self, request, raw_request):
+                self.child_ns.append(request.n)
+                return self.responses.pop(0)
+
+            def create_error_response(self, message):
+                raise AssertionError(message)
+
+        raw_request = types.SimpleNamespace(state=types.SimpleNamespace())
+        serving = FakeServing([response("first", 2), response("second", 3)])
+        merged = asyncio.run(self.run_fanout(
+            serving, FakeRequest(2), raw_request, 2))
+        self.assertEqual(serving.child_ns, [1, 1])
+        self.assertEqual([choice.index for choice in merged.choices], [0, 1])
+        self.assertEqual(merged.usage.completion_tokens, 5)
+        self.assertEqual(
+            raw_request.state.request_metadata.request_id, "chat-parent")
+        self.assertIs(
+            raw_request.state.request_metadata.final_usage_info, merged.usage)
+
+        error = self.fanout_error_type()
+        serving = FakeServing([error, response("unused", 1)])
+        returned = asyncio.run(self.run_fanout(
+            serving, FakeRequest(2), raw_request, 2))
+        self.assertIs(returned, error)
+        self.assertEqual(serving.child_ns, [1])
 
     def test_qwen36_image_placeholder_uses_native_vision_tokens(self):
         placeholder_str = _load_chat_placeholder_method()

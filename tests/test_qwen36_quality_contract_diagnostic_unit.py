@@ -32,7 +32,7 @@ class FakeClient:
 
 
 def observation(case_id: str) -> dict:
-    status = 200 if case_id == "top_p_0" else 400
+    status = 200 if case_id in {"top_p_0", "n_2"} else 400
     return {
         "status_codes": [status],
         "finish_reasons": ["stop"] if status == 200 else [],
@@ -68,8 +68,8 @@ class DiagnosticQualityContractTest(unittest.TestCase):
             handlers=handlers,
         )
         self.assertTrue(report["qualified"])
-        self.assertEqual(report["case_count"], 8)
-        self.assertEqual(report["passed"], 8)
+        self.assertEqual(report["case_count"], 9)
+        self.assertEqual(report["passed"], 9)
         self.assertEqual(calls, list(MODULE.CASE_IDS))
         self.assertEqual(client.health_checks, 1)
         serialized = json.dumps(report)

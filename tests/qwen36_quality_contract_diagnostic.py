@@ -21,6 +21,7 @@ SCHEMA = "qwen36-diagnostic-quality-contract-v1"
 CASE_IDS = (
     "top_p_0",
     "top_p_1_1",
+    "n_2",
     "max_tokens_minus_1",
     "max_tokens_over_context",
     "empty_request_body",
@@ -35,7 +36,7 @@ class DiagnosticConfig:
     max_model_len = 262144
     truncation_tokens = 32768
     endpoint_mode = "direct"
-    allow_bare_engine_n2_skip = True
+    allow_bare_engine_n2_skip = False
 
 
 def _atomic_write(path: Path, value: Json) -> None:

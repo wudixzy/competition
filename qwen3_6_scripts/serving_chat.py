@@ -107,6 +107,88 @@ def _named_tool_delta_payload(name: str, arguments: str, index: int,
     return payload
 
 
+def _sequential_greedy_fanout_count(
+    request: ChatCompletionRequest,
+    max_num_seqs: int,
+) -> int:
+    """Return the supported deterministic fan-out width, or zero."""
+    n = request.n if request.n is not None else 1
+    if (
+        max_num_seqs == 1
+        and n == 2
+        and request.temperature == 0
+        and not request.stream
+        and not request.use_beam_search
+        and request.best_of is None
+        and request.prompt_logprobs is None
+    ):
+        return n
+    return 0
+
+
+def _merge_sequential_chat_responses(
+    responses: List[ChatCompletionResponse],
+    request_id: str,
+    created_time: int,
+) -> ChatCompletionResponse:
+    if len(responses) != 2:
+        raise ValueError("deterministic fan-out requires exactly two responses")
+
+    first = responses[0]
+    if any(response.model != first.model for response in responses):
+        raise ValueError("fan-out response models differ")
+    if any(len(response.choices) != 1 for response in responses):
+        raise ValueError("fan-out child response must contain one choice")
+    if any(
+        response.usage.prompt_tokens != first.usage.prompt_tokens
+        for response in responses
+    ):
+        raise ValueError("fan-out prompt token counts differ")
+    if any(
+        response.usage.completion_tokens is None for response in responses
+    ):
+        raise ValueError("fan-out completion token count is missing")
+
+    choices = [
+        response.choices[0].model_copy(
+            deep=True,
+            update={"index": index},
+        )
+        for index, response in enumerate(responses)
+    ]
+    completion_tokens = sum(
+        response.usage.completion_tokens or 0 for response in responses
+    )
+    reasoning_counts = [
+        response.usage.reasoning_tokens for response in responses
+    ]
+    reasoning_tokens = (
+        None
+        if all(value is None for value in reasoning_counts)
+        else sum(value or 0 for value in reasoning_counts)
+    )
+    prompt_details = first.usage.prompt_tokens_details
+    usage = UsageInfo(
+        prompt_tokens=first.usage.prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=first.usage.prompt_tokens + completion_tokens,
+        reasoning_tokens=reasoning_tokens,
+        prompt_tokens_details=(
+            prompt_details.model_copy(deep=True)
+            if prompt_details is not None
+            else None
+        ),
+    )
+    return ChatCompletionResponse(
+        id=request_id,
+        created=created_time,
+        model=first.model,
+        choices=choices,
+        usage=usage,
+        prompt_logprobs=first.prompt_logprobs,
+    )
+
+
 class OpenAIServingChat(OpenAIServing):
 
     def __init__(self,
@@ -195,6 +277,22 @@ class OpenAIServingChat(OpenAIServing):
         if self.engine_client.errored:
             raise self.engine_client.dead_error
 
+        # The fixed competition command uses max_num_seqs=1. Native vLLM
+        # cannot schedule n=2 in that configuration and also rejects greedy
+        # n>1. Two greedy choices are identical by definition, so execute two
+        # isolated n=1 requests and merge only this exact deterministic shape.
+        scheduler_config = await self.engine_client.get_scheduler_config()
+        max_num_seqs = scheduler_config.max_num_seqs
+        if request.n is not None and request.n > max_num_seqs:
+            fanout_count = _sequential_greedy_fanout_count(
+                request, max_num_seqs)
+            if fanout_count:
+                return await self._create_sequential_greedy_fanout(
+                    request, raw_request, fanout_count)
+            return self.create_error_response(
+                f"n={request.n} exceeds max_num_seqs={max_num_seqs}. "
+                f"Use n<={max_num_seqs} or omit n.")
+
         try:
             (
                 lora_request,
@@ -244,16 +342,6 @@ class OpenAIServingChat(OpenAIServing):
         except Exception as e:
             logger.exception("Error in loading multi-modal data")
             return self.create_error_response(str(e))
-
-        # n > max_num_seqs deadlock guard: scheduler uses break (not continue)
-        # when can_schedule(num_new_seqs=n) fails, so an n that exceeds
-        # max_num_seqs permanently blocks the entire waiting queue with no error.
-        _sched_cfg = await self.engine_client.get_scheduler_config()
-        _max_seqs = _sched_cfg.max_num_seqs
-        if request.n is not None and request.n > _max_seqs:
-            return self.create_error_response(
-                f"n={request.n} exceeds max_num_seqs={_max_seqs}. "
-                f"Use n<={_max_seqs} or omit n.")
 
         # validation for OpenAI tools
         # tool_choice = "required" is not supported
@@ -369,6 +457,58 @@ class OpenAIServingChat(OpenAIServing):
         except ValueError as e:
             # TODO: Use a vllm-specific Validation Error
             return self.create_error_response(str(e))
+
+    async def _create_sequential_greedy_fanout(
+        self,
+        request: ChatCompletionRequest,
+        raw_request: Optional[Request],
+        fanout_count: int,
+    ) -> Union[ChatCompletionResponse, ErrorResponse]:
+        request_id = f"chat-{random_uuid()}"
+        created_time = int(time.time())
+        responses: List[ChatCompletionResponse] = []
+
+        for _ in range(fanout_count):
+            child_request = request.model_copy(
+                deep=True,
+                update={"n": 1},
+            )
+            child_response = await self.create_chat_completion(
+                child_request, raw_request)
+            if isinstance(child_response, ErrorResponse):
+                return child_response
+            if not isinstance(child_response, ChatCompletionResponse):
+                logger.error(
+                    "Sequential greedy fan-out unexpectedly returned a stream")
+                return self.create_error_response(
+                    "Failed to aggregate deterministic n=2 completion")
+            responses.append(child_response)
+
+        try:
+            response = _merge_sequential_chat_responses(
+                responses,
+                request_id,
+                created_time,
+            )
+        except ValueError as error:
+            logger.error(
+                "Sequential greedy fan-out aggregation failed: %s",
+                type(error).__name__,
+            )
+            return self.create_error_response(
+                "Failed to aggregate deterministic n=2 completion")
+
+        if raw_request is not None:
+            metadata = RequestResponseMetadata(
+                request_id=request_id,
+                final_usage_info=response.usage,
+            )
+            raw_request.state.request_metadata = metadata
+        logger.info(
+            "[BI100 N_FANOUT] choices=%d mode=sequential_greedy",
+            fanout_count,
+        )
+        return response
 
     def get_chat_request_role(self, request: ChatCompletionRequest) -> str:
         if request.add_generation_prompt:
