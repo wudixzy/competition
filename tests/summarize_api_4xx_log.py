@@ -63,6 +63,18 @@ INTEGER_SHAPE_FIELDS = (
     "stream",
 )
 SHAPE_FIELDS = INTEGER_SHAPE_FIELDS + ("choice", "n")
+LEGACY_INTEGER_SHAPE_FIELDS = (
+    "messages",
+    "systems",
+    "tools",
+    "tool_msgs",
+    "assistant_tool_msgs",
+    "strict_false",
+    "strict_true",
+    "image",
+    "stream",
+)
+LEGACY_SHAPE_FIELDS = LEGACY_INTEGER_SHAPE_FIELDS + ("choice", "n")
 ALLOWED_CHOICES = {"unset", "none", "auto", "required", "named", "other"}
 
 
@@ -101,21 +113,35 @@ def parse_marker(line: str) -> dict[str, Any]:
         record["errors"] = require_int(
             fields.get("errors"), "errors", minimum=1)
 
-    has_shape = any(field in fields for field in SHAPE_FIELDS)
+    has_shape = any(
+        field in fields
+        for field in set(SHAPE_FIELDS) | set(LEGACY_SHAPE_FIELDS)
+    )
     if has_shape:
-        for field in INTEGER_SHAPE_FIELDS:
+        legacy_shape = "image" in fields and "images" not in fields
+        integer_fields = (
+            LEGACY_INTEGER_SHAPE_FIELDS
+            if legacy_shape else INTEGER_SHAPE_FIELDS
+        )
+        for field in integer_fields:
             record[field] = require_int(fields.get(field), field)
         if record["stream"] not in (0, 1):
             raise ValueError("invalid stream")
-        if record["system_part_msgs"] > record["systems"]:
-            raise ValueError("invalid system_part_msgs")
-        image_sources = (
-            record["image_data"]
-            + record["image_remote"]
-            + record["image_other"]
-        )
-        if image_sources != record["images"]:
-            raise ValueError("image source counts do not match images")
+        if legacy_shape:
+            if record["image"] not in (0, 1):
+                raise ValueError("invalid image")
+            record["_shape_version"] = 2
+        else:
+            if record["system_part_msgs"] > record["systems"]:
+                raise ValueError("invalid system_part_msgs")
+            image_sources = (
+                record["image_data"]
+                + record["image_remote"]
+                + record["image_other"]
+            )
+            if image_sources != record["images"]:
+                raise ValueError("image source counts do not match images")
+            record["_shape_version"] = 3
         choice = fields.get("choice")
         if choice not in ALLOWED_CHOICES:
             raise ValueError("invalid choice")
@@ -131,7 +157,19 @@ def parse_marker(line: str) -> dict[str, Any]:
 def shape_key(record: dict[str, Any]) -> tuple[Any, ...] | None:
     if "messages" not in record:
         return None
-    return tuple(record[field] for field in SHAPE_FIELDS)
+    version = record["_shape_version"]
+    shape_fields = LEGACY_SHAPE_FIELDS if version == 2 else SHAPE_FIELDS
+    return (version, *(record[field] for field in shape_fields))
+
+
+def shape_report(key: tuple[Any, ...], count: int) -> dict[str, Any]:
+    version = key[0]
+    shape_fields = LEGACY_SHAPE_FIELDS if version == 2 else SHAPE_FIELDS
+    report = dict(zip(shape_fields, key[1:]))
+    if version == 2:
+        report["shape_version"] = 2
+    report["count"] = count
+    return report
 
 
 def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
@@ -187,10 +225,7 @@ def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
         "by_endpoint": dict(sorted(endpoints.items())),
         "by_reason": dict(sorted(reasons.items())),
         "request_shapes": [
-            {
-                **dict(zip(SHAPE_FIELDS, key)),
-                "count": count,
-            }
+            shape_report(key, count)
             for key, count in sorted(
                 shapes.items(),
                 key=lambda item: tuple(

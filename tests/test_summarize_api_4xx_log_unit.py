@@ -101,6 +101,36 @@ class SummarizeApi4xxLogTest(unittest.TestCase):
         self.assertTrue(qualified)
         self.assertEqual(report["chat_4xx_access_count"], 0)
 
+    def test_legacy_v2_shape_is_reconciled_without_inventing_fields(self):
+        legacy = (
+            "messages=2 systems=0 tools=1 tool_msgs=0 "
+            "assistant_tool_msgs=0 strict_false=0 strict_true=1 "
+            "choice=none image=0 stream=0 n=1"
+        )
+        report, qualified = self.summarize(
+            "WARNING [BI100 4XX] endpoint=request_validation code=400 "
+            "reason=request_validation_tool_strict "
+            f"{legacy} errors=1\n"
+            'INFO: 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" '
+            "400 Bad Request\n"
+        )
+        self.assertTrue(qualified, report)
+        self.assertEqual(report["request_shapes"], [{
+            "messages": 2,
+            "systems": 0,
+            "tools": 1,
+            "tool_msgs": 0,
+            "assistant_tool_msgs": 0,
+            "strict_false": 0,
+            "strict_true": 1,
+            "image": 0,
+            "stream": 0,
+            "choice": "none",
+            "n": 1,
+            "shape_version": 2,
+            "count": 1,
+        }])
+
 
 if __name__ == "__main__":
     unittest.main()
