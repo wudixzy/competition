@@ -23,6 +23,11 @@ Only SHA-256 digests and aggregate token counts enter the report. Raw prompts,
 model output, endpoint details, and credentials remain excluded. The runner
 copies the cross-case result into its final structured status.
 
+The full TP4 quality-report comparator applies the same output-digest
+relationship whenever a report contains the new evidence. Legacy v1 reports
+that contain neither digest remain readable; partially populated, malformed,
+or mismatched new evidence fails closed.
+
 No runtime model code, model weight, dtype, tokenizer, chat template, request
 sampling value, cache policy, submission YAML, or default switch changed.
 
@@ -30,8 +35,8 @@ sampling value, cache policy, submission YAML, or default switch changed.
 
 Local results:
 
-- 903 `unittest` cases passed; 25 optional-dependency cases skipped;
-- 27 focused quality-contract and runner cases passed;
+- 904 `unittest` cases passed; 25 optional-dependency cases skipped;
+- 47 focused quality-contract, comparator, and runner cases passed;
 - the frozen 53-case official metric manifest qualified;
 - all seven quality-data provenance sources qualified;
 - submission preflight passed 9 of 9 checks;

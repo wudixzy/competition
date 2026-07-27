@@ -471,6 +471,36 @@ class QualityComparisonTest(unittest.TestCase):
             "candidate: n=2 completion usage is not the sum of choices",
             result["reasons"])
 
+    def test_n_cross_case_digest_is_enforced_without_breaking_legacy(self):
+        baseline = make_report("baseline")
+        candidate = make_report("candidate")
+        for report in (candidate,):
+            cases = {case["id"]: case for case in report["cases"]}
+            for case_id in ("n_1", "n_2"):
+                cases[case_id]["observation"]["facts"][
+                    "choice_output_sha256"] = "b" * 64
+        self.assertTrue(MODULE.compare_reports(
+            baseline, candidate)["qualified"])
+
+        mismatched = copy.deepcopy(candidate)
+        cases = {case["id"]: case for case in mismatched["cases"]}
+        cases["n_2"]["observation"]["facts"][
+            "choice_output_sha256"] = "c" * 64
+        result = MODULE.compare_reports(baseline, mismatched)
+        self.assertFalse(result["qualified"])
+        self.assertIn(
+            "candidate: n=1/n=2 deterministic output digest differs",
+            result["reasons"])
+
+        incomplete = copy.deepcopy(candidate)
+        cases = {case["id"]: case for case in incomplete["cases"]}
+        del cases["n_1"]["observation"]["facts"]["choice_output_sha256"]
+        result = MODULE.compare_reports(baseline, incomplete)
+        self.assertFalse(result["qualified"])
+        self.assertIn(
+            "candidate: n=1/n=2 deterministic output digest differs",
+            result["reasons"])
+
     def test_rejected_request_cannot_be_forged_as_http_200(self):
         baseline = make_report("baseline")
         candidate = make_report("candidate")

@@ -48,7 +48,7 @@ limit, cache policy, formal YAML value, or default compute switch changed.
 
 ## Local gates
 
-- 903 `unittest` cases passed; 25 optional-dependency cases skipped.
+- 904 `unittest` cases passed; 25 optional-dependency cases skipped.
 - The 53-case official metric manifest is qualified.
 - Quality data manifests are qualified.
 - Submission preflight passed 9 of 9 checks.

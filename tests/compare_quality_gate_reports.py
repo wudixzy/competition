@@ -675,6 +675,16 @@ def _case_map(
                 or n2_completion[0] != 2 * n1_completion[0]):
             reasons.append(
                 f"{label}: n=2 completion usage is not the sum of choices")
+        n1_facts = n1_observation.get("facts") or {}
+        n2_facts = n2_observation.get("facts") or {}
+        n1_digest = n1_facts.get("choice_output_sha256")
+        n2_digest = n2_facts.get("choice_output_sha256")
+        if n1_digest is not None or n2_digest is not None:
+            if (not _is_sha256(n1_digest)
+                    or not _is_sha256(n2_digest)
+                    or n1_digest != n2_digest):
+                reasons.append(
+                    f"{label}: n=1/n=2 deterministic output digest differs")
     return result, reasons
 
 
