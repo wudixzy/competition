@@ -19,6 +19,16 @@ VERSION = 1
 MODE_ENV = "BI100_HYBRID_KV_ACCOUNTING"
 MODE_CONFIG = "bi100_hybrid_kv_accounting_mode"
 EXPECTED_LAYERS = {"legacy40": 40, "full_attention": 10}
+KERNEL_PROFILES = {
+    "submission": {
+        "moe_direct": "1",
+        "gdn_packed": "1",
+    },
+    "strict-reference": {
+        "moe_direct": "0",
+        "gdn_packed": "0",
+    },
+}
 MAX_SEQ_RE = re.compile(r"\bmax_seq_len=(\d+)\b")
 GPU_BLOCK_RE = re.compile(r"# GPU blocks:\s*(\d+)\b")
 CPU_BLOCK_RE = re.compile(r"# CPU blocks:\s*(\d+)\b")
@@ -396,6 +406,7 @@ def _runtime_contract(
     expected_gdn_restore_mode: str = "direct",
     expected_fused_prefill: str = "0",
     expected_kv_eviction_policy: str = "lru",
+    expected_kernel_profile: str = "submission",
 ) -> tuple[dict[str, Any], list[str]]:
     binary_expectations = {
         "expected_cache_trace": expected_cache_trace,
@@ -407,6 +418,9 @@ def _runtime_contract(
     for name, value in binary_expectations.items():
         if value not in {"0", "1"}:
             raise ValueError(f"{name} must be 0 or 1")
+    if expected_kernel_profile not in KERNEL_PROFILES:
+        raise ValueError(
+            "expected_kernel_profile must be submission or strict-reference")
     reasons: list[str] = []
     matches = SERVICE_CONTRACT_RE.findall(log_text)
     service: dict[str, str] = {}
@@ -428,6 +442,7 @@ def _runtime_contract(
                 service[name] = value
 
     expected_service = dict(FIXED_SERVICE_CONTRACT)
+    expected_service.update(KERNEL_PROFILES[expected_kernel_profile])
     expected_service.update({
         "accounting": mode,
         "cache_trace": expected_cache_trace,
@@ -524,6 +539,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--expected-kv-eviction-policy",
         choices=("lru", "frequency"), default="lru")
+    parser.add_argument(
+        "--expected-kernel-profile",
+        choices=tuple(KERNEL_PROFILES),
+        default="submission",
+    )
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.max_model_len <= 0:
@@ -558,6 +578,7 @@ def main(argv: list[str] | None = None) -> int:
             expected_gdn_restore_mode=args.expected_gdn_restore_mode,
             expected_fused_prefill=args.expected_fused_prefill,
             expected_kv_eviction_policy=args.expected_kv_eviction_policy,
+            expected_kernel_profile=args.expected_kernel_profile,
         )
         report = evaluate(
             log_text,

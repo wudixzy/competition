@@ -61,6 +61,8 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
             self.source,
         )
         self.assertIn('--kernel-profile "$KERNEL_PROFILE"', self.source)
+        self.assertIn(
+            '--expected-kernel-profile "$KERNEL_PROFILE"', self.source)
 
     def test_raw_run_artifacts_cannot_enter_repository(self):
         self.assertIn(

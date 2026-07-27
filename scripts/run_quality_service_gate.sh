@@ -478,6 +478,7 @@ python3 "$ROOT/tests/hybrid_kv_startup_gate.py" \
     --expected-gdn-restore-mode "$RESTORE_MODE" \
     --expected-fused-prefill "$FUSED_PREFILL" \
     --expected-kv-eviction-policy "$KV_EVICTION" \
+    --expected-kernel-profile "$KERNEL_PROFILE" \
     --out "$RUN_ROOT/startup_contract.json" \
     > "$RUN_ROOT/startup_contract.stdout" \
     2> "$RUN_ROOT/startup_contract.stderr"
