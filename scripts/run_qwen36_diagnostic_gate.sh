@@ -30,6 +30,8 @@ PORT=${PORT:-8000}
 STARTUP_TIMEOUT_S=${STARTUP_TIMEOUT_S:-900}
 ACTIVE_PID=""
 ACTIVE_PGID=""
+POSTFLIGHT_COMPLETE=0
+FATAL_PATTERN='CUDA error|SIGSEGV|Fatal Python error|out of memory|device-side assert|worker process.*died|worker.*(lost|exited unexpectedly)|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|Connection reset by peer|TimeoutError|engine iteration timed out|watchdog.*tim(e|ed) out|scheduler requested a missing GDN prefix state|non-finite GatedDeltaNet'
 
 case "$TP_SIZE" in
     1|2) ;;
@@ -123,21 +125,155 @@ export PATH=/usr/local/corex/bin:/usr/local/corex-3.2.3/bin:/usr/local/sbin:/usr
 stop_service() {
     local rc=0
     if [[ -n "$ACTIVE_PGID" ]]; then
-        bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" || rc=$?
+        bi100_stop_process_group \
+            "$ACTIVE_PGID" "$ACTIVE_PID" 60 20 || rc=$?
+    elif [[ -n "$ACTIVE_PID" ]]; then
+        echo "service PID lacks a verified process group" >&2
+        rc=2
     fi
     ACTIVE_PID=""
     ACTIVE_PGID=""
     return "$rc"
 }
 
+run_service_postflight() {
+    timeout --signal=TERM --kill-after=70s 240s \
+        env -u CUDA_VISIBLE_DEVICES PYTHONPATH="$ROOT/tests" \
+        python3 "$ROOT/tests/service_postflight_gate.py" \
+        --gpus "$GPU_LIST" \
+        --settle-timeout-s 90 --clean-samples 3 \
+        --sample-interval-s 2 \
+        --out "$RUN_ROOT/service_postflight.json" \
+        > "$RUN_ROOT/service_postflight.stdout" \
+        2> "$RUN_ROOT/service_postflight.stderr"
+}
+
+run_gpu_preflight_after() {
+    timeout --signal=TERM --kill-after=70s 240s \
+        env -u CUDA_VISIBLE_DEVICES \
+        python3 "$ROOT/tests/bi100_preflight.py" \
+        --gpus "$GPU_LIST" --timeout-s 25 --matmul-size 1024 \
+        --json-out "$RUN_ROOT/preflight_after.json" \
+        > "$RUN_ROOT/preflight_after.stdout" \
+        2> "$RUN_ROOT/preflight_after.stderr"
+}
+
+scan_fatal_logs() {
+    if [[ -f "$RUN_ROOT/server.log" ]] \
+            && grep -Eiq "$FATAL_PATTERN" "$RUN_ROOT/server.log"; then
+        grep -Ein "$FATAL_PATTERN" "$RUN_ROOT/server.log" \
+            > "$RUN_ROOT/fatal_scan.txt" || true
+        return 1
+    fi
+    : > "$RUN_ROOT/fatal_scan.txt"
+}
+
+scan_timeout_rcs() {
+    local file
+    local value
+    local found=0
+    : > "$RUN_ROOT/timeout_scan.txt"
+    while IFS= read -r -d '' file; do
+        value=$(tr -d '[:space:]' < "$file")
+        case "$value" in
+            124|137)
+                printf '%s=%s\n' "$file" "$value" \
+                    >> "$RUN_ROOT/timeout_scan.txt"
+                found=1
+                ;;
+        esac
+    done < <(find "$RUN_ROOT" -maxdepth 1 -type f -name '*.rc' -print0)
+    return "$found"
+}
+
+perform_postflight() {
+    local cleanup_rc=0
+    local service_postflight_rc=0
+    local preflight_rc=0
+    local fatal_rc=0
+    local timeout_rc=0
+    local audit_rc=0
+    if [[ "$POSTFLIGHT_COMPLETE" == 1 ]]; then
+        return 0
+    fi
+    stop_service
+    cleanup_rc=$?
+    printf '%s\n' "$cleanup_rc" > "$RUN_ROOT/cleanup.rc"
+    unset CUDA_VISIBLE_DEVICES
+    run_service_postflight
+    service_postflight_rc=$?
+    printf '%s\n' "$service_postflight_rc" \
+        > "$RUN_ROOT/service_postflight.rc"
+    run_gpu_preflight_after
+    preflight_rc=$?
+    printf '%s\n' "$preflight_rc" > "$RUN_ROOT/preflight_after.rc"
+    scan_fatal_logs
+    fatal_rc=$?
+    printf '%s\n' "$fatal_rc" > "$RUN_ROOT/fatal_scan.rc"
+    scan_timeout_rcs
+    timeout_rc=$?
+    printf '%s\n' "$timeout_rc" > "$RUN_ROOT/timeout_scan.rc"
+    python3 - "$RUN_ROOT" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+
+def read_rc(name):
+    path = root / name
+    if not path.is_file():
+        return None
+    try:
+        return int(path.read_text(encoding="utf-8").strip())
+    except ValueError:
+        return None
+
+gates = {
+    "cleanup": read_rc("cleanup.rc"),
+    "service_postflight": read_rc("service_postflight.rc"),
+    "preflight_after": read_rc("preflight_after.rc"),
+    "fatal_scan": read_rc("fatal_scan.rc"),
+    "timeout_scan": read_rc("timeout_scan.rc"),
+}
+report = {
+    "schema": "qwen36-diagnostic-cleanup-v1",
+    "version": 1,
+    "qualified": all(value == 0 for value in gates.values()),
+    "gates": gates,
+    "production_promotion_authorized": False,
+}
+(root / "cleanup_status.json").write_text(
+    json.dumps(report, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+    audit_rc=$?
+    printf '%s\n' "$audit_rc" > "$RUN_ROOT/cleanup_status.rc"
+    POSTFLIGHT_COMPLETE=1
+    if [[ $cleanup_rc -ne 0 || $service_postflight_rc -ne 0 \
+            || $preflight_rc -ne 0 || $fatal_rc -ne 0 \
+            || $timeout_rc -ne 0 || $audit_rc -ne 0 ]]; then
+        return 1
+    fi
+    return 0
+}
+
 cleanup() {
     local rc=$?
-    trap - EXIT
+    local postflight_rc=0
+    trap - EXIT TERM INT
     set +e
-    stop_service
+    perform_postflight
+    postflight_rc=$?
+    if [[ $postflight_rc -ne 0 ]]; then
+        rc=1
+    fi
     exit "$rc"
 }
 trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 if ! python3 "$ROOT/scripts/verify_qwen36_diagnostic_checkpoint.py" \
         --source "$SOURCE_MODEL_PATH" \
@@ -150,7 +286,7 @@ if ! python3 "$ROOT/scripts/verify_qwen36_diagnostic_checkpoint.py" \
     exit 4
 fi
 
-if ! timeout --signal=TERM --kill-after=10s 180s \
+if ! timeout --signal=TERM --kill-after=70s 240s \
         python3 "$ROOT/tests/bi100_preflight.py" \
         --gpus "$GPU_LIST" --timeout-s 25 --matmul-size 1024 \
         --json-out "$RUN_ROOT/preflight_before.json" \
@@ -159,9 +295,8 @@ if ! timeout --signal=TERM --kill-after=10s 180s \
     echo "selected GPU preflight failed" >&2
     exit 4
 fi
-
 if [[ "$TP_SIZE" == 2 ]]; then
-    if ! timeout --signal=TERM --kill-after=10s 180s \
+    if ! timeout --signal=TERM --kill-after=70s 240s \
             python3 "$ROOT/tests/bi100_nccl_preflight.py" \
             --gpus "$GPU_LIST" --timeout-s 60 \
             --json-out "$RUN_ROOT/nccl_before.json" \
@@ -319,7 +454,8 @@ fi
 printf '%s\n' 0 > "$RUN_ROOT/startup.rc"
 
 overall_rc=0
-if python3 "$ROOT/tests/qwen36_diagnostic_api.py" \
+if timeout --signal=TERM --kill-after=70s 1800s \
+        python3 "$ROOT/tests/qwen36_diagnostic_api.py" \
         --base "http://127.0.0.1:$PORT" \
         --model-path "$MODEL_PATH" \
         --timeout-s 300 \
@@ -333,7 +469,21 @@ else
     overall_rc=1
 fi
 
-if python3 "$ROOT/tests/prefix_boundary_api.py" \
+if timeout --signal=TERM --kill-after=70s 1200s \
+        python3 "$ROOT/tests/qwen36_quality_contract_diagnostic.py" \
+        --base "http://127.0.0.1:$PORT" \
+        --json-out "$RUN_ROOT/quality_contract_gate.json" \
+        > "$RUN_ROOT/quality_contract_gate.stdout" \
+        2> "$RUN_ROOT/quality_contract_gate.stderr"; then
+    printf '%s\n' 0 > "$RUN_ROOT/quality_contract_gate.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/quality_contract_gate.rc"
+    overall_rc=1
+fi
+
+if timeout --signal=TERM --kill-after=70s 1200s \
+        python3 "$ROOT/tests/prefix_boundary_api.py" \
         --base "http://127.0.0.1:$PORT" \
         --model-path "$MODEL_PATH" \
         --block-context-len 11296 \
@@ -351,20 +501,8 @@ else
     overall_rc=1
 fi
 
-if ! stop_service; then
+if ! perform_postflight; then
     overall_rc=1
-fi
-unset CUDA_VISIBLE_DEVICES
-
-FATAL_PATTERN='CUDA error|SIGSEGV|Fatal Python error|out of memory|worker process.*died|Gloo.*failed|Connection reset by peer|scheduler requested a missing GDN prefix state|non-finite GatedDeltaNet'
-if grep -Eiq "$FATAL_PATTERN" "$RUN_ROOT/server.log"; then
-    grep -Ein "$FATAL_PATTERN" "$RUN_ROOT/server.log" \
-        > "$RUN_ROOT/fatal_scan.txt" || true
-    printf '%s\n' 1 > "$RUN_ROOT/fatal_scan.rc"
-    overall_rc=1
-else
-    : > "$RUN_ROOT/fatal_scan.txt"
-    printf '%s\n' 0 > "$RUN_ROOT/fatal_scan.rc"
 fi
 
 expected_layer_lines=$((TP_SIZE * 4))
@@ -380,19 +518,6 @@ if [[ "$actual_layer_lines" -lt "$expected_layer_lines" ]]; then
 else
     : > "$RUN_ROOT/layer_trace_error.txt"
     printf '%s\n' 0 > "$RUN_ROOT/layer_trace.rc"
-fi
-
-if timeout --signal=TERM --kill-after=10s 180s \
-        python3 "$ROOT/tests/bi100_preflight.py" \
-        --gpus "$GPU_LIST" --timeout-s 25 --matmul-size 1024 \
-        --json-out "$RUN_ROOT/preflight_after.json" \
-        > "$RUN_ROOT/preflight_after.stdout" \
-        2> "$RUN_ROOT/preflight_after.stderr"; then
-    printf '%s\n' 0 > "$RUN_ROOT/preflight_after.rc"
-else
-    rc=$?
-    printf '%s\n' "$rc" > "$RUN_ROOT/preflight_after.rc"
-    overall_rc=1
 fi
 
 python3 - "$RUN_ROOT" "$overall_rc" <<'PY'
@@ -418,6 +543,9 @@ def sha(name):
 
 api = json.loads((root / "api_gate.json").read_text()) \
     if (root / "api_gate.json").is_file() else None
+quality_contract = json.loads(
+    (root / "quality_contract_gate.json").read_text()) \
+    if (root / "quality_contract_gate.json").is_file() else None
 prefix = json.loads((root / "prefix_boundary.json").read_text()) \
     if (root / "prefix_boundary.json").is_file() else None
 report = {
@@ -428,8 +556,13 @@ report = {
         (root / "runtime_identity.json").read_text()),
     "gates": {
         "api": read_rc("api_gate.rc"),
+        "quality_contract": read_rc("quality_contract_gate.rc"),
         "prefix_boundary": read_rc("prefix_boundary.rc"),
+        "cleanup": read_rc("cleanup.rc"),
+        "cleanup_status": read_rc("cleanup_status.rc"),
+        "service_postflight": read_rc("service_postflight.rc"),
         "fatal_scan": read_rc("fatal_scan.rc"),
+        "timeout_scan": read_rc("timeout_scan.rc"),
         "layer_trace": read_rc("layer_trace.rc"),
         "preflight_after": read_rc("preflight_after.rc"),
     },
@@ -439,6 +572,13 @@ report = {
         "qualified": api.get("qualified"),
         "case_count": api.get("case_count"),
     } if api else None,
+    "quality_contract_summary": {
+        "qualified": quality_contract.get("qualified"),
+        "case_count": quality_contract.get("case_count"),
+        "passed": quality_contract.get("passed"),
+        "failed": quality_contract.get("failed"),
+        "final_health": quality_contract.get("final_health"),
+    } if quality_contract else None,
     "prefix_summary": {
         "partial_cached_tokens": (
             prefix.get("partial_cache", {}).get("cached_tokens")),
@@ -452,8 +592,11 @@ report = {
             "nccl_before.json",
             "gdn_action_broadcast.json",
             "api_gate.json",
+            "quality_contract_gate.json",
             "prefix_boundary.json",
             "server.log",
+            "cleanup_status.json",
+            "service_postflight.json",
             "preflight_after.json",
         )
     },
@@ -464,5 +607,5 @@ report = {
     json.dumps(report, indent=2, sort_keys=True) + "\n")
 PY
 
-trap - EXIT
+trap - EXIT TERM INT
 exit "$overall_rc"
