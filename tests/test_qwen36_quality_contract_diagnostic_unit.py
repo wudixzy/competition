@@ -31,16 +31,35 @@ class FakeClient:
         return {"data": [{"id": expected_model}]}
 
 
-def observation(case_id: str) -> dict:
-    status = 200 if case_id in {"top_p_0", "n_2"} else 400
+def observation(
+    case_id: str,
+    *,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    choice_digest: str = "b" * 64,
+) -> dict:
+    status = 200 if case_id in {"top_p_0", "n_1", "n_2"} else 400
+    if prompt_tokens is None:
+        prompt_tokens = 4
+    if completion_tokens is None:
+        completion_tokens = 2 if case_id == "n_2" else 1
+    facts = {"contract_checked": True}
+    if case_id in {"n_1", "n_2"}:
+        facts.update({
+            "n": 1 if case_id == "n_1" else 2,
+            "choice_indices_exact": True,
+            "usage_accounted": True,
+            "deterministic_choices_exact": True,
+            "choice_output_sha256": choice_digest,
+        })
     return {
         "status_codes": [status],
         "finish_reasons": ["stop"] if status == 200 else [],
-        "prompt_tokens": [4] if status == 200 else [],
+        "prompt_tokens": [prompt_tokens] if status == 200 else [],
         "cached_tokens": [0] if status == 200 else [],
-        "completion_tokens": [1] if status == 200 else [],
+        "completion_tokens": [completion_tokens] if status == 200 else [],
         "semantic_output_sha256": "a" * 64,
-        "facts": {"contract_checked": True},
+        "facts": facts,
     }
 
 
@@ -68,8 +87,15 @@ class DiagnosticQualityContractTest(unittest.TestCase):
             handlers=handlers,
         )
         self.assertTrue(report["qualified"])
-        self.assertEqual(report["case_count"], 9)
-        self.assertEqual(report["passed"], 9)
+        self.assertEqual(report["schema"],
+                         "qwen36-diagnostic-quality-contract-v2")
+        self.assertEqual(report["version"], 2)
+        self.assertEqual(report["case_count"], 10)
+        self.assertEqual(report["passed"], 10)
+        self.assertTrue(report["n_cross_case_contract"]["qualified"])
+        self.assertTrue(all(
+            report["n_cross_case_contract"]["checks"].values()))
+        self.assertEqual(report["n_cross_case_contract"]["reasons"], [])
         self.assertEqual(calls, list(MODULE.CASE_IDS))
         self.assertEqual(client.health_checks, 1)
         serialized = json.dumps(report)
@@ -109,6 +135,66 @@ class DiagnosticQualityContractTest(unittest.TestCase):
         )
         self.assertFalse(unhealthy["qualified"])
         self.assertFalse(unhealthy["final_health"])
+
+    def test_n_cross_case_contract_fails_closed_on_accounting_or_output(self):
+        scenarios = {
+            "prompt": {
+                "n_2": {"prompt_tokens": 8},
+                "failed_check": "prompt_counted_once",
+            },
+            "completion": {
+                "n_2": {"completion_tokens": 3},
+                "failed_check": "completion_summed",
+            },
+            "output": {
+                "n_2": {"choice_digest": "c" * 64},
+                "failed_check": "choice_output_exact",
+            },
+        }
+        for name, scenario in scenarios.items():
+            with self.subTest(name=name):
+                overrides = scenario.get("n_2", {})
+                handlers = {
+                    case_id: (
+                        lambda client, config, case=case_id:
+                        observation(
+                            case,
+                            **(overrides if case == "n_2" else {}),
+                        )
+                    )
+                    for case_id in MODULE.CASE_IDS
+                }
+                report = MODULE.run_gate(
+                    "http://127.0.0.1:8000",
+                    client=FakeClient(),
+                    handlers=handlers,
+                )
+                self.assertEqual(report["failed"], 0)
+                self.assertFalse(report["qualified"])
+                contract = report["n_cross_case_contract"]
+                self.assertFalse(contract["qualified"])
+                self.assertFalse(
+                    contract["checks"][scenario["failed_check"]])
+
+    def test_n_cross_case_contract_rejects_noncanonical_digest(self):
+        handlers = {
+            case_id: (
+                lambda client, config, case=case_id:
+                observation(
+                    case,
+                    choice_digest=("B" * 64 if case == "n_2" else "b" * 64),
+                )
+            )
+            for case_id in MODULE.CASE_IDS
+        }
+        report = MODULE.run_gate(
+            "http://127.0.0.1:8000",
+            client=FakeClient(),
+            handlers=handlers,
+        )
+        self.assertFalse(report["qualified"])
+        self.assertFalse(report["n_cross_case_contract"]["checks"][
+            "choice_output_exact"])
 
 
 if __name__ == "__main__":

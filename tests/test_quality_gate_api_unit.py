@@ -393,7 +393,10 @@ class QualityGateApiTest(unittest.TestCase):
         observation = MODULE._n_case(client, object(), 2)
         self.assertEqual(observation["finish_reasons"], ["stop", "stop"])
         self.assertEqual(observation["completion_tokens"], [2])
-        self.assertEqual(observation["facts"], {
+        facts = dict(observation["facts"])
+        choice_digest = facts.pop("choice_output_sha256")
+        self.assertRegex(choice_digest, r"^[0-9a-f]{64}$")
+        self.assertEqual(facts, {
             "n": 2,
             "choice_indices_exact": True,
             "usage_accounted": True,

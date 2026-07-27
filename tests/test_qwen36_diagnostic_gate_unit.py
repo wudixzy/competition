@@ -90,6 +90,7 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
             "qwen36_quality_contract_diagnostic.py",
             "quality_contract_gate.json",
             '"quality_contract": read_rc("quality_contract_gate.rc")',
+            '"n_cross_case_contract": quality_contract.get(',
             "qwen36_compat_http_gate.py",
             "--multiple-system-parts-expected-status 200",
             "--image-limit 1",

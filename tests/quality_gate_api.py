@@ -919,6 +919,7 @@ def _n_case(client: Client, config: RunConfig, n: int) -> Json:
         "choice_indices_exact": True,
         "usage_accounted": True,
         "deterministic_choices_exact": True,
+        "choice_output_sha256": _sha256_json(normalized_choices[0]),
     })
 
 

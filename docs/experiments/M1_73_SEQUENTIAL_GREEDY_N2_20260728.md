@@ -48,7 +48,7 @@ limit, cache policy, formal YAML value, or default compute switch changed.
 
 ## Local gates
 
-- 897 `unittest` cases passed; 25 optional-dependency cases skipped.
+- 903 `unittest` cases passed; 25 optional-dependency cases skipped.
 - The 53-case official metric manifest is qualified.
 - Quality data manifests are qualified.
 - Submission preflight passed 9 of 9 checks.
@@ -57,8 +57,8 @@ limit, cache policy, formal YAML value, or default compute switch changed.
   contract drift, error propagation, metadata restoration, and the normal
   `n=1` scheduler-query bypass.
 - The quality gate requires exact choice indices, deterministic normalized
-  choices, positive usage, equal `n=1`/`n=2` prompt usage, and exactly doubled
-  completion usage.
+  choices, positive usage, equal `n=1`/`n=2` prompt usage, exactly doubled
+  completion usage, and an exact privacy-safe per-choice output digest.
 - The diagnostic runner sets `allow_bare_engine_n2_skip = False`; the historic
   400 cannot be reported as a pass.
 
@@ -82,7 +82,10 @@ Use the immutable four-layer real-weight diagnostic checkpoint on one healthy
 BI100 GPU with `max_model_len=262144`, `max_num_seqs=1`, and the fixed runner
 `scripts/run_qwen36_diagnostic_gate.sh`. Require:
 
-- all nine quality boundary cases, including real HTTP `n=2`, to pass;
+- all ten quality boundary cases, including real HTTP `n=1` and `n=2`, to
+  pass;
+- the cross-case contract to prove one prompt charge, summed completion usage,
+  and exact deterministic output digests across `n=1` and each `n=2` choice;
 - the compatibility, tool, multimodal, and prefix gates to pass;
 - `[BI100 N_FANOUT] choices=2 mode=sequential_greedy`;
 - scoped process-group SIGTERM cleanup with at least 60 seconds of grace;

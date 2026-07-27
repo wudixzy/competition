@@ -618,6 +618,8 @@ report = {
         "passed": quality_contract.get("passed"),
         "failed": quality_contract.get("failed"),
         "final_health": quality_contract.get("final_health"),
+        "n_cross_case_contract": quality_contract.get(
+            "n_cross_case_contract"),
     } if quality_contract else None,
     "compat_http_summary": {
         "qualified": compat_http.get("qualified"),
