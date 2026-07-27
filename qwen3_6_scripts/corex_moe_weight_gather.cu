@@ -33,6 +33,20 @@ __global__ void selected_weight_gather_vec16_kernel(
   }
 }
 
+__global__ void selected_w2_gather_vec16_kernel(
+    const uint4* w2, const int64_t* expert_ids, uint4* selected_w2,
+    int64_t vecs_per_expert) {
+  const int slot = blockIdx.y;
+  const int64_t source_offset = expert_ids[slot] * vecs_per_expert;
+  const int64_t output_offset = static_cast<int64_t>(slot) * vecs_per_expert;
+  for (int64_t index =
+           static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       index < vecs_per_expert;
+       index += static_cast<int64_t>(blockDim.x) * gridDim.x) {
+    selected_w2[output_offset + index] = w2[source_offset + index];
+  }
+}
+
 void check_weight(const torch::Tensor& tensor, const char* name) {
   TORCH_CHECK(tensor.is_cuda(), name, " must be a CUDA tensor");
   TORCH_CHECK(tensor.scalar_type() == torch::kFloat16,
@@ -86,7 +100,35 @@ std::vector<torch::Tensor> gather_selected_weights(
   return {selected_w13, selected_w2};
 }
 
+torch::Tensor gather_selected_w2(const torch::Tensor& w2,
+                                 const torch::Tensor& expert_ids) {
+  check_weight(w2, "w2");
+  TORCH_CHECK(expert_ids.is_cuda() && expert_ids.is_contiguous(),
+              "expert_ids must be a contiguous CUDA tensor");
+  TORCH_CHECK(expert_ids.device() == w2.device(),
+              "w2 and expert_ids must be on the same device");
+  TORCH_CHECK(expert_ids.scalar_type() == torch::kInt64,
+              "expert_ids must have dtype int64");
+  TORCH_CHECK(expert_ids.dim() == 1 && expert_ids.numel() == kTopK,
+              "expert_ids must have shape (8,)");
+
+  auto selected_w2 = torch::empty(
+      {kTopK, w2.size(1), w2.size(2)}, w2.options());
+  const int64_t vecs_per_expert = w2.size(1) * w2.size(2) / 8;
+  const dim3 grid(kGridX, kTopK);
+  selected_w2_gather_vec16_kernel<<<
+      grid, kThreads, 0, at::cuda::getCurrentCUDAStream()>>>(
+      reinterpret_cast<const uint4*>(w2.data_ptr<at::Half>()),
+      expert_ids.data_ptr<int64_t>(),
+      reinterpret_cast<uint4*>(selected_w2.data_ptr<at::Half>()),
+      vecs_per_expert);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  return selected_w2;
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def("gather", &gather_selected_weights,
              "Gather selected FP16 top-8 MoE weights with 16-byte loads");
+  module.def("gather_w2", &gather_selected_w2,
+             "Gather only selected FP16 top-8 W2 experts");
 }
