@@ -345,6 +345,7 @@ report = {
         "startup_contract": read_rc("startup_contract.rc"),
         "quality": read_rc("quality.rc"),
         "agent_workload": read_rc("agent_workload.rc"),
+        "api_4xx_attribution": read_rc("api_4xx_attribution.rc"),
         "cleanup": read_rc("cleanup.rc"),
         "service_postflight": read_rc("service_postflight.rc"),
         "fatal_scan": read_rc("fatal_scan.rc"),
@@ -360,6 +361,7 @@ report = {
 contract = root / "runtime_contract.json"
 quality = root / "quality_report.json"
 agent = root / "agent_workload.json"
+api_4xx = root / "api_4xx_attribution.json"
 report["artifacts"] = {
     "runtime_contract_sha256": (
         hashlib.sha256(contract.read_bytes()).hexdigest()
@@ -370,6 +372,9 @@ report["artifacts"] = {
     "agent_workload_sha256": (
         hashlib.sha256(agent.read_bytes()).hexdigest()
         if agent.is_file() else None),
+    "api_4xx_attribution_sha256": (
+        hashlib.sha256(api_4xx.read_bytes()).hexdigest()
+        if api_4xx.is_file() else None),
 }
 (root / "status.json").write_text(
     json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -381,6 +386,7 @@ finish() {
     local cleanup_rc=0
     local service_postflight_rc=0
     local fatal_rc=0
+    local api_4xx_rc=0
     local timeout_rc=0
     local after_rc=0
     local comparison_rc=0
@@ -397,7 +403,18 @@ finish() {
         fi
         scan_fatal_log
         fatal_rc=$?
+        if [[ -f "$RUN_ROOT/server.log" ]]; then
+            python3 "$ROOT/tests/summarize_api_4xx_log.py" \
+                "$RUN_ROOT/server.log" \
+                --out "$RUN_ROOT/api_4xx_attribution.json" \
+                > "$RUN_ROOT/api_4xx_attribution.stdout" \
+                2> "$RUN_ROOT/api_4xx_attribution.stderr"
+            api_4xx_rc=$?
+        else
+            api_4xx_rc=1
+        fi
     fi
+    printf '%s\n' "$api_4xx_rc" > "$RUN_ROOT/api_4xx_attribution.rc"
     printf '%s\n' "$cleanup_rc" > "$RUN_ROOT/cleanup.rc"
     run_service_postflight
     service_postflight_rc=$?
@@ -423,7 +440,8 @@ finish() {
     fi
 
     if [[ $cleanup_rc -ne 0 || $service_postflight_rc -ne 0 \
-            || $fatal_rc -ne 0 || $timeout_rc -ne 0 \
+            || $fatal_rc -ne 0 || $api_4xx_rc -ne 0 \
+            || $timeout_rc -ne 0 \
             || $after_rc -ne 0 || $comparison_rc -ne 0 ]]; then
         final_rc=1
     fi

@@ -102,6 +102,8 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertIn("--settle-timeout-s 30 --clean-samples 3",
                       self.source)
         self.assertIn('"service_postflight": read_rc(', self.source)
+        self.assertIn('"api_4xx_attribution": read_rc(', self.source)
+        self.assertIn("tests/summarize_api_4xx_log.py", self.source)
         self.assertIn('"timeout_scan": read_rc(', self.source)
         cleanup = self.source.index("stop_service\n")
         process_scan = self.source.index("run_service_postflight\n")
@@ -111,6 +113,7 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertNotIn("pkill", self.source)
         for gate in (
                 "cleanup", "service_postflight", "fatal_scan",
+                "api_4xx_attribution",
                 "timeout_scan", "preflight_after",
                 "preflight_comparison"):
             self.assertIn(f'"{gate}": read_rc(', self.source)

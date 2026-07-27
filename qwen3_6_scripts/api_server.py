@@ -26,6 +26,19 @@ def _bi100_scalar(value):
     return getattr(value, "value", value)
 
 
+def _bi100_tool_choice_kind(value):
+    value = _bi100_scalar(value)
+    if value is None:
+        return "unset"
+    if isinstance(value, str):
+        return value if value in ("none", "auto", "required") else "other"
+    function = _bi100_field(value, "function")
+    if function is not None and isinstance(
+            _bi100_field(function, "name"), str):
+        return "named"
+    return "other"
+
+
 def _bi100_chat_4xx_reason(message):
     if message == "messages must contain at least one message":
         return "empty_messages"
@@ -37,6 +50,11 @@ def _bi100_chat_4xx_reason(message):
     if (isinstance(message, str)
             and message.startswith('"auto" tool choice requires ')):
         return "tool_parser_unavailable"
+    if message == "Tool call arguments are not valid JSON.":
+        return "invalid_tool_arguments_json"
+    if (isinstance(message, str)
+            and message.startswith("Tool call arguments must ")):
+        return "invalid_tool_arguments_type"
     return "unclassified_chat_error"
 
 
@@ -49,10 +67,18 @@ def _bi100_chat_request_shape(request):
         tools = ()
 
     system_count = 0
+    tool_message_count = 0
+    assistant_tool_message_count = 0
     has_image = False
     for message in messages:
-        if _bi100_scalar(_bi100_field(message, "role")) == "system":
+        role = _bi100_scalar(_bi100_field(message, "role"))
+        if role == "system":
             system_count += 1
+        elif role == "tool":
+            tool_message_count += 1
+        elif (role == "assistant"
+              and _bi100_field(message, "tool_calls")):
+            assistant_tool_message_count += 1
         content = _bi100_field(message, "content")
         if not isinstance(content, (list, tuple)):
             continue
@@ -61,15 +87,107 @@ def _bi100_chat_request_shape(request):
             if part_type in ("image", "image_url"):
                 has_image = True
 
+    strict_false_count = 0
+    strict_true_count = 0
+    for tool in tools:
+        function = _bi100_field(tool, "function")
+        strict = _bi100_field(function, "strict")
+        if strict is False:
+            strict_false_count += 1
+        elif strict is True:
+            strict_true_count += 1
+
     n = _bi100_field(request, "n")
     return {
         "message_count": len(messages),
         "system_count": system_count,
         "tool_count": len(tools),
+        "tool_message_count": tool_message_count,
+        "assistant_tool_message_count": assistant_tool_message_count,
+        "strict_false_count": strict_false_count,
+        "strict_true_count": strict_true_count,
+        "tool_choice_kind": _bi100_tool_choice_kind(
+            _bi100_field(request, "tool_choice")),
         "has_image": has_image,
         "stream": bool(_bi100_field(request, "stream")),
         "n": n if isinstance(n, int) else None,
     }
+
+
+def _bi100_validation_reason(errors):
+    categories = set()
+    validation_errors = errors if isinstance(errors, (list, tuple)) else ()
+    for error in validation_errors:
+        if not isinstance(error, dict):
+            continue
+        location = error.get("loc")
+        if not isinstance(location, (list, tuple)):
+            continue
+        fields = [
+            value for value in location
+            if isinstance(value, str)
+            and value not in ("body", "query", "path")
+        ]
+        if not fields:
+            continue
+        field = fields[0]
+        descendants = set(fields[1:])
+        if field == "messages":
+            if "tool_call_id" in descendants:
+                categories.add("request_validation_message_tool_call_id")
+            elif "tool_calls" in descendants:
+                categories.add("request_validation_message_tool_calls")
+            elif "content" in descendants:
+                categories.add("request_validation_message_content")
+            elif "role" in descendants:
+                categories.add("request_validation_message_role")
+            else:
+                categories.add("request_validation_messages")
+        elif field == "tools":
+            if "strict" in descendants:
+                categories.add("request_validation_tool_strict")
+            elif "parameters" in descendants:
+                categories.add("request_validation_tool_parameters")
+            else:
+                categories.add("request_validation_tools")
+        elif field in ("tool_choice", "parallel_tool_calls"):
+            categories.add("request_validation_tool_choice")
+        elif field == "response_format":
+            categories.add("request_validation_response_format")
+        elif field in ("stream", "stream_options"):
+            categories.add("request_validation_streaming")
+        elif field in ("n", "max_tokens", "min_tokens", "stop"):
+            categories.add("request_validation_generation")
+        elif field in (
+                "temperature", "top_p", "top_k", "frequency_penalty",
+                "presence_penalty", "repetition_penalty", "seed"):
+            categories.add("request_validation_sampling")
+        elif field == "model":
+            categories.add("request_validation_model")
+        else:
+            categories.add("request_validation_other")
+
+    priority = (
+        "request_validation_tool_strict",
+        "request_validation_tool_parameters",
+        "request_validation_tool_choice",
+        "request_validation_message_tool_call_id",
+        "request_validation_message_tool_calls",
+        "request_validation_message_content",
+        "request_validation_message_role",
+        "request_validation_messages",
+        "request_validation_tools",
+        "request_validation_response_format",
+        "request_validation_streaming",
+        "request_validation_generation",
+        "request_validation_sampling",
+        "request_validation_model",
+        "request_validation_other",
+    )
+    for category in priority:
+        if category in categories:
+            return category
+    return "request_validation_unknown"
 
 
 def _bi100_startup_trace(message: str) -> None:
@@ -149,12 +267,18 @@ def _bi100_log_chat_4xx(request, error) -> None:
     reason = _bi100_chat_4xx_reason(getattr(error, "message", None))
     logger.warning(
         "[BI100 4XX] endpoint=chat code=%d reason=%s messages=%d "
-        "systems=%d tools=%d image=%d stream=%d n=%s",
+        "systems=%d tools=%d tool_msgs=%d assistant_tool_msgs=%d "
+        "strict_false=%d strict_true=%d choice=%s image=%d stream=%d n=%s",
         code,
         reason,
         shape["message_count"],
         shape["system_count"],
         shape["tool_count"],
+        shape["tool_message_count"],
+        shape["assistant_tool_message_count"],
+        shape["strict_false_count"],
+        shape["strict_true_count"],
+        shape["tool_choice_kind"],
         int(shape["has_image"]),
         int(shape["stream"]),
         shape["n"] if shape["n"] is not None else "unset",
@@ -524,10 +648,42 @@ def build_app(args: Namespace) -> FastAPI:
     )
 
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(_, exc):
-        logger.warning(
-            "[BI100 4XX] endpoint=request_validation code=400 "
-            "reason=request_validation")
+    async def validation_exception_handler(raw_request, exc):
+        validation_errors = exc.errors()
+        reason = _bi100_validation_reason(validation_errors)
+        body = getattr(exc, "body", None)
+        if (raw_request.url.path.endswith("/v1/chat/completions")
+                and isinstance(body, dict)):
+            shape = _bi100_chat_request_shape(body)
+            if (reason == "request_validation_tools"
+                    and shape["strict_true_count"]):
+                reason = "request_validation_tool_strict"
+            logger.warning(
+                "[BI100 4XX] endpoint=request_validation code=400 reason=%s "
+                "messages=%d systems=%d tools=%d tool_msgs=%d "
+                "assistant_tool_msgs=%d strict_false=%d strict_true=%d "
+                "choice=%s image=%d stream=%d n=%s errors=%d",
+                reason,
+                shape["message_count"],
+                shape["system_count"],
+                shape["tool_count"],
+                shape["tool_message_count"],
+                shape["assistant_tool_message_count"],
+                shape["strict_false_count"],
+                shape["strict_true_count"],
+                shape["tool_choice_kind"],
+                int(shape["has_image"]),
+                int(shape["stream"]),
+                shape["n"] if shape["n"] is not None else "unset",
+                len(validation_errors),
+            )
+        else:
+            logger.warning(
+                "[BI100 4XX] endpoint=request_validation code=400 reason=%s "
+                "errors=%d",
+                reason,
+                len(validation_errors),
+            )
         chat = app.state.openai_serving_chat
         err = chat.create_error_response(message=str(exc))
         return JSONResponse(err.model_dump(),

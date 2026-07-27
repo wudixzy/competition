@@ -518,7 +518,11 @@ def _postprocess_messages(messages: List[ConversationMessage]) -> None:
             for item in message["tool_calls"]:
                 arguments = item["function"]["arguments"]
                 if isinstance(arguments, str):
-                    arguments = json.loads(arguments)
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError as exc:
+                        raise ValueError(
+                            "Tool call arguments are not valid JSON.") from exc
                 elif not isinstance(arguments, dict):
                     raise TypeError(
                         "Tool call arguments must be a JSON object or a "

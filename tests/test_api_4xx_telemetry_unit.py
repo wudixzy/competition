@@ -9,8 +9,10 @@ API_SERVER = ROOT / "qwen3_6_scripts/api_server.py"
 HELPERS = {
     "_bi100_field",
     "_bi100_scalar",
+    "_bi100_tool_choice_kind",
     "_bi100_chat_4xx_reason",
     "_bi100_chat_request_shape",
+    "_bi100_validation_reason",
 }
 
 
@@ -36,6 +38,8 @@ class Api4xxTelemetryTest(unittest.TestCase):
         helpers = _load_helpers()
         cls.reason = staticmethod(helpers["_bi100_chat_4xx_reason"])
         cls.shape = staticmethod(helpers["_bi100_chat_request_shape"])
+        cls.validation_reason = staticmethod(
+            helpers["_bi100_validation_reason"])
 
     def test_known_errors_have_fixed_reason_codes(self):
         self.assertEqual(
@@ -49,6 +53,15 @@ class Api4xxTelemetryTest(unittest.TestCase):
         self.assertEqual(
             self.reason('tool_choice = "required" is not supported!'),
             "unsupported_tool_choice_required",
+        )
+        self.assertEqual(
+            self.reason("Tool call arguments are not valid JSON."),
+            "invalid_tool_arguments_json",
+        )
+        self.assertEqual(
+            self.reason(
+                "Tool call arguments must decode to a JSON object."),
+            "invalid_tool_arguments_type",
         )
 
     def test_unknown_error_does_not_enter_reason_code(self):
@@ -71,6 +84,10 @@ class Api4xxTelemetryTest(unittest.TestCase):
                 ),
             ],
             tools=[{"function": {"name": "private_tool"}}],
+            tool_choice={
+                "type": "function",
+                "function": {"name": "private_tool"},
+            },
             stream=True,
             n=2,
         )
@@ -78,15 +95,74 @@ class Api4xxTelemetryTest(unittest.TestCase):
             "message_count": 2,
             "system_count": 1,
             "tool_count": 1,
+            "tool_message_count": 0,
+            "assistant_tool_message_count": 0,
+            "strict_false_count": 0,
+            "strict_true_count": 0,
+            "tool_choice_kind": "named",
             "has_image": True,
             "stream": True,
             "n": 2,
         })
 
+    def test_shape_counts_tool_history_and_strict_without_values(self):
+        shape = self.shape({
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{"private": "value"}],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "private-id",
+                    "content": "private result",
+                },
+            ],
+            "tools": [
+                {"function": {"strict": False, "private": "schema"}},
+                {"function": {"strict": True, "private": "schema"}},
+            ],
+            "tool_choice": "required",
+        })
+        self.assertEqual(shape["tool_message_count"], 1)
+        self.assertEqual(shape["assistant_tool_message_count"], 1)
+        self.assertEqual(shape["strict_false_count"], 1)
+        self.assertEqual(shape["strict_true_count"], 1)
+        self.assertEqual(shape["tool_choice_kind"], "required")
+        self.assertNotIn("private", repr(shape))
+
+    def test_validation_errors_have_bounded_specific_reason_codes(self):
+        cases = (
+            (("body", "tools", 0, "function", "strict"),
+             "request_validation_tool_strict"),
+            (("body", "tools", 0, "function", "parameters"),
+             "request_validation_tool_parameters"),
+            (("body", "tool_choice"),
+             "request_validation_tool_choice"),
+            (("body", "messages", 1, "tool_call_id"),
+             "request_validation_message_tool_call_id"),
+            (("body", "messages", 1, "tool_calls"),
+             "request_validation_message_tool_calls"),
+            (("body", "messages", 1, "content"),
+             "request_validation_message_content"),
+        )
+        for location, expected in cases:
+            with self.subTest(location=location):
+                self.assertEqual(
+                    self.validation_reason([{
+                        "loc": location,
+                        "input": "private",
+                    }]),
+                    expected,
+                )
+
     def test_runtime_logs_reason_without_raw_error_message(self):
         source = API_SERVER.read_text()
         self.assertIn("[BI100 4XX] endpoint=chat", source)
-        self.assertIn("reason=request_validation", source)
+        self.assertIn("[BI100 4XX] endpoint=request_validation", source)
+        self.assertIn("_bi100_validation_reason(validation_errors)", source)
+        self.assertIn("_bi100_chat_request_shape(body)", source)
         self.assertIn("_bi100_log_chat_4xx(request, generator)", source)
         self.assertNotIn("[BI100 4XX] message=", source)
 

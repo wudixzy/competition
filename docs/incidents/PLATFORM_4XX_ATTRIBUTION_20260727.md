@@ -32,21 +32,50 @@ Completions 4xx. It records only:
 
 - fixed reason code;
 - status code;
-- message, system-message, and tool counts;
+- message, system-message, tool-result, assistant-tool-call, and tool counts;
+- `strict=false` and `strict=true` tool counts;
+- bounded tool-choice kind (`unset`, `none`, `auto`, `required`, `named`, or
+  `other`);
 - whether an image part is present;
 - stream mode and `n`.
 
 It never records message text, image data or URLs, tool definitions or
 arguments, exception text, tokens, or generated output.
 
-Known categories are:
+Validation categories distinguish:
 
-- `request_validation`;
+- message role, content, tool calls, and tool-call ID;
+- tool definition, parameters, `strict`, and tool choice;
+- response format, streaming, generation, sampling, model, and other fields.
+
+Runtime categories include:
+
 - `empty_messages`;
+- `invalid_tool_arguments_json`;
+- `invalid_tool_arguments_type`;
 - `n_exceeds_max_num_seqs`;
 - `unsupported_tool_choice_required`;
 - `tool_parser_unavailable`;
 - `unclassified_chat_error`.
+
+`tests/summarize_api_4xx_log.py` reconciles every Chat Completions access-log
+4xx with exactly one marker after the service has exited. Missing, orphaned,
+malformed, unknown, or unclassified records fail the quality runner. Its v2
+report contains only aggregate reason and request-shape counts.
+
+## Compatibility fixes
+
+M1-68 closes two request-shape failures without weakening request semantics:
+
+- explicit OpenAI function-tool `strict=false` is accepted as a no-op and
+  excluded from the tool dictionary passed to the chat template;
+- assistant tool-call history may provide `function.arguments` as either a
+  JSON object or a JSON-encoded object string; both reach the template as the
+  same object.
+
+`strict=true` and `tool_choice=required` remain fail-closed because the CoreX
+vLLM 0.6.3 path does not implement their full semantics. Invalid JSON, arrays,
+and scalar tool arguments also remain rejected.
 
 ## Qualification rule
 
@@ -58,9 +87,10 @@ Known categories are:
   workload request is a real request-success failure.
 - Any `unclassified_chat_error` blocks promotion until its fixed request shape
   is reproduced and the response error is diagnosed privately.
+- `api_4xx_attribution.rc` must be zero, with `complete=true`,
+  `classified=true`, and `attribution_delta=0`.
 - Aggregate access-log 400 counts cannot be used to claim success or failure
   without phase and reason attribution.
 
-This change is observability-only. It does not alter request validation,
-sampling, chat templates, model execution, cache behavior, formal YAML, or
-default optimization switches.
+These compatibility fixes do not alter sampling, model execution, cache
+behavior, formal YAML, or default optimization switches.
