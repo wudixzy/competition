@@ -44,6 +44,12 @@ Describe the exact files, algorithmic change, and rollback command.
 - cached/uncached output hashes:
 - 100K boundary:
 - error-log scan:
+- current-run process-group cleanup (TERM grace >= 60s, then KILL/reap):
+- residual API server and worker scan:
+- GPU process scan:
+- repeated per-card postflight:
+- fatal/Gloo/NCCL/worker-loss/timeout scan:
+- postflight qualified:
 
 ## Performance protocol
 
@@ -72,3 +78,4 @@ the worst request, overlap score, and disjoint score.
 
 Explain the decision, residual risks, and next experiment. A performance gain
 cannot override a correctness, hardware, or contract failure.
+Any cleanup or postflight failure invalidates the complete experiment.

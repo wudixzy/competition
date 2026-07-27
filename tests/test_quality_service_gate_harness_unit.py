@@ -106,6 +106,12 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         gpu_preflight = self.source.index("run_preflight after")
         self.assertLess(cleanup, process_scan)
         self.assertLess(process_scan, gpu_preflight)
+        self.assertNotIn("pkill", self.source)
+        for gate in (
+                "cleanup", "service_postflight", "fatal_scan",
+                "timeout_scan", "preflight_after",
+                "preflight_comparison"):
+            self.assertIn(f'"{gate}": read_rc(', self.source)
 
 
 if __name__ == "__main__":

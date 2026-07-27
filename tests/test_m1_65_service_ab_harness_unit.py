@@ -45,12 +45,50 @@ class M165ServiceAbHarnessTest(unittest.TestCase):
 
     def test_orchestrator_manages_only_its_active_child_group(self):
         self.assertIn("setsid env BI100_QUALITY_KERNEL_PROFILE", self.orchestrator)
-        self.assertIn('kill -TERM -- "-$ACTIVE_CHILD_PGID"', self.orchestrator)
-        self.assertIn("waited < 120", self.orchestrator)
-        self.assertIn('kill -KILL -- "-$ACTIVE_CHILD_PGID"', self.orchestrator)
-        self.assertIn("wait \"$ACTIVE_CHILD_PID\"", self.orchestrator)
+        self.assertIn(
+            'source "$ROOT/scripts/lib/process_group.sh"',
+            self.orchestrator,
+        )
+        self.assertIn("CHILD_TERM_GRACE_S=900", self.orchestrator)
+        self.assertIn(
+            'bi100_stop_process_group \\\n'
+            '        "$ACTIVE_CHILD_PGID" "$ACTIVE_CHILD_PID"',
+            self.orchestrator,
+        )
         self.assertNotIn("pkill", self.orchestrator)
         self.assertIn("orchestrator_postflight", self.orchestrator)
+
+    def test_orchestrator_postflight_is_fail_closed_and_complete(self):
+        for gate in (
+                "orchestrator_cleanup",
+                "orchestrator_postflight",
+                "orchestrator_preflight_after",
+                "orchestrator_fatal_scan",
+                "orchestrator_timeout_scan"):
+            self.assertIn(f'"{gate}"', self.orchestrator)
+            self.assertIn(f"$RUN_ROOT/{gate}.rc", self.orchestrator)
+        self.assertIn("tests/service_postflight_gate.py", self.orchestrator)
+        self.assertIn("tests/bi100_preflight.py", self.orchestrator)
+        self.assertIn("--gpus 0,1,2,3", self.orchestrator)
+        self.assertIn("Gloo.*(failed|reset|error)", self.orchestrator)
+        self.assertIn(
+            "worker.*(died|lost|exited unexpectedly)",
+            self.orchestrator,
+        )
+        self.assertIn("124|137", self.orchestrator)
+        self.assertIn("trap 'exit 143' TERM", self.orchestrator)
+        self.assertIn("trap 'exit 130' INT", self.orchestrator)
+        self.assertIn("trap finish EXIT", self.orchestrator)
+        cleanup = self.orchestrator.index("stop_active_child\n")
+        process_scan = self.orchestrator.index("run_orchestrator_postflight\n")
+        gpu_preflight = self.orchestrator.index("run_orchestrator_preflight\n")
+        fatal_scan = self.orchestrator.index("scan_orchestrator_fatal_logs\n")
+        timeout_scan = self.orchestrator.index(
+            "scan_orchestrator_timeouts\n")
+        self.assertLess(cleanup, process_scan)
+        self.assertLess(process_scan, gpu_preflight)
+        self.assertLess(gpu_preflight, fatal_scan)
+        self.assertLess(fatal_scan, timeout_scan)
 
     def test_ab_is_private_and_does_not_change_submission_contract(self):
         self.assertIn(

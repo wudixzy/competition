@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+source "$ROOT/scripts/lib/process_group.sh"
 
 if [[ $# -ne 2 ]]; then
     echo "usage: $0 INSTANCE RUN_ROOT" >&2
@@ -45,6 +46,8 @@ git -C "$ROOT" rev-parse HEAD > "$RUN_ROOT/source_revision.txt"
 git -C "$ROOT" branch --show-current > "$RUN_ROOT/source_branch.txt"
 ACTIVE_CHILD_PID=""
 ACTIVE_CHILD_PGID=""
+CHILD_TERM_GRACE_S=900
+CHILD_KILL_GRACE_S=30
 
 write_status() {
     local final_rc=$1
@@ -74,8 +77,16 @@ report = {
         "control": read_rc(root / "control.rc"),
         "candidate": read_rc(root / "candidate.rc"),
         "comparison": read_rc(root / "comparison.rc"),
+        "orchestrator_cleanup": read_rc(
+            root / "orchestrator_cleanup.rc"),
         "orchestrator_postflight": read_rc(
             root / "orchestrator_postflight.rc"),
+        "orchestrator_preflight_after": read_rc(
+            root / "orchestrator_preflight_after.rc"),
+        "orchestrator_fatal_scan": read_rc(
+            root / "orchestrator_fatal_scan.rc"),
+        "orchestrator_timeout_scan": read_rc(
+            root / "orchestrator_timeout_scan.rc"),
     },
     "production_promotion_authorized": False,
 }
@@ -86,40 +97,104 @@ PY
 }
 
 stop_active_child() {
-    local waited=0
+    local rc=0
     if [[ -z "$ACTIVE_CHILD_PID" || -z "$ACTIVE_CHILD_PGID" ]]; then
         return 0
     fi
-    if kill -0 "$ACTIVE_CHILD_PID" 2>/dev/null; then
-        kill -TERM -- "-$ACTIVE_CHILD_PGID" 2>/dev/null || true
-        while kill -0 "$ACTIVE_CHILD_PID" 2>/dev/null && ((waited < 120)); do
-            sleep 1
-            waited=$((waited + 1))
-        done
-        if kill -0 "$ACTIVE_CHILD_PID" 2>/dev/null; then
-            kill -KILL -- "-$ACTIVE_CHILD_PGID" 2>/dev/null || true
-        fi
-    fi
-    wait "$ACTIVE_CHILD_PID" 2>/dev/null || true
+    # The child runs its own 60-second TP4 shutdown and full postflight. The
+    # outer grace covers that path, including the bounded four-GPU recheck.
+    bi100_stop_process_group \
+        "$ACTIVE_CHILD_PGID" "$ACTIVE_CHILD_PID" \
+        "$CHILD_TERM_GRACE_S" "$CHILD_KILL_GRACE_S" || rc=$?
     ACTIVE_CHILD_PID=""
     ACTIVE_CHILD_PGID=""
+    return "$rc"
 }
 
-finish() {
-    local rc=$?
-    local postflight_rc=0
-    trap - EXIT TERM INT
-    set +e
-    stop_active_child
+run_orchestrator_postflight() {
     python3 "$ROOT/tests/service_postflight_gate.py" \
         --gpus 0,1,2,3 \
         --out "$RUN_ROOT/orchestrator_postflight.json" \
         > "$RUN_ROOT/orchestrator_postflight.stdout" \
         2> "$RUN_ROOT/orchestrator_postflight.stderr"
+}
+
+run_orchestrator_preflight() {
+    timeout --signal=TERM --kill-after=70s 480s \
+        python3 "$ROOT/tests/bi100_preflight.py" \
+        --gpus 0,1,2,3 --timeout-s 25 --matmul-size 1024 \
+        --json-out "$RUN_ROOT/orchestrator_preflight_after.json" \
+        > "$RUN_ROOT/orchestrator_preflight_after.stdout" \
+        2> "$RUN_ROOT/orchestrator_preflight_after.stderr"
+}
+
+scan_orchestrator_fatal_logs() {
+    local file
+    local found=0
+    local pattern
+    pattern='CUDA error|SIGSEGV|Fatal Python error|out of memory|AssertionError|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|Connection reset by peer|worker.*(died|lost|exited unexpectedly)|TimeoutError|engine iteration timed out|watchdog.*tim(e|ed) out'
+    : > "$RUN_ROOT/orchestrator_fatal_scan.txt"
+    while IFS= read -r -d '' file; do
+        if grep -Eiq "$pattern" "$file"; then
+            printf '%s\n' "file=$file" \
+                >> "$RUN_ROOT/orchestrator_fatal_scan.txt"
+            grep -Ein "$pattern" "$file" \
+                >> "$RUN_ROOT/orchestrator_fatal_scan.txt" || true
+            found=1
+        fi
+    done < <(find "$RUN_ROOT" -type f -name server.log -print0)
+    return "$found"
+}
+
+scan_orchestrator_timeouts() {
+    local file
+    local found=0
+    local value
+    : > "$RUN_ROOT/orchestrator_timeout_scan.txt"
+    while IFS= read -r -d '' file; do
+        value=$(tr -d '[:space:]' < "$file")
+        case "$value" in
+            124|137)
+                printf '%s=%s\n' "$file" "$value" \
+                    >> "$RUN_ROOT/orchestrator_timeout_scan.txt"
+                found=1
+                ;;
+        esac
+    done < <(find "$RUN_ROOT" -type f \
+        \( -name startup.rc -o -name quality.rc \
+        -o -name agent_workload.rc \) -print0)
+    return "$found"
+}
+
+finish() {
+    local rc=$?
+    local cleanup_rc=0
+    local postflight_rc=0
+    local preflight_rc=0
+    local fatal_rc=0
+    local timeout_rc=0
+    trap - EXIT TERM INT
+    set +e
+    stop_active_child
+    cleanup_rc=$?
+    printf '%s\n' "$cleanup_rc" > "$RUN_ROOT/orchestrator_cleanup.rc"
+    run_orchestrator_postflight
     postflight_rc=$?
     printf '%s\n' "$postflight_rc" \
         > "$RUN_ROOT/orchestrator_postflight.rc"
-    if [[ $postflight_rc -ne 0 ]]; then
+    run_orchestrator_preflight
+    preflight_rc=$?
+    printf '%s\n' "$preflight_rc" \
+        > "$RUN_ROOT/orchestrator_preflight_after.rc"
+    scan_orchestrator_fatal_logs
+    fatal_rc=$?
+    printf '%s\n' "$fatal_rc" > "$RUN_ROOT/orchestrator_fatal_scan.rc"
+    scan_orchestrator_timeouts
+    timeout_rc=$?
+    printf '%s\n' "$timeout_rc" > "$RUN_ROOT/orchestrator_timeout_scan.rc"
+    if [[ $cleanup_rc -ne 0 || $postflight_rc -ne 0 \
+            || $preflight_rc -ne 0 || $fatal_rc -ne 0 \
+            || $timeout_rc -ne 0 ]]; then
         rc=1
     fi
     write_status "$rc"

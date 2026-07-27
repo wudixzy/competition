@@ -114,6 +114,12 @@ Cleanup is fail-closed. Each service has its own process group, receives
 reaped, and residual service/GPU processes, fatal logs, timeout records, and
 per-GPU pre/postflight comparison are mandatory. The GPU preflight itself now
 uses the same 60-second TERM grace instead of Python's immediate timeout kill.
+The outer A/B runner uses the same process-group helper and allows up to 900
+seconds for a signalled child runner to complete its bounded cleanup and
+postflight; this prevents the outer layer from killing a child that is still
+making normal cleanup progress. It then independently repeats residual
+process/GPU scans, a four-card preflight, fatal/collective/worker-loss scans,
+and timeout scans. Any nonzero outer postflight gate invalidates the A/B run.
 
 ## Current TP4 Infrastructure Blocker
 
