@@ -275,6 +275,41 @@ class ProtocolUnitTest(unittest.TestCase):
         self.assertEqual(request.messages[1]["tool_calls"][0]["id"],
                          "call_lookup_1")
 
+    def test_object_tool_arguments_normalize_before_union_validation(self):
+        messages = [{
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": "call_lookup_object",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": {"query": "value"},
+                },
+            }],
+        }]
+        request = self.request(messages=messages)
+        self.assertEqual(
+            request.messages[0]["tool_calls"][0]["function"]["arguments"],
+            '{"query":"value"}',
+        )
+
+    def test_invalid_tool_argument_representations_are_rejected(self):
+        for arguments in ("{invalid", "[]", [], 3):
+            with self.subTest(arguments=arguments):
+                self.assert_validation_error(messages=[{
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": "call_lookup_invalid",
+                        "type": "function",
+                        "function": {
+                            "name": "lookup",
+                            "arguments": arguments,
+                        },
+                    }],
+                }])
+
     def test_message_without_content_reasoning_or_tool_calls_is_rejected(self):
         self.assert_validation_error(messages=[{
             "role": "assistant",

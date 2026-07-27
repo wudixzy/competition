@@ -513,7 +513,9 @@ def _postprocess_messages(messages: List[ConversationMessage]) -> None:
     # from openAI format) to dict
     for message in messages:
         if (message["role"] == "assistant" and "tool_calls" in message
-                and isinstance(message["tool_calls"], list)):
+                and message["tool_calls"] is not None):
+            if not isinstance(message["tool_calls"], list):
+                message["tool_calls"] = list(message["tool_calls"])
 
             for item in message["tool_calls"]:
                 arguments = item["function"]["arguments"]

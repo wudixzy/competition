@@ -65,6 +65,26 @@ class ChatUtilsToolHistoryUnitTest(unittest.TestCase):
             arguments,
         )
 
+    def test_lazy_tool_call_iterable_is_materialized(self):
+        messages = [{
+            "role": "assistant",
+            "content": "",
+            "tool_calls": iter([{
+                "id": "call_synthetic",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": '{"key":"synthetic"}',
+                },
+            }]),
+        }]
+        self.postprocess(messages)
+        self.assertIsInstance(messages[0]["tool_calls"], list)
+        self.assertEqual(
+            messages[0]["tool_calls"][0]["function"]["arguments"],
+            {"key": "synthetic"},
+        )
+
     def test_invalid_json_and_non_objects_fail_closed(self):
         for arguments in ("{invalid", "[]", [], 3, None):
             with self.subTest(arguments=arguments):

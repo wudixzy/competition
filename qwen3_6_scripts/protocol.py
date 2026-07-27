@@ -1,5 +1,6 @@
 # Adapted from
 # https://github.com/lm-sys/FastChat/blob/168ccc29d3f7edc50823016105c024fe2282732a/fastchat/protocol/openai_api_protocol.py
+import json
 import time
 from argparse import Namespace
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -422,6 +423,44 @@ class ChatCompletionRequest(OpenAIBaseModel):
             if not isinstance(msg, dict):
                 normalized.append(msg)
                 continue
+            tool_calls = msg.get("tool_calls")
+            if isinstance(tool_calls, list):
+                normalized_calls = []
+                for call in tool_calls:
+                    if not isinstance(call, dict):
+                        normalized_calls.append(call)
+                        continue
+                    function = call.get("function")
+                    if not isinstance(function, dict):
+                        normalized_calls.append(call)
+                        continue
+                    arguments = function.get("arguments")
+                    if isinstance(arguments, dict):
+                        arguments = json.dumps(
+                            arguments,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                    elif isinstance(arguments, str):
+                        try:
+                            decoded_arguments = json.loads(arguments)
+                        except json.JSONDecodeError as exc:
+                            raise ValueError(
+                                "Tool call arguments are not valid JSON."
+                            ) from exc
+                        if not isinstance(decoded_arguments, dict):
+                            raise ValueError(
+                                "Tool call arguments must decode to a JSON "
+                                "object.")
+                    elif arguments is not None:
+                        raise ValueError(
+                            "Tool call arguments must be a JSON object or a "
+                            "JSON-encoded object string.")
+                    if arguments is not None:
+                        function = {**function, "arguments": arguments}
+                        call = {**call, "function": function}
+                    normalized_calls.append(call)
+                msg = {**msg, "tool_calls": normalized_calls}
             if msg.get("content") is None:
                 if (msg.get("reasoning_content") is None
                         and not msg.get("tool_calls")):
