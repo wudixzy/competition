@@ -183,6 +183,7 @@ finish() {
             python3 "$ROOT/tests/compare_bi100_preflights.py" \
                 --preflight "before=$RUN_ROOT/preflight_before.json" \
                 --preflight "after=$RUN_ROOT/preflight_after.json" \
+                --expected-gpus "$GPU_INDEX" \
                 --max-free-memory-drop-bytes 1073741824 \
                 --out "$RUN_ROOT/preflight_comparison.json" \
                 > "$RUN_ROOT/preflight_comparison.stdout" \

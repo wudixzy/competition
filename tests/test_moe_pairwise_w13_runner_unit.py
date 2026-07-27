@@ -31,6 +31,7 @@ class MoePairwiseW13RunnerUnitTest(unittest.TestCase):
         self.assertIn("trap finish EXIT", self.source)
         self.assertIn("run_preflight after", self.source)
         self.assertIn("compare_bi100_preflights.py", self.source)
+        self.assertIn('--expected-gpus "$GPU_INDEX"', self.source)
         self.assertIn("runner_status.json", self.source)
         self.assertIn('"production_promotion_authorized": False', self.source)
 
