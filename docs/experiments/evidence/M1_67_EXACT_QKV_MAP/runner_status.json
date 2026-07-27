@@ -1,0 +1,38 @@
+{
+  "artifacts": {
+    "benchmark_sha256": "b754a2bab55163837a4d14f748a2427a590c265b3fea5f3fac0a757d0d49711d",
+    "extension_sha256": "b8091fddc4bc6571e25e3ef43e994d82b5f56055db7bc1d2fcf2d2bbc9669c68",
+    "qualification_sha256": "3b7f6895823542931350cc6f64fc53959738c0809e089d1b8ad1443a0feec1f2",
+    "runtime_identity_sha256": "5524184e2f64a90c4275b719a3388aef201cd0f81b55f9ff33db01128597e5b0",
+    "service_postflight_sha256": "f9dbb8899cb86e3fc185423d1938e45777f13f101062d5e28cf0cb5659b1f144"
+  },
+  "gates": {
+    "benchmark": 0,
+    "build": 0,
+    "cleanup": 0,
+    "fatal_scan": 0,
+    "preflight_after": 0,
+    "preflight_before": 0,
+    "preflight_comparison": 0,
+    "qualification": 1,
+    "runtime_identity": 0,
+    "service_postflight": 0,
+    "timeout_scan": 0
+  },
+  "instance": "ssh-73ca29ba",
+  "last_stage": "qualification",
+  "limits": {
+    "relative_l2": 1e-05,
+    "saving_ms": 0.02,
+    "sequence_steps": 1000,
+    "speedup": 1.25
+  },
+  "physical_gpu": 1,
+  "production_integration_attempted": false,
+  "production_promotion_authorized": false,
+  "returncode": 1,
+  "schema": "bi100-gdn-exact-qkv-map-runner-v1",
+  "source_branch": "",
+  "source_revision": "79bdd95f69327dd3e165360ad83a0526dc387ccc",
+  "version": 1
+}

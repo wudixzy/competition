@@ -65,8 +65,48 @@ can settle, while a persistent or repeatedly reappearing holder still fails.
 
 ## Current status
 
-`HARNESS READY; REMOTE RESULT PENDING`.
+`REJECTED: ABSOLUTE SAVING BELOW GATE`.
 
-The current TP4 host has only physical GPU1 passing the basic CUDA preflight.
-M1-67 may use GPU1 for this isolated component gate, but no model or TP4 result
-may be inferred from it.
+The fixed gate ran on physical GPU1 of `ssh-73ca29ba`:
+
+```text
+source revision: 79bdd95f69327dd3e165360ad83a0526dc387ccc
+runtime tree:    05d720faf7a6298946b6ab70d0ab73b8e88f0d7b90c7a54cf50c2c19e0273b7b
+extension:       b8091fddc4bc6571e25e3ef43e994d82b5f56055db7bc1d2fcf2d2bbc9669c68
+```
+
+| Metric | Reference | Candidate | Result |
+| --- | ---: | ---: | ---: |
+| Median q/k map plus value cast | 0.014316 ms | 0.007265 ms | 1.9705x |
+| Paired median speedup | - | - | 1.9717x |
+| Saving per GDN layer | - | - | 0.007051 ms |
+| Projected saving across 30 layers | - | - | 0.211522 ms/token |
+| Fixed-input relative L2 | 0 | 0 | exact |
+| 1,000-step relative L2 | 0 | 0 | exact |
+| Exact sequence steps | - | 1,000/1,000 | pass |
+
+The speed ratio passes, but the absolute saving is below the frozen
+`0.02 ms/layer` gate. `qualification.rc=1` and
+`production_promotion_authorized=false`. Do not add this function to the
+production extension, prebuilt binary, model path, or default environment.
+The value-cast boundary is closed and must not be revisited as a parameter
+scan.
+
+All infrastructure gates other than the intentionally failed qualification
+returned zero: build, benchmark, runtime identity, cleanup, stable process/GPU
+postflight, fatal scan, timeout scan, before/after GPU1 preflight, and GPU
+comparison. GPU1 retained exactly `34057748480` free bytes before and after.
+No model or API server was started. This remains a one-rank component result
+and is not a TP4 or model-throughput result.
+
+Structured evidence is under
+[`evidence/M1_67_EXACT_QKV_MAP`](evidence/M1_67_EXACT_QKV_MAP):
+
+```text
+benchmark          b754a2bab55163837a4d14f748a2427a590c265b3fea5f3fac0a757d0d49711d
+qualification      3b7f6895823542931350cc6f64fc53959738c0809e089d1b8ad1443a0feec1f2
+runner status      7043f2dadd33bfe4dcbd864a754a60f656e6daf13cae2fab5a05cb581c84cad7
+runtime identity   5524184e2f64a90c4275b719a3388aef201cd0f81b55f9ff33db01128597e5b0
+service postflight f9dbb8899cb86e3fc185423d1938e45777f13f101062d5e28cf0cb5659b1f144
+GPU comparison     5d09848a67c056014aa0410eae6484b0cc273a9a6366e1633410244632e650c9
+```

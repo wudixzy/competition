@@ -1,0 +1,24 @@
+{
+  "component_qualified": false,
+  "limits": {
+    "relative_l2": 1e-05,
+    "saving_ms": 0.02,
+    "sequence_steps": 1000,
+    "speedup": 1.25
+  },
+  "observed": {
+    "artifact_sha256": "b8091fddc4bc6571e25e3ef43e994d82b5f56055db7bc1d2fcf2d2bbc9669c68",
+    "exact_steps": 1000,
+    "max_relative_l2": 0.0,
+    "paired_speedup_median": 1.9717205289149302,
+    "projected_30_layer_saving_ms": 0.21152213215827942,
+    "relative_l2": 0.0,
+    "saving_ms": 0.007050737738609314,
+    "speedup": 1.970511379485749
+  },
+  "production_promotion_authorized": false,
+  "reasons": [
+    "q/k/v stage saving is below 0.02 ms/layer"
+  ],
+  "schema": "bi100-gdn-exact-qkv-map-qualification-v1"
+}
