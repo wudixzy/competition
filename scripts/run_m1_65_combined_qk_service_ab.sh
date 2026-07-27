@@ -114,6 +114,8 @@ stop_active_child() {
 run_orchestrator_postflight() {
     python3 "$ROOT/tests/service_postflight_gate.py" \
         --gpus 0,1,2,3 \
+        --settle-timeout-s 30 --clean-samples 3 \
+        --sample-interval-s 1 \
         --out "$RUN_ROOT/orchestrator_postflight.json" \
         > "$RUN_ROOT/orchestrator_postflight.stdout" \
         2> "$RUN_ROOT/orchestrator_postflight.stderr"

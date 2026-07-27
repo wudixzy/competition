@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import time
 from typing import Any
 
 
@@ -178,6 +179,72 @@ def scan(
     }
 
 
+def _observation(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "qualified": result.get("qualified") is True,
+        "missing_devices": result.get("missing_devices", []),
+        "api_server_pids": result.get("api_server_pids", []),
+        "worker_pids": result.get("worker_pids", []),
+        "gpu_processes": result.get("gpu_processes", []),
+        "scan_errors": result.get("scan_errors", []),
+    }
+
+
+def scan_until_stable(
+    scan_once: Any,
+    *,
+    settle_timeout_s: float,
+    clean_samples: int,
+    sample_interval_s: float,
+    monotonic: Any = time.monotonic,
+    sleep: Any = time.sleep,
+) -> dict[str, Any]:
+    if settle_timeout_s < 0:
+        raise ValueError("settle_timeout_s must be non-negative")
+    if clean_samples < 1:
+        raise ValueError("clean_samples must be positive")
+    if sample_interval_s <= 0:
+        raise ValueError("sample_interval_s must be positive")
+    if settle_timeout_s == 0 and clean_samples != 1:
+        raise ValueError(
+            "clean_samples must be 1 when settling is disabled")
+
+    started = monotonic()
+    deadline = started + settle_timeout_s
+    clean_streak = 0
+    observations: list[dict[str, Any]] = []
+    final: dict[str, Any] | None = None
+    while True:
+        final = scan_once()
+        observations.append(_observation(final))
+        if final.get("qualified") is True:
+            clean_streak += 1
+        else:
+            clean_streak = 0
+        if clean_streak >= clean_samples:
+            qualified = True
+            break
+        current = monotonic()
+        if current >= deadline:
+            qualified = False
+            break
+        sleep(min(sample_interval_s, max(0.0, deadline - current)))
+
+    assert final is not None
+    result = dict(final)
+    result["qualified"] = qualified
+    result["settling"] = {
+        "timeout_s": settle_timeout_s,
+        "sample_interval_s": sample_interval_s,
+        "required_clean_samples": clean_samples,
+        "final_clean_streak": clean_streak,
+        "attempts": len(observations),
+        "elapsed_s": monotonic() - started,
+        "observations": observations,
+    }
+    return result
+
+
 def _parse_gpu_indices(value: str) -> tuple[int, ...]:
     try:
         indices = tuple(int(item) for item in value.split(","))
@@ -198,13 +265,31 @@ def main() -> int:
         "--gpus", type=_parse_gpu_indices, default=(0, 1, 2, 3))
     parser.add_argument("--proc-root", type=Path, default=Path("/proc"))
     parser.add_argument("--device-root", type=Path, default=Path("/dev"))
+    parser.add_argument("--settle-timeout-s", type=float, default=0.0)
+    parser.add_argument("--clean-samples", type=int, default=1)
+    parser.add_argument("--sample-interval-s", type=float, default=1.0)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
-    result = scan(
-        args.proc_root.resolve(),
-        args.device_root.resolve(),
-        args.gpus,
-        os.getpid(),
+    if args.settle_timeout_s < 0:
+        parser.error("--settle-timeout-s must be non-negative")
+    if args.clean_samples < 1:
+        parser.error("--clean-samples must be positive")
+    if args.sample_interval_s <= 0:
+        parser.error("--sample-interval-s must be positive")
+    if args.settle_timeout_s == 0 and args.clean_samples != 1:
+        parser.error(
+            "--clean-samples must be 1 when settling is disabled")
+
+    result = scan_until_stable(
+        lambda: scan(
+            args.proc_root.resolve(),
+            args.device_root.resolve(),
+            args.gpus,
+            os.getpid(),
+        ),
+        settle_timeout_s=args.settle_timeout_s,
+        clean_samples=args.clean_samples,
+        sample_interval_s=args.sample_interval_s,
     )
     _atomic_write(args.out, result)
     print(json.dumps(result, indent=2, sort_keys=True))

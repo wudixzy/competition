@@ -203,6 +203,8 @@ finish() {
 
     python3 "$ROOT/tests/service_postflight_gate.py" \
         --gpus "$GPU_INDEX" \
+        --settle-timeout-s 30 --clean-samples 3 \
+        --sample-interval-s 1 \
         --out "$RUN_ROOT/service_postflight.json" \
         > "$RUN_ROOT/service_postflight.stdout" \
         2> "$RUN_ROOT/service_postflight.stderr"

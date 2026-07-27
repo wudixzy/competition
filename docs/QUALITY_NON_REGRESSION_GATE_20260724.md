@@ -74,6 +74,10 @@ open-GPU-device scans, and a repeated per-card CUDA preflight. Cleanup,
 postflight, fatal scan, timeout scan, final preflight, and preflight comparison
 are independent fail-closed gates. A nonzero or missing required result makes
 the experiment invalid, even when its request or performance report passed.
+The process/GPU scan requires three consecutive clean observations within a
+30-second settling window. This tolerates a short platform health query without
+ignoring it: every failed observation remains in the JSON report, while any
+persistent or repeatedly reappearing holder still fails the postflight.
 Raw logs remain under a private `/tmp` path outside the repository. The
 functional run executes all 53 rows. It still sends and validates the `n=2`
 request, but records the manifest's sole documented skip only when the fixed

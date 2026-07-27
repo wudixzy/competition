@@ -120,6 +120,10 @@ postflight; this prevents the outer layer from killing a child that is still
 making normal cleanup progress. It then independently repeats residual
 process/GPU scans, a four-card preflight, fatal/collective/worker-loss scans,
 and timeout scans. Any nonzero outer postflight gate invalidates the A/B run.
+Residual process/GPU checks require three consecutive clean samples within 30
+seconds. Every transient observation is retained in the report; this avoids
+classifying a short platform `ixsmi` query as a leaked model process without
+allowing a persistent or repeatedly reappearing holder to pass.
 
 ## Current TP4 Infrastructure Blocker
 
