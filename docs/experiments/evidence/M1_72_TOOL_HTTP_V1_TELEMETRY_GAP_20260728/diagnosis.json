@@ -1,0 +1,62 @@
+{
+  "behavior": {
+    "candidate_object_history_http_fix_qualified": true,
+    "candidate_strict_false_http_fix_qualified": true,
+    "candidate_tool_4xx_status_contract_qualified": true,
+    "candidate_tool_generation_exact": true,
+    "candidate_tool_history_generation_exact": true,
+    "http_probe_qualified": true
+  },
+  "decision": {
+    "default_change_authorized": false,
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false,
+    "rerun_authorized_after_specific_fix": true,
+    "yaml_change_authorized": false
+  },
+  "diagnosis": {
+    "component": "qwen3_6_scripts/api_server.py",
+    "failure_class": "privacy_safe_telemetry_classification_gap",
+    "model_runtime_failure": false,
+    "request_semantics_failure": false,
+    "root_cause": "Two model-level Pydantic validation errors have an empty location tuple, so the location-only classifier emits request_validation_unknown.",
+    "specific_fix": "Map only exact bounded validator messages to fixed reason enums while retaining fail-closed handling for every unknown message."
+  },
+  "full_model_evaluated": false,
+  "performance_evaluated": false,
+  "privacy": {
+    "contains_credentials": false,
+    "contains_environment": false,
+    "contains_multimodal_url_or_bytes": false,
+    "contains_raw_log_lines": false,
+    "contains_request_content": false,
+    "contains_response_content": false,
+    "contains_tool_schema": false
+  },
+  "qualified": false,
+  "run": {
+    "candidate_revision": "cdb1bc41f728a5610a3632ad7923d73a90748919",
+    "control_revision": "c78d55d0a7637baf4910af68b6d6ba4e286a1254",
+    "instance": "ssh-73ca29ba",
+    "physical_gpu": 1,
+    "run_root": "/tmp/m1-72-tool-http-v1-40d16d7-20260727T182809Z",
+    "runner_revision": "40d16d7e7595c7800daf8cdb2978cd7daabd4de8"
+  },
+  "schema": "bi100-m1-72-tool-http-v1-telemetry-gap-v1",
+  "semantic_quality_evaluated": false,
+  "telemetry": {
+    "attributed_4xx_count": 3,
+    "expected_by_reason": {
+      "invalid_tool_arguments_json": 1,
+      "request_validation_tool_strict": 1,
+      "unsupported_tool_choice_required": 1
+    },
+    "observed_by_reason": {
+      "request_validation_tool_strict": 1,
+      "request_validation_unknown": 2
+    },
+    "qualified": false,
+    "unknown_4xx_count": 2
+  },
+  "version": 1
+}

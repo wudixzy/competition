@@ -1,0 +1,17 @@
+{
+  "checks": {
+    "candidate_4xx_attribution_qualified": false,
+    "object_history_http_fix_qualified": true,
+    "strict_false_http_fix_qualified": true
+  },
+  "full_model_evaluated": false,
+  "production_promotion_authorized": false,
+  "qualified": false,
+  "reasons": [
+    "candidate 4xx reason set differs from the contract",
+    "candidate contains an unclassified tool 4xx"
+  ],
+  "schema": "qwen36-diagnostic-tool-http-ab-v1",
+  "semantic_quality_evaluated": false,
+  "version": 1
+}
