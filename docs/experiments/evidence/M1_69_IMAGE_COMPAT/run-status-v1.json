@@ -1,0 +1,43 @@
+{
+  "expected_rcs": {
+    "baseline-multimodal-v3": 0,
+    "baseline-request": 0,
+    "baseline-template-v3": 1,
+    "candidate-multimodal-v3": 0,
+    "candidate-request": 0,
+    "candidate-template-v3": 0,
+    "gpu1-preflight-20260728": 0,
+    "gpu1-preflight-postflight-20260728": 0,
+    "install": 0,
+    "multimodal-preprocessing-dd3f1cc": 0,
+    "service-postflight-final": 0
+  },
+  "fatal_scan": {
+    "fatal_scan_clean": true,
+    "hits": []
+  },
+  "preprocessing_elapsed_s": 22.969,
+  "probe_revision": "dd3f1cc413f32848b4b2996bd2e006823465c700",
+  "qualified": true,
+  "rcs": {
+    "baseline-multimodal-v3": 0,
+    "baseline-request": 0,
+    "baseline-template-v3": 1,
+    "candidate-multimodal-v3": 0,
+    "candidate-request": 0,
+    "candidate-template-v3": 0,
+    "gpu1-preflight-20260728": 0,
+    "gpu1-preflight-postflight-20260728": 0,
+    "install": 0,
+    "multimodal-preprocessing-dd3f1cc": 0,
+    "service-postflight-final": 0
+  },
+  "runtime_inputs_diff_empty": true,
+  "runtime_revision": "37001edff643d98bf41bf4a52e0a145329003315",
+  "runtime_tree_sha256": "9cb9bf5b21260826372d8f9496a23bc501cb4052ce7c701dbc401be0952f6549",
+  "schema": "bi100-m1-69-validation-status-v1",
+  "setup_retries": [
+    "physical_gpu_ordinal_visibility_corrected",
+    "corex_openmpi_library_path_completed"
+  ]
+}

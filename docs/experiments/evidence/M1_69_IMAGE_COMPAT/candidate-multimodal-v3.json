@@ -1,0 +1,67 @@
+{
+  "checks": {
+    "default_effective_image_limit_one": true,
+    "default_tracker_rejects_second_image": true,
+    "explicit_effective_image_limit_two": true,
+    "explicit_tracker_accepts_two_images": true,
+    "max_model_len_262144": true,
+    "profile_budget_scales_linearly": true,
+    "qwen36_model_identity": true
+  },
+  "default": {
+    "configured": {},
+    "effective": {
+      "audio": 1,
+      "image": 1,
+      "video": 1
+    },
+    "max_multimodal_tokens": 1280,
+    "tracker": {
+      "accepted": 1,
+      "attempted": 2,
+      "combined_count": 1,
+      "error_type": "ValueError",
+      "reason": "image_count_limit"
+    }
+  },
+  "explicit_image_two": {
+    "configured": {
+      "image": 2
+    },
+    "effective": {
+      "audio": 1,
+      "image": 2,
+      "video": 1
+    },
+    "max_multimodal_tokens": 2560,
+    "tracker": {
+      "accepted": 2,
+      "attempted": 2,
+      "combined_count": 2,
+      "error_type": null,
+      "reason": null
+    }
+  },
+  "model": {
+    "architectures": [
+      "Qwen3_5MoeForCausalLM"
+    ],
+    "config_sha256": "cb30bf4e6205013f03c30fb0e275a6ffec6ecf2002410d401e35b20e8701e69c",
+    "max_model_len": 262144,
+    "model_type": "qwen3_5_moe",
+    "tokenizer_config_sha256": "5186f0defcd7f232382c7f0aebcd2252d073bb921ab240e407b7ae8745d2b29b"
+  },
+  "package_versions": {
+    "torch": "2.1.0+corex.3.2.3",
+    "transformers": "4.55.3",
+    "vllm": "0.6.3+corex.3.2.3"
+  },
+  "privacy": {
+    "contains_image_url_or_bytes": false,
+    "contains_model_weights": false,
+    "contains_prompt_or_response_text": false
+  },
+  "qualified": true,
+  "schema": "bi100-multimodal-limit-probe-v1",
+  "synthetic_only": true
+}

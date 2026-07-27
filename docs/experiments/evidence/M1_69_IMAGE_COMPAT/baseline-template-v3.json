@@ -1,0 +1,44 @@
+{
+  "checks": {
+    "object_history_token_exact": true,
+    "strict_false_token_exact": true,
+    "strict_not_forwarded_to_template": true,
+    "strict_true_rejected": true,
+    "system_text_parts_token_exact": false,
+    "tool_choice_required_rejected": true
+  },
+  "model_identity": {
+    "config_sha256": "cb30bf4e6205013f03c30fb0e275a6ffec6ecf2002410d401e35b20e8701e69c",
+    "tokenizer_config_sha256": "5186f0defcd7f232382c7f0aebcd2252d073bb921ab240e407b7ae8745d2b29b"
+  },
+  "pairs": {
+    "object_history": {
+      "object_sha256": "dbb6540982f22fe0869097c06fc76f17f7a338678bc8dff27c81ec217d75132c",
+      "object_token_count": 316,
+      "string_sha256": "dbb6540982f22fe0869097c06fc76f17f7a338678bc8dff27c81ec217d75132c",
+      "string_token_count": 316
+    },
+    "strict_false": {
+      "false_sha256": "6be7162d76c967d8137cf687610783f45f497b1e40d79a71ce0e222e0fc9fbee",
+      "false_token_count": 268,
+      "omitted_sha256": "6be7162d76c967d8137cf687610783f45f497b1e40d79a71ce0e222e0fc9fbee",
+      "omitted_token_count": 268
+    },
+    "system_text_parts": {
+      "normalized_error_type": null,
+      "normalized_sha256": "7c227b48b70d5d76b494b8bc70af2e2dfcad22c9de6a73303e3c7fab1a505b4d",
+      "normalized_token_count": 32,
+      "parts_error_type": "TemplateError",
+      "parts_sha256": null,
+      "parts_token_count": null
+    }
+  },
+  "privacy": {
+    "contains_model_weights": false,
+    "contains_prompt_or_response_text": false,
+    "contains_tool_schema": false
+  },
+  "qualified": false,
+  "schema": "bi100-chat-request-template-compat-v1",
+  "synthetic_only": true
+}

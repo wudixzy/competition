@@ -1,0 +1,174 @@
+{
+  "checks": {
+    "default_rejects_second_image": true,
+    "explicit_two_accepts_two_images": true,
+    "image_order_is_content_sensitive": true,
+    "mapped_contract_present": true,
+    "mapped_tensors_are_finite": true,
+    "max_model_len_262144": true,
+    "repeat_is_exact": true,
+    "visual_token_count_scales_linearly": true
+  },
+  "default_limit": {
+    "error_type": "ValueError",
+    "reason": "image_count_limit",
+    "rejected": true
+  },
+  "model": {
+    "architectures": [
+      "Qwen3_5MoeForCausalLM"
+    ],
+    "max_model_len": 262144,
+    "model_type": "qwen3_5_moe"
+  },
+  "one_image": {
+    "image_count": 1,
+    "mapped_finite": {
+      "image_grid_thw": true,
+      "pixel_values": true
+    },
+    "mapped_keys": [
+      "image_grid_thw",
+      "pixel_values"
+    ],
+    "mapped_sha256": {
+      "image_grid_thw": "6b359ec104188cf914af6e882ece7fff639cdc4a5d6f77d49d07651e3de4974d",
+      "pixel_values": "646ce45ffda799887aa0f8ad0510799e3bc82389c4e50adbd1a850f8e6e300c1"
+    },
+    "mapped_shapes": {
+      "image_grid_thw": [
+        [
+          1,
+          3
+        ]
+      ],
+      "pixel_values": [
+        [
+          256,
+          1536
+        ]
+      ]
+    },
+    "original_image_placeholders": 1,
+    "original_prompt_tokens": 17,
+    "processed_image_tokens": 64,
+    "processed_prompt_tokens": 100,
+    "processed_token_sha256": "218aa0d320401e8e94144097f134adf562d63c82082a96d25a50394a1203dff4"
+  },
+  "package_versions": {
+    "torch": "2.1.0+corex.3.2.3",
+    "transformers": "4.55.3",
+    "vllm": "0.6.3+corex.3.2.3"
+  },
+  "privacy": {
+    "contains_image_url_or_bytes": false,
+    "contains_model_weights": false,
+    "contains_prompt_or_response_text": false,
+    "synthetic_image_only": true
+  },
+  "qualified": true,
+  "schema": "bi100-multimodal-preprocessing-probe-v1",
+  "synthetic_only": true,
+  "two_images": {
+    "image_count": 2,
+    "mapped_finite": {
+      "image_grid_thw": true,
+      "pixel_values": true
+    },
+    "mapped_keys": [
+      "image_grid_thw",
+      "pixel_values"
+    ],
+    "mapped_sha256": {
+      "image_grid_thw": "6bc17606337830224759b58e828d535e643d213f87b7d46c20c4e1fc050be328",
+      "pixel_values": "69a44a416e70e3a8479c8640106e2c85889d25329f26bf4f95c90b30170b341f"
+    },
+    "mapped_shapes": {
+      "image_grid_thw": [
+        [
+          2,
+          3
+        ]
+      ],
+      "pixel_values": [
+        [
+          512,
+          1536
+        ]
+      ]
+    },
+    "original_image_placeholders": 2,
+    "original_prompt_tokens": 21,
+    "processed_image_tokens": 128,
+    "processed_prompt_tokens": 185,
+    "processed_token_sha256": "4cdef95106f6f52155a0ab668f9158317002ebd39c66fe26fac26e9f8444e909"
+  },
+  "two_images_repeated": {
+    "image_count": 2,
+    "mapped_finite": {
+      "image_grid_thw": true,
+      "pixel_values": true
+    },
+    "mapped_keys": [
+      "image_grid_thw",
+      "pixel_values"
+    ],
+    "mapped_sha256": {
+      "image_grid_thw": "6bc17606337830224759b58e828d535e643d213f87b7d46c20c4e1fc050be328",
+      "pixel_values": "69a44a416e70e3a8479c8640106e2c85889d25329f26bf4f95c90b30170b341f"
+    },
+    "mapped_shapes": {
+      "image_grid_thw": [
+        [
+          2,
+          3
+        ]
+      ],
+      "pixel_values": [
+        [
+          512,
+          1536
+        ]
+      ]
+    },
+    "original_image_placeholders": 2,
+    "original_prompt_tokens": 21,
+    "processed_image_tokens": 128,
+    "processed_prompt_tokens": 185,
+    "processed_token_sha256": "4cdef95106f6f52155a0ab668f9158317002ebd39c66fe26fac26e9f8444e909"
+  },
+  "two_images_reversed": {
+    "image_count": 2,
+    "mapped_finite": {
+      "image_grid_thw": true,
+      "pixel_values": true
+    },
+    "mapped_keys": [
+      "image_grid_thw",
+      "pixel_values"
+    ],
+    "mapped_sha256": {
+      "image_grid_thw": "6bc17606337830224759b58e828d535e643d213f87b7d46c20c4e1fc050be328",
+      "pixel_values": "99e15ad66ce2373d909ea871e3f591639b17c5a2ef178ee41463dcb0c4a0e19c"
+    },
+    "mapped_shapes": {
+      "image_grid_thw": [
+        [
+          2,
+          3
+        ]
+      ],
+      "pixel_values": [
+        [
+          512,
+          1536
+        ]
+      ]
+    },
+    "original_image_placeholders": 2,
+    "original_prompt_tokens": 21,
+    "processed_image_tokens": 128,
+    "processed_prompt_tokens": 185,
+    "processed_token_sha256": "ac72a95decdd924c98fd1c380a984013466d798ac65b78ffcd799764d95d4adf"
+  }
+}
