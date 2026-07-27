@@ -41,12 +41,28 @@ arguments, exception text, tokens, or generated output.
 
 Known categories are:
 
-- `request_validation`;
+- `request_validation_messages`;
+- `request_validation_tools`;
+- `request_validation_response_format`;
+- `request_validation_streaming`;
+- `request_validation_generation`;
+- `request_validation_sampling`;
+- `request_validation_model`;
+- `request_validation_other`;
+- `request_validation_unknown`;
 - `empty_messages`;
 - `n_exceeds_max_num_seqs`;
 - `unsupported_tool_choice_required`;
 - `tool_parser_unavailable`;
 - `unclassified_chat_error`.
+
+After service shutdown, `tests/summarize_api_4xx_log.py` reconciles every
+Chat Completions 4xx access-log record against exactly one diagnostic record.
+It emits `api_4xx_attribution.json` with fixed reason counts and aggregated
+request-shape counts. The service gate fails closed when an access-log 4xx is
+unattributed, a diagnostic record is orphaned or malformed, or an unknown
+reason code appears. The summary contains no raw log lines or request and
+response content.
 
 ## Qualification rule
 
@@ -58,6 +74,8 @@ Known categories are:
   workload request is a real request-success failure.
 - Any `unclassified_chat_error` blocks promotion until its fixed request shape
   is reproduced and the response error is diagnosed privately.
+- `api_4xx_attribution.rc` must be zero, and its report must have
+  `complete=true` with `attribution_delta=0`.
 - Aggregate access-log 400 counts cannot be used to claim success or failure
   without phase and reason attribution.
 
