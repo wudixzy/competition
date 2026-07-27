@@ -455,9 +455,16 @@ class ServingChatUnitTest(unittest.TestCase):
                     self.merge_fanout(pair, "chat-parent", 123)
 
     def test_sequential_fanout_guard_precedes_template_and_is_observable(self):
+        multi_choice_guard = SERVING_CHAT_SOURCE.index(
+            "if request.n is not None and request.n > 1:")
+        scheduler_lookup = SERVING_CHAT_SOURCE.index(
+            "scheduler_config = await self.engine_client."
+            "get_scheduler_config()")
         guard = SERVING_CHAT_SOURCE.index(
             "fanout_count = _sequential_greedy_fanout_count")
         template = SERVING_CHAT_SOURCE.index("parse_chat_messages_futures(")
+        self.assertLess(multi_choice_guard, scheduler_lookup)
+        self.assertLess(scheduler_lookup, guard)
         self.assertLess(guard, template)
         self.assertIn(
             "return await self._create_sequential_greedy_fanout(",

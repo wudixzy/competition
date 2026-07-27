@@ -281,17 +281,18 @@ class OpenAIServingChat(OpenAIServing):
         # cannot schedule n=2 in that configuration and also rejects greedy
         # n>1. Two greedy choices are identical by definition, so execute two
         # isolated n=1 requests and merge only this exact deterministic shape.
-        scheduler_config = await self.engine_client.get_scheduler_config()
-        max_num_seqs = scheduler_config.max_num_seqs
-        if request.n is not None and request.n > max_num_seqs:
-            fanout_count = _sequential_greedy_fanout_count(
-                request, max_num_seqs)
-            if fanout_count:
-                return await self._create_sequential_greedy_fanout(
-                    request, raw_request, fanout_count)
-            return self.create_error_response(
-                f"n={request.n} exceeds max_num_seqs={max_num_seqs}. "
-                f"Use n<={max_num_seqs} or omit n.")
+        if request.n is not None and request.n > 1:
+            scheduler_config = await self.engine_client.get_scheduler_config()
+            max_num_seqs = scheduler_config.max_num_seqs
+            if request.n > max_num_seqs:
+                fanout_count = _sequential_greedy_fanout_count(
+                    request, max_num_seqs)
+                if fanout_count:
+                    return await self._create_sequential_greedy_fanout(
+                        request, raw_request, fanout_count)
+                return self.create_error_response(
+                    f"n={request.n} exceeds max_num_seqs={max_num_seqs}. "
+                    f"Use n<={max_num_seqs} or omit n.")
 
         try:
             (
