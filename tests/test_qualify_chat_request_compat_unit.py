@@ -40,6 +40,23 @@ class QualifyChatRequestCompatUnitTest(unittest.TestCase):
             },
         )
 
+    def test_system_text_part_pair_has_one_canonical_meaning(self):
+        parts = MODULE._system_parts_payload(normalized=False)
+        normalized = MODULE._system_parts_payload(normalized=True)
+        self.assertEqual(
+            normalized["messages"][0]["content"],
+            "synthetic rule A1\nsynthetic rule A2\n\nsynthetic rule B",
+        )
+        self.assertIsInstance(parts["messages"][1]["content"], list)
+        self.assertEqual(
+            [message["role"] for message in parts["messages"]],
+            ["user", "system", "system"],
+        )
+        self.assertEqual(
+            [message["role"] for message in normalized["messages"]],
+            ["system", "user"],
+        )
+
     def test_report_source_contains_no_raw_tokenizer_output(self):
         source = MODULE_PATH.read_text(encoding="utf-8")
         self.assertIn("contains_prompt_or_response_text", source)

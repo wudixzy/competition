@@ -332,6 +332,41 @@ class ProtocolUnitTest(unittest.TestCase):
             ["system", "user", "assistant"],
         )
 
+    def test_multiple_system_text_parts_use_chat_utils_semantics(self):
+        request = self.request(messages=[
+            {"role": "user", "content": "question"},
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": "SYSTEM_A1"},
+                    {"type": "text", "text": "SYSTEM_A2"},
+                ],
+            },
+            {"role": "system", "content": "SYSTEM_B"},
+        ])
+        self.assertEqual(request.messages[0], {
+            "role": "system",
+            "content": "SYSTEM_A1\nSYSTEM_A2\n\nSYSTEM_B",
+        })
+        self.assertEqual(
+            [message["role"] for message in request.messages],
+            ["system", "user"],
+        )
+
+    def test_non_text_system_parts_are_not_silently_dropped(self):
+        messages = [
+            {
+                "role": "system",
+                "content": [{
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,AA=="},
+                }],
+            },
+            {"role": "user", "content": "question"},
+        ]
+        request = self.request(messages=messages)
+        self.assertEqual(request.messages, messages)
+
 
 if __name__ == "__main__":
     unittest.main()

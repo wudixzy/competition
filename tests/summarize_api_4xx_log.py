@@ -10,8 +10,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-REPORT_SCHEMA = "bi100-api-4xx-attribution-v2"
-REPORT_VERSION = 2
+REPORT_SCHEMA = "bi100-api-4xx-attribution-v3"
+REPORT_VERSION = 3
 MARKER = "[BI100 4XX]"
 ACCESS_RE = re.compile(
     r'"POST /v1/chat/completions HTTP/1\.[01]" (?P<code>4\d\d)\b'
@@ -22,6 +22,8 @@ ALLOWED_REASONS = {
     "empty_messages",
     "invalid_tool_arguments_json",
     "invalid_tool_arguments_type",
+    "image_count_limit",
+    "image_model_type_unsupported",
     "n_exceeds_max_num_seqs",
     "request_validation_generation",
     "request_validation_message_content",
@@ -46,12 +48,18 @@ ALLOWED_REASONS = {
 INTEGER_SHAPE_FIELDS = (
     "messages",
     "systems",
+    "system_part_msgs",
+    "system_text_parts",
+    "system_other_parts",
     "tools",
     "tool_msgs",
     "assistant_tool_msgs",
     "strict_false",
     "strict_true",
-    "image",
+    "images",
+    "image_data",
+    "image_remote",
+    "image_other",
     "stream",
 )
 SHAPE_FIELDS = INTEGER_SHAPE_FIELDS + ("choice", "n")
@@ -97,9 +105,17 @@ def parse_marker(line: str) -> dict[str, Any]:
     if has_shape:
         for field in INTEGER_SHAPE_FIELDS:
             record[field] = require_int(fields.get(field), field)
-        for field in ("image", "stream"):
-            if record[field] not in (0, 1):
-                raise ValueError(f"invalid {field}")
+        if record["stream"] not in (0, 1):
+            raise ValueError("invalid stream")
+        if record["system_part_msgs"] > record["systems"]:
+            raise ValueError("invalid system_part_msgs")
+        image_sources = (
+            record["image_data"]
+            + record["image_remote"]
+            + record["image_other"]
+        )
+        if image_sources != record["images"]:
+            raise ValueError("image source counts do not match images")
         choice = fields.get("choice")
         if choice not in ALLOWED_CHOICES:
             raise ValueError("invalid choice")

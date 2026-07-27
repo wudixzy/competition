@@ -39,6 +39,17 @@ def _bi100_tool_choice_kind(value):
     return "other"
 
 
+def _bi100_image_source_kind(value):
+    if not isinstance(value, str):
+        return "other"
+    prefix = value[:8].lower()
+    if prefix.startswith("data:"):
+        return "data"
+    if prefix.startswith(("http://", "https://")):
+        return "remote"
+    return "other"
+
+
 def _bi100_chat_4xx_reason(message):
     if message == "messages must contain at least one message":
         return "empty_messages"
@@ -55,6 +66,15 @@ def _bi100_chat_4xx_reason(message):
     if (isinstance(message, str)
             and message.startswith("Tool call arguments must ")):
         return "invalid_tool_arguments_type"
+    if (isinstance(message, str)
+            and (
+                (message.startswith("At most ")
+                 and " image(s) may be provided in one request." in message)
+                or (message.startswith("You set image=")
+                    and "items in the same prompt." in message))):
+        return "image_count_limit"
+    if message == "Unknown model type: qwen3_5_moe":
+        return "image_model_type_unsupported"
     return "unclassified_chat_error"
 
 
@@ -67,9 +87,15 @@ def _bi100_chat_request_shape(request):
         tools = ()
 
     system_count = 0
+    system_part_message_count = 0
+    system_text_part_count = 0
+    system_other_part_count = 0
     tool_message_count = 0
     assistant_tool_message_count = 0
-    has_image = False
+    image_count = 0
+    image_data_count = 0
+    image_remote_count = 0
+    image_other_count = 0
     for message in messages:
         role = _bi100_scalar(_bi100_field(message, "role"))
         if role == "system":
@@ -82,10 +108,26 @@ def _bi100_chat_request_shape(request):
         content = _bi100_field(message, "content")
         if not isinstance(content, (list, tuple)):
             continue
+        if role == "system":
+            system_part_message_count += 1
         for part in content:
             part_type = _bi100_scalar(_bi100_field(part, "type"))
+            if role == "system":
+                if part_type == "text":
+                    system_text_part_count += 1
+                else:
+                    system_other_part_count += 1
             if part_type in ("image", "image_url"):
-                has_image = True
+                image_count += 1
+                image_url = _bi100_field(part, "image_url")
+                source_kind = _bi100_image_source_kind(
+                    _bi100_field(image_url, "url"))
+                if source_kind == "data":
+                    image_data_count += 1
+                elif source_kind == "remote":
+                    image_remote_count += 1
+                else:
+                    image_other_count += 1
 
     strict_false_count = 0
     strict_true_count = 0
@@ -101,6 +143,9 @@ def _bi100_chat_request_shape(request):
     return {
         "message_count": len(messages),
         "system_count": system_count,
+        "system_part_message_count": system_part_message_count,
+        "system_text_part_count": system_text_part_count,
+        "system_other_part_count": system_other_part_count,
         "tool_count": len(tools),
         "tool_message_count": tool_message_count,
         "assistant_tool_message_count": assistant_tool_message_count,
@@ -108,7 +153,11 @@ def _bi100_chat_request_shape(request):
         "strict_true_count": strict_true_count,
         "tool_choice_kind": _bi100_tool_choice_kind(
             _bi100_field(request, "tool_choice")),
-        "has_image": has_image,
+        "image_count": image_count,
+        "image_data_count": image_data_count,
+        "image_remote_count": image_remote_count,
+        "image_other_count": image_other_count,
+        "has_image": image_count > 0,
         "stream": bool(_bi100_field(request, "stream")),
         "n": n if isinstance(n, int) else None,
     }
@@ -267,19 +316,28 @@ def _bi100_log_chat_4xx(request, error) -> None:
     reason = _bi100_chat_4xx_reason(getattr(error, "message", None))
     logger.warning(
         "[BI100 4XX] endpoint=chat code=%d reason=%s messages=%d "
-        "systems=%d tools=%d tool_msgs=%d assistant_tool_msgs=%d "
-        "strict_false=%d strict_true=%d choice=%s image=%d stream=%d n=%s",
+        "systems=%d system_part_msgs=%d system_text_parts=%d "
+        "system_other_parts=%d tools=%d tool_msgs=%d "
+        "assistant_tool_msgs=%d strict_false=%d strict_true=%d choice=%s "
+        "images=%d image_data=%d image_remote=%d image_other=%d "
+        "stream=%d n=%s",
         code,
         reason,
         shape["message_count"],
         shape["system_count"],
+        shape["system_part_message_count"],
+        shape["system_text_part_count"],
+        shape["system_other_part_count"],
         shape["tool_count"],
         shape["tool_message_count"],
         shape["assistant_tool_message_count"],
         shape["strict_false_count"],
         shape["strict_true_count"],
         shape["tool_choice_kind"],
-        int(shape["has_image"]),
+        shape["image_count"],
+        shape["image_data_count"],
+        shape["image_remote_count"],
+        shape["image_other_count"],
         int(shape["stream"]),
         shape["n"] if shape["n"] is not None else "unset",
     )
@@ -660,19 +718,27 @@ def build_app(args: Namespace) -> FastAPI:
                 reason = "request_validation_tool_strict"
             logger.warning(
                 "[BI100 4XX] endpoint=request_validation code=400 reason=%s "
-                "messages=%d systems=%d tools=%d tool_msgs=%d "
-                "assistant_tool_msgs=%d strict_false=%d strict_true=%d "
-                "choice=%s image=%d stream=%d n=%s errors=%d",
+                "messages=%d systems=%d system_part_msgs=%d "
+                "system_text_parts=%d system_other_parts=%d tools=%d "
+                "tool_msgs=%d assistant_tool_msgs=%d strict_false=%d "
+                "strict_true=%d choice=%s images=%d image_data=%d "
+                "image_remote=%d image_other=%d stream=%d n=%s errors=%d",
                 reason,
                 shape["message_count"],
                 shape["system_count"],
+                shape["system_part_message_count"],
+                shape["system_text_part_count"],
+                shape["system_other_part_count"],
                 shape["tool_count"],
                 shape["tool_message_count"],
                 shape["assistant_tool_message_count"],
                 shape["strict_false_count"],
                 shape["strict_true_count"],
                 shape["tool_choice_kind"],
-                int(shape["has_image"]),
+                shape["image_count"],
+                shape["image_data_count"],
+                shape["image_remote_count"],
+                shape["image_other_count"],
                 int(shape["stream"]),
                 shape["n"] if shape["n"] is not None else "unset",
                 len(validation_errors),

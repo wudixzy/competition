@@ -8,6 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 API_SERVER = ROOT / "qwen3_6_scripts/api_server.py"
 HELPERS = {
     "_bi100_field",
+    "_bi100_image_source_kind",
     "_bi100_scalar",
     "_bi100_tool_choice_kind",
     "_bi100_chat_4xx_reason",
@@ -37,6 +38,8 @@ class Api4xxTelemetryTest(unittest.TestCase):
     def setUpClass(cls):
         helpers = _load_helpers()
         cls.reason = staticmethod(helpers["_bi100_chat_4xx_reason"])
+        cls.image_source_kind = staticmethod(
+            helpers["_bi100_image_source_kind"])
         cls.shape = staticmethod(helpers["_bi100_chat_request_shape"])
         cls.validation_reason = staticmethod(
             helpers["_bi100_validation_reason"])
@@ -63,6 +66,31 @@ class Api4xxTelemetryTest(unittest.TestCase):
                 "Tool call arguments must decode to a JSON object."),
             "invalid_tool_arguments_type",
         )
+        self.assertEqual(
+            self.reason(
+                "At most 1 image(s) may be provided in one request."),
+            "image_count_limit",
+        )
+        self.assertEqual(
+            self.reason(
+                "You set image=1 (or defaulted to 1) in "
+                "`--limit-mm-per-prompt`, but found 2 items "
+                "in the same prompt."),
+            "image_count_limit",
+        )
+        self.assertEqual(
+            self.reason("Unknown model type: qwen3_5_moe"),
+            "image_model_type_unsupported",
+        )
+
+    def test_image_source_kinds_are_bounded(self):
+        self.assertEqual(
+            self.image_source_kind("data:image/png;base64,private"), "data")
+        self.assertEqual(
+            self.image_source_kind("https://private.example/image"), "remote")
+        self.assertEqual(
+            self.image_source_kind("file:///private/image"), "other")
+        self.assertEqual(self.image_source_kind(None), "other")
 
     def test_unknown_error_does_not_enter_reason_code(self):
         sensitive = "template failed for private prompt contents"
@@ -79,7 +107,15 @@ class Api4xxTelemetryTest(unittest.TestCase):
                     content=[
                         {"type": "text", "text": "private user prompt"},
                         {"type": "image_url",
-                         "image_url": {"url": "private image bytes"}},
+                         "image_url": {
+                             "url": "data:image/png;base64,private",
+                         }},
+                        {"type": "image_url",
+                         "image_url": {
+                             "url": "https://private.example/image",
+                         }},
+                        {"type": "image",
+                         "private": "already parsed image"},
                     ],
                 ),
             ],
@@ -94,12 +130,19 @@ class Api4xxTelemetryTest(unittest.TestCase):
         self.assertEqual(self.shape(request), {
             "message_count": 2,
             "system_count": 1,
+            "system_part_message_count": 0,
+            "system_text_part_count": 0,
+            "system_other_part_count": 0,
             "tool_count": 1,
             "tool_message_count": 0,
             "assistant_tool_message_count": 0,
             "strict_false_count": 0,
             "strict_true_count": 0,
             "tool_choice_kind": "named",
+            "image_count": 3,
+            "image_data_count": 1,
+            "image_remote_count": 1,
+            "image_other_count": 1,
             "has_image": True,
             "stream": True,
             "n": 2,
@@ -130,6 +173,21 @@ class Api4xxTelemetryTest(unittest.TestCase):
         self.assertEqual(shape["strict_false_count"], 1)
         self.assertEqual(shape["strict_true_count"], 1)
         self.assertEqual(shape["tool_choice_kind"], "required")
+        self.assertNotIn("private", repr(shape))
+
+    def test_shape_counts_system_parts_without_text(self):
+        shape = self.shape({
+            "messages": [{
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": "private"},
+                    {"type": "other", "private": "value"},
+                ],
+            }],
+        })
+        self.assertEqual(shape["system_part_message_count"], 1)
+        self.assertEqual(shape["system_text_part_count"], 1)
+        self.assertEqual(shape["system_other_part_count"], 1)
         self.assertNotIn("private", repr(shape))
 
     def test_validation_errors_have_bounded_specific_reason_codes(self):
@@ -164,6 +222,7 @@ class Api4xxTelemetryTest(unittest.TestCase):
         self.assertIn("_bi100_validation_reason(validation_errors)", source)
         self.assertIn("_bi100_chat_request_shape(body)", source)
         self.assertIn("_bi100_log_chat_4xx(request, generator)", source)
+        self.assertIn("images=%d image_data=%d image_remote=%d", source)
         self.assertNotIn("[BI100 4XX] message=", source)
 
 

@@ -12,8 +12,10 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 SHAPE = (
-    "messages=3 systems=1 tools=2 tool_msgs=1 assistant_tool_msgs=1 "
-    "strict_false=2 strict_true=0 choice=auto image=0 stream=1 n=1"
+    "messages=3 systems=1 system_part_msgs=1 system_text_parts=2 "
+    "system_other_parts=0 tools=2 tool_msgs=1 assistant_tool_msgs=1 "
+    "strict_false=2 strict_true=0 choice=auto images=1 image_data=1 "
+    "image_remote=0 image_other=0 stream=1 n=1"
 )
 
 
@@ -39,13 +41,19 @@ class SummarizeApi4xxLogTest(unittest.TestCase):
         self.assertEqual(report["request_shapes"], [{
             "messages": 3,
             "systems": 1,
+            "system_part_msgs": 1,
+            "system_text_parts": 2,
+            "system_other_parts": 0,
             "tools": 2,
             "tool_msgs": 1,
             "assistant_tool_msgs": 1,
             "strict_false": 2,
             "strict_true": 0,
             "choice": "auto",
-            "image": 0,
+            "images": 1,
+            "image_data": 1,
+            "image_remote": 0,
+            "image_other": 0,
             "stream": 1,
             "n": 1,
             "count": 1,
@@ -64,6 +72,15 @@ class SummarizeApi4xxLogTest(unittest.TestCase):
         report, qualified = self.summarize(
             "WARNING [BI100 4XX] endpoint=request_validation code=400 "
             f"reason=unknown {SHAPE} errors=1\n")
+        self.assertFalse(qualified)
+        self.assertEqual(report["malformed_marker_count"], 1)
+
+    def test_inconsistent_image_counts_fail_closed(self):
+        malformed = SHAPE.replace("images=1", "images=2")
+        report, qualified = self.summarize(
+            "WARNING [BI100 4XX] endpoint=chat code=400 "
+            f"reason=image_count_limit {malformed}\n"
+        )
         self.assertFalse(qualified)
         self.assertEqual(report["malformed_marker_count"], 1)
 

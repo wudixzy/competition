@@ -28,6 +28,7 @@ class ChatRequestCompatProbeUnitTest(unittest.TestCase):
         self.assertIn("function_tool_strict_false", names)
         self.assertIn("function_tool_strict_true", names)
         self.assertIn("tool_choice_required", names)
+        self.assertIn("multiple_system_text_parts", names)
         self.assertNotIn("evaluation", repr(self.probe.CASES).lower())
 
     def test_semantic_fail_closed_expectations_are_explicit(self):

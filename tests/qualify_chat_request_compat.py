@@ -79,6 +79,35 @@ def _strict_payload(strict: bool | None) -> Json:
     }
 
 
+def _system_parts_payload(*, normalized: bool) -> Json:
+    if normalized:
+        messages = [
+            {
+                "role": "system",
+                "content": "synthetic rule A1\nsynthetic rule A2\n\n"
+                           "synthetic rule B",
+            },
+            {"role": "user", "content": "respond"},
+        ]
+    else:
+        messages = [
+            {"role": "user", "content": "respond"},
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": "synthetic rule A1"},
+                    {"type": "text", "text": "synthetic rule A2"},
+                ],
+            },
+            {"role": "system", "content": "synthetic rule B"},
+        ]
+    return {
+        "model": "llm",
+        "messages": messages,
+        "max_tokens": 8,
+    }
+
+
 def _render(tokenizer, payload: Json) -> tuple[list[int], Json]:
     from vllm.entrypoints.chat_utils import _postprocess_messages
     from vllm.entrypoints.openai.protocol import ChatCompletionRequest
@@ -126,9 +155,14 @@ def qualify(model_path: Path) -> Json:
         tokenizer, _strict_payload(None))
     false_tokens, false_meta = _render(
         tokenizer, _strict_payload(False))
+    system_parts_tokens, _ = _render(
+        tokenizer, _system_parts_payload(normalized=False))
+    system_normalized_tokens, _ = _render(
+        tokenizer, _system_parts_payload(normalized=True))
 
     history_exact = string_tokens == object_tokens
     strict_exact = default_tokens == false_tokens
+    system_parts_exact = system_parts_tokens == system_normalized_tokens
     strict_not_forwarded = (
         default_meta["tools"] == false_meta["tools"]
         and all(
@@ -147,6 +181,7 @@ def qualify(model_path: Path) -> Json:
         "strict_not_forwarded_to_template": strict_not_forwarded,
         "strict_true_rejected": strict_true_rejected,
         "tool_choice_required_rejected": required_rejected,
+        "system_text_parts_token_exact": system_parts_exact,
     }
     qualified = all(checks.values())
     return {
@@ -166,6 +201,13 @@ def qualify(model_path: Path) -> Json:
                 "false_token_count": len(false_tokens),
                 "omitted_sha256": _token_digest(default_tokens),
                 "false_sha256": _token_digest(false_tokens),
+            },
+            "system_text_parts": {
+                "parts_token_count": len(system_parts_tokens),
+                "normalized_token_count": len(system_normalized_tokens),
+                "parts_sha256": _token_digest(system_parts_tokens),
+                "normalized_sha256": _token_digest(
+                    system_normalized_tokens),
             },
         },
         "model_identity": {

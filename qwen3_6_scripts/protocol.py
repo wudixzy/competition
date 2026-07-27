@@ -468,6 +468,21 @@ class ChatCompletionRequest(OpenAIBaseModel):
                         "Each message must have at least one of 'content' or "
                         "'reasoning_content', or contain 'tool_calls'.")
                 msg = {**msg, "content": ""}
+            if (msg.get("role") == "system"
+                    and isinstance(msg.get("content"), list)):
+                content_parts = msg["content"]
+                if all(
+                        isinstance(part, dict)
+                        and part.get("type") == "text"
+                        and isinstance(part.get("text"), str)
+                        for part in content_parts):
+                    # Match chat_utils' existing text-part semantics before
+                    # combining multiple system messages for Qwen.
+                    msg = {
+                        **msg,
+                        "content": "\n".join(
+                            part["text"] for part in content_parts),
+                    }
             normalized.append(msg)
 
         # Qwen's tokenizer template accepts at most one system message and

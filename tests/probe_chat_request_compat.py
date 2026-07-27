@@ -146,6 +146,21 @@ CASES: tuple[Json, ...] = (
         ]),
     },
     {
+        "name": "multiple_system_text_parts",
+        "expected": "accept",
+        "payload": _base(messages=[
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": "synthetic rule A1"},
+                    {"type": "text", "text": "synthetic rule A2"},
+                ],
+            },
+            {"role": "system", "content": "synthetic rule B"},
+            {"role": "user", "content": "respond"},
+        ]),
+    },
+    {
         "name": "assistant_tool_arguments_object",
         "expected": "accept",
         "payload": _base(messages=[{
