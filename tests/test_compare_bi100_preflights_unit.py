@@ -13,13 +13,18 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
 
 
-def _preflight(*, free_delta: int = 0, checksum_delta: float = 0.0) -> dict:
+def _preflight(
+    *,
+    gpus: tuple[int, ...] = (0, 1, 2, 3),
+    free_delta: int = 0,
+    checksum_delta: float = 0.0,
+) -> dict:
     size = 1024
     total = 64 * 1024 ** 3
     return {
         "schema": MODULE.SOURCE_SCHEMA,
         "version": MODULE.VERSION,
-        "gpus": [0, 1, 2, 3],
+        "gpus": list(gpus),
         "matmul_size": size,
         "timeout_s": 25.0,
         "ok": True,
@@ -33,7 +38,7 @@ def _preflight(*, free_delta: int = 0, checksum_delta: float = 0.0) -> dict:
             "stage": "done",
             "ok": True,
             "returncode": 0,
-        } for gpu in range(4)],
+        } for gpu in gpus],
     }
 
 
@@ -98,6 +103,25 @@ class CompareBi100PreflightsTest(unittest.TestCase):
             report["stages"][1]["free_memory_drop_from_first_bytes"]["0"],
             512 * 1024 ** 2,
         )
+
+    def test_declared_single_gpu_preflight_passes(self):
+        report = MODULE.compare([
+            ("before", _preflight(gpus=(1,))),
+            ("after", _preflight(gpus=(1,), free_delta=-64 * 1024 ** 2)),
+        ], expected_gpus=(1,), max_free_memory_drop_bytes=1024 ** 3)
+        self.assertTrue(report["qualified"], report)
+        self.assertEqual(report["expected_gpus"], [1])
+
+    def test_single_gpu_report_without_declaration_fails_closed(self):
+        report = MODULE.compare([
+            ("before", _preflight(gpus=(1,))),
+            ("after", _preflight(gpus=(1,))),
+        ])
+        self.assertFalse(report["qualified"])
+        self.assertTrue(any(
+            "GPU order must equal [0, 1, 2, 3]" in reason
+            for reason in report["reasons"]
+        ))
 
 
 if __name__ == "__main__":

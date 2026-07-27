@@ -29,6 +29,7 @@ def _validate_stage(
     label: str,
     value: Any,
     reasons: list[str],
+    expected_gpus: tuple[int, ...],
 ) -> tuple[dict[int, tuple[Any, ...]], dict[str, Any]]:
     signatures: dict[int, tuple[Any, ...]] = {}
     safe_summary: dict[str, Any] = {"label": label, "qualified": False}
@@ -39,9 +40,10 @@ def _validate_stage(
         reasons.append(f"{label} preflight schema is invalid")
     if value.get("ok") is not True:
         reasons.append(f"{label} preflight is not qualified")
-    if value.get("gpus") != EXPECTED_GPUS:
+    expected_list = list(expected_gpus)
+    if value.get("gpus") != expected_list:
         reasons.append(
-            f"{label} GPU order must equal {EXPECTED_GPUS}, "
+            f"{label} GPU order must equal {expected_list}, "
             f"got {value.get('gpus')!r}")
     matmul_size = value.get("matmul_size")
     if not _positive_int(matmul_size):
@@ -54,12 +56,13 @@ def _validate_stage(
         reasons.append(f"{label} timeout_s is invalid")
         timeout_s = None
     results = value.get("results")
-    if not isinstance(results, list) or len(results) != len(EXPECTED_GPUS):
-        reasons.append(f"{label} must contain exactly four GPU results")
+    if not isinstance(results, list) or len(results) != len(expected_gpus):
+        reasons.append(
+            f"{label} must contain exactly {len(expected_gpus)} GPU results")
         results = []
 
     safe_results = []
-    for expected_gpu, result in zip(EXPECTED_GPUS, results):
+    for expected_gpu, result in zip(expected_gpus, results):
         if not isinstance(result, dict):
             reasons.append(f"{label} GPU {expected_gpu} result must be an object")
             continue
@@ -125,9 +128,23 @@ def _validate_stage(
 def compare(
     stages: list[tuple[str, Any]],
     *,
+    expected_gpus: tuple[int, ...] = tuple(EXPECTED_GPUS),
     max_free_memory_drop_bytes: int | None = None,
 ) -> dict[str, Any]:
     reasons: list[str] = []
+    if (
+        not isinstance(expected_gpus, tuple)
+        or not expected_gpus
+        or any(
+            not isinstance(gpu, int) or isinstance(gpu, bool) or gpu < 0
+            for gpu in expected_gpus
+        )
+        or len(set(expected_gpus)) != len(expected_gpus)
+    ):
+        reasons.append(
+            "expected_gpus must be a non-empty tuple of unique "
+            "non-negative integers")
+        expected_gpus = ()
     if (max_free_memory_drop_bytes is not None
             and (not isinstance(max_free_memory_drop_bytes, int)
                  or isinstance(max_free_memory_drop_bytes, bool)
@@ -144,7 +161,8 @@ def compare(
     baseline_free: dict[int, int] | None = None
     summaries = []
     for label, value in stages:
-        signatures, summary = _validate_stage(label, value, reasons)
+        signatures, summary = _validate_stage(
+            label, value, reasons, expected_gpus)
         summaries.append(summary)
         current_free = {
             result["gpu"]: result["free"]
@@ -184,6 +202,7 @@ def compare(
         "version": VERSION,
         "qualified": not reasons,
         "reasons": reasons,
+        "expected_gpus": list(expected_gpus),
         "max_free_memory_drop_bytes": max_free_memory_drop_bytes,
         "stages": summaries,
     }
@@ -199,6 +218,22 @@ def _parse_stage(value: str) -> tuple[str, Path]:
     if not raw_path:
         raise argparse.ArgumentTypeError("preflight path must not be empty")
     return label, Path(raw_path)
+
+
+def _parse_gpus(value: str) -> tuple[int, ...]:
+    try:
+        gpus = tuple(int(item) for item in value.split(","))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "--expected-gpus must be comma-separated integers") from exc
+    if (
+        not gpus
+        or any(gpu < 0 for gpu in gpus)
+        or len(set(gpus)) != len(gpus)
+    ):
+        raise argparse.ArgumentTypeError(
+            "--expected-gpus must contain unique non-negative integers")
+    return gpus
 
 
 def _atomic_write(path: Path, value: dict[str, Any]) -> None:
@@ -224,6 +259,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--preflight", action="append", type=_parse_stage, required=True)
+    parser.add_argument(
+        "--expected-gpus", type=_parse_gpus,
+        default=tuple(EXPECTED_GPUS))
     parser.add_argument("--max-free-memory-drop-bytes", type=int)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -234,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         ]
         report = compare(
             stages,
+            expected_gpus=args.expected_gpus,
             max_free_memory_drop_bytes=args.max_free_memory_drop_bytes,
         )
     except Exception as error:
