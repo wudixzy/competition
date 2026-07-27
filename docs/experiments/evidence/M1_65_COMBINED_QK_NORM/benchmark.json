@@ -1,0 +1,107 @@
+{
+  "config": {
+    "device": "cuda:0",
+    "fixed_seeds": [
+      20260715,
+      20260727
+    ],
+    "iterations": 500,
+    "random_scales": [
+      0.001,
+      0.05,
+      0.5,
+      2.0
+    ],
+    "repeats": 9,
+    "sequence_seed": 20260729,
+    "sequence_steps": 500,
+    "warmup": 50
+  },
+  "fixed": {
+    "20260715": {
+      "mapped": {
+        "exact": true,
+        "finite": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "normalized": {
+        "exact": true,
+        "finite": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0
+      }
+    },
+    "20260727": {
+      "mapped": {
+        "exact": true,
+        "finite": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "normalized": {
+        "exact": true,
+        "finite": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0
+      }
+    }
+  },
+  "schema": "bi100-gdn-combined-qk-norm-v1",
+  "sequence": {
+    "finite_steps": 500,
+    "mapped_exact_steps": 500,
+    "mapped_relative_l2": 0.0,
+    "max_mapped_abs": 0.0,
+    "max_mapped_relative_l2": 0.0,
+    "max_normalized_abs": 0.0,
+    "max_normalized_relative_l2": 0.0,
+    "normalized_exact_steps": 500,
+    "normalized_relative_l2": 0.0,
+    "steps": 500
+  },
+  "shape": {
+    "batch": 1,
+    "dtype": "torch.float16",
+    "head_dim": 128,
+    "key_heads": 4,
+    "value_heads": 8
+  },
+  "timings": {
+    "candidate": {
+      "median_ms": 0.05855249613523483,
+      "p10_ms": 0.05842696875333786,
+      "p90_ms": 0.06343644112348557,
+      "projected_30_layer_saving_ms": 1.5466875582933426,
+      "saving_ms": 0.05155625194311142,
+      "speedup_vs_reference": 1.8805133059406272,
+      "trials_ms": [
+        0.05866939574480057,
+        0.05855249613523483,
+        0.06416449695825577,
+        0.05851026624441147,
+        0.05842696875333786,
+        0.062103986740112305,
+        0.06343644112348557,
+        0.05854412168264389,
+        0.05849159508943558
+      ]
+    },
+    "reference": {
+      "median_ms": 0.11010874807834625,
+      "p10_ms": 0.10991370677947998,
+      "p90_ms": 0.11025875061750412,
+      "trials_ms": [
+        0.11006749421358109,
+        0.11003701388835907,
+        0.11012408137321472,
+        0.11010874807834625,
+        0.11009614169597626,
+        0.10991370677947998,
+        0.11025875061750412,
+        0.11021795868873596,
+        0.11035650223493576
+      ]
+    }
+  }
+}

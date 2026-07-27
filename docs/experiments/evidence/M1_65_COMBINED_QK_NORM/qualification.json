@@ -1,0 +1,21 @@
+{
+  "component_qualified": true,
+  "limits": {
+    "relative_l2": 1e-05,
+    "saving_ms": 0.02,
+    "sequence_steps": 500,
+    "speedup": 1.25
+  },
+  "observed": {
+    "mapped_relative_l2": 0.0,
+    "max_mapped_relative_l2": 0.0,
+    "max_normalized_relative_l2": 0.0,
+    "normalized_relative_l2": 0.0,
+    "projected_30_layer_saving_ms": 1.5466875582933426,
+    "saving_ms": 0.05155625194311142,
+    "speedup": 1.8805133059406272
+  },
+  "production_promotion_authorized": false,
+  "reasons": [],
+  "schema": "bi100-gdn-combined-qk-norm-qualification-v1"
+}
