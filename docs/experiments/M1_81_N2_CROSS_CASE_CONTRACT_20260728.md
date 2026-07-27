@@ -35,8 +35,8 @@ sampling value, cache policy, submission YAML, or default switch changed.
 
 Local results:
 
-- 904 `unittest` cases passed; 25 optional-dependency cases skipped;
-- 47 focused quality-contract, comparator, and runner cases passed;
+- 906 `unittest` cases passed; 25 optional-dependency cases skipped;
+- 49 focused quality-contract, comparator, and runner cases passed;
 - the frozen 53-case official metric manifest qualified;
 - all seven quality-data provenance sources qualified;
 - submission preflight passed 9 of 9 checks;

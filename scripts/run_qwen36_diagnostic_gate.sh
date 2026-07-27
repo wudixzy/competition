@@ -10,8 +10,9 @@ Usage:
   run_qwen36_diagnostic_gate.sh MODEL_PATH TP_SIZE GPU_LIST INSTANCE RUN_ROOT
 
 TP_SIZE must be 1 or 2. GPU_LIST contains physical BI100 indices, for example
-"3" or "1,2". The immutable runtime overlay is supplied through
-BI100_RUNTIME_SITE_PACKAGES. Results must stay outside the source repository.
+"3" or "1,2". BI100_RUNTIME_SITE_PACKAGES must point to an immutable overlay
+installed from the exact current HEAD. Results must stay outside the source
+repository.
 EOF
 }
 
@@ -44,6 +45,18 @@ fi
 IFS=, read -r -a GPU_ARRAY <<< "$GPU_LIST"
 if [[ ${#GPU_ARRAY[@]} -ne $TP_SIZE ]]; then
     echo "GPU_LIST count must equal TP_SIZE" >&2
+    exit 2
+fi
+declare -A GPU_SEEN=()
+for gpu in "${GPU_ARRAY[@]}"; do
+    if [[ -n "${GPU_SEEN[$gpu]+present}" ]]; then
+        echo "GPU_LIST must contain unique physical indices" >&2
+        exit 2
+    fi
+    GPU_SEEN[$gpu]=1
+done
+if [[ ! "$INSTANCE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+    echo "INSTANCE must be a short non-sensitive label" >&2
     exit 2
 fi
 if [[ ! "$PORT" =~ ^[0-9]+$ || "$PORT" -lt 1 || "$PORT" -gt 65535 ]]; then
@@ -158,6 +171,19 @@ run_gpu_preflight_after() {
         2> "$RUN_ROOT/preflight_after.stderr"
 }
 
+run_preflight_comparison() {
+    timeout --signal=TERM --kill-after=70s 240s \
+        env -u CUDA_VISIBLE_DEVICES PYTHONPATH="$ROOT/tests" \
+        python3 "$ROOT/tests/compare_bi100_preflights.py" \
+        --preflight "before=$RUN_ROOT/preflight_before.json" \
+        --preflight "after=$RUN_ROOT/preflight_after.json" \
+        --expected-gpus "$GPU_LIST" \
+        --max-free-memory-drop-bytes 1073741824 \
+        --out "$RUN_ROOT/preflight_comparison.json" \
+        > "$RUN_ROOT/preflight_comparison.stdout" \
+        2> "$RUN_ROOT/preflight_comparison.stderr"
+}
+
 scan_fatal_logs() {
     if [[ -f "$RUN_ROOT/server.log" ]] \
             && grep -Eiq "$FATAL_PATTERN" "$RUN_ROOT/server.log"; then
@@ -190,6 +216,7 @@ perform_postflight() {
     local cleanup_rc=0
     local service_postflight_rc=0
     local preflight_rc=0
+    local preflight_comparison_rc=0
     local fatal_rc=0
     local timeout_rc=0
     local audit_rc=0
@@ -207,6 +234,10 @@ perform_postflight() {
     run_gpu_preflight_after
     preflight_rc=$?
     printf '%s\n' "$preflight_rc" > "$RUN_ROOT/preflight_after.rc"
+    run_preflight_comparison
+    preflight_comparison_rc=$?
+    printf '%s\n' "$preflight_comparison_rc" \
+        > "$RUN_ROOT/preflight_comparison.rc"
     scan_fatal_logs
     fatal_rc=$?
     printf '%s\n' "$fatal_rc" > "$RUN_ROOT/fatal_scan.rc"
@@ -233,6 +264,7 @@ gates = {
     "cleanup": read_rc("cleanup.rc"),
     "service_postflight": read_rc("service_postflight.rc"),
     "preflight_after": read_rc("preflight_after.rc"),
+    "preflight_comparison": read_rc("preflight_comparison.rc"),
     "fatal_scan": read_rc("fatal_scan.rc"),
     "timeout_scan": read_rc("timeout_scan.rc"),
 }
@@ -253,6 +285,7 @@ PY
     POSTFLIGHT_COMPLETE=1
     if [[ $cleanup_rc -ne 0 || $service_postflight_rc -ne 0 \
             || $preflight_rc -ne 0 || $fatal_rc -ne 0 \
+            || $preflight_comparison_rc -ne 0 \
             || $timeout_rc -ne 0 || $audit_rc -ne 0 ]]; then
         return 1
     fi
@@ -275,49 +308,84 @@ trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 
-if ! python3 "$ROOT/scripts/verify_qwen36_diagnostic_checkpoint.py" \
+if python3 "$ROOT/scripts/verify_qwen36_diagnostic_checkpoint.py" \
         --source "$SOURCE_MODEL_PATH" \
         --checkpoint "$MODEL_PATH" \
         --full-hash \
         --json-out "$RUN_ROOT/checkpoint_verify.json" \
         > "$RUN_ROOT/checkpoint_verify.stdout" \
         2> "$RUN_ROOT/checkpoint_verify.stderr"; then
+    printf '%s\n' 0 > "$RUN_ROOT/checkpoint_verify.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/checkpoint_verify.rc"
     echo "diagnostic checkpoint verification failed" >&2
     exit 4
 fi
 
-if ! timeout --signal=TERM --kill-after=70s 240s \
+if timeout --signal=TERM --kill-after=70s 240s \
+        python3 "$ROOT/tests/verify_bare_host_runtime_identity.py" \
+        --source-root "$ROOT" \
+        --runtime-site-packages "$BI100_RUNTIME_SITE_PACKAGES" \
+        --runtime-install "$RUNTIME_INSTALL" \
+        --out "$RUN_ROOT/runtime_overlay_identity.json" \
+        > "$RUN_ROOT/runtime_overlay_identity.stdout" \
+        2> "$RUN_ROOT/runtime_overlay_identity.stderr"; then
+    printf '%s\n' 0 > "$RUN_ROOT/runtime_overlay_identity.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/runtime_overlay_identity.rc"
+    echo "immutable runtime overlay identity failed" >&2
+    exit 4
+fi
+
+if timeout --signal=TERM --kill-after=70s 240s \
         python3 "$ROOT/tests/bi100_preflight.py" \
         --gpus "$GPU_LIST" --timeout-s 25 --matmul-size 1024 \
         --json-out "$RUN_ROOT/preflight_before.json" \
         > "$RUN_ROOT/preflight_before.stdout" \
         2> "$RUN_ROOT/preflight_before.stderr"; then
+    printf '%s\n' 0 > "$RUN_ROOT/preflight_before.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/preflight_before.rc"
     echo "selected GPU preflight failed" >&2
     exit 4
 fi
 if [[ "$TP_SIZE" == 2 ]]; then
-    if ! timeout --signal=TERM --kill-after=70s 240s \
+    if timeout --signal=TERM --kill-after=70s 240s \
             python3 "$ROOT/tests/bi100_nccl_preflight.py" \
             --gpus "$GPU_LIST" --timeout-s 60 \
             --json-out "$RUN_ROOT/nccl_before.json" \
             > "$RUN_ROOT/nccl_before.stdout" \
             2> "$RUN_ROOT/nccl_before.stderr"; then
+        printf '%s\n' 0 > "$RUN_ROOT/nccl_before.rc"
+    else
+        rc=$?
+        printf '%s\n' "$rc" > "$RUN_ROOT/nccl_before.rc"
         echo "selected TP2 NCCL preflight failed" >&2
         exit 4
     fi
+else
+    printf '%s\n' 0 > "$RUN_ROOT/nccl_before.rc"
 fi
 
-if ! python3 "$ROOT/tests/gdn_action_broadcast_gate.py" \
+if python3 "$ROOT/tests/gdn_action_broadcast_gate.py" \
         --out "$RUN_ROOT/gdn_action_broadcast.json" \
         > "$RUN_ROOT/gdn_action_broadcast.stdout" \
         2> "$RUN_ROOT/gdn_action_broadcast.stderr"; then
+    printf '%s\n' 0 > "$RUN_ROOT/gdn_action_broadcast.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/gdn_action_broadcast.rc"
     echo "GDN action broadcast gate failed" >&2
     exit 4
 fi
 
 python3 - "$ROOT" "$MODEL_PATH" "$SOURCE_MODEL_PATH" \
         "$BI100_RUNTIME_SITE_PACKAGES" "$RUNTIME_INSTALL" "$GPU_LIST" \
-        "$TP_SIZE" "$INSTANCE" "$RUN_ROOT/runtime_identity.json" <<'PY'
+        "$TP_SIZE" "$INSTANCE" "$RUN_ROOT/runtime_identity.json" \
+        "$RUN_ROOT/runtime_overlay_identity.json" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -330,6 +398,7 @@ source_model = Path(sys.argv[3])
 site = Path(sys.argv[4])
 install = Path(sys.argv[5])
 out = Path(sys.argv[9])
+overlay_path = Path(sys.argv[10])
 
 def sha(path):
     digest = hashlib.sha256()
@@ -338,6 +407,8 @@ def sha(path):
             digest.update(chunk)
     return digest.hexdigest()
 
+install_report = json.loads(install.read_text(encoding="utf-8"))
+overlay_report = json.loads(overlay_path.read_text(encoding="utf-8"))
 report = {
     "schema": "qwen36-diagnostic-runtime-identity-v1",
     "version": 1,
@@ -355,6 +426,10 @@ report = {
     "runtime_site_packages": str(site),
     "runtime_install_report": str(install),
     "runtime_install_sha256": sha(install),
+    "runtime_install_source_revision": install_report.get("source_revision"),
+    "runtime_overlay_identity_sha256": sha(overlay_path),
+    "runtime_overlay_qualified": overlay_report.get("qualified"),
+    "runtime_tree_sha256": overlay_report.get("runtime_tree_sha256"),
     "physical_gpus": sys.argv[6].split(","),
     "tensor_parallel_size": int(sys.argv[7]),
     "instance": sys.argv[8],
@@ -364,6 +439,12 @@ report = {
 }
 out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
 PY
+rc=$?
+printf '%s\n' "$rc" > "$RUN_ROOT/runtime_identity.rc"
+if [[ $rc -ne 0 ]]; then
+    echo "diagnostic runtime identity report failed" >&2
+    exit 4
+fi
 
 export CUDA_VISIBLE_DEVICES="$GPU_LIST"
 export VLLM_ENGINE_ITERATION_TIMEOUT_S=3600
@@ -412,6 +493,62 @@ COMMAND=(
 )
 printf '%q ' "${COMMAND[@]}" > "$RUN_ROOT/service_command.txt"
 printf '\n' >> "$RUN_ROOT/service_command.txt"
+if python3 - "$RUN_ROOT/service_contract.json" "$RUNTIME_WORKDIR" \
+        "${COMMAND[@]}" <<'PY'
+import json
+import os
+from pathlib import Path
+import sys
+
+environment_names = (
+    "PYTHONPATH",
+    "LD_LIBRARY_PATH",
+    "PATH",
+    "CUDA_VISIBLE_DEVICES",
+    "VLLM_ENGINE_ITERATION_TIMEOUT_S",
+    "ENABLE_CUSTOM_IPC",
+    "PYTHONFAULTHANDLER",
+    "PYTHONUNBUFFERED",
+    "BI100_EXECUTOR_STARTUP_DEBUG",
+    "BI100_DIAGNOSTIC_LAYER_TRACE",
+    "BI100_HYBRID_KV_ACCOUNTING",
+    "BI100_GDN_CACHE_POLICY",
+    "BI100_GDN_RESTORE_MODE",
+    "BI100_GDN_ALLOW_NAN_ZERO",
+    "BI100_GDN_FINITE_CHECK",
+    "BI100_CACHE_TRACE",
+    "BI100_PREFIX_MODEL_FINGERPRINT",
+    "BI100_PREFIX_DTYPE",
+    "BI100_PREFIX_TP_SIZE",
+    "BI100_BLOCK_MAJOR_CPU_KV",
+    "BI100_CPU_KV_OFFLOAD",
+    "BI100_MOE_COREX_DIRECT_ROUTED",
+    "BI100_GDN_COREX_PACKED_DECODE",
+)
+report = {
+    "schema": "qwen36-diagnostic-service-contract-v1",
+    "version": 1,
+    "command": sys.argv[3:],
+    "environment": {
+        name: os.environ.get(name) for name in environment_names
+    },
+    "working_directory": sys.argv[2],
+    "contains_credentials": False,
+    "production_promotion_authorized": False,
+}
+Path(sys.argv[1]).write_text(
+    json.dumps(report, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+then
+    printf '%s\n' 0 > "$RUN_ROOT/service_contract.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/service_contract.rc"
+    echo "diagnostic service contract report failed" >&2
+    exit 4
+fi
 
 (
     cd "$RUNTIME_WORKDIR" || exit 1
@@ -448,6 +585,7 @@ for _ in $(seq 1 "$STARTUP_TIMEOUT_S"); do
     sleep 1
 done
 if [[ "$startup_ok" != 1 ]]; then
+    printf '%s\n' 1 > "$RUN_ROOT/startup.rc"
     echo "diagnostic service failed to become healthy" >&2
     exit 5
 fi
@@ -586,26 +724,55 @@ tool_http = json.loads((root / "tool_http_gate.json").read_text()) \
     if (root / "tool_http_gate.json").is_file() else None
 prefix = json.loads((root / "prefix_boundary.json").read_text()) \
     if (root / "prefix_boundary.json").is_file() else None
+overlay = json.loads(
+    (root / "runtime_overlay_identity.json").read_text()) \
+    if (root / "runtime_overlay_identity.json").is_file() else None
+preflight_comparison = json.loads(
+    (root / "preflight_comparison.json").read_text()) \
+    if (root / "preflight_comparison.json").is_file() else None
+gates = {
+    "checkpoint_verify": read_rc("checkpoint_verify.rc"),
+    "runtime_overlay_identity": read_rc("runtime_overlay_identity.rc"),
+    "runtime_identity": read_rc("runtime_identity.rc"),
+    "preflight_before": read_rc("preflight_before.rc"),
+    "nccl_before": read_rc("nccl_before.rc"),
+    "gdn_action_broadcast": read_rc("gdn_action_broadcast.rc"),
+    "service_contract": read_rc("service_contract.rc"),
+    "startup": read_rc("startup.rc"),
+    "api": read_rc("api_gate.rc"),
+    "quality_contract": read_rc("quality_contract_gate.rc"),
+    "compat_http": read_rc("compat_http_gate.rc"),
+    "tool_http": read_rc("tool_http_gate.rc"),
+    "prefix_boundary": read_rc("prefix_boundary.rc"),
+    "cleanup": read_rc("cleanup.rc"),
+    "cleanup_status": read_rc("cleanup_status.rc"),
+    "service_postflight": read_rc("service_postflight.rc"),
+    "fatal_scan": read_rc("fatal_scan.rc"),
+    "timeout_scan": read_rc("timeout_scan.rc"),
+    "layer_trace": read_rc("layer_trace.rc"),
+    "preflight_after": read_rc("preflight_after.rc"),
+    "preflight_comparison": read_rc("preflight_comparison.rc"),
+}
 report = {
     "schema": "qwen36-diagnostic-service-gate-v1",
     "version": 1,
-    "qualified": int(sys.argv[2]) == 0,
+    "qualified": (
+        int(sys.argv[2]) == 0
+        and all(value == 0 for value in gates.values())
+    ),
     "runtime_identity": json.loads(
         (root / "runtime_identity.json").read_text()),
-    "gates": {
-        "api": read_rc("api_gate.rc"),
-        "quality_contract": read_rc("quality_contract_gate.rc"),
-        "compat_http": read_rc("compat_http_gate.rc"),
-        "tool_http": read_rc("tool_http_gate.rc"),
-        "prefix_boundary": read_rc("prefix_boundary.rc"),
-        "cleanup": read_rc("cleanup.rc"),
-        "cleanup_status": read_rc("cleanup_status.rc"),
-        "service_postflight": read_rc("service_postflight.rc"),
-        "fatal_scan": read_rc("fatal_scan.rc"),
-        "timeout_scan": read_rc("timeout_scan.rc"),
-        "layer_trace": read_rc("layer_trace.rc"),
-        "preflight_after": read_rc("preflight_after.rc"),
-    },
+    "gates": gates,
+    "runtime_overlay_summary": {
+        "qualified": overlay.get("qualified"),
+        "runtime_tree_sha256": overlay.get("runtime_tree_sha256"),
+    } if overlay else None,
+    "preflight_comparison_summary": {
+        "qualified": preflight_comparison.get("qualified"),
+        "expected_gpus": preflight_comparison.get("expected_gpus"),
+        "max_free_memory_drop_bytes": preflight_comparison.get(
+            "max_free_memory_drop_bytes"),
+    } if preflight_comparison else None,
     "layer_trace_count": int(
         (root / "layer_trace_count.txt").read_text().strip()),
     "api_summary": {
@@ -648,9 +815,12 @@ report = {
     "artifact_sha256": {
         name: sha(name) for name in (
             "checkpoint_verify.json",
+            "runtime_overlay_identity.json",
+            "runtime_identity.json",
             "preflight_before.json",
             "nccl_before.json",
             "gdn_action_broadcast.json",
+            "service_contract.json",
             "api_gate.json",
             "quality_contract_gate.json",
             "compat_http_gate.json",
@@ -660,6 +830,7 @@ report = {
             "cleanup_status.json",
             "service_postflight.json",
             "preflight_after.json",
+            "preflight_comparison.json",
         )
     },
     "semantic_quality_evaluated": False,
@@ -667,7 +838,13 @@ report = {
 }
 (root / "status.json").write_text(
     json.dumps(report, indent=2, sort_keys=True) + "\n")
+raise SystemExit(0 if report["qualified"] else 1)
 PY
+status_rc=$?
+printf '%s\n' "$status_rc" > "$RUN_ROOT/status.rc"
+if [[ $status_rc -ne 0 ]]; then
+    overall_rc=1
+fi
 
 trap - EXIT TERM INT
 exit "$overall_rc"

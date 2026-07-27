@@ -48,7 +48,7 @@ limit, cache policy, formal YAML value, or default compute switch changed.
 
 ## Local gates
 
-- 904 `unittest` cases passed; 25 optional-dependency cases skipped.
+- 906 `unittest` cases passed; 25 optional-dependency cases skipped.
 - The 53-case official metric manifest is qualified.
 - Quality data manifests are qualified.
 - Submission preflight passed 9 of 9 checks.
@@ -82,6 +82,8 @@ Use the immutable four-layer real-weight diagnostic checkpoint on one healthy
 BI100 GPU with `max_model_len=262144`, `max_num_seqs=1`, and the fixed runner
 `scripts/run_qwen36_diagnostic_gate.sh`. Require:
 
+- the runtime overlay to be freshly installed from the exact experiment HEAD,
+  with its complete tree identity matching `install.json`;
 - all ten quality boundary cases, including real HTTP `n=1` and `n=2`, to
   pass;
 - the cross-case contract to prove one prompt charge, summed completion usage,
@@ -91,6 +93,7 @@ BI100 GPU with `max_model_len=262144`, `max_num_seqs=1`, and the fixed runner
 - scoped process-group SIGTERM cleanup with at least 60 seconds of grace;
 - no residual API server, worker, or GPU process;
 - qualified repeated GPU postflight;
+- an exact before/after GPU topology and memory comparison;
 - empty fatal, Gloo, NCCL, worker-loss, and timeout scans.
 
 After that result, run the full-model TP4 functional gate before any

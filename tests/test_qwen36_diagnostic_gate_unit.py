@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
+import subprocess
 import sys
 import unittest
 from unittest import mock
@@ -83,6 +84,9 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
         for marker in (
             "--max-model-len 262144",
             "verify_qwen36_diagnostic_checkpoint.py",
+            "verify_bare_host_runtime_identity.py",
+            "runtime_overlay_identity.json",
+            "runtime_tree_sha256",
             "BI100_DIAGNOSTIC_LAYER_TRACE=1",
             "BI100_HYBRID_KV_ACCOUNTING=full_attention",
             "prefix_boundary_api.py",
@@ -104,6 +108,13 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
             "bi100_stop_process_group",
             '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
             "service_postflight_gate.py",
+            "compare_bi100_preflights.py",
+            '--expected-gpus "$GPU_LIST"',
+            "--max-free-memory-drop-bytes 1073741824",
+            "preflight_comparison.json",
+            '"preflight_comparison": read_rc(',
+            "service_contract.json",
+            "qwen36-diagnostic-service-contract-v1",
             "scan_timeout_rcs",
             "perform_postflight",
             "qwen36-diagnostic-cleanup-v1",
@@ -111,10 +122,57 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
             "trap 'exit 143' TERM",
             "production_promotion_authorized",
             "unset CUDA_VISIBLE_DEVICES",
+            "all(value == 0 for value in gates.values())",
         ):
             self.assertIn(marker, harness)
         self.assertNotIn("computility-run.yaml", harness)
         self.assertNotIn("git push", harness)
+
+    def test_harness_rejects_duplicate_gpus_and_unsafe_instance_label(
+            self) -> None:
+        script = ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
+        duplicate = subprocess.run(
+            [
+                "bash", str(script), "/missing-model", "2", "0,0",
+                "single-card", "/tmp/unused-diagnostic-run",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(duplicate.returncode, 2)
+        self.assertIn("unique physical indices", duplicate.stderr)
+
+        unsafe = subprocess.run(
+            [
+                "bash", str(script), "/missing-model", "1", "0",
+                "contains/a/slash", "/tmp/unused-diagnostic-run",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(unsafe.returncode, 2)
+        self.assertIn("short non-sensitive label", unsafe.stderr)
+
+    def test_postflight_orders_cleanup_before_gpu_comparison(self) -> None:
+        harness = (
+            ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
+        ).read_text(encoding="utf-8")
+        start = harness.index("perform_postflight()")
+        end = harness.index("\ncleanup()", start)
+        body = harness[start:end]
+        cleanup = body.index("stop_service\n")
+        process_scan = body.index("run_service_postflight\n")
+        gpu_probe = body.index("run_gpu_preflight_after\n")
+        comparison = body.index("run_preflight_comparison\n")
+        fatal_scan = body.index("scan_fatal_logs\n")
+        self.assertLess(cleanup, process_scan)
+        self.assertLess(process_scan, gpu_probe)
+        self.assertLess(gpu_probe, comparison)
+        self.assertLess(comparison, fatal_scan)
 
     def test_layer_trace_is_opt_in_and_post_moe(self) -> None:
         model = (
