@@ -20,8 +20,8 @@ import zlib
 
 
 Json = dict[str, Any]
-SCHEMA = "qwen36-diagnostic-compat-http-gate-v1"
-VERSION = 1
+SCHEMA = "qwen36-diagnostic-compat-http-gate-v2"
+VERSION = 2
 SEED = 20260728
 SYSTEM_TEXT = "synthetic alpha\nsynthetic beta\n\nsynthetic gamma"
 USER_TEXT = "Return one short token for this synthetic diagnostic request."
@@ -213,7 +213,7 @@ def run_gate(
     base: str,
     model_path: Path,
     timeout_s: float,
-    system_parts_expected_status: int,
+    multiple_system_parts_expected_status: int,
     image_limit: int,
 ) -> Json:
     cases: list[Json] = []
@@ -296,15 +296,14 @@ def run_gate(
                 {"role": "user", "content": USER_TEXT},
             ]),
             timeout_s=timeout_s,
-            expected_status=system_parts_expected_status,
+            expected_status=200,
         )
-        if system_parts_expected_status == 200:
-            if canonical_response is None:
-                raise AssertionError("canonical system request did not run")
-            if not _same_generation(canonical_response, response):
-                raise AssertionError(
-                    "single system text-parts changed deterministic output")
-            summary["canonical_generation_exact"] = True
+        if canonical_response is None:
+            raise AssertionError("canonical system request did not run")
+        if not _same_generation(canonical_response, response):
+            raise AssertionError(
+                "single system text-parts changed deterministic output")
+        summary["canonical_generation_exact"] = True
         return summary
 
     run("single_system_text_parts", single_system_parts)
@@ -324,9 +323,9 @@ def run_gate(
                 {"role": "user", "content": USER_TEXT},
             ]),
             timeout_s=timeout_s,
-            expected_status=system_parts_expected_status,
+            expected_status=multiple_system_parts_expected_status,
         )
-        if system_parts_expected_status == 200:
+        if multiple_system_parts_expected_status == 200:
             if canonical_response is None:
                 raise AssertionError("canonical system request did not run")
             if not _same_generation(canonical_response, response):
@@ -409,7 +408,8 @@ def run_gate(
             "seed": SEED,
             "temperature": 0,
             "max_tokens": 8,
-            "system_parts_expected_status": system_parts_expected_status,
+            "multiple_system_parts_expected_status":
+                multiple_system_parts_expected_status,
             "image_limit": image_limit,
         },
         "cases": cases,
@@ -452,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model-path", type=Path, required=True)
     parser.add_argument("--timeout-s", type=float, default=300)
     parser.add_argument(
-        "--system-parts-expected-status",
+        "--multiple-system-parts-expected-status",
         type=int,
         choices=(200, 400),
         required=True,
@@ -467,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
         args.base,
         args.model_path,
         args.timeout_s,
-        args.system_parts_expected_status,
+        args.multiple_system_parts_expected_status,
         args.image_limit,
     )
     _atomic_write(args.json_out, report)

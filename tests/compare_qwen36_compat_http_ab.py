@@ -12,9 +12,9 @@ from typing import Any
 
 
 Json = dict[str, Any]
-SCHEMA = "qwen36-diagnostic-compat-http-comparison-v1"
-VERSION = 1
-GATE_SCHEMA = "qwen36-diagnostic-compat-http-gate-v1"
+SCHEMA = "qwen36-diagnostic-compat-http-comparison-v2"
+VERSION = 2
+GATE_SCHEMA = "qwen36-diagnostic-compat-http-gate-v2"
 ATTRIBUTION_SCHEMA = "bi100-api-4xx-attribution-v3"
 
 
@@ -116,24 +116,36 @@ def compare(
     }
     for name, (system_status, image_limit) in expected_config.items():
         config = reports[name].get("config") or {}
-        if config.get("system_parts_expected_status") != system_status:
+        if config.get(
+                "multiple_system_parts_expected_status") != system_status:
             reasons.append(f"{name} system status contract mismatch")
         if config.get("image_limit") != image_limit:
             reasons.append(f"{name} image limit contract mismatch")
 
-    for case_name in (
-            "single_system_text_parts", "multiple_system_text_parts"):
-        baseline_status = _evidence(
-            case_maps["baseline_default"], case_name).get("http_status")
-        if baseline_status != 400:
-            reasons.append(f"baseline {case_name} did not reproduce HTTP 400")
-        for name in ("candidate_default", "candidate_image2"):
-            evidence = _evidence(case_maps[name], case_name)
-            if evidence.get("http_status") != 200:
-                reasons.append(f"{name} {case_name} did not return HTTP 200")
-            if evidence.get("canonical_generation_exact") is not True:
-                reasons.append(
-                    f"{name} {case_name} changed deterministic generation")
+    for name in reports:
+        evidence = _evidence(
+            case_maps[name], "single_system_text_parts")
+        if evidence.get("http_status") != 200:
+            reasons.append(
+                f"{name} single_system_text_parts did not return HTTP 200")
+        if evidence.get("canonical_generation_exact") is not True:
+            reasons.append(
+                f"{name} single_system_text_parts changed generation")
+
+    baseline_multi = _evidence(
+        case_maps["baseline_default"], "multiple_system_text_parts")
+    if baseline_multi.get("http_status") != 400:
+        reasons.append(
+            "baseline multiple_system_text_parts did not reproduce HTTP 400")
+    for name in ("candidate_default", "candidate_image2"):
+        evidence = _evidence(
+            case_maps[name], "multiple_system_text_parts")
+        if evidence.get("http_status") != 200:
+            reasons.append(
+                f"{name} multiple_system_text_parts did not return HTTP 200")
+        if evidence.get("canonical_generation_exact") is not True:
+            reasons.append(
+                f"{name} multiple_system_text_parts changed generation")
 
     canonical_shas = {
         _message_sha(case_maps[name], "canonical_system_string")
@@ -197,7 +209,7 @@ def compare(
         },
         "arm_contract": {
             name: {
-                "system_parts_expected_status": values[0],
+                "multiple_system_parts_expected_status": values[0],
                 "image_limit": values[1],
             }
             for name, values in expected_config.items()

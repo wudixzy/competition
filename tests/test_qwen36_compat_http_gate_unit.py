@@ -52,7 +52,10 @@ def fake_request(*, system_parts_supported: bool, image_limit: int):
             and isinstance(message.get("content"), list)
             for message in messages
         )
-        if system_parts and not system_parts_supported:
+        system_count = sum(
+            message.get("role") == "system" for message in messages)
+        if (system_parts and system_count > 1
+                and not system_parts_supported):
             return 400, {"error": {"type": "TemplateError"}}
 
         image_count = sum(
@@ -128,15 +131,18 @@ def attribution(image_count: int) -> dict:
 
 class Qwen36CompatHttpGateTest(unittest.TestCase):
 
-    def test_baseline_reproduces_system_400_and_survives(self):
+    def test_baseline_accepts_single_parts_but_reproduces_multi_system_400(self):
         report = run_report(False, 1)
         self.assertTrue(report["qualified"], report)
         self.assertEqual(report["case_count"], 8)
         cases = {row["name"]: row for row in report["cases"]}
         self.assertEqual(
             cases["single_system_text_parts"]["evidence"]["http_status"],
-            400,
+            200,
         )
+        self.assertTrue(
+            cases["single_system_text_parts"]["evidence"][
+                "canonical_generation_exact"])
         self.assertEqual(
             cases["multiple_system_text_parts"]["evidence"]["http_status"],
             400,

@@ -28,6 +28,8 @@ class M170DiagnosticHttpRunnerTest(unittest.TestCase):
         self.assertIn('"$CONTROL_REVISION" 400 1 0', self.source)
         self.assertIn('"$CANDIDATE_REVISION" 200 1 1', self.source)
         self.assertIn('"$CANDIDATE_REVISION" 200 2 1', self.source)
+        self.assertIn(
+            "--multiple-system-parts-expected-status", self.source)
         self.assertIn("--limit-mm-per-prompt image=2", self.source)
         self.assertIn("compare_qwen36_compat_http_ab.py", self.source)
 

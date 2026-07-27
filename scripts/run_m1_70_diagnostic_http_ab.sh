@@ -215,11 +215,11 @@ def sha(name):
         if path.is_file() else None
 
 report = {
-    "schema": "bi100-m1-70-diagnostic-http-arm-v1",
-    "version": 1,
+    "schema": "bi100-m1-70-diagnostic-http-arm-v2",
+    "version": 2,
     "qualified": int(sys.argv[2]) == 0,
     "runtime_revision": sys.argv[5],
-    "system_parts_expected_status": int(sys.argv[3]),
+    "multiple_system_parts_expected_status": int(sys.argv[3]),
     "image_limit": int(sys.argv[4]),
     "gates": {
         "preflight_before": rc("preflight_before.rc"),
@@ -370,7 +370,8 @@ PY
             --base "http://127.0.0.1:$PORT" \
             --model-path "$MODEL_PATH" \
             --timeout-s 600 \
-            --system-parts-expected-status "$expected_system_status" \
+            --multiple-system-parts-expected-status \
+            "$expected_system_status" \
             --image-limit "$image_limit" \
             --json-out "$arm/probe.json" \
             > "$arm/probe.stdout" 2> "$arm/probe.stderr"
@@ -477,8 +478,8 @@ def sha(name):
         if path.is_file() else None
 
 report = {
-    "schema": "bi100-m1-70-diagnostic-http-ab-runner-v1",
-    "version": 1,
+    "schema": "bi100-m1-70-diagnostic-http-ab-runner-v2",
+    "version": 2,
     "qualified": int(sys.argv[6]) == 0,
     "source_revision": sys.argv[3],
     "source_branch": sys.argv[4],
