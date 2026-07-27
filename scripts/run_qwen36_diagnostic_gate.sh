@@ -482,6 +482,40 @@ else
     overall_rc=1
 fi
 
+if timeout --signal=TERM --kill-after=70s 2400s \
+        python3 "$ROOT/tests/qwen36_compat_http_gate.py" \
+        --base "http://127.0.0.1:$PORT" \
+        --model-path "$MODEL_PATH" \
+        --timeout-s 300 \
+        --multiple-system-parts-expected-status 200 \
+        --image-limit 1 \
+        --json-out "$RUN_ROOT/compat_http_gate.json" \
+        > "$RUN_ROOT/compat_http_gate.stdout" \
+        2> "$RUN_ROOT/compat_http_gate.stderr"; then
+    printf '%s\n' 0 > "$RUN_ROOT/compat_http_gate.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/compat_http_gate.rc"
+    overall_rc=1
+fi
+
+if timeout --signal=TERM --kill-after=70s 2400s \
+        python3 "$ROOT/tests/qwen36_tool_http_gate.py" \
+        --base "http://127.0.0.1:$PORT" \
+        --model-path "$MODEL_PATH" \
+        --timeout-s 300 \
+        --strict-false-expected-status 200 \
+        --object-history-expected-status 200 \
+        --json-out "$RUN_ROOT/tool_http_gate.json" \
+        > "$RUN_ROOT/tool_http_gate.stdout" \
+        2> "$RUN_ROOT/tool_http_gate.stderr"; then
+    printf '%s\n' 0 > "$RUN_ROOT/tool_http_gate.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/tool_http_gate.rc"
+    overall_rc=1
+fi
+
 if timeout --signal=TERM --kill-after=70s 1200s \
         python3 "$ROOT/tests/prefix_boundary_api.py" \
         --base "http://127.0.0.1:$PORT" \
@@ -546,6 +580,10 @@ api = json.loads((root / "api_gate.json").read_text()) \
 quality_contract = json.loads(
     (root / "quality_contract_gate.json").read_text()) \
     if (root / "quality_contract_gate.json").is_file() else None
+compat_http = json.loads((root / "compat_http_gate.json").read_text()) \
+    if (root / "compat_http_gate.json").is_file() else None
+tool_http = json.loads((root / "tool_http_gate.json").read_text()) \
+    if (root / "tool_http_gate.json").is_file() else None
 prefix = json.loads((root / "prefix_boundary.json").read_text()) \
     if (root / "prefix_boundary.json").is_file() else None
 report = {
@@ -557,6 +595,8 @@ report = {
     "gates": {
         "api": read_rc("api_gate.rc"),
         "quality_contract": read_rc("quality_contract_gate.rc"),
+        "compat_http": read_rc("compat_http_gate.rc"),
+        "tool_http": read_rc("tool_http_gate.rc"),
         "prefix_boundary": read_rc("prefix_boundary.rc"),
         "cleanup": read_rc("cleanup.rc"),
         "cleanup_status": read_rc("cleanup_status.rc"),
@@ -579,6 +619,24 @@ report = {
         "failed": quality_contract.get("failed"),
         "final_health": quality_contract.get("final_health"),
     } if quality_contract else None,
+    "compat_http_summary": {
+        "qualified": compat_http.get("qualified"),
+        "case_count": compat_http.get("case_count"),
+        "multiple_system_parts_expected_status": (
+            compat_http.get("config", {}).get(
+                "multiple_system_parts_expected_status")),
+        "image_limit": compat_http.get("config", {}).get("image_limit"),
+    } if compat_http else None,
+    "tool_http_summary": {
+        "qualified": tool_http.get("qualified"),
+        "case_count": tool_http.get("case_count"),
+        "strict_false_expected_status": (
+            tool_http.get("config", {}).get(
+                "strict_false_expected_status")),
+        "object_history_expected_status": (
+            tool_http.get("config", {}).get(
+                "object_history_expected_status")),
+    } if tool_http else None,
     "prefix_summary": {
         "partial_cached_tokens": (
             prefix.get("partial_cache", {}).get("cached_tokens")),
@@ -593,6 +651,8 @@ report = {
             "gdn_action_broadcast.json",
             "api_gate.json",
             "quality_contract_gate.json",
+            "compat_http_gate.json",
+            "tool_http_gate.json",
             "prefix_boundary.json",
             "server.log",
             "cleanup_status.json",
