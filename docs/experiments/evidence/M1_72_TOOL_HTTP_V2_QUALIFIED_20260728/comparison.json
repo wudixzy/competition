@@ -1,0 +1,14 @@
+{
+  "checks": {
+    "candidate_4xx_attribution_qualified": true,
+    "object_history_http_fix_qualified": true,
+    "strict_false_http_fix_qualified": true
+  },
+  "full_model_evaluated": false,
+  "production_promotion_authorized": false,
+  "qualified": true,
+  "reasons": [],
+  "schema": "qwen36-diagnostic-tool-http-ab-v1",
+  "semantic_quality_evaluated": false,
+  "version": 1
+}

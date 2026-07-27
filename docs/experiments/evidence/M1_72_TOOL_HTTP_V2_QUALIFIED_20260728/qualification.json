@@ -1,0 +1,66 @@
+{
+  "behavior": {
+    "candidate_object_history_http_fix_qualified": true,
+    "candidate_strict_false_http_fix_qualified": true,
+    "candidate_tool_4xx_status_contract_qualified": true,
+    "candidate_tool_generation_exact": true,
+    "candidate_tool_history_generation_exact": true,
+    "http_probe_qualified": true
+  },
+  "cross_run": {
+    "candidate_http_statuses_exact_vs_v1": true,
+    "successful_tool_generation_contract_exact_vs_v1": true,
+    "successful_tool_generation_cases": [
+      "function_tool_default",
+      "function_tool_strict_false",
+      "tool_arguments_json_string",
+      "tool_arguments_json_object"
+    ],
+    "v1_unknown_4xx_count": 2,
+    "v2_unknown_4xx_count": 0
+  },
+  "decision": {
+    "default_change_authorized": false,
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false,
+    "tp4_full_model_gate_required": true,
+    "yaml_change_authorized": false
+  },
+  "full_model_evaluated": false,
+  "performance_evaluated": false,
+  "privacy": {
+    "contains_credentials": false,
+    "contains_environment": false,
+    "contains_multimodal_url_or_bytes": false,
+    "contains_raw_log_lines": false,
+    "contains_request_content": false,
+    "contains_response_content": false,
+    "contains_tool_schema": false
+  },
+  "qualified": true,
+  "run": {
+    "candidate_revision": "d2eed78371ef78aee36682c2322fb9ea44ebb5f2",
+    "candidate_runtime_tree_sha256": "6c69c7a0452f183073308d3a440d51097d512c7af6179350d093e583a79f4511",
+    "control_revision": "c78d55d0a7637baf4910af68b6d6ba4e286a1254",
+    "control_runtime_tree_sha256": "05d720faf7a6298946b6ab70d0ab73b8e88f0d7b90c7a54cf50c2c19e0273b7b",
+    "instance": "ssh-73ca29ba",
+    "physical_gpu": 1,
+    "run_root": "/tmp/m1-72-tool-http-v2-d2eed78-20260727T185821Z",
+    "runner_revision": "d2eed78371ef78aee36682c2322fb9ea44ebb5f2"
+  },
+  "schema": "bi100-m1-72-tool-http-v2-qualification-v1",
+  "semantic_quality_evaluated": false,
+  "telemetry": {
+    "attributed_4xx_count": 3,
+    "by_reason": {
+      "invalid_tool_arguments_json": 1,
+      "request_validation_tool_strict": 1,
+      "unsupported_tool_choice_required": 1
+    },
+    "complete": true,
+    "privacy_qualified": true,
+    "qualified": true,
+    "unknown_4xx_count": 0
+  },
+  "version": 1
+}

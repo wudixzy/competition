@@ -1,0 +1,124 @@
+{
+  "base": "http://127.0.0.1:8023",
+  "case_count": 9,
+  "cases": [
+    {
+      "elapsed_s": 0.003,
+      "evidence": {
+        "http_status": 200,
+        "max_model_len": 262144,
+        "served_model": "llm"
+      },
+      "name": "models_262144_contract",
+      "ok": true
+    },
+    {
+      "elapsed_s": 2.8781,
+      "evidence": {
+        "cached_tokens": 0,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "has_content": true,
+        "has_reasoning_content": false,
+        "http_status": 200,
+        "message_sha256": "f5996695a12b201f8e9b55a55fe3ed54492fdf2ce369bda43616e3866676b6da",
+        "prompt_tokens": 285,
+        "tool_call_count": 0
+      },
+      "name": "function_tool_default",
+      "ok": true
+    },
+    {
+      "elapsed_s": 0.0014,
+      "evidence": {
+        "http_status": 400,
+        "response_sha256": "35056d2c5f186926d93d7d99d42185e95ed19ffc4e75977bfc90798b89a9083e"
+      },
+      "name": "function_tool_strict_false",
+      "ok": true
+    },
+    {
+      "elapsed_s": 0.9193,
+      "evidence": {
+        "cached_tokens": 0,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "has_content": true,
+        "has_reasoning_content": false,
+        "http_status": 200,
+        "message_sha256": "29192552b713806cac6d1f70bbeb5c3d7a530ded341c9a7a2e57294f79900b2b",
+        "prompt_tokens": 336,
+        "tool_call_count": 0
+      },
+      "name": "tool_arguments_json_string",
+      "ok": true
+    },
+    {
+      "elapsed_s": 0.0022,
+      "evidence": {
+        "http_status": 400,
+        "response_sha256": "860cdeec1a2681f591c40d32b5e801f827026b674c9c4a3a3b2a2b1544dcf534"
+      },
+      "name": "tool_arguments_json_object",
+      "ok": true
+    },
+    {
+      "elapsed_s": 0.0014,
+      "evidence": {
+        "http_status": 400,
+        "response_sha256": "b9ae5f95e3f538eb5da72b681f9700c173c51234e25b437714e0066410aed9c6"
+      },
+      "name": "tool_arguments_invalid_json_400",
+      "ok": true
+    },
+    {
+      "elapsed_s": 0.0009,
+      "evidence": {
+        "http_status": 400,
+        "response_sha256": "211c6e9be34f54d785d75fe7880a5b28c8acf1b17051f26b36f11916e008189a"
+      },
+      "name": "function_tool_strict_true_400",
+      "ok": true
+    },
+    {
+      "elapsed_s": 0.0008,
+      "evidence": {
+        "http_status": 400,
+        "response_sha256": "dd83d66f94700e9f7f02996f855d50f538bb30fc1e922a48b44a4a39d168b515"
+      },
+      "name": "tool_choice_required_400",
+      "ok": true
+    },
+    {
+      "elapsed_s": 0.0008,
+      "evidence": {
+        "http_status": 200,
+        "response_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "name": "post_4xx_health",
+      "ok": true
+    }
+  ],
+  "config": {
+    "max_tokens": 8,
+    "object_history_expected_status": 400,
+    "seed": 20260728,
+    "strict_false_expected_status": 400,
+    "temperature": 0
+  },
+  "full_model_evaluated": false,
+  "model_path": "/root/shared-storage/models/Qwen/Qwen3.6-35B-A3B-diagnostic-4L-real",
+  "privacy": {
+    "contains_credentials": false,
+    "contains_raw_request": false,
+    "contains_raw_response": false,
+    "contains_tool_arguments": false,
+    "contains_tool_schema": false,
+    "synthetic_inputs_only": true
+  },
+  "production_promotion_authorized": false,
+  "qualified": true,
+  "schema": "qwen36-diagnostic-tool-http-gate-v1",
+  "semantic_quality_evaluated": false,
+  "version": 1
+}

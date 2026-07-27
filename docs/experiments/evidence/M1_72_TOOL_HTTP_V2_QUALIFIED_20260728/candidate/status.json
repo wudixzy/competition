@@ -1,0 +1,29 @@
+{
+  "artifact_sha256": {
+    "attribution": "991d083b7b6fe98acc2d7502d7bcff398e2e6dce8ba82cfad1d911a69fef24f7",
+    "probe": "94f0d7e17cec41362a3ac3eda981e7e1ecb20d4c3fb443bf2615da58384c66be",
+    "service_postflight": "4491a4baef0d8913c14d8b2f13ab682054f9dee5540c22301d02e102a34d9bbf"
+  },
+  "full_model_evaluated": false,
+  "gates": {
+    "attribution": 0,
+    "cleanup": 0,
+    "fatal_scan": 0,
+    "port_preflight": 0,
+    "preflight_after": 0,
+    "preflight_before": 0,
+    "preflight_comparison": 0,
+    "probe": 0,
+    "service_postflight": 0,
+    "startup": 0
+  },
+  "object_history_expected_status": 200,
+  "port": 8024,
+  "production_promotion_authorized": false,
+  "qualified": true,
+  "runtime_revision": "d2eed78371ef78aee36682c2322fb9ea44ebb5f2",
+  "schema": "bi100-m1-72-tool-http-arm-v1",
+  "semantic_quality_evaluated": false,
+  "strict_false_expected_status": 200,
+  "version": 1
+}

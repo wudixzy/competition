@@ -1,0 +1,51 @@
+{
+  "api_server_pids": [],
+  "gpu_indices": [
+    1
+  ],
+  "gpu_processes": [],
+  "missing_devices": [],
+  "privacy": {
+    "command_lines_recorded": false,
+    "environment_recorded": false
+  },
+  "qualified": true,
+  "scan_errors": [],
+  "schema": "bi100-service-postflight-v1",
+  "settling": {
+    "attempts": 3,
+    "elapsed_s": 4.021628845483065,
+    "final_clean_streak": 3,
+    "observations": [
+      {
+        "api_server_pids": [],
+        "gpu_processes": [],
+        "missing_devices": [],
+        "qualified": true,
+        "scan_errors": [],
+        "worker_pids": []
+      },
+      {
+        "api_server_pids": [],
+        "gpu_processes": [],
+        "missing_devices": [],
+        "qualified": true,
+        "scan_errors": [],
+        "worker_pids": []
+      },
+      {
+        "api_server_pids": [],
+        "gpu_processes": [],
+        "missing_devices": [],
+        "qualified": true,
+        "scan_errors": [],
+        "worker_pids": []
+      }
+    ],
+    "required_clean_samples": 3,
+    "sample_interval_s": 2.0,
+    "timeout_s": 90.0
+  },
+  "version": 1,
+  "worker_pids": []
+}
