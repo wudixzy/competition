@@ -128,6 +128,17 @@ def _render(tokenizer, payload: Json) -> tuple[list[int], Json]:
     return list(tokens), {"tools": tools}
 
 
+def _try_render(
+    tokenizer,
+    payload: Json,
+) -> tuple[list[int] | None, Json | None, str | None]:
+    try:
+        tokens, metadata = _render(tokenizer, payload)
+    except Exception as exc:
+        return None, None, type(exc).__name__
+    return tokens, metadata, None
+
+
 def _is_rejected(payload: Json) -> bool:
     from vllm.entrypoints.openai.protocol import ChatCompletionRequest
 
@@ -155,14 +166,18 @@ def qualify(model_path: Path) -> Json:
         tokenizer, _strict_payload(None))
     false_tokens, false_meta = _render(
         tokenizer, _strict_payload(False))
-    system_parts_tokens, _ = _render(
+    system_parts_tokens, _, system_parts_error = _try_render(
         tokenizer, _system_parts_payload(normalized=False))
-    system_normalized_tokens, _ = _render(
+    system_normalized_tokens, _, system_normalized_error = _try_render(
         tokenizer, _system_parts_payload(normalized=True))
 
     history_exact = string_tokens == object_tokens
     strict_exact = default_tokens == false_tokens
-    system_parts_exact = system_parts_tokens == system_normalized_tokens
+    system_parts_exact = (
+        system_parts_error is None
+        and system_normalized_error is None
+        and system_parts_tokens == system_normalized_tokens
+    )
     strict_not_forwarded = (
         default_meta["tools"] == false_meta["tools"]
         and all(
@@ -203,11 +218,24 @@ def qualify(model_path: Path) -> Json:
                 "false_sha256": _token_digest(false_tokens),
             },
             "system_text_parts": {
-                "parts_token_count": len(system_parts_tokens),
-                "normalized_token_count": len(system_normalized_tokens),
-                "parts_sha256": _token_digest(system_parts_tokens),
-                "normalized_sha256": _token_digest(
-                    system_normalized_tokens),
+                "parts_token_count": (
+                    None if system_parts_tokens is None
+                    else len(system_parts_tokens)
+                ),
+                "normalized_token_count": (
+                    None if system_normalized_tokens is None
+                    else len(system_normalized_tokens)
+                ),
+                "parts_sha256": (
+                    None if system_parts_tokens is None
+                    else _token_digest(system_parts_tokens)
+                ),
+                "normalized_sha256": (
+                    None if system_normalized_tokens is None
+                    else _token_digest(system_normalized_tokens)
+                ),
+                "parts_error_type": system_parts_error,
+                "normalized_error_type": system_normalized_error,
             },
         },
         "model_identity": {

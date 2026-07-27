@@ -57,6 +57,20 @@ class QualifyChatRequestCompatUnitTest(unittest.TestCase):
             ["system", "user"],
         )
 
+    def test_failed_render_is_bounded_without_error_text(self):
+        original = MODULE._render
+
+        def fail(_tokenizer, _payload):
+            raise RuntimeError("private prompt contents")
+
+        MODULE._render = fail
+        try:
+            result = MODULE._try_render(object(), {})
+        finally:
+            MODULE._render = original
+        self.assertEqual(result, (None, None, "RuntimeError"))
+        self.assertNotIn("private", repr(result))
+
     def test_report_source_contains_no_raw_tokenizer_output(self):
         source = MODULE_PATH.read_text(encoding="utf-8")
         self.assertIn("contains_prompt_or_response_text", source)
