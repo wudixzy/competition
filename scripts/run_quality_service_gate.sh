@@ -25,8 +25,8 @@ SERVICE_STARTED=0
 BEFORE_PREFLIGHT_PASSED=0
 
 case "$SUITE" in
-    functional|long-context) ;;
-    *) echo "SUITE must be functional or long-context" >&2; exit 2 ;;
+    functional|long-context|decode) ;;
+    *) echo "SUITE must be functional, long-context, or decode" >&2; exit 2 ;;
 esac
 case "$POLICY" in
     fine32|admission64) ;;
@@ -213,7 +213,7 @@ wait_for_port_free() {
 run_preflight() {
     local name=$1
     local rc=0
-    if timeout --signal=TERM --kill-after=10s 150s \
+    if timeout --signal=TERM --kill-after=70s 480s \
             python3 "$ROOT/tests/bi100_preflight.py" \
             --gpus 0,1,2,3 --timeout-s 25 --matmul-size 1024 \
             --json-out "$RUN_ROOT/preflight_${name}.json" \
@@ -228,16 +228,18 @@ run_preflight() {
 }
 
 stop_service() {
+    local rc=0
     if [[ -n "$ACTIVE_PGID" ]]; then
         # Allow TP4 workers and collective runtimes a full minute to unwind.
         # SIGKILL is only used for live members after this grace period.
-        bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" 60 20
+        bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" 60 20 || rc=$?
     elif [[ -n "$ACTIVE_PID" ]]; then
         echo "service PID lacks a verified process group" >&2
-        return 2
+        rc=2
     fi
     ACTIVE_PID=""
     ACTIVE_PGID=""
+    return "$rc"
 }
 
 scan_fatal_log() {
@@ -381,7 +383,7 @@ finish() {
     local after_rc=0
     local comparison_rc=0
     local final_rc=$primary_rc
-    trap - EXIT
+    trap - EXIT TERM INT
     set +e
 
     if [[ "$SERVICE_STARTED" == 1 ]]; then
@@ -427,6 +429,8 @@ finish() {
     write_status "$final_rc"
     exit "$final_rc"
 }
+trap 'exit 143' TERM
+trap 'exit 130' INT
 trap finish EXIT
 
 set +e
@@ -572,13 +576,31 @@ if [[ "$SUITE" == functional ]]; then
     if [[ $quality_rc -ne 0 || $agent_rc -ne 0 ]]; then
         rc=1
     fi
-else
+elif [[ "$SUITE" == long-context ]]; then
     timeout --signal=TERM --kill-after=30s 43200s \
         "$ROOT/scripts/run_quality_long_context_gate.sh" \
         http://127.0.0.1:8000 "$MODEL_PATH" \
         "$RUN_ROOT/runtime_contract.json" "$RUN_ROOT/server.log" \
         "$LABEL" "$RUNTIME_IDENTITY" "$INSTANCE" \
         "$RUN_ROOT/quality_report.json" \
+        > "$RUN_ROOT/quality.stdout" 2> "$RUN_ROOT/quality.stderr"
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/quality.rc"
+else
+    timeout --signal=TERM --kill-after=30s 5400s \
+        python3 "$ROOT/tests/gdn_combined_qk_decode_api.py" \
+        --base http://127.0.0.1:8000 \
+        --source-revision "$(git -C "$ROOT" rev-parse HEAD)" \
+        --runtime-identity "$RUNTIME_IDENTITY" \
+        --runtime-contract "$RUN_ROOT/runtime_contract.json" \
+        --instance "$INSTANCE" \
+        --label "$LABEL" \
+        --requests 3 \
+        --warmup 1 \
+        --tokens 1000 \
+        --seed 20260727 \
+        --timeout-s 1200 \
+        --out "$RUN_ROOT/quality_report.json" \
         > "$RUN_ROOT/quality.stdout" 2> "$RUN_ROOT/quality.stderr"
     rc=$?
     printf '%s\n' "$rc" > "$RUN_ROOT/quality.rc"

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import textwrap
@@ -26,6 +27,8 @@ COREX_PYTHON_PATHS = [
     "/usr/local/corex/lib64/python3/dist-packages",
     "/usr/local/corex/lib/python3/dist-packages",
 ]
+TERM_GRACE_S = 60.0
+KILL_GRACE_S = 20.0
 
 
 def _prepend_env_list(env: dict[str, str], key: str, values: list[str]) -> None:
@@ -104,30 +107,68 @@ def probe_gpu(index: int, timeout_s: float, matmul_size: int) -> dict[str, Any]:
         result["ok"] = True
         print(json.dumps(result, sort_keys=True), flush=True)
     """).strip()
+    process = subprocess.Popen(
+        [sys.executable, "-c", child, str(index), str(matmul_size)],
+        env=corex_env(),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
     try:
-        completed = subprocess.run(
-            [sys.executable, "-c", child, str(index), str(matmul_size)],
-            env=corex_env(),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout_s,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout = _clean_stream(exc.stdout)
+        stdout, stderr = process.communicate(timeout=timeout_s)
+    except subprocess.TimeoutExpired as initial_timeout:
+        stdout = _clean_stream(initial_timeout.stdout)
+        stderr = _clean_stream(initial_timeout.stderr)
+        termination = "sigterm"
+        cleanup_reaped = False
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except OSError as error:
+            termination = f"sigterm_error:{type(error).__name__}"
+        try:
+            final_stdout, final_stderr = process.communicate(
+                timeout=TERM_GRACE_S)
+            stdout = _clean_stream(final_stdout) or stdout
+            stderr = _clean_stream(final_stderr) or stderr
+            cleanup_reaped = True
+        except subprocess.TimeoutExpired as term_timeout:
+            stdout = _clean_stream(term_timeout.stdout) or stdout
+            stderr = _clean_stream(term_timeout.stderr) or stderr
+            termination = "sigkill"
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except OSError as error:
+                termination = f"sigkill_error:{type(error).__name__}"
+            try:
+                final_stdout, final_stderr = process.communicate(
+                    timeout=KILL_GRACE_S)
+                stdout = _clean_stream(final_stdout) or stdout
+                stderr = _clean_stream(final_stderr) or stderr
+                cleanup_reaped = True
+            except subprocess.TimeoutExpired as kill_timeout:
+                stdout = _clean_stream(kill_timeout.stdout) or stdout
+                stderr = _clean_stream(kill_timeout.stderr) or stderr
+                termination = "cleanup_failed"
         return {
             "gpu": index,
             "ok": False,
             "stage": "timeout",
             "last_progress_stage": _last_progress_stage(stdout),
             "returncode": 124,
+            "child_returncode": process.returncode,
+            "termination": termination,
+            "cleanup_reaped": cleanup_reaped,
             "stdout": stdout,
-            "stderr": _clean_stream(exc.stderr),
+            "stderr": stderr,
         }
 
-    stdout = completed.stdout.strip()
-    stderr = completed.stderr.strip()
+    stdout = stdout.strip()
+    stderr = stderr.strip()
     parsed: dict[str, Any] | None = None
     if stdout:
         last_line = stdout.splitlines()[-1]
@@ -141,10 +182,10 @@ def probe_gpu(index: int, timeout_s: float, matmul_size: int) -> dict[str, Any]:
             "ok": False,
             "stage": "parse_output",
         }
-    parsed["returncode"] = completed.returncode
+    parsed["returncode"] = process.returncode
     if stderr:
         parsed["stderr"] = stderr
-    if completed.returncode != 0:
+    if process.returncode != 0:
         parsed["ok"] = False
     return parsed
 

@@ -5,7 +5,7 @@ import socket
 import subprocess
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
@@ -50,14 +50,64 @@ class Bi100PreflightUnitTest(unittest.TestCase):
             ),
             stderr=b"runtime warning\n",
         )
-        with patch.object(
-                bi100_preflight.subprocess, "run", side_effect=timeout):
+        process = MagicMock()
+        process.pid = 4242
+        process.returncode = -15
+        process.communicate.side_effect = [
+            timeout,
+            (
+                '{"gpu": 0, "stage": "import_torch"}\n'
+                '{"gpu": 0, "stage": "matmul"}\n',
+                "runtime warning\n",
+            ),
+        ]
+        with (
+            patch.object(
+                bi100_preflight.subprocess, "Popen",
+                return_value=process,
+            ) as popen,
+            patch.object(bi100_preflight.os, "killpg") as killpg,
+        ):
             result = bi100_preflight.probe_gpu(0, 25, 1024)
 
         self.assertEqual(result["stage"], "timeout")
         self.assertEqual(result["last_progress_stage"], "matmul")
         self.assertEqual(result["returncode"], 124)
         self.assertEqual(result["stderr"], "runtime warning")
+        self.assertEqual(result["termination"], "sigterm")
+        self.assertTrue(result["cleanup_reaped"])
+        popen.assert_called_once()
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        killpg.assert_called_once_with(4242, bi100_preflight.signal.SIGTERM)
+        self.assertEqual(process.communicate.call_args_list, [
+            call(timeout=25),
+            call(timeout=bi100_preflight.TERM_GRACE_S),
+        ])
+
+    def test_cuda_timeout_uses_sigkill_only_after_term_grace(self):
+        process = MagicMock()
+        process.pid = 4343
+        process.returncode = -9
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(["python3"], 25),
+            subprocess.TimeoutExpired(["python3"], 60),
+            ("", ""),
+        ]
+        with (
+            patch.object(
+                bi100_preflight.subprocess, "Popen",
+                return_value=process,
+            ),
+            patch.object(bi100_preflight.os, "killpg") as killpg,
+        ):
+            result = bi100_preflight.probe_gpu(3, 25, 1024)
+
+        self.assertEqual(result["termination"], "sigkill")
+        self.assertTrue(result["cleanup_reaped"])
+        self.assertEqual(killpg.call_args_list, [
+            call(4343, bi100_preflight.signal.SIGTERM),
+            call(4343, bi100_preflight.signal.SIGKILL),
+        ])
 
     def test_cuda_corex_env_prepends_paths_without_mutating_os_environ(self):
         with patch.dict(os.environ, {

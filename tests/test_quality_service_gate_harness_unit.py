@@ -92,6 +92,12 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
             'bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
             self.source,
         )
+        self.assertIn(
+            '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20 || rc=$?',
+            self.source,
+        )
+        self.assertIn('return "$rc"', self.source)
+        self.assertIn("trap - EXIT TERM INT", self.source)
         self.assertIn("tests/service_postflight_gate.py", self.source)
         self.assertIn('"service_postflight": read_rc(', self.source)
         self.assertIn('"timeout_scan": read_rc(', self.source)
