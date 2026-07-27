@@ -221,7 +221,9 @@ run_preflight() {
 
 stop_service() {
     if [[ -n "$ACTIVE_PGID" ]]; then
-        bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID"
+        # Allow TP4 workers and collective runtimes a full minute to unwind.
+        # SIGKILL is only used for live members after this grace period.
+        bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" 60 20
     elif [[ -n "$ACTIVE_PID" ]]; then
         echo "service PID lacks a verified process group" >&2
         return 2
@@ -236,15 +238,52 @@ scan_fatal_log() {
         echo "service log is missing" > "$RUN_ROOT/fatal_scan.txt"
         return 1
     fi
-    if grep -Eiq 'CUDA error|SIGSEGV|Fatal Python error|out of memory|worker process.*died|Gloo.*failed|AssertionError' \
+    local pattern
+    pattern='CUDA error|SIGSEGV|Fatal Python error|out of memory|AssertionError|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|Connection reset by peer|worker.*(died|lost|exited unexpectedly)|TimeoutError|engine iteration timed out|watchdog.*tim(e|ed) out'
+    if grep -Eiq "$pattern" \
             "$RUN_ROOT/server.log"; then
-        grep -Ein 'CUDA error|SIGSEGV|Fatal Python error|out of memory|worker process.*died|Gloo.*failed|AssertionError' \
+        grep -Ein "$pattern" \
             "$RUN_ROOT/server.log" > "$RUN_ROOT/fatal_scan.txt" || true
         printf '%s\n' 1 > "$RUN_ROOT/fatal_scan.rc"
         return 1
     fi
     : > "$RUN_ROOT/fatal_scan.txt"
     printf '%s\n' 0 > "$RUN_ROOT/fatal_scan.rc"
+}
+
+run_service_postflight() {
+    local rc=0
+    if python3 "$ROOT/tests/service_postflight_gate.py" \
+            --gpus 0,1,2,3 \
+            --out "$RUN_ROOT/service_postflight.json" \
+            > "$RUN_ROOT/service_postflight.stdout" \
+            2> "$RUN_ROOT/service_postflight.stderr"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    printf '%s\n' "$rc" > "$RUN_ROOT/service_postflight.rc"
+    return "$rc"
+}
+
+scan_runner_timeouts() {
+    local file
+    local value
+    local found=0
+    : > "$RUN_ROOT/timeout_scan.txt"
+    for file in startup.rc quality.rc agent_workload.rc; do
+        [[ -f "$RUN_ROOT/$file" ]] || continue
+        value=$(tr -d '[:space:]' < "$RUN_ROOT/$file")
+        case "$value" in
+            124|137)
+                printf '%s=%s\n' "$file" "$value" \
+                    >> "$RUN_ROOT/timeout_scan.txt"
+                found=1
+                ;;
+        esac
+    done
+    printf '%s\n' "$found" > "$RUN_ROOT/timeout_scan.rc"
+    return "$found"
 }
 
 write_status() {
@@ -295,7 +334,9 @@ report = {
         "quality": read_rc("quality.rc"),
         "agent_workload": read_rc("agent_workload.rc"),
         "cleanup": read_rc("cleanup.rc"),
+        "service_postflight": read_rc("service_postflight.rc"),
         "fatal_scan": read_rc("fatal_scan.rc"),
+        "timeout_scan": read_rc("timeout_scan.rc"),
         "preflight_after": read_rc("preflight_after.rc"),
         "preflight_comparison": read_rc("preflight_comparison.rc"),
     },
@@ -326,7 +367,9 @@ PY
 finish() {
     local primary_rc=$?
     local cleanup_rc=0
+    local service_postflight_rc=0
     local fatal_rc=0
+    local timeout_rc=0
     local after_rc=0
     local comparison_rc=0
     local final_rc=$primary_rc
@@ -344,6 +387,10 @@ finish() {
         fatal_rc=$?
     fi
     printf '%s\n' "$cleanup_rc" > "$RUN_ROOT/cleanup.rc"
+    run_service_postflight
+    service_postflight_rc=$?
+    scan_runner_timeouts
+    timeout_rc=$?
 
     if [[ "$BEFORE_PREFLIGHT_PASSED" == 1 ]]; then
         run_preflight after
@@ -363,7 +410,8 @@ finish() {
         printf '%s\n' "$comparison_rc" > "$RUN_ROOT/preflight_comparison.rc"
     fi
 
-    if [[ $cleanup_rc -ne 0 || $fatal_rc -ne 0 \
+    if [[ $cleanup_rc -ne 0 || $service_postflight_rc -ne 0 \
+            || $fatal_rc -ne 0 || $timeout_rc -ne 0 \
             || $after_rc -ne 0 || $comparison_rc -ne 0 ]]; then
         final_rc=1
     fi
