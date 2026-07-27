@@ -99,6 +99,8 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertIn('return "$rc"', self.source)
         self.assertIn("trap - EXIT TERM INT", self.source)
         self.assertIn("tests/service_postflight_gate.py", self.source)
+        self.assertIn("--settle-timeout-s 30 --clean-samples 3",
+                      self.source)
         self.assertIn('"service_postflight": read_rc(', self.source)
         self.assertIn('"timeout_scan": read_rc(', self.source)
         cleanup = self.source.index("stop_service\n")

@@ -37,6 +37,8 @@ class M165ServiceAbHarnessTest(unittest.TestCase):
             self.service_gate,
         )
         self.assertIn("tests/service_postflight_gate.py", self.service_gate)
+        self.assertIn("--settle-timeout-s 30 --clean-samples 3",
+                      self.service_gate)
         self.assertIn("run_preflight after", self.service_gate)
         self.assertIn("scan_fatal_log", self.service_gate)
         self.assertIn("scan_runner_timeouts", self.service_gate)
@@ -68,6 +70,8 @@ class M165ServiceAbHarnessTest(unittest.TestCase):
             self.assertIn(f'"{gate}"', self.orchestrator)
             self.assertIn(f"$RUN_ROOT/{gate}.rc", self.orchestrator)
         self.assertIn("tests/service_postflight_gate.py", self.orchestrator)
+        self.assertIn("--settle-timeout-s 30 --clean-samples 3",
+                      self.orchestrator)
         self.assertIn("tests/bi100_preflight.py", self.orchestrator)
         self.assertIn("--gpus 0,1,2,3", self.orchestrator)
         self.assertIn("Gloo.*(failed|reset|error)", self.orchestrator)
