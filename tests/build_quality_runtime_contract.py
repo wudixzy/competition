@@ -29,6 +29,7 @@ def service_environment(
     gdn_restore_mode: str,
     fused_prefill: str,
     kv_eviction_policy: str,
+    kernel_profile: str = "submission",
 ) -> dict[str, str]:
     return runtime_contract.service_environment(
         runtime_site_packages,
@@ -36,6 +37,7 @@ def service_environment(
         gdn_restore_mode=gdn_restore_mode,
         fused_prefill=fused_prefill,
         kv_eviction_policy=kv_eviction_policy,
+        kernel_profile=kernel_profile,
     )
 
 
@@ -51,6 +53,7 @@ def build_contract(
     gdn_restore_mode: str,
     fused_prefill: str,
     kv_eviction_policy: str,
+    kernel_profile: str = "submission",
 ) -> Json:
     identity = f"bare-host-overlay-v1:{runtime_overlay_sha256[:20]}"
     return {
@@ -74,6 +77,7 @@ def build_contract(
             gdn_restore_mode=gdn_restore_mode,
             fused_prefill=fused_prefill,
             kv_eviction_policy=kv_eviction_policy,
+            kernel_profile=kernel_profile,
         ),
         "cache_trace_enabled": True,
         "optimization_label": optimization_label,
@@ -114,6 +118,11 @@ def main() -> int:
     parser.add_argument("--fused-prefill", choices=("0", "1"), required=True)
     parser.add_argument(
         "--kv-eviction-policy", choices=("lru", "frequency"), required=True)
+    parser.add_argument(
+        "--kernel-profile",
+        choices=tuple(runtime_contract.KERNEL_PROFILES),
+        default="submission",
+    )
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -153,6 +162,7 @@ def main() -> int:
         gdn_restore_mode=args.gdn_restore_mode,
         fused_prefill=args.fused_prefill,
         kv_eviction_policy=args.kv_eviction_policy,
+        kernel_profile=args.kernel_profile,
     )
     expected = {
         "source_revision": source_revision,

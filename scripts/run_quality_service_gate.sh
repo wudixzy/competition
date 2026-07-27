@@ -18,6 +18,7 @@ LABEL=$6
 INSTANCE=$7
 RUN_ROOT=$8
 MODEL_PATH=${MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
+KERNEL_PROFILE=${BI100_QUALITY_KERNEL_PROFILE:-submission}
 ACTIVE_PID=""
 ACTIVE_PGID=""
 SERVICE_STARTED=0
@@ -42,6 +43,20 @@ esac
 case "$KV_EVICTION" in
     lru|frequency) ;;
     *) echo "KV_EVICTION must be lru or frequency" >&2; exit 2 ;;
+esac
+case "$KERNEL_PROFILE" in
+    submission)
+        MOE_DIRECT=1
+        GDN_PACKED=1
+        ;;
+    strict-reference)
+        MOE_DIRECT=0
+        GDN_PACKED=0
+        ;;
+    *)
+        echo "BI100_QUALITY_KERNEL_PROFILE must be submission or strict-reference" >&2
+        exit 2
+        ;;
 esac
 
 RUN_ROOT=$(python3 - "$RUN_ROOT" <<'PY'
@@ -120,11 +135,11 @@ export VLLM_ENGINE_ITERATION_TIMEOUT_S=3600
 export BI100_ALLOW_PREFIX_GUARD_CAP=0
 export BI100_ATTN_COREX_HEAD_RMS_NORM=1
 export BI100_ATTN_COREX_PAGED_GATHER=1
-export BI100_MOE_COREX_DIRECT_ROUTED=1
+export BI100_MOE_COREX_DIRECT_ROUTED="$MOE_DIRECT"
 export BI100_MOE_COREX_EXACT_REDUCE=1
 export BI100_MOE_COREX_WEIGHT_GATHER=1
 export BI100_MOE_FUSED_ACTIVATION=1
-export BI100_GDN_COREX_PACKED_DECODE=1
+export BI100_GDN_COREX_PACKED_DECODE="$GDN_PACKED"
 export BI100_GDN_COREX_BETA_DECAY=1
 export BI100_GDN_COREX_CAUSAL_CONV=1
 export BI100_GDN_COREX_GATED_NORM=1
@@ -236,7 +251,7 @@ write_status() {
     local final_rc=$1
     python3 - "$RUN_ROOT" "$SUITE" "$POLICY" "$RESTORE_MODE" \
             "$FUSED_PREFILL" "$KV_EVICTION" "$LABEL" "$INSTANCE" \
-            "$final_rc" <<'PY'
+            "$KERNEL_PROFILE" "$final_rc" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -260,10 +275,11 @@ report = {
         "gdn_restore_mode": sys.argv[4],
         "fused_prefill": sys.argv[5],
         "kv_eviction_policy": sys.argv[6],
+        "kernel_profile": sys.argv[9],
     },
     "label": sys.argv[7],
     "instance": sys.argv[8],
-    "overall_rc": int(sys.argv[9]),
+    "overall_rc": int(sys.argv[10]),
     "source_revision": (root / "source_revision.txt").read_text(
         encoding="utf-8").strip(),
     "source_branch": (root / "source_branch.txt").read_text(
@@ -382,6 +398,7 @@ python3 "$ROOT/tests/build_quality_runtime_contract.py" \
     --gdn-restore-mode "$RESTORE_MODE" \
     --fused-prefill "$FUSED_PREFILL" \
     --kv-eviction-policy "$KV_EVICTION" \
+    --kernel-profile "$KERNEL_PROFILE" \
     --out "$RUN_ROOT/runtime_contract.json" \
     > "$RUN_ROOT/runtime_contract.stdout" \
     2> "$RUN_ROOT/runtime_contract.stderr"

@@ -75,6 +75,24 @@ class QualityRuntimeContractBuilderTest(unittest.TestCase):
         self.assertEqual(environment["BI100_ATTN_COREX_PAGED_GATHER"], "1")
         self.assertEqual(environment["BI100_PREFIX_DTYPE"], "float16")
 
+    def test_strict_reference_profile_is_attested(self):
+        contract = MODULE.build_contract(
+            source_revision="a" * 40,
+            runtime_overlay_sha256="b" * 64,
+            runtime_site_packages="/runtime/site-packages",
+            model_path="/model",
+            instance="private-tp4",
+            optimization_label="strict-reference",
+            gdn_cache_policy="fine32",
+            gdn_restore_mode="direct",
+            fused_prefill="0",
+            kv_eviction_policy="lru",
+            kernel_profile="strict-reference",
+        )
+        environment = contract["environment"]
+        self.assertEqual(environment["BI100_MOE_COREX_DIRECT_ROUTED"], "0")
+        self.assertEqual(environment["BI100_GDN_COREX_PACKED_DECODE"], "0")
+
     def test_documented_example_matches_canonical_command_and_environment(self):
         example = json.loads((
             ROOT / "quality/runtime_contract.example.json"

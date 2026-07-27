@@ -34,11 +34,9 @@ FIXED_SERVICE_ENVIRONMENT = {
     "BI100_GDN_COREX_BETA_DECAY": "1",
     "BI100_GDN_COREX_CAUSAL_CONV": "1",
     "BI100_GDN_COREX_GATED_NORM": "1",
-    "BI100_GDN_COREX_PACKED_DECODE": "1",
     "BI100_GDN_COREX_QK_MAP": "1",
     "BI100_GDN_FINITE_CHECK": "0",
     "BI100_HYBRID_KV_ACCOUNTING": "full_attention",
-    "BI100_MOE_COREX_DIRECT_ROUTED": "1",
     "BI100_MOE_COREX_EXACT_REDUCE": "1",
     "BI100_MOE_COREX_WEIGHT_GATHER": "1",
     "BI100_MOE_FUSED_ACTIVATION": "1",
@@ -58,6 +56,16 @@ FIXED_SERVICE_ENVIRONMENT = {
     "PYTHONUNBUFFERED": "1",
     "VLLM_ENGINE_ITERATION_TIMEOUT_S": "3600",
 }
+KERNEL_PROFILES = {
+    "submission": {
+        "BI100_GDN_COREX_PACKED_DECODE": "1",
+        "BI100_MOE_COREX_DIRECT_ROUTED": "1",
+    },
+    "strict-reference": {
+        "BI100_GDN_COREX_PACKED_DECODE": "0",
+        "BI100_MOE_COREX_DIRECT_ROUTED": "0",
+    },
+}
 VARIABLE_SERVICE_ENVIRONMENT = {
     "BI100_ATTN_COREX_FUSED_PREFILL": {"0", "1"},
     "BI100_GDN_CACHE_POLICY": {"fine32", "admission64"},
@@ -65,9 +73,11 @@ VARIABLE_SERVICE_ENVIRONMENT = {
     "BI100_KV_EVICTION_POLICY": {"lru", "frequency"},
 }
 RUNTIME_PATH_ENVIRONMENT = {"BI100_RUNTIME_SITE_PACKAGES"}
+KERNEL_PROFILE_ENVIRONMENT = set(next(iter(KERNEL_PROFILES.values())))
 SERVICE_ENVIRONMENT_FIELDS = (
     set(FIXED_SERVICE_ENVIRONMENT)
     | set(VARIABLE_SERVICE_ENVIRONMENT)
+    | KERNEL_PROFILE_ENVIRONMENT
     | RUNTIME_PATH_ENVIRONMENT
 )
 
@@ -129,8 +139,13 @@ def service_environment(
     gdn_restore_mode: str,
     fused_prefill: str,
     kv_eviction_policy: str,
+    kernel_profile: str = "submission",
 ) -> dict[str, str]:
+    if kernel_profile not in KERNEL_PROFILES:
+        raise RuntimeContractError(
+            f"unknown quality kernel profile: {kernel_profile}")
     value = dict(FIXED_SERVICE_ENVIRONMENT)
+    value.update(KERNEL_PROFILES[kernel_profile])
     value.update({
         "BI100_ATTN_COREX_FUSED_PREFILL": fused_prefill,
         "BI100_GDN_CACHE_POLICY": gdn_cache_policy,
@@ -211,6 +226,14 @@ def validate_runtime_contract(
     for name, choices in VARIABLE_SERVICE_ENVIRONMENT.items():
         _require(environment.get(name) in choices,
                  f"runtime contract environment {name} is invalid")
+    kernel_values = {
+        name: environment.get(name)
+        for name in next(iter(KERNEL_PROFILES.values()))
+    }
+    _require(
+        any(kernel_values == profile for profile in KERNEL_PROFILES.values()),
+        "runtime contract kernel profile is invalid",
+    )
     runtime_site_packages = environment.get("BI100_RUNTIME_SITE_PACKAGES")
     _require(isinstance(runtime_site_packages, str)
              and Path(runtime_site_packages).is_absolute(),

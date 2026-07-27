@@ -105,6 +105,31 @@ class QualityRuntimeContractTest(unittest.TestCase):
             MODULE.validate_runtime_contract(
                 value, mismatched, require_cache_trace=True)
 
+    def test_strict_reference_disables_rejected_kernels(self):
+        value = contract()
+        value["environment"] = MODULE.service_environment(
+            "/runtime/site-packages",
+            gdn_cache_policy="fine32",
+            gdn_restore_mode="direct",
+            fused_prefill="0",
+            kv_eviction_policy="lru",
+            kernel_profile="strict-reference",
+        )
+        self.assertEqual(
+            value["environment"]["BI100_MOE_COREX_DIRECT_ROUTED"], "0")
+        self.assertEqual(
+            value["environment"]["BI100_GDN_COREX_PACKED_DECODE"], "0")
+        MODULE.validate_runtime_contract(
+            value, expected(value), require_cache_trace=True)
+
+    def test_mixed_kernel_profile_fails(self):
+        value = contract()
+        value["environment"]["BI100_GDN_COREX_PACKED_DECODE"] = "0"
+        with self.assertRaisesRegex(
+                MODULE.RuntimeContractError, "kernel profile"):
+            MODULE.validate_runtime_contract(
+                value, expected(value), require_cache_trace=True)
+
 
 if __name__ == "__main__":
     unittest.main()
