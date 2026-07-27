@@ -75,8 +75,25 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
     def test_fatal_scan_covers_known_worker_failures(self):
         for marker in (
                 "CUDA error", "SIGSEGV", "out of memory",
-                "worker process.*died", "Gloo.*failed"):
+                "worker.*(died|lost|exited unexpectedly)",
+                "Gloo.*(failed|reset|error)",
+                "NCCL.*(failed|abort|error)",
+                "Connection reset by peer", "TimeoutError"):
             self.assertIn(marker, self.source)
+
+    def test_cleanup_has_grace_period_and_fail_closed_postflight(self):
+        self.assertIn(
+            'bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
+            self.source,
+        )
+        self.assertIn("tests/service_postflight_gate.py", self.source)
+        self.assertIn('"service_postflight": read_rc(', self.source)
+        self.assertIn('"timeout_scan": read_rc(', self.source)
+        cleanup = self.source.index("stop_service\n")
+        process_scan = self.source.index("run_service_postflight\n")
+        gpu_preflight = self.source.index("run_preflight after")
+        self.assertLess(cleanup, process_scan)
+        self.assertLess(process_scan, gpu_preflight)
 
 
 if __name__ == "__main__":
