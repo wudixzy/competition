@@ -163,12 +163,54 @@ def _bi100_chat_request_shape(request):
     }
 
 
-def _bi100_validation_reason(errors):
+def _bi100_validation_message_reason(error, tool_choice_kind):
+    if not isinstance(error, dict):
+        return None
+
+    messages = []
+    context = error.get("ctx")
+    if isinstance(context, dict):
+        context_error = context.get("error")
+        if isinstance(context_error, ValueError):
+            messages.append(str(context_error))
+
+    message = error.get("msg")
+    if isinstance(message, str):
+        if message.startswith("Value error, "):
+            message = message.removeprefix("Value error, ")
+        messages.append(message)
+
+    for message in messages:
+        if message == "Tool call arguments are not valid JSON.":
+            return "invalid_tool_arguments_json"
+        if message in (
+                "Tool call arguments must decode to a JSON object.",
+                "Tool call arguments must be a JSON object or a "
+                "JSON-encoded object string."):
+            return "invalid_tool_arguments_type"
+        if message == (
+                "`tool_choice` must be a named tool, \"auto\", or \"none\"."):
+            if tool_choice_kind == "required":
+                return "unsupported_tool_choice_required"
+            return "request_validation_tool_choice"
+    return None
+
+
+def _bi100_validation_reason(errors, request_shape=None):
     categories = set()
+    message_categories = set()
+    tool_choice_kind = (
+        request_shape.get("tool_choice_kind")
+        if isinstance(request_shape, dict) else None
+    )
     validation_errors = errors if isinstance(errors, (list, tuple)) else ()
     for error in validation_errors:
         if not isinstance(error, dict):
             continue
+        message_category = _bi100_validation_message_reason(
+            error, tool_choice_kind)
+        if message_category is not None:
+            message_categories.add(message_category)
         location = error.get("loc")
         if not isinstance(location, (list, tuple)):
             continue
@@ -235,6 +277,15 @@ def _bi100_validation_reason(errors):
     )
     for category in priority:
         if category in categories:
+            return category
+    message_priority = (
+        "invalid_tool_arguments_json",
+        "invalid_tool_arguments_type",
+        "unsupported_tool_choice_required",
+        "request_validation_tool_choice",
+    )
+    for category in message_priority:
+        if category in message_categories:
             return category
     return "request_validation_unknown"
 
@@ -708,11 +759,14 @@ def build_app(args: Namespace) -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(raw_request, exc):
         validation_errors = exc.errors()
-        reason = _bi100_validation_reason(validation_errors)
         body = getattr(exc, "body", None)
-        if (raw_request.url.path.endswith("/v1/chat/completions")
-                and isinstance(body, dict)):
-            shape = _bi100_chat_request_shape(body)
+        is_chat_request = (
+            raw_request.url.path.endswith("/v1/chat/completions")
+            and isinstance(body, dict)
+        )
+        shape = _bi100_chat_request_shape(body) if is_chat_request else None
+        reason = _bi100_validation_reason(validation_errors, shape)
+        if shape is not None:
             if (reason == "request_validation_tools"
                     and shape["strict_true_count"]):
                 reason = "request_validation_tool_strict"

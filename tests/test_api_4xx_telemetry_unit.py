@@ -13,6 +13,7 @@ HELPERS = {
     "_bi100_tool_choice_kind",
     "_bi100_chat_4xx_reason",
     "_bi100_chat_request_shape",
+    "_bi100_validation_message_reason",
     "_bi100_validation_reason",
 }
 
@@ -215,11 +216,99 @@ class Api4xxTelemetryTest(unittest.TestCase):
                     expected,
                 )
 
+    def test_model_level_validation_messages_have_bounded_reason_codes(self):
+        required_shape = {"tool_choice_kind": "required"}
+        cases = (
+            ({
+                "loc": (),
+                "msg": (
+                    "Value error, Tool call arguments are not valid JSON."
+                ),
+            }, None, "invalid_tool_arguments_json"),
+            ({
+                "loc": (),
+                "ctx": {
+                    "error": ValueError(
+                        "Tool call arguments are not valid JSON."),
+                },
+            }, None, "invalid_tool_arguments_json"),
+            ({
+                "loc": (),
+                "msg": (
+                    "Value error, Tool call arguments must decode to a JSON "
+                    "object."
+                ),
+            }, None, "invalid_tool_arguments_type"),
+            ({
+                "loc": (),
+                "msg": (
+                    "Value error, Tool call arguments must be a JSON object "
+                    "or a JSON-encoded object string."
+                ),
+            }, None, "invalid_tool_arguments_type"),
+            ({
+                "loc": (),
+                "msg": (
+                    "Value error, `tool_choice` must be a named tool, "
+                    "\"auto\", or \"none\"."
+                ),
+            }, required_shape, "unsupported_tool_choice_required"),
+        )
+        for error, shape, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(
+                    self.validation_reason([error], shape),
+                    expected,
+                )
+
+    def test_model_level_tool_choice_uses_request_shape(self):
+        error = {
+            "loc": (),
+            "msg": (
+                "Value error, `tool_choice` must be a named tool, "
+                "\"auto\", or \"none\"."
+            ),
+        }
+        self.assertEqual(
+            self.validation_reason(
+                [error], {"tool_choice_kind": "required"}),
+            "unsupported_tool_choice_required",
+        )
+        self.assertEqual(
+            self.validation_reason(
+                [error], {"tool_choice_kind": "other"}),
+            "request_validation_tool_choice",
+        )
+
+    def test_location_reason_takes_priority_over_message_reason(self):
+        self.assertEqual(
+            self.validation_reason([{
+                "loc": ("body", "tools", 0, "function", "strict"),
+                "msg": (
+                    "Value error, Tool call arguments are not valid JSON."
+                ),
+            }]),
+            "request_validation_tool_strict",
+        )
+
+    def test_unknown_validation_message_remains_private_and_fail_closed(self):
+        sensitive = "private prompt contains Tool call arguments"
+        reason = self.validation_reason([{
+            "loc": (),
+            "msg": f"Value error, {sensitive}",
+            "ctx": {"error": ValueError(sensitive)},
+            "input": {"private": sensitive},
+        }])
+        self.assertEqual(reason, "request_validation_unknown")
+        self.assertNotIn("private", reason)
+        self.assertNotIn("prompt", reason)
+
     def test_runtime_logs_reason_without_raw_error_message(self):
         source = API_SERVER.read_text()
         self.assertIn("[BI100 4XX] endpoint=chat", source)
         self.assertIn("[BI100 4XX] endpoint=request_validation", source)
-        self.assertIn("_bi100_validation_reason(validation_errors)", source)
+        self.assertIn(
+            "_bi100_validation_reason(validation_errors, shape)", source)
         self.assertIn("_bi100_chat_request_shape(body)", source)
         self.assertIn("_bi100_log_chat_4xx(request, generator)", source)
         self.assertIn("images=%d image_data=%d image_remote=%d", source)
