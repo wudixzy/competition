@@ -1,0 +1,48 @@
+{
+  "baseline": {
+    "graceful_shutdown_marker_present": true,
+    "http_cases_passed": 8,
+    "http_cases_total": 8,
+    "qualified": true
+  },
+  "candidate": {
+    "address_in_use_marker_present": true,
+    "address_in_use_marker_sha256": "853428516389fe603248dbeb5fe95255f83d1391f9e65ffc750a907c6f6add0a",
+    "model_construction_started": false,
+    "model_weights_loading_started": false,
+    "port": 8018,
+    "probe_rc": 1,
+    "qualified": false,
+    "startup_rc": 1
+  },
+  "classification": "runner_arm_port_reuse",
+  "cleanup": {
+    "api_server_pids": [],
+    "fatal_scan_empty": true,
+    "final_gpu_preflight_qualified": true,
+    "final_postflight_qualified": true,
+    "gpu1_free_memory_drop_bytes": 0,
+    "gpu_processes": [],
+    "timeout_scan_empty": true,
+    "worker_pids": []
+  },
+  "inference": "The candidate failed before model construction while rebinding the baseline arm port; the evidence is consistent with a recently closed socket remaining unavailable, not with a GPU or model-loading failure.",
+  "privacy": {
+    "contains_credentials": false,
+    "contains_environment": false,
+    "contains_raw_request": false,
+    "contains_raw_response": false,
+    "contains_server_log": false
+  },
+  "qualified": true,
+  "schema": "bi100-m1-70-v2-port-conflict-diagnosis-v1",
+  "scope": {
+    "candidate_behavior_evaluated": false,
+    "full_model_evaluated": false,
+    "production_promotion_authorized": false,
+    "semantic_quality_evaluated": false
+  },
+  "source_revision": "b51c4227e7b28081030ef4d0a17c2143aa8e051a",
+  "source_run": "/tmp/m1-70-http-ab-v2-b51c422-20260727T172627Z",
+  "version": 1
+}

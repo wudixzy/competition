@@ -1,0 +1,23 @@
+{
+  "attributed_count": 0,
+  "attribution_delta": 0,
+  "by_access_code": {},
+  "by_attributed_code": {},
+  "by_endpoint": {},
+  "by_reason": {},
+  "chat_4xx_access_count": 0,
+  "classified": true,
+  "complete": true,
+  "malformed_marker_count": 0,
+  "privacy": {
+    "contains_multimodal_url_or_bytes": false,
+    "contains_raw_log_lines": false,
+    "contains_request_content": false,
+    "contains_response_content": false,
+    "contains_tool_schema": false
+  },
+  "qualified": true,
+  "request_shapes": [],
+  "schema": "bi100-api-4xx-attribution-v3",
+  "version": 3
+}

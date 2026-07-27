@@ -1,0 +1,27 @@
+{
+  "artifact_sha256": {
+    "attribution": "2ac3e071d10ffc36433f25d0e79c9b4b8793f39633e07a461efaf4cf61287ac8",
+    "probe": null,
+    "service_postflight": "b738cf194ef17d9691506e58fe3e393f70190220cb087b7c4508e323df97860c"
+  },
+  "full_model_evaluated": false,
+  "gates": {
+    "attribution": 0,
+    "cleanup": 0,
+    "fatal_scan": 0,
+    "preflight_after": 0,
+    "preflight_before": 0,
+    "preflight_comparison": 0,
+    "probe": 1,
+    "service_postflight": 0,
+    "startup": 1
+  },
+  "image_limit": 1,
+  "multiple_system_parts_expected_status": 200,
+  "production_promotion_authorized": false,
+  "qualified": false,
+  "runtime_revision": "37001edff643d98bf41bf4a52e0a145329003315",
+  "schema": "bi100-m1-70-diagnostic-http-arm-v2",
+  "semantic_quality_evaluated": false,
+  "version": 2
+}

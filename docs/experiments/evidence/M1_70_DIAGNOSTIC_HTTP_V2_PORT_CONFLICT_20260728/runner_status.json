@@ -1,0 +1,34 @@
+{
+  "artifact_sha256": {
+    "comparison": null,
+    "final_postflight": "bccc1b56ed44ad794e8f11fc4fd25188e945a3fa7d0a3439c86657fa60f2ae6e",
+    "runtime_pair": "d3f51780093a7e5a621dcce02ae2ed43fac664656ef0651f8a5220e99782ca7c"
+  },
+  "default_image_limit_change_authorized": false,
+  "full_model_evaluated": false,
+  "gates": {
+    "baseline_default": 0,
+    "candidate_default": null,
+    "candidate_image2": null,
+    "checkpoint_verify": 0,
+    "cleanup": 0,
+    "comparison": null,
+    "fatal_scan": 0,
+    "final_postflight": 0,
+    "final_preflight": 0,
+    "final_preflight_comparison": 0,
+    "initial_preflight": 0,
+    "runtime_pair": 0,
+    "timeout_scan": 0
+  },
+  "instance": "ssh-73ca29ba",
+  "physical_gpu": 1,
+  "production_promotion_authorized": false,
+  "qualified": false,
+  "returncode": 1,
+  "schema": "bi100-m1-70-diagnostic-http-ab-runner-v2",
+  "semantic_quality_evaluated": false,
+  "source_branch": "",
+  "source_revision": "b51c4227e7b28081030ef4d0a17c2143aa8e051a",
+  "version": 2
+}
