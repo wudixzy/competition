@@ -265,7 +265,13 @@ class PatchTest(unittest.TestCase):
             self.assertEqual(record["hash_encoding"], "sha256_base64")
             self.assertEqual(record["gdn_policy"], "admission64")
             self.assertEqual(record["raw_kv_contiguous_hit_blocks"], 2)
+            self.assertEqual(
+                record["initial_raw_kv_contiguous_hit_blocks"], 2)
             self.assertEqual(record["effective_gdn_hit_blocks"], 1)
+            self.assertEqual(
+                base64.b64decode(record["gdn_restore_digest_base64"]),
+                hash_a,
+            )
             self.assertEqual(record["gdn_admissions"][0]["reason"],
                              "final_prefill")
             self.assertEqual(record["gdn_evictions"][0]["reason"],
@@ -297,6 +303,10 @@ class PatchTest(unittest.TestCase):
             self.assertEqual(second_record["ordinal"], 2)
             self.assertEqual(
                 second_record["observed_effective_cached_tokens"], 0)
+            self.assertEqual(
+                second_record["initial_raw_kv_contiguous_hit_blocks"], 0)
+            self.assertIsNone(
+                second_record["gdn_restore_digest_base64"])
             self.assertEqual(second_record["trace_session_sha256"],
                              record["trace_session_sha256"])
 

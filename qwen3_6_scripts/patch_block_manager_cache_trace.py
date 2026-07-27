@@ -51,6 +51,12 @@ HELPER = '''
             return
         record = requests[seq.seq_id]
         record["gdn_policy"] = policy
+        if "initial_raw_kv_contiguous_hit_blocks" not in record:
+            record["initial_raw_kv_contiguous_hit_blocks"] = max(
+                0, int(raw_kv_hit_blocks))
+            record["gdn_restore_digest_base64"] = (
+                base64.b64encode(restore_key[1]).decode("ascii")
+                if restore_key is not None else None)
         record["raw_kv_contiguous_hit_blocks"] = max(
             int(raw_kv_hit_blocks),
             int(record.get("raw_kv_contiguous_hit_blocks", 0)))
