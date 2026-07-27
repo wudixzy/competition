@@ -1,5 +1,18 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-27 M1-61 精确 W2 混合 MoE 否决
+
+- 私有分支 `exp/M1-61-exact-w2-hybrid-20260727` 验证了
+  direct W13 + W2-only 精确拷贝 + vendor BMM + serial-float reduction。
+- W2-only 拷贝 byte-exact，fixed/routed 分别达到 `2.433x/1.928x`。
+- 新 seed 下 direct W13 相对 L2 为 `2.452e-5`，hybrid 为
+  `9.404e-5`；500 步聚合为 `7.526e-5`，最大单步 `3.204e-4`。
+- 候选违反 `1e-5` 硬门槛，已停止该方向，不增加生产 dispatch、不改
+  YAML、不进行 TP4 服务测试。下一步先运行关闭 direct MoE/packed GDN
+  的完整模型四卡参考基线并重新 profile。
+- 结构化证据：
+  `docs/experiments/evidence/M1_61_EXACT_W2_HYBRID/`。
+
 ## 2026-07-27 M1-60 真实权重缩层诊断模型
 
 - 私有分支 `exp/M1-60-qwen36-diagnostic-checkpoint-20260727` 已建立可重复的

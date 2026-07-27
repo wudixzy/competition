@@ -1,0 +1,24 @@
+{
+  "limits": {
+    "fixed_speedup": 1.5,
+    "relative_l2": 1e-05,
+    "routed_speedup": 1.25,
+    "sequence_steps": 500
+  },
+  "observed": {
+    "direct_w13_relative_l2": 2.452344775978081e-05,
+    "fixed_speedup": 2.4328296140337318,
+    "hybrid_relative_l2": 9.403802451529374e-05,
+    "routed_speedup": 1.9277412987762963,
+    "sequence_max_step_relative_l2": 0.0003204477857089558,
+    "sequence_relative_l2": 7.526406972113806e-05
+  },
+  "qualified": false,
+  "reasons": [
+    "direct_w13 relative L2 exceeds 1e-05",
+    "hybrid relative L2 exceeds 1e-05",
+    "sequence relative_l2 exceeds 1e-05",
+    "sequence max_step_relative_l2 exceeds 1e-05"
+  ],
+  "schema": "bi100-moe-exact-w2-hybrid-qualification-v1"
+}
