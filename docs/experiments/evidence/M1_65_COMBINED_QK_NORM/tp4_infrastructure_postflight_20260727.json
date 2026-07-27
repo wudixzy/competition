@@ -1,0 +1,20 @@
+{
+  "api_server_pids": [],
+  "gpu_indices": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "gpu_processes": [],
+  "missing_devices": [],
+  "privacy": {
+    "command_lines_recorded": false,
+    "environment_recorded": false
+  },
+  "qualified": true,
+  "scan_errors": [],
+  "schema": "bi100-service-postflight-v1",
+  "version": 1,
+  "worker_pids": []
+}

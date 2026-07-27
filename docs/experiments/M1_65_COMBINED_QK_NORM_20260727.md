@@ -78,3 +78,69 @@ The projected 1.55 ms/token saving is useful but insufficient by itself to
 close the current Output TPS or weighted-score gap. End-to-end TP4 evidence is
 required before combining M1-65 with another exact structural optimization.
 
+## Executable A/B Gate
+
+The branch now contains a fixed service A/B:
+
+```bash
+export BI100_RUNTIME_SITE_PACKAGES=/root/m1-65-runtime-<revision>/site-packages
+export MODEL_PATH=/root/public-storage/models/Qwen/Qwen3.6-35B-A3B
+
+scripts/run_m1_65_combined_qk_service_ab.sh \
+  ssh-73ca29ba /tmp/m1-65-service-ab-<revision>
+```
+
+Both arms use `scripts/run_quality_service_gate.sh`, one source revision, one
+runtime overlay, the same model, request order, seed, cache policy, and service
+arguments. The fixed probe runs one warmup plus three 1000-token deterministic
+streaming requests. It stores only usage, timing, lengths, and output digests.
+
+The comparator requires:
+
+- identical first-output and complete-output digests for each paired request;
+- exactly 1000 completion tokens and `finish_reason=length`;
+- the only environment delta to be
+  `BI100_GDN_COMBINED_QK_NORM=0 -> 1`;
+- candidate P10 throughput no lower than 98% of control;
+- median paired speedup of at least 1.01x.
+
+Even a passing result remains `production_promotion_authorized=false`; it only
+unlocks the complete functional, Agent, long-context, and final performance
+gates.
+
+Cleanup is fail-closed. Each service has its own process group, receives
+`SIGTERM`, gets 60 seconds to unwind TP4/CoreX/Gloo/NCCL, and receives
+`SIGKILL` only if still live. Cleanup return codes are preserved, children are
+reaped, and residual service/GPU processes, fatal logs, timeout records, and
+per-GPU pre/postflight comparison are mandatory. The GPU preflight itself now
+uses the same 60-second TERM grace instead of Python's immediate timeout kill.
+
+## Current TP4 Infrastructure Blocker
+
+The first attempt after integration did not start either model arm. A clean
+four-device preflight on `ssh-73ca29ba` found:
+
+| Physical GPU | Direct-index preflight | Isolated visible-device probe |
+| ---: | --- | --- |
+| 0 | timeout at `mem_get_info` | timeout at `import_torch` |
+| 1 | pass, checksum 1073741824 | pass, checksum 1073741824 |
+| 2 | timeout at `mem_get_info` | timeout at `import_torch` |
+| 3 | timeout at `mem_get_info` | timeout at `import_torch` |
+
+`ixsmi` still listed four BI-V100 devices at 257 MiB each and no running
+processes. All isolated failures exited after `SIGTERM`; no `SIGKILL` was
+needed. Final postflight found no API server, worker, or GPU process and
+qualified.
+
+This is an infrastructure failure, not a candidate failure or performance
+result. Structured evidence:
+
+- [`tp4_infrastructure_preflight_20260727.json`](evidence/M1_65_COMBINED_QK_NORM/tp4_infrastructure_preflight_20260727.json)
+- [`tp4_infrastructure_visible_map_20260727.json`](evidence/M1_65_COMBINED_QK_NORM/tp4_infrastructure_visible_map_20260727.json)
+- [`tp4_infrastructure_postflight_20260727.json`](evidence/M1_65_COMBINED_QK_NORM/tp4_infrastructure_postflight_20260727.json)
+
+The direct preflight artifact SHA-256 is:
+
+```text
+647e156987c16f82002035f0552f911fb48b10327e813a14f336b3e35ca0d7d6
+```
