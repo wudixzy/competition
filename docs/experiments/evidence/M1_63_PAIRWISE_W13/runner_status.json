@@ -1,0 +1,32 @@
+{
+  "artifacts": {
+    "benchmark_sha256": "63521e85c35b883fb9e319bd1b54db68ef0db67d4241dd2071202dd7781944dd",
+    "qualification_sha256": "039d2661e89be6cc4c8c0ab37470a1751cb68a04024af26ebf98157fdfef6892",
+    "runtime_identity_sha256": "39b833c6427123cffed5bcf07dd5fda78d92dd84ae192909eac0c6495851cd8b"
+  },
+  "gates": {
+    "benchmark": 0,
+    "build": 0,
+    "fatal_scan": 0,
+    "preflight_after": 0,
+    "preflight_before": 0,
+    "preflight_comparison": 0,
+    "qualification": 1,
+    "runtime_identity": 0
+  },
+  "instance": "ssh-73ca29ba",
+  "last_stage": "qualification",
+  "limits": {
+    "fixed_speedup": 1.5,
+    "relative_l2": 1e-05,
+    "routed_speedup": 1.25,
+    "sequence_steps": 500
+  },
+  "physical_gpu": 1,
+  "production_promotion_authorized": false,
+  "returncode": 1,
+  "schema": "bi100-moe-pairwise-w13-runner-v1",
+  "source_branch": "",
+  "source_revision": "93b75ff9650ddaed18eec6a6ca2ee173a54714a9",
+  "version": 1
+}

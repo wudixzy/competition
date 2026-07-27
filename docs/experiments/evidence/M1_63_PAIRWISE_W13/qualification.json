@@ -1,0 +1,25 @@
+{
+  "limits": {
+    "fixed_speedup": 1.5,
+    "relative_l2": 1e-05,
+    "routed_speedup": 1.25,
+    "sequence_steps": 500
+  },
+  "observed": {
+    "fixed_relative_l2": {
+      "20260716": 7.302349143937655e-06,
+      "20260727": 2.9739046984005934e-05
+    },
+    "fixed_speedup": 7.4068325941734505,
+    "routed_speedup": 4.9324154655063,
+    "sequence_max_step_relative_l2": 5.392576740294783e-05,
+    "sequence_relative_l2": 1.4009495878068956e-05
+  },
+  "qualified": false,
+  "reasons": [
+    "pairwise fixed seed 20260727 relative L2 exceeds 1e-05",
+    "pairwise sequence relative_l2 exceeds 1e-05",
+    "pairwise sequence max_step_relative_l2 exceeds 1e-05"
+  ],
+  "schema": "bi100-moe-pairwise-w13-qualification-v1"
+}
