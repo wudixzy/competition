@@ -129,6 +129,26 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
         self.assertNotIn("computility-run.yaml", harness)
         self.assertNotIn("git push", harness)
 
+    def test_gpu_preflight_wrappers_cover_child_cleanup_window(self) -> None:
+        harness = (
+            ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
+        ).read_text(encoding="utf-8")
+        marker = 'python3 "$ROOT/tests/bi100_preflight.py"'
+        positions = []
+        offset = 0
+        while True:
+            position = harness.find(marker, offset)
+            if position < 0:
+                break
+            positions.append(position)
+            offset = position + len(marker)
+        self.assertEqual(len(positions), 2)
+        for position in positions:
+            self.assertIn(
+                "--kill-after=90s 240s",
+                harness[max(0, position - 180):position],
+            )
+
     def test_harness_rejects_duplicate_gpus_and_unsafe_instance_label(
             self) -> None:
         script = ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"

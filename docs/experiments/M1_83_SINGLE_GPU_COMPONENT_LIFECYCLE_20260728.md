@@ -59,8 +59,8 @@ runtime switch changed.
 
 ## Local validation
 
-- 913 repository `unittest` cases pass; 25 optional-dependency cases skip;
-- 55 focused component, HTTP diagnostic, preflight-signal, process-group,
+- 914 repository `unittest` cases pass; 25 optional-dependency cases skip;
+- 56 focused component, HTTP diagnostic, preflight-signal, process-group,
   preflight-comparison, and process-residue tests pass;
 - the frozen 53-case quality manifest and all seven quality-data provenance
   sources qualify;
