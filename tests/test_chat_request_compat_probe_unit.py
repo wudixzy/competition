@@ -39,6 +39,10 @@ class ChatRequestCompatProbeUnitTest(unittest.TestCase):
         self.assertEqual(
             expectations["function_tool_strict_true"], "reject")
         self.assertEqual(expectations["tool_choice_required"], "reject")
+        self.assertEqual(
+            expectations["assistant_tool_arguments_object"], "accept")
+        self.assertEqual(
+            expectations["assistant_tool_arguments_invalid_json"], "reject")
 
     def test_bounded_errors_never_include_input_or_context(self):
         class FakeValidationError(Exception):

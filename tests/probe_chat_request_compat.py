@@ -147,7 +147,7 @@ CASES: tuple[Json, ...] = (
     },
     {
         "name": "assistant_tool_arguments_object",
-        "expected": "reject",
+        "expected": "accept",
         "payload": _base(messages=[{
             "role": "assistant",
             "content": None,
@@ -157,6 +157,22 @@ CASES: tuple[Json, ...] = (
                 "function": {
                     "name": "lookup",
                     "arguments": {"key": "synthetic"},
+                },
+            }],
+        }]),
+    },
+    {
+        "name": "assistant_tool_arguments_invalid_json",
+        "expected": "reject",
+        "payload": _base(messages=[{
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": "call_synthetic_4",
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "arguments": "{invalid",
                 },
             }],
         }]),
@@ -190,6 +206,7 @@ def _bounded_errors(exc: Exception) -> list[Json]:
 
 
 def run() -> Json:
+    from vllm.entrypoints.chat_utils import _postprocess_messages
     from vllm.entrypoints.openai.protocol import ChatCompletionRequest
 
     observations = []
@@ -197,6 +214,7 @@ def run() -> Json:
     for case in CASES:
         try:
             request = ChatCompletionRequest.model_validate(case["payload"])
+            _postprocess_messages(request.messages)
         except Exception as exc:
             accepted = False
             errors = _bounded_errors(exc)
@@ -225,6 +243,14 @@ def run() -> Json:
             )
             observation["strict_forwarded_to_template"] = strict_forwarded
             matched = matched and not strict_forwarded
+            observation["matched"] = matched
+        if (case["name"] == "assistant_tool_arguments_object"
+                and accepted):
+            arguments = request.messages[0]["tool_calls"][0][
+                "function"]["arguments"]
+            object_preserved = arguments == {"key": "synthetic"}
+            observation["argument_object_preserved"] = object_preserved
+            matched = matched and object_preserved
             observation["matched"] = matched
         observations.append(observation)
         if not matched:

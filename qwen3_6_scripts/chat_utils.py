@@ -516,8 +516,17 @@ def _postprocess_messages(messages: List[ConversationMessage]) -> None:
                 and isinstance(message["tool_calls"], list)):
 
             for item in message["tool_calls"]:
-                item["function"]["arguments"] = json.loads(
-                    item["function"]["arguments"])
+                arguments = item["function"]["arguments"]
+                if isinstance(arguments, str):
+                    arguments = json.loads(arguments)
+                elif not isinstance(arguments, dict):
+                    raise TypeError(
+                        "Tool call arguments must be a JSON object or a "
+                        "JSON-encoded object string.")
+                if not isinstance(arguments, dict):
+                    raise TypeError(
+                        "Tool call arguments must decode to a JSON object.")
+                item["function"]["arguments"] = arguments
 
 
 def parse_chat_messages(
