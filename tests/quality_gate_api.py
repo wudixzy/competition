@@ -222,9 +222,13 @@ def _expect_200(result: tuple[int, Json]) -> Json:
     return data
 
 
-def _expect_4xx(result: tuple[int, Json]) -> None:
-    status, _ = result
+def _expect_4xx(result: tuple[int, Json]) -> Json:
+    status, data = result
     require(400 <= status < 500, "expected HTTP 4xx")
+    require(isinstance(data, dict), "4xx response JSON must be an object")
+    require(bool(_error_message(data).strip()),
+            "4xx response lacks a structured error message")
+    return data
 
 
 def _error_message(data: Json) -> str:
@@ -233,6 +237,15 @@ def _error_message(data: Json) -> str:
         return error["message"]
     message = data.get("message")
     return message if isinstance(message, str) else ""
+
+
+def _expect_4xx_and_health(
+    client: "Client",
+    config: "RunConfig",
+    result: tuple[int, Json],
+) -> None:
+    _expect_4xx(result)
+    client.models(config.model)
 
 
 def _parse_sse_payload(raw: bytes) -> Json:
@@ -841,19 +854,32 @@ def _parameter_case(
     result = client.post(payload)
     status, data = result
     if expect_4xx:
-        _expect_4xx(result)
+        _expect_4xx_and_health(client, config, result)
     elif accept_2xx_or_4xx:
         require(status == 200 or 400 <= status < 500,
                 "expected HTTP 2xx or 4xx")
         if status == 200:
+            data = _expect_200(result)
             _content(data)
+        else:
+            require(config.endpoint_mode == "direct",
+                    "gateway must normalize top_p=0 to a successful request")
+            _expect_4xx_and_health(client, config, result)
     else:
         data = _expect_200(result)
         _content(data)
     semantic = [_normalized_response(data)] if status == 200 else [{"status": status}]
-    return _observation([result], semantic, facts={
-        "parameter": field, "accepted": status == 200,
-    })
+    facts = {
+        "parameter": field,
+        "accepted": status == 200,
+        "endpoint_mode": config.endpoint_mode,
+    }
+    if status != 200:
+        facts.update({
+            "structured_error": True,
+            "post_error_health": True,
+        })
+    return _observation([result], semantic, facts=facts)
 
 
 def _n_case(client: Client, config: RunConfig, n: int) -> Json:
@@ -891,24 +917,26 @@ def _max_tokens_case(
     payload = _base_payload("只输出字母 A。", max_tokens=value)
     result = client.post(payload, timeout=600)
     if expect_4xx:
-        _expect_4xx(result)
+        _expect_4xx_and_health(client, config, result)
         return _observation([result], [{"status": result[0]}], facts={
             "requested_max_tokens": value,
             "rejected_without_5xx": True,
+            "structured_error": True,
+            "post_error_health": True,
         })
     data = _expect_200(result)
     _content(data)
     finish = (data.get("choices") or [{}])[0].get("finish_reason")
     if value == 1:
         completion = _usage(data)["completion_tokens"]
-        require(isinstance(completion, int) and completion <= 1,
+        require(completion == 1,
                 "max_tokens=1 completion usage is invalid")
-        require(finish in {"stop", "length"},
-                "max_tokens=1 finish_reason is invalid")
+        require(finish == "stop",
+                "max_tokens=1 did not finish naturally")
         facts = {
             "requested_max_tokens": value,
             "completion_within_limit": True,
-            "finish_reason_valid": True,
+            "natural_stop": True,
         }
     else:
         require(finish == "stop",
@@ -1034,9 +1062,11 @@ def _idempotency(client: Client, config: RunConfig) -> Json:
 
 def _invalid_payload(client: Client, config: RunConfig, payload: Json) -> Json:
     result = client.post(payload)
-    _expect_4xx(result)
+    _expect_4xx_and_health(client, config, result)
     return _observation([result], [{"status": result[0]}], facts={
         "rejected_without_5xx": True,
+        "structured_error": True,
+        "post_error_health": True,
     })
 
 

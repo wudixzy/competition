@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 import tempfile
 import unittest
@@ -42,7 +43,7 @@ class StreamingClient:
 
 class ResponseClient:
 
-    def __init__(self, finish_reason="length", completion_tokens=1):
+    def __init__(self, finish_reason="stop", completion_tokens=1):
         self.finish_reason = finish_reason
         self.completion_tokens = completion_tokens
 
@@ -63,6 +64,20 @@ class ResponseClient:
                 "total_tokens": 3 + self.completion_tokens,
             },
         }
+
+
+class ErrorClient:
+
+    def __init__(self, message="invalid request"):
+        self.message = message
+        self.health_checks = 0
+
+    def post(self, payload, timeout=None):
+        return 400, {"error": {"message": self.message}}
+
+    def models(self, expected_model="llm"):
+        self.health_checks += 1
+        return {"data": [{"id": expected_model}]}
 
 
 class ToolClient:
@@ -328,15 +343,48 @@ class QualityGateApiTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.CaseFailure, "inconsistent"):
             MODULE._validate_response_schema(response)
 
-    def test_max_tokens_one_accepts_length_and_enforces_usage_cap(self):
+    def test_max_tokens_one_requires_natural_stop_and_exact_usage(self):
         observation = MODULE._max_tokens_case(
             ResponseClient(), object(), 1)
-        self.assertEqual(observation["finish_reasons"], ["length"])
+        self.assertEqual(observation["finish_reasons"], ["stop"])
         self.assertTrue(observation["facts"]["completion_within_limit"])
+        self.assertTrue(observation["facts"]["natural_stop"])
 
         with self.assertRaisesRegex(MODULE.CaseFailure, "usage is invalid"):
             MODULE._max_tokens_case(
                 ResponseClient(completion_tokens=2), object(), 1)
+        with self.assertRaisesRegex(MODULE.CaseFailure, "finish naturally"):
+            MODULE._max_tokens_case(
+                ResponseClient(finish_reason="length"), object(), 1)
+
+    def test_rejected_requests_require_structured_error_and_health(self):
+        config = SimpleNamespace(model="llm", endpoint_mode="direct")
+        client = ErrorClient()
+        observation = MODULE._invalid_payload(client, config, {})
+        self.assertEqual(observation["status_codes"], [400])
+        self.assertTrue(observation["facts"]["structured_error"])
+        self.assertTrue(observation["facts"]["post_error_health"])
+        self.assertEqual(client.health_checks, 1)
+
+        with self.assertRaisesRegex(
+                MODULE.CaseFailure, "structured error message"):
+            MODULE._invalid_payload(ErrorClient(message=""), config, {})
+
+    def test_top_p_zero_rejection_is_direct_only(self):
+        direct = SimpleNamespace(model="llm", endpoint_mode="direct")
+        client = ErrorClient()
+        observation = MODULE._parameter_case(
+            client, direct, "top_p", 0.0, accept_2xx_or_4xx=True)
+        self.assertFalse(observation["facts"]["accepted"])
+        self.assertTrue(observation["facts"]["post_error_health"])
+        self.assertEqual(client.health_checks, 1)
+
+        gateway = SimpleNamespace(model="llm", endpoint_mode="gateway")
+        with self.assertRaisesRegex(
+                MODULE.CaseFailure, "gateway must normalize"):
+            MODULE._parameter_case(
+                ErrorClient(), gateway, "top_p", 0.0,
+                accept_2xx_or_4xx=True)
 
     def test_manifest_file_hash_is_frozen(self):
         value = json.loads((

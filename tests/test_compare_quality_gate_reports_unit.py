@@ -49,10 +49,11 @@ def make_report(label: str) -> dict:
             facts["parameter"] = parameter
             facts["accepted"] = (
                 status_codes == [200] if accepted is None else accepted)
+            facts["endpoint_mode"] = "direct"
         if case_id in MODULE.MAX_TOKEN_FACTS:
             facts["requested_max_tokens"] = MODULE.MAX_TOKEN_FACTS[case_id]
         if case_id == "max_tokens_1":
-            finish_reasons = ["length"]
+            finish_reasons = ["stop"]
             completion_tokens = [1]
         if case_id in ("tool_calling", "function_calling"):
             facts["tool_calls"] = 1
@@ -235,6 +236,15 @@ def make_report(label: str) -> dict:
 
 
 class QualityComparisonTest(unittest.TestCase):
+
+    def test_semantic_contract_registry_covers_every_frozen_case(self):
+        self.assertEqual(MODULE._contract_registry_reasons(MANIFEST), [])
+        mutated = copy.deepcopy(MANIFEST)
+        mutated["cases"].append({"id": "unvalidated_case"})
+        self.assertIn(
+            "semantic contract registry does not cover all cases",
+            MODULE._contract_registry_reasons(mutated),
+        )
 
     def test_identical_qualified_reports_pass_quality_only(self):
         result = MODULE.compare_reports(
@@ -473,7 +483,7 @@ class QualityComparisonTest(unittest.TestCase):
             result["reasons"],
         )
 
-    def test_max_tokens_one_accepts_length_but_rejects_overrun(self):
+    def test_max_tokens_one_requires_natural_stop_and_exact_usage(self):
         baseline = make_report("baseline")
         candidate = make_report("candidate")
         self.assertTrue(MODULE.compare_reports(
@@ -481,12 +491,36 @@ class QualityComparisonTest(unittest.TestCase):
 
         case = next(row for row in candidate["cases"]
                     if row["id"] == "max_tokens_1")
-        case["observation"]["completion_tokens"] = [2]
+        case["observation"]["finish_reasons"] = ["length"]
         result = MODULE.compare_reports(baseline, candidate)
         self.assertFalse(result["qualified"])
         self.assertIn(
-            "candidate: case max_tokens_1: max_tokens=1 enforcement "
+            "candidate: case max_tokens_1: max_tokens=1 natural-stop "
             "evidence differs", result["reasons"])
+
+    def test_gateway_top_p_zero_rejection_fails_closed(self):
+        baseline = make_report("baseline")
+        candidate = make_report("candidate")
+        for report in (baseline, candidate):
+            report["runtime"]["endpoint_mode"] = "gateway"
+            case = next(
+                row for row in report["cases"] if row["id"] == "top_p_0")
+            case["observation"]["status_codes"] = [400]
+            case["observation"]["prompt_tokens"] = []
+            case["observation"]["cached_tokens"] = []
+            case["observation"]["completion_tokens"] = []
+            case["observation"]["finish_reasons"] = []
+            case["observation"]["facts"].update({
+                "accepted": False,
+                "endpoint_mode": "gateway",
+                "structured_error": True,
+                "post_error_health": True,
+            })
+        result = MODULE.compare_reports(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertIn(
+            "baseline: case top_p_0: top_p=0 status is invalid for endpoint "
+            "mode", result["reasons"])
 
     def test_cross_image_cached_tokens_must_be_zero(self):
         baseline = make_report("baseline")
