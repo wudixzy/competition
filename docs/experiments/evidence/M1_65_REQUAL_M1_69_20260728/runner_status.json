@@ -1,0 +1,35 @@
+{
+  "artifacts": {
+    "benchmark_sha256": "318aa20bc7799cb601b03059ae91e3772be7fe6583b0955c99dc8e10d8bd87cb",
+    "qualification_sha256": "d4a372cf24798ee885353ed3261b4d71b6d48d1a62576671caf00bcc62ddc637",
+    "runtime_identity_sha256": "b664b8050f79f3f6f8d3cb1a7613e20ca775e2390ae7dba75150dd7e25942081",
+    "service_postflight_sha256": "55bca6062f652cb97df087df040e2ce21d9d9d22b39ac28fa55457460b90c2b6"
+  },
+  "gates": {
+    "benchmark": 0,
+    "cleanup": 0,
+    "fatal_scan": 0,
+    "preflight_after": 0,
+    "preflight_before": 0,
+    "preflight_comparison": 0,
+    "qualification": 0,
+    "runtime_identity": 0,
+    "service_postflight": 0,
+    "timeout_scan": 0
+  },
+  "instance": "ssh-73ca29ba",
+  "last_stage": "completed",
+  "limits": {
+    "relative_l2": 1e-05,
+    "saving_ms": 0.02,
+    "sequence_steps": 500,
+    "speedup": 1.25
+  },
+  "physical_gpu": 1,
+  "production_promotion_authorized": false,
+  "returncode": 0,
+  "schema": "bi100-gdn-combined-qk-norm-runner-v1",
+  "source_branch": "",
+  "source_revision": "37001edff643d98bf41bf4a52e0a145329003315",
+  "version": 1
+}

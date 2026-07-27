@@ -1,0 +1,153 @@
+{
+  "files": {
+    "api_server": {
+      "generated": false,
+      "same": true
+    },
+    "bi100_env": {
+      "generated": false,
+      "same": true
+    },
+    "bi100_profile": {
+      "generated": false,
+      "same": true
+    },
+    "block_major_kv_cache": {
+      "generated": false,
+      "same": true
+    },
+    "block_major_kv_extension": {
+      "generated": false,
+      "same": true
+    },
+    "block_manager": {
+      "generated": true,
+      "same": true
+    },
+    "block_table": {
+      "generated": false,
+      "same": true
+    },
+    "cache_engine": {
+      "generated": true,
+      "same": true
+    },
+    "cache_trace_outputs": {
+      "generated": true,
+      "same": true
+    },
+    "chat_utils": {
+      "generated": false,
+      "same": true
+    },
+    "cli_args": {
+      "generated": false,
+      "same": true
+    },
+    "content_cache": {
+      "generated": false,
+      "same": true
+    },
+    "cpu_gpu_block_allocator": {
+      "generated": false,
+      "same": true
+    },
+    "evictor": {
+      "generated": false,
+      "same": true
+    },
+    "gdn_prefix": {
+      "generated": false,
+      "same": true
+    },
+    "mamba_cache": {
+      "generated": false,
+      "same": true
+    },
+    "model_runner": {
+      "generated": true,
+      "same": true
+    },
+    "moe_config": {
+      "generated": false,
+      "same": true
+    },
+    "paged_attention": {
+      "generated": false,
+      "same": true
+    },
+    "prefix_caching_block": {
+      "generated": false,
+      "same": true
+    },
+    "protocol": {
+      "generated": false,
+      "same": true
+    },
+    "reasoning_abs": {
+      "generated": false,
+      "same": true
+    },
+    "reasoning_init": {
+      "generated": false,
+      "same": true
+    },
+    "reasoning_qwen3": {
+      "generated": false,
+      "same": true
+    },
+    "scheduler": {
+      "generated": false,
+      "same": true
+    },
+    "sequence": {
+      "generated": false,
+      "same": true
+    },
+    "serving_chat": {
+      "generated": false,
+      "same": true
+    },
+    "tool_parser": {
+      "generated": false,
+      "same": true
+    },
+    "transformers_qwen3_5_config": {
+      "generated": false,
+      "same": true
+    },
+    "transformers_qwen3_5_init": {
+      "generated": false,
+      "same": true
+    },
+    "transformers_qwen3_5_moe_init": {
+      "generated": false,
+      "same": true
+    },
+    "vllm_model": {
+      "generated": false,
+      "same": true
+    },
+    "worker": {
+      "generated": true,
+      "same": true
+    },
+    "xformers_backend": {
+      "generated": false,
+      "same": true
+    }
+  },
+  "fixed_source_identity": {
+    "block_manager_base_sha256": true,
+    "cache_trace_patcher_sha256": true,
+    "installer_sha256": true,
+    "offline_metadata_normalizer_sha256": true
+  },
+  "qualified": true,
+  "reasons": [],
+  "runtime_site_packages": "/root/m1-69-runtime-37001ed/site-packages",
+  "runtime_tree_sha256": "9cb9bf5b21260826372d8f9496a23bc501cb4052ce7c701dbc401be0952f6549",
+  "schema": "bi100-bare-host-runtime-identity-v1",
+  "source_revision": "37001edff643d98bf41bf4a52e0a145329003315",
+  "version": 1
+}

@@ -1,0 +1,107 @@
+{
+  "config": {
+    "device": "cuda:0",
+    "fixed_seeds": [
+      20260715,
+      20260727
+    ],
+    "iterations": 500,
+    "random_scales": [
+      0.001,
+      0.05,
+      0.5,
+      2.0
+    ],
+    "repeats": 9,
+    "sequence_seed": 20260729,
+    "sequence_steps": 500,
+    "warmup": 50
+  },
+  "fixed": {
+    "20260715": {
+      "mapped": {
+        "exact": true,
+        "finite": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "normalized": {
+        "exact": true,
+        "finite": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0
+      }
+    },
+    "20260727": {
+      "mapped": {
+        "exact": true,
+        "finite": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0
+      },
+      "normalized": {
+        "exact": true,
+        "finite": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0
+      }
+    }
+  },
+  "schema": "bi100-gdn-combined-qk-norm-v1",
+  "sequence": {
+    "finite_steps": 500,
+    "mapped_exact_steps": 500,
+    "mapped_relative_l2": 0.0,
+    "max_mapped_abs": 0.0,
+    "max_mapped_relative_l2": 0.0,
+    "max_normalized_abs": 0.0,
+    "max_normalized_relative_l2": 0.0,
+    "normalized_exact_steps": 500,
+    "normalized_relative_l2": 0.0,
+    "steps": 500
+  },
+  "shape": {
+    "batch": 1,
+    "dtype": "torch.float16",
+    "head_dim": 128,
+    "key_heads": 4,
+    "value_heads": 8
+  },
+  "timings": {
+    "candidate": {
+      "median_ms": 0.05832255631685257,
+      "p10_ms": 0.058282263576984406,
+      "p90_ms": 0.058355994522571564,
+      "projected_30_layer_saving_ms": 1.5298470854759216,
+      "saving_ms": 0.05099490284919739,
+      "speedup_vs_reference": 1.8743598715418819,
+      "trials_ms": [
+        0.05834902077913284,
+        0.058282263576984406,
+        0.058322444558143616,
+        0.058355994522571564,
+        0.0583326518535614,
+        0.05832255631685257,
+        0.06338223069906235,
+        0.05831112712621689,
+        0.05831136554479599
+      ]
+    },
+    "reference": {
+      "median_ms": 0.10931745916604996,
+      "p10_ms": 0.10920697450637817,
+      "p90_ms": 0.10938436537981033,
+      "trials_ms": [
+        0.10920697450637817,
+        0.10931745916604996,
+        0.10922995209693909,
+        0.10931343585252762,
+        0.1092718243598938,
+        0.10938436537981033,
+        0.10940629243850708,
+        0.10936310887336731,
+        0.10932143777608871
+      ]
+    }
+  }
+}
