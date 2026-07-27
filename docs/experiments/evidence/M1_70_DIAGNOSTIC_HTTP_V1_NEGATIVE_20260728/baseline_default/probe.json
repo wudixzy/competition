@@ -1,0 +1,136 @@
+{
+  "base": "http://127.0.0.1:8018",
+  "case_count": 8,
+  "cases": [
+    {
+      "elapsed_s": 0.0028,
+      "evidence": {
+        "http_status": 200,
+        "max_model_len": 262144,
+        "served_model": "llm"
+      },
+      "name": "models_262144_contract",
+      "ok": true
+    },
+    {
+      "elapsed_s": 2.9454,
+      "evidence": {
+        "cached_tokens": 0,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "has_content": true,
+        "has_reasoning_content": false,
+        "http_status": 200,
+        "message_sha256": "45e10f46d2399af300395ebffd698efc417dd7568dcb1799355de655e064057b",
+        "prompt_tokens": 296,
+        "tool_call_count": 0
+      },
+      "name": "canonical_system_string",
+      "ok": true
+    },
+    {
+      "elapsed_s": 0.5859,
+      "error_sha256": "7691d47ce6906f4f7d824c15f6335d22b1c75bcdb592683d89c838b2cbcfa42e",
+      "error_type": "AssertionError",
+      "name": "single_system_text_parts",
+      "ok": false
+    },
+    {
+      "elapsed_s": 0.004,
+      "evidence": {
+        "http_status": 400,
+        "response_sha256": "7596c5558393167db437cc1512688709ce83c23943acb4f0a3e1039cc4df2308"
+      },
+      "name": "multiple_system_text_parts",
+      "ok": true
+    },
+    {
+      "elapsed_s": 20.3775,
+      "evidence": {
+        "cached_tokens": 0,
+        "completion_tokens": 8,
+        "finish_reason": "length",
+        "has_content": true,
+        "has_reasoning_content": false,
+        "http_status": 200,
+        "message_sha256": "52016e4e0b2e4f071b79bfe60b73d820f6597ec1ed7b5aad2b895565fbc1adc7",
+        "prompt_tokens": 366,
+        "tool_call_count": 0
+      },
+      "name": "one_image",
+      "ok": true
+    },
+    {
+      "elapsed_s": 1.2939,
+      "evidence": {
+        "exact_generation_match": true,
+        "first": {
+          "cached_tokens": 352,
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "has_content": true,
+          "has_reasoning_content": false,
+          "http_status": 200,
+          "message_sha256": "52016e4e0b2e4f071b79bfe60b73d820f6597ec1ed7b5aad2b895565fbc1adc7",
+          "prompt_tokens": 366,
+          "tool_call_count": 0
+        },
+        "image_count": 1,
+        "replay": {
+          "cached_tokens": 352,
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "has_content": true,
+          "has_reasoning_content": false,
+          "http_status": 200,
+          "message_sha256": "52016e4e0b2e4f071b79bfe60b73d820f6597ec1ed7b5aad2b895565fbc1adc7",
+          "prompt_tokens": 366,
+          "tool_call_count": 0
+        }
+      },
+      "name": "image_at_limit_replay",
+      "ok": true
+    },
+    {
+      "elapsed_s": 0.002,
+      "evidence": {
+        "http_status": 400,
+        "image_count": 2,
+        "response_sha256": "a64b85e0c8faed674c691a957d9cd57f40f78d837d0ed1032c544836281a91da"
+      },
+      "name": "over_limit_image_400",
+      "ok": true
+    },
+    {
+      "elapsed_s": 0.0027,
+      "evidence": {
+        "http_status": 200,
+        "response_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "name": "post_4xx_health",
+      "ok": true
+    }
+  ],
+  "config": {
+    "image_limit": 1,
+    "max_tokens": 8,
+    "seed": 20260728,
+    "system_parts_expected_status": 400,
+    "temperature": 0
+  },
+  "full_model_evaluated": false,
+  "model_path": "/root/shared-storage/models/Qwen/Qwen3.6-35B-A3B-diagnostic-4L-real",
+  "privacy": {
+    "contains_credentials": false,
+    "contains_image_url_or_bytes": false,
+    "contains_raw_request": false,
+    "contains_raw_response": false,
+    "contains_tool_schema": false,
+    "synthetic_inputs_only": true
+  },
+  "production_promotion_authorized": false,
+  "qualified": false,
+  "schema": "qwen36-diagnostic-compat-http-gate-v1",
+  "semantic_quality_evaluated": false,
+  "version": 1
+}

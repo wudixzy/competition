@@ -1,0 +1,53 @@
+{
+  "arm": "baseline_default",
+  "diagnosis": {
+    "baseline_multi_system_defect_reproduced": true,
+    "multiple_system_text_parts_actual_status": 400,
+    "single_system_text_parts_actual_status": 200,
+    "v1_harness_expectation_was_wrong": true,
+    "v1_harness_expected_single_status": 400
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_image_url_or_bytes": false,
+    "contains_raw_request": false,
+    "contains_raw_response": false,
+    "contains_request_body": false
+  },
+  "requests": [
+    {
+      "http_status": 200,
+      "name": "canonical_system_string"
+    },
+    {
+      "http_status": 200,
+      "name": "single_system_text_parts"
+    },
+    {
+      "http_status": 400,
+      "name": "multiple_system_text_parts"
+    },
+    {
+      "http_status": 200,
+      "name": "one_image"
+    },
+    {
+      "http_status": 200,
+      "name": "image_at_limit_first"
+    },
+    {
+      "http_status": 200,
+      "name": "image_at_limit_replay"
+    },
+    {
+      "http_status": 400,
+      "name": "over_limit_image"
+    }
+  ],
+  "schema": "qwen36-diagnostic-http-access-summary-v1",
+  "source_run": "/tmp/m1-70-http-ab-4b78815-20260728T20260727T171106Z",
+  "status_counts": {
+    "200": 5,
+    "400": 2
+  }
+}
