@@ -24,8 +24,10 @@ def _log(
     cache_trace: str = "0",
     cpu_kv_offload: str = "0",
     block_major_cpu_kv: str = "0",
+    kernel_profile: str = "submission",
 ) -> str:
     service_contract = dict(MODULE.FIXED_SERVICE_CONTRACT)
+    service_contract.update(MODULE.KERNEL_PROFILES[kernel_profile])
     service_contract.update({
         "accounting": mode,
         "cache_trace": cache_trace,
@@ -176,6 +178,42 @@ class HybridKvStartupGateTest(unittest.TestCase):
         self.assertEqual(contract["service"]["cache_trace"], "1")
         self.assertTrue(any(
             "cache_trace" in reason for reason in mismatch_reasons))
+
+    def test_strict_reference_kernel_profile_is_explicit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = pathlib.Path(directory)
+            (model_path / "config.json").write_text(
+                '{}\n', encoding="utf-8")
+            contract, reasons = MODULE._runtime_contract(
+                _log(
+                    model_path=str(model_path),
+                    kernel_profile="strict-reference",
+                ),
+                model_path,
+                mode="full_attention",
+                max_model_len=262_144,
+                block_size=16,
+                tensor_parallel_size=4,
+                expected_kernel_profile="strict-reference",
+            )
+            _, submission_reasons = MODULE._runtime_contract(
+                _log(
+                    model_path=str(model_path),
+                    kernel_profile="strict-reference",
+                ),
+                model_path,
+                mode="full_attention",
+                max_model_len=262_144,
+                block_size=16,
+                tensor_parallel_size=4,
+            )
+        self.assertEqual(reasons, [])
+        self.assertEqual(contract["service"]["moe_direct"], "0")
+        self.assertEqual(contract["service"]["gdn_packed"], "0")
+        self.assertTrue(any(
+            "moe_direct" in reason for reason in submission_reasons))
+        self.assertTrue(any(
+            "gdn_packed" in reason for reason in submission_reasons))
 
     def test_block_major_candidate_contract_and_rank_reports(self):
         with tempfile.TemporaryDirectory() as directory:
