@@ -166,6 +166,36 @@ class AgentWorkloadComparisonUnitTest(unittest.TestCase):
             "disallowed runtime environment" in reason
             for reason in report["reasons"]))
 
+    def test_combined_qk_is_the_only_allowed_kernel_profile_delta(self):
+        baseline = make_report("fine32")
+        candidate = make_report("fine32")
+        for report, profile in (
+                (baseline, "strict-reference"),
+                (candidate, "strict-reference-combined-qk")):
+            contract = report["runtime_contract"]["contract"]
+            contract["environment"] = (
+                MODULE.runtime_contract.service_environment(
+                    "/runtime/site-packages",
+                    gdn_cache_policy="fine32",
+                    gdn_restore_mode="direct",
+                    fused_prefill="0",
+                    kv_eviction_policy="lru",
+                    kernel_profile=profile,
+                ))
+            contract_sha = MODULE.runtime_contract.sha256_json(contract)
+            report["runtime_contract"]["sha256"] = contract_sha
+            report["runtime"]["runtime_contract_sha256"] = contract_sha
+        self.assertTrue(
+            MODULE.compare_reports(baseline, candidate)["qualified"])
+
+        contract = candidate["runtime_contract"]["contract"]
+        contract["environment"]["BI100_MOE_COREX_DIRECT_ROUTED"] = "1"
+        contract_sha = MODULE.runtime_contract.sha256_json(contract)
+        candidate["runtime_contract"]["sha256"] = contract_sha
+        candidate["runtime"]["runtime_contract_sha256"] = contract_sha
+        self.assertFalse(
+            MODULE.compare_reports(baseline, candidate)["qualified"])
+
     def test_privacy_declaration_fails_closed(self):
         baseline = make_report("fine32")
         candidate = make_report("admission64")

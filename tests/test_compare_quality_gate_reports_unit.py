@@ -306,6 +306,41 @@ class QualityComparisonTest(unittest.TestCase):
         self.assertFalse(MODULE.compare_reports(
             baseline, candidate)["qualified"])
 
+    def test_ab_may_enable_only_combined_qk_on_strict_reference(self):
+        baseline = make_report("baseline")
+        candidate = make_report("candidate")
+        for report, profile in (
+                (baseline, "strict-reference"),
+                (candidate, "strict-reference-combined-qk")):
+            contract = report["runtime_contract"]["contract"]
+            contract["environment"] = (
+                MODULE.runtime_contract.service_environment(
+                    "/runtime/site-packages",
+                    gdn_cache_policy="fine32",
+                    gdn_restore_mode="direct",
+                    fused_prefill="0",
+                    kv_eviction_policy="lru",
+                    kernel_profile=profile,
+                ))
+            report["runtime_contract"]["sha256"] = (
+                MODULE.runtime_contract.sha256_json(contract))
+            report["runtime"]["service_env_sha256"] = (
+                MODULE.runtime_contract.sha256_json(
+                    contract["environment"]))
+        self.assertTrue(MODULE.compare_reports(
+            baseline, candidate)["qualified"])
+
+        candidate["runtime_contract"]["contract"]["environment"][
+            "BI100_GDN_COREX_PACKED_DECODE"] = "1"
+        candidate["runtime_contract"]["sha256"] = (
+            MODULE.runtime_contract.sha256_json(
+                candidate["runtime_contract"]["contract"]))
+        candidate["runtime"]["service_env_sha256"] = (
+            MODULE.runtime_contract.sha256_json(
+                candidate["runtime_contract"]["contract"]["environment"]))
+        self.assertFalse(MODULE.compare_reports(
+            baseline, candidate)["qualified"])
+
     def test_ab_requires_same_source_overlay_and_instance(self):
         baseline = make_report("baseline")
         for field, value in (
