@@ -105,6 +105,8 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
             "--object-history-expected-status 200",
             "tool_http_gate.json",
             '"tool_http": read_rc("tool_http_gate.rc")',
+            '"streaming_contract_qualified": (',
+            '"streaming_equivalence_qualified": (',
             "bi100_stop_process_group",
             '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
             "--kill-after=90s 240s",

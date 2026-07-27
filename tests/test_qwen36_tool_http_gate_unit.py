@@ -93,11 +93,70 @@ def fake_request(
     return request
 
 
+def fake_stream_request(
+    *,
+    strict_false_supported: bool,
+    object_history_supported: bool,
+    object_output_drift: bool = False,
+):
+    request = fake_request(
+        strict_false_supported=strict_false_supported,
+        object_history_supported=object_history_supported,
+        object_output_drift=object_output_drift,
+    )
+
+    def stream(base, payload, timeout_s):
+        status, response = request(
+            "POST",
+            f"{base.rstrip('/')}/v1/chat/completions",
+            payload,
+            timeout_s=timeout_s,
+        )
+        if status != 200:
+            return status, {}
+        choice = response["choices"][0]
+        message = choice["message"]
+        usage = response["usage"]
+        prompt_tokens = usage["prompt_tokens"]
+        completion_tokens = usage["completion_tokens"]
+        details = usage.get("prompt_tokens_details") or {}
+        tool_calls = []
+        for call in message.get("tool_calls") or []:
+            function = call["function"]
+            arguments = function.get("arguments", {})
+            if isinstance(arguments, str):
+                arguments = json.loads(arguments)
+            tool_calls.append({
+                "name": function["name"],
+                "arguments": arguments,
+            })
+        return 200, {
+            "chunks": 3,
+            "done": 1,
+            "usage_blocks": 1,
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+                "prompt_tokens_details": {
+                    "cached_tokens": details.get("cached_tokens", 0),
+                },
+            },
+            "content": message.get("content") or "",
+            "reasoning_content": message.get("reasoning_content") or "",
+            "finish_reasons": [choice["finish_reason"]],
+            "tool_calls": tool_calls,
+        }
+
+    return stream
+
+
 def run_report(
     strict_false_supported: bool,
     object_history_supported: bool,
     *,
     object_output_drift: bool = False,
+    stream_object_output_drift: bool = False,
 ) -> dict:
     with mock.patch.object(
             GATE,
@@ -112,6 +171,11 @@ def run_report(
             30.0,
             200 if strict_false_supported else 400,
             200 if object_history_supported else 400,
+            stream_request=fake_stream_request(
+                strict_false_supported=strict_false_supported,
+                object_history_supported=object_history_supported,
+                object_output_drift=stream_object_output_drift,
+            ),
         )
 
 
@@ -142,7 +206,7 @@ class Qwen36ToolHttpGateTest(unittest.TestCase):
     def test_baseline_reproduces_two_compatibility_400s(self):
         report = run_report(False, False)
         self.assertTrue(report["qualified"], report)
-        self.assertEqual(report["case_count"], 9)
+        self.assertEqual(report["case_count"], 13)
         cases = {row["name"]: row for row in report["cases"]}
         self.assertEqual(
             cases["function_tool_strict_false"]["evidence"][
@@ -154,6 +218,22 @@ class Qwen36ToolHttpGateTest(unittest.TestCase):
                 "http_status"],
             400,
         )
+        self.assertEqual(
+            cases["stream_function_tool_strict_false"]["evidence"][
+                "http_status"],
+            400,
+        )
+        self.assertEqual(
+            cases["stream_tool_arguments_json_object"]["evidence"][
+                "http_status"],
+            400,
+        )
+        self.assertTrue(report["streaming_contract"]["qualified"])
+        self.assertEqual(
+            report["streaming_contract"]["successful_sse_count"], 2)
+        self.assertFalse(
+            report["streaming_contract"][
+                "accepted_equivalence_qualified"])
         self.assertEqual(
             cases["post_4xx_health"]["evidence"]["http_status"], 200)
 
@@ -167,6 +247,22 @@ class Qwen36ToolHttpGateTest(unittest.TestCase):
         self.assertTrue(strict["default_generation_exact"])
         self.assertEqual(history["http_status"], 200)
         self.assertTrue(history["string_generation_exact"])
+        stream_strict = cases[
+            "stream_function_tool_strict_false"]["evidence"]
+        stream_history = cases[
+            "stream_tool_arguments_json_object"]["evidence"]
+        self.assertEqual(stream_strict["http_status"], 200)
+        self.assertTrue(
+            stream_strict["default_stream_generation_exact"])
+        self.assertEqual(stream_history["http_status"], 200)
+        self.assertTrue(
+            stream_history["string_stream_generation_exact"])
+        self.assertTrue(report["streaming_contract"]["qualified"])
+        self.assertEqual(
+            report["streaming_contract"]["successful_sse_count"], 4)
+        self.assertTrue(
+            report["streaming_contract"][
+                "accepted_equivalence_qualified"])
         for name in (
                 "tool_arguments_invalid_json_400",
                 "function_tool_strict_true_400",
@@ -178,6 +274,7 @@ class Qwen36ToolHttpGateTest(unittest.TestCase):
         self.assertNotIn(GATE.USER_TEXT, serialized)
         self.assertNotIn("synthetic_lookup", serialized)
         self.assertNotIn('{"key":"synthetic"}', serialized)
+        self.assertNotIn("synthetic-tool-output", serialized)
 
     def test_equivalent_object_output_drift_fails_closed(self):
         report = run_report(
@@ -192,6 +289,40 @@ class Qwen36ToolHttpGateTest(unittest.TestCase):
             ["tool_arguments_json_object"],
         )
 
+    def test_streaming_equivalent_object_output_drift_fails_closed(self):
+        report = run_report(
+            True,
+            True,
+            stream_object_output_drift=True,
+        )
+        self.assertFalse(report["qualified"])
+        failed = [case for case in report["cases"] if not case["ok"]]
+        self.assertEqual(
+            [case["name"] for case in failed],
+            ["stream_tool_arguments_json_object"],
+        )
+        self.assertFalse(
+            report["streaming_contract"][
+                "accepted_equivalence_qualified"])
+
+    def test_stream_summary_rejects_malformed_usage(self):
+        with self.assertRaisesRegex(
+                AssertionError, "total_tokens is inconsistent"):
+            GATE._stream_summary({
+                "chunks": 3,
+                "done": 1,
+                "usage_blocks": 1,
+                "usage": {
+                    "prompt_tokens": 48,
+                    "completion_tokens": 8,
+                    "total_tokens": 57,
+                },
+                "content": "synthetic output",
+                "reasoning_content": "",
+                "finish_reasons": ["length"],
+                "tool_calls": [],
+            })
+
     def test_ab_comparison_qualifies_without_promotion(self):
         result = COMPARE.compare(
             run_report(False, False),
@@ -203,6 +334,14 @@ class Qwen36ToolHttpGateTest(unittest.TestCase):
             result["checks"]["strict_false_http_fix_qualified"])
         self.assertTrue(
             result["checks"]["object_history_http_fix_qualified"])
+        self.assertTrue(
+            result["checks"][
+                "streaming_strict_false_http_fix_qualified"])
+        self.assertTrue(
+            result["checks"][
+                "streaming_object_history_http_fix_qualified"])
+        self.assertTrue(
+            result["checks"]["streaming_contract_qualified"])
         self.assertFalse(result["production_promotion_authorized"])
 
     def test_unclassified_4xx_or_output_drift_rejects_comparison(self):
@@ -225,6 +364,19 @@ class Qwen36ToolHttpGateTest(unittest.TestCase):
         self.assertFalse(result["qualified"])
         self.assertTrue(any(
             "function_tool_default changed" in reason
+            for reason in result["reasons"]))
+
+        changed_stream = copy.deepcopy(candidate)
+        cases = {
+            case["name"]: case for case in changed_stream["cases"]
+        }
+        cases["stream_function_tool_default"]["evidence"][
+            "semantic_output_sha256"] = "0" * 64
+        result = COMPARE.compare(
+            baseline, changed_stream, attribution())
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "stream_function_tool_default changed" in reason
             for reason in result["reasons"]))
 
         wrong_reason = attribution()

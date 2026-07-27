@@ -12,9 +12,9 @@ from typing import Any
 
 
 Json = dict[str, Any]
-SCHEMA = "qwen36-diagnostic-tool-http-ab-v1"
-VERSION = 1
-GATE_SCHEMA = "qwen36-diagnostic-tool-http-gate-v1"
+SCHEMA = "qwen36-diagnostic-tool-http-ab-v2"
+VERSION = 2
+GATE_SCHEMA = "qwen36-diagnostic-tool-http-gate-v2"
 ATTRIBUTION_SCHEMA = "bi100-api-4xx-attribution-v3"
 EXPECTED_4XX_REASONS = {
     "invalid_tool_arguments_json": 1,
@@ -27,6 +27,10 @@ CASE_NAMES = (
     "function_tool_strict_false",
     "tool_arguments_json_string",
     "tool_arguments_json_object",
+    "stream_function_tool_default",
+    "stream_function_tool_strict_false",
+    "stream_tool_arguments_json_string",
+    "stream_tool_arguments_json_object",
     "tool_arguments_invalid_json_400",
     "function_tool_strict_true_400",
     "tool_choice_required_400",
@@ -78,6 +82,18 @@ def _generation_contract(value: Json) -> tuple[Any, ...]:
     )
 
 
+def _stream_generation_contract(value: Json) -> tuple[Any, ...]:
+    return (
+        value.get("semantic_output_sha256"),
+        value.get("finish_reason"),
+        value.get("prompt_tokens"),
+        value.get("completion_tokens"),
+        value.get("has_content"),
+        value.get("has_reasoning_content"),
+        value.get("tool_call_count"),
+    )
+
+
 def compare(
     baseline: Json,
     candidate: Json,
@@ -102,7 +118,9 @@ def compare(
 
     for name in (
             "function_tool_strict_false",
-            "tool_arguments_json_object"):
+            "tool_arguments_json_object",
+            "stream_function_tool_strict_false",
+            "stream_tool_arguments_json_object"):
         if _status(baseline_cases, name) != 400:
             reasons.append(f"baseline {name} did not reproduce HTTP 400")
         if _status(candidate_cases, name) != 200:
@@ -118,6 +136,18 @@ def compare(
             "tool_arguments_json_object",
     ).get("string_generation_exact") is not True:
         reasons.append("candidate object-history generation is not exact")
+    if _evidence(
+            candidate_cases,
+            "stream_function_tool_strict_false",
+    ).get("default_stream_generation_exact") is not True:
+        reasons.append(
+            "candidate streaming strict=false generation is not exact")
+    if _evidence(
+            candidate_cases,
+            "stream_tool_arguments_json_object",
+    ).get("string_stream_generation_exact") is not True:
+        reasons.append(
+            "candidate streaming object-history generation is not exact")
 
     for name in (
             "function_tool_default",
@@ -126,6 +156,25 @@ def compare(
         right = _evidence(candidate_cases, name)
         if _generation_contract(left) != _generation_contract(right):
             reasons.append(f"{name} changed across runtime overlays")
+    for name in (
+            "stream_function_tool_default",
+            "stream_tool_arguments_json_string"):
+        left = _evidence(baseline_cases, name)
+        right = _evidence(candidate_cases, name)
+        if _stream_generation_contract(
+                left) != _stream_generation_contract(right):
+            reasons.append(f"{name} changed across runtime overlays")
+
+    baseline_streaming = baseline.get("streaming_contract") or {}
+    candidate_streaming = candidate.get("streaming_contract") or {}
+    if baseline_streaming.get("qualified") is not True:
+        reasons.append("baseline streaming contract is not qualified")
+    if candidate_streaming.get("qualified") is not True:
+        reasons.append("candidate streaming contract is not qualified")
+    if candidate_streaming.get(
+            "accepted_equivalence_qualified") is not True:
+        reasons.append(
+            "candidate streaming accepted equivalence is not qualified")
 
     for name in (
             "tool_arguments_invalid_json_400",
@@ -179,6 +228,40 @@ def compare(
                 candidate_cases,
                 "tool_arguments_json_object",
             ).get("string_generation_exact") is True
+        ),
+        "streaming_strict_false_http_fix_qualified": (
+            _status(
+                baseline_cases,
+                "stream_function_tool_strict_false",
+            ) == 400
+            and _status(
+                candidate_cases,
+                "stream_function_tool_strict_false",
+            ) == 200
+            and _evidence(
+                candidate_cases,
+                "stream_function_tool_strict_false",
+            ).get("default_stream_generation_exact") is True
+        ),
+        "streaming_object_history_http_fix_qualified": (
+            _status(
+                baseline_cases,
+                "stream_tool_arguments_json_object",
+            ) == 400
+            and _status(
+                candidate_cases,
+                "stream_tool_arguments_json_object",
+            ) == 200
+            and _evidence(
+                candidate_cases,
+                "stream_tool_arguments_json_object",
+            ).get("string_stream_generation_exact") is True
+        ),
+        "streaming_contract_qualified": (
+            baseline_streaming.get("qualified") is True
+            and candidate_streaming.get("qualified") is True
+            and candidate_streaming.get(
+                "accepted_equivalence_qualified") is True
         ),
         "candidate_4xx_attribution_qualified": (
             candidate_attribution.get("qualified") is True

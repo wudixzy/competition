@@ -799,6 +799,11 @@ report = {
     "tool_http_summary": {
         "qualified": tool_http.get("qualified"),
         "case_count": tool_http.get("case_count"),
+        "streaming_contract_qualified": (
+            tool_http.get("streaming_contract", {}).get("qualified")),
+        "streaming_equivalence_qualified": (
+            tool_http.get("streaming_contract", {}).get(
+                "accepted_equivalence_qualified")),
         "strict_false_expected_status": (
             tool_http.get("config", {}).get(
                 "strict_false_expected_status")),
