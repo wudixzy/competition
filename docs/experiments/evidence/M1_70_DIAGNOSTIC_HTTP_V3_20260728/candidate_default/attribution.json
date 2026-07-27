@@ -1,0 +1,52 @@
+{
+  "attributed_count": 1,
+  "attribution_delta": 0,
+  "by_access_code": {
+    "400": 1
+  },
+  "by_attributed_code": {
+    "400": 1
+  },
+  "by_endpoint": {
+    "chat": 1
+  },
+  "by_reason": {
+    "image_count_limit": 1
+  },
+  "chat_4xx_access_count": 1,
+  "classified": true,
+  "complete": true,
+  "malformed_marker_count": 0,
+  "privacy": {
+    "contains_multimodal_url_or_bytes": false,
+    "contains_raw_log_lines": false,
+    "contains_request_content": false,
+    "contains_response_content": false,
+    "contains_tool_schema": false
+  },
+  "qualified": true,
+  "request_shapes": [
+    {
+      "assistant_tool_msgs": 0,
+      "choice": "none",
+      "count": 1,
+      "image_data": 2,
+      "image_other": 0,
+      "image_remote": 0,
+      "images": 2,
+      "messages": 1,
+      "n": 1,
+      "stream": 0,
+      "strict_false": 0,
+      "strict_true": 0,
+      "system_other_parts": 0,
+      "system_part_msgs": 0,
+      "system_text_parts": 0,
+      "systems": 0,
+      "tool_msgs": 0,
+      "tools": 1
+    }
+  ],
+  "schema": "bi100-api-4xx-attribution-v3",
+  "version": 3
+}

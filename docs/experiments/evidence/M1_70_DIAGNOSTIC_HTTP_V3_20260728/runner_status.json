@@ -1,0 +1,39 @@
+{
+  "arm_ports": {
+    "baseline_default": 8018,
+    "candidate_default": 8019,
+    "candidate_image2": 8020
+  },
+  "artifact_sha256": {
+    "comparison": "002bbbb1527c24df137082a4f3733284cdc6329eb54c2443dd686469692d4045",
+    "final_postflight": "234fda76dce5399cec28903ed03d9ca4dccc9c98916e47d3e51e2c1331b2e54a",
+    "runtime_pair": "d3f51780093a7e5a621dcce02ae2ed43fac664656ef0651f8a5220e99782ca7c"
+  },
+  "default_image_limit_change_authorized": false,
+  "full_model_evaluated": false,
+  "gates": {
+    "baseline_default": 0,
+    "candidate_default": 0,
+    "candidate_image2": 0,
+    "checkpoint_verify": 0,
+    "cleanup": 0,
+    "comparison": 0,
+    "fatal_scan": 0,
+    "final_postflight": 0,
+    "final_preflight": 0,
+    "final_preflight_comparison": 0,
+    "initial_preflight": 0,
+    "runtime_pair": 0,
+    "timeout_scan": 0
+  },
+  "instance": "ssh-73ca29ba",
+  "physical_gpu": 1,
+  "production_promotion_authorized": false,
+  "qualified": true,
+  "returncode": 0,
+  "schema": "bi100-m1-70-diagnostic-http-ab-runner-v3",
+  "semantic_quality_evaluated": false,
+  "source_branch": "",
+  "source_revision": "dfba141669518f554ed72f9372526b7de6bdb0b2",
+  "version": 3
+}

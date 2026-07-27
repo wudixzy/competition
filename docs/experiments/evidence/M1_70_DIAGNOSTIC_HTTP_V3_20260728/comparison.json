@@ -1,0 +1,36 @@
+{
+  "arm_contract": {
+    "baseline_default": {
+      "image_limit": 1,
+      "multiple_system_parts_expected_status": 400
+    },
+    "candidate_default": {
+      "image_limit": 1,
+      "multiple_system_parts_expected_status": 200
+    },
+    "candidate_image2": {
+      "image_limit": 2,
+      "multiple_system_parts_expected_status": 200
+    }
+  },
+  "checks": {
+    "candidate_4xx_v3_attribution_qualified": true,
+    "explicit_image_two_structural_qualified": true,
+    "one_image_non_regression_qualified": true,
+    "system_text_parts_http_fix_qualified": true
+  },
+  "default_image_limit_change_authorized": false,
+  "full_model_evaluated": false,
+  "privacy": {
+    "contains_credentials": false,
+    "contains_image_url_or_bytes": false,
+    "contains_raw_request": false,
+    "contains_raw_response": false
+  },
+  "production_promotion_authorized": false,
+  "qualified": true,
+  "reasons": [],
+  "schema": "qwen36-diagnostic-compat-http-comparison-v2",
+  "semantic_quality_evaluated": false,
+  "version": 2
+}
