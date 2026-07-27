@@ -1,4 +1,6 @@
 import argparse
+import contextlib
+import io
 import os
 import pathlib
 import socket
@@ -15,6 +17,11 @@ import bi100_preflight
 
 
 class Bi100PreflightUnitTest(unittest.TestCase):
+    def setUp(self):
+        bi100_preflight._ACTIVE_CHILD = None
+
+    def tearDown(self):
+        bi100_preflight._ACTIVE_CHILD = None
 
     def test_cuda_parse_gpus_allows_single_gpu_and_ignores_empty_parts(self):
         self.assertEqual(bi100_preflight.parse_gpus("0, 2,,3"), [0, 2, 3])
@@ -108,6 +115,150 @@ class Bi100PreflightUnitTest(unittest.TestCase):
             call(4343, bi100_preflight.signal.SIGTERM),
             call(4343, bi100_preflight.signal.SIGKILL),
         ])
+
+    def test_parent_termination_cleans_and_reaps_child_group(self):
+        process = MagicMock()
+        process.pid = 4444
+        process.poll.return_value = None
+        process.communicate.side_effect = [
+            bi100_preflight.ParentTermination(
+                bi100_preflight.signal.SIGTERM),
+            ("", ""),
+        ]
+        with (
+            patch.object(
+                bi100_preflight.subprocess, "Popen",
+                return_value=process,
+            ),
+            patch.object(bi100_preflight.os, "killpg") as killpg,
+            self.assertRaises(bi100_preflight.ParentTermination),
+        ):
+            bi100_preflight.probe_gpu(0, 25, 1024)
+
+        killpg.assert_called_once_with(
+            4444, bi100_preflight.signal.SIGTERM)
+        self.assertEqual(process.communicate.call_args_list, [
+            call(timeout=25),
+            call(timeout=bi100_preflight.TERM_GRACE_S),
+        ])
+
+    def test_parent_termination_uses_kill_after_full_term_grace(self):
+        process = MagicMock()
+        process.pid = 4545
+        process.poll.return_value = None
+        process.communicate.side_effect = [
+            bi100_preflight.ParentTermination(
+                bi100_preflight.signal.SIGINT),
+            subprocess.TimeoutExpired(["python3"], 60),
+            ("", ""),
+        ]
+        with (
+            patch.object(
+                bi100_preflight.subprocess, "Popen",
+                return_value=process,
+            ),
+            patch.object(bi100_preflight.os, "killpg") as killpg,
+            self.assertRaises(bi100_preflight.ParentTermination),
+        ):
+            bi100_preflight.probe_gpu(2, 25, 1024)
+
+        self.assertEqual(killpg.call_args_list, [
+            call(4545, bi100_preflight.signal.SIGTERM),
+            call(4545, bi100_preflight.signal.SIGKILL),
+        ])
+        self.assertEqual(process.communicate.call_args_list, [
+            call(timeout=25),
+            call(timeout=bi100_preflight.TERM_GRACE_S),
+            call(timeout=bi100_preflight.KILL_GRACE_S),
+        ])
+
+    def test_parent_termination_during_timeout_cleanup_restarts_cleanup(self):
+        process = MagicMock()
+        process.pid = 4646
+        process.poll.return_value = None
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(["python3"], 25),
+            bi100_preflight.ParentTermination(
+                bi100_preflight.signal.SIGTERM),
+            ("", ""),
+        ]
+        with (
+            patch.object(
+                bi100_preflight.subprocess, "Popen",
+                return_value=process,
+            ),
+            patch.object(bi100_preflight.os, "killpg") as killpg,
+            self.assertRaises(bi100_preflight.ParentTermination),
+        ):
+            bi100_preflight.probe_gpu(1, 25, 1024)
+
+        self.assertEqual(killpg.call_args_list, [
+            call(4646, bi100_preflight.signal.SIGTERM),
+            call(4646, bi100_preflight.signal.SIGTERM),
+        ])
+        self.assertEqual(process.communicate.call_args_list, [
+            call(timeout=25),
+            call(timeout=bi100_preflight.TERM_GRACE_S),
+            call(timeout=bi100_preflight.TERM_GRACE_S),
+        ])
+        self.assertIsNone(bi100_preflight._ACTIVE_CHILD)
+
+    def test_signal_unblocked_after_spawn_still_cleans_saved_child(self):
+        process = MagicMock()
+        process.pid = 4747
+        process.poll.return_value = None
+        process.communicate.return_value = ("", "")
+        with (
+            patch.object(
+                bi100_preflight.subprocess, "Popen",
+                return_value=process,
+            ),
+            patch.object(
+                bi100_preflight.signal,
+                "pthread_sigmask",
+                side_effect=[
+                    set(),
+                    bi100_preflight.ParentTermination(
+                        bi100_preflight.signal.SIGTERM),
+                ],
+            ),
+            patch.object(bi100_preflight.os, "killpg") as killpg,
+            self.assertRaises(bi100_preflight.ParentTermination),
+        ):
+            bi100_preflight.probe_gpu(1, 25, 1024)
+
+        killpg.assert_called_once_with(
+            4747, bi100_preflight.signal.SIGTERM)
+        process.communicate.assert_called_once_with(
+            timeout=bi100_preflight.TERM_GRACE_S)
+        self.assertIsNone(bi100_preflight._ACTIVE_CHILD)
+
+    def test_main_reports_parent_termination_after_child_cleanup(self):
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["bi100_preflight.py", "--gpus", "0"],
+            ),
+            patch.object(
+                bi100_preflight,
+                "probe_gpu",
+                side_effect=bi100_preflight.ParentTermination(
+                    bi100_preflight.signal.SIGTERM),
+            ),
+            patch.object(
+                bi100_preflight.signal,
+                "getsignal",
+                return_value=bi100_preflight.signal.SIG_DFL,
+            ),
+            patch.object(bi100_preflight.signal, "signal") as set_signal,
+            contextlib.redirect_stderr(io.StringIO()) as stderr,
+        ):
+            rc = bi100_preflight.main()
+
+        self.assertEqual(rc, 143)
+        self.assertIn("child_cleanup_ok=true", stderr.getvalue())
+        self.assertGreaterEqual(set_signal.call_count, 4)
 
     def test_cuda_corex_env_prepends_paths_without_mutating_os_environ(self):
         with patch.dict(os.environ, {

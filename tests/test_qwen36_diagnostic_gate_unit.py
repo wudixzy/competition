@@ -107,6 +107,7 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
             '"tool_http": read_rc("tool_http_gate.rc")',
             "bi100_stop_process_group",
             '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
+            "--kill-after=90s 240s",
             "service_postflight_gate.py",
             "compare_bi100_preflights.py",
             '--expected-gpus "$GPU_LIST"',

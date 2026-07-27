@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -209,6 +210,27 @@ class Qwen36DiagnosticComponentGateUnitTest(unittest.TestCase):
 
 
 class Qwen36DiagnosticComponentStaticTest(unittest.TestCase):
+    def test_runner_rejects_unsafe_instance_before_gpu_work(self) -> None:
+        run_root = Path(tempfile.gettempdir()) / "m1-83-invalid-instance"
+        result = subprocess.run(
+            [
+                str(
+                    ROOT
+                    / "scripts"
+                    / "run_qwen36_diagnostic_component_gates.sh"
+                ),
+                "0",
+                "unsafe/instance",
+                str(run_root),
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("short non-sensitive label", result.stderr)
+
     def test_runner_covers_target_shape_components(self) -> None:
         script = (
             ROOT / "scripts"
@@ -228,6 +250,54 @@ class Qwen36DiagnosticComponentStaticTest(unittest.TestCase):
             self.assertIn(marker, script)
         self.assertNotIn("computility-run.yaml", script)
         self.assertNotIn("git push", script)
+
+    def test_runner_scopes_probe_lifecycle_and_fails_closed(self) -> None:
+        script = (
+            ROOT / "scripts"
+            / "run_qwen36_diagnostic_component_gates.sh"
+        ).read_text(encoding="utf-8")
+        for marker in (
+            'source "$ROOT/scripts/lib/process_group.sh"',
+            "setsid --fork --wait",
+            "--kill-after=60s",
+            "timeout --signal=TERM --kill-after=90s 180s",
+            '"$ACTIVE_PGID" "" 60 20',
+            'wait "$ACTIVE_LAUNCHER_PID"',
+            '"/proc/$ACTIVE_PID/stat"',
+            "probe process-group leader identity changed",
+            "probe process-group id was reused",
+            "service_postflight_gate.py",
+            "compare_bi100_preflights.py",
+            "--max-free-memory-drop-bytes 1073741824",
+            "scan_fatal_logs",
+            "scan_timeout_rcs",
+            "qwen36-diagnostic-component-runner-v2",
+            "PREFLIGHT_ATTEMPTED=1",
+        ):
+            self.assertIn(marker, script)
+        self.assertIn(
+            'if [[ $rc -ne 0 ]]; then\n'
+            '        abort_after_probe_failure "$name failed (rc=$rc)"',
+            script,
+        )
+        self.assertNotIn("pkill", script)
+
+        postflight = script[
+            script.index("perform_postflight() {"):
+            script.index("\ncleanup() {")
+        ]
+        cleanup = postflight.index("stop_active_probe")
+        residue = postflight.index("run_service_postflight")
+        gpu_after = postflight.index(
+            "run_physical_preflight preflight_after")
+        comparison = postflight.index("run_preflight_comparison")
+        fatal_scan = postflight.index("scan_fatal_logs")
+        timeout_scan = postflight.index("scan_timeout_rcs")
+        self.assertLess(cleanup, residue)
+        self.assertLess(residue, gpu_after)
+        self.assertLess(gpu_after, comparison)
+        self.assertLess(comparison, fatal_scan)
+        self.assertLess(fatal_scan, timeout_scan)
 
     def test_benchmarks_expose_fail_closed_numerics(self) -> None:
         moe = (

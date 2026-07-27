@@ -150,7 +150,7 @@ stop_service() {
 }
 
 run_service_postflight() {
-    timeout --signal=TERM --kill-after=70s 240s \
+    timeout --signal=TERM --kill-after=90s 240s \
         env -u CUDA_VISIBLE_DEVICES PYTHONPATH="$ROOT/tests" \
         python3 "$ROOT/tests/service_postflight_gate.py" \
         --gpus "$GPU_LIST" \
@@ -323,7 +323,7 @@ else
     exit 4
 fi
 
-if timeout --signal=TERM --kill-after=70s 240s \
+if timeout --signal=TERM --kill-after=90s 240s \
         python3 "$ROOT/tests/verify_bare_host_runtime_identity.py" \
         --source-root "$ROOT" \
         --runtime-site-packages "$BI100_RUNTIME_SITE_PACKAGES" \

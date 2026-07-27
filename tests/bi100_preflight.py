@@ -29,6 +29,21 @@ COREX_PYTHON_PATHS = [
 ]
 TERM_GRACE_S = 60.0
 KILL_GRACE_S = 20.0
+_ACTIVE_CHILD: subprocess.Popen[str] | None = None
+
+
+class ParentTermination(BaseException):
+    def __init__(self, signum: int) -> None:
+        super().__init__(signum)
+        self.signum = signum
+
+
+def _parent_signal_handler(signum: int, _frame: Any) -> None:
+    # Ignore repeated termination while probe_gpu gives the child its full
+    # graceful shutdown window.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    raise ParentTermination(signum)
 
 
 def _prepend_env_list(env: dict[str, str], key: str, values: list[str]) -> None:
@@ -65,7 +80,73 @@ def _last_progress_stage(value: str) -> str | None:
     return None
 
 
+def _cleanup_child_group(process: subprocess.Popen[str]) -> bool:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    except OSError:
+        process.terminate()
+    try:
+        process.communicate(timeout=TERM_GRACE_S)
+        return True
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            process.kill()
+        try:
+            process.communicate(timeout=KILL_GRACE_S)
+            return True
+        except subprocess.TimeoutExpired:
+            return False
+
+
+def _cleanup_active_child() -> bool:
+    global _ACTIVE_CHILD
+    process = _ACTIVE_CHILD
+    if process is None:
+        return True
+    if process.poll() is not None:
+        _ACTIVE_CHILD = None
+        return True
+    cleaned = _cleanup_child_group(process)
+    if cleaned:
+        _ACTIVE_CHILD = None
+    return cleaned
+
+
+def _spawn_probe_child(
+    command: list[str],
+    env: dict[str, str],
+) -> subprocess.Popen[str]:
+    global _ACTIVE_CHILD
+    if _ACTIVE_CHILD is not None:
+        if _ACTIVE_CHILD.poll() is None:
+            raise RuntimeError("previous GPU probe child is still active")
+        _ACTIVE_CHILD = None
+
+    blocked = {signal.SIGTERM, signal.SIGINT}
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+    try:
+        process = subprocess.Popen(
+            command,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        _ACTIVE_CHILD = process
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+    return process
+
+
 def probe_gpu(index: int, timeout_s: float, matmul_size: int) -> dict[str, Any]:
+    global _ACTIVE_CHILD
     child = textwrap.dedent("""
         import json
         import sys
@@ -107,87 +188,90 @@ def probe_gpu(index: int, timeout_s: float, matmul_size: int) -> dict[str, Any]:
         result["ok"] = True
         print(json.dumps(result, sort_keys=True), flush=True)
     """).strip()
-    process = subprocess.Popen(
-        [sys.executable, "-c", child, str(index), str(matmul_size)],
-        env=corex_env(),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-    )
     try:
-        stdout, stderr = process.communicate(timeout=timeout_s)
-    except subprocess.TimeoutExpired as initial_timeout:
-        stdout = _clean_stream(initial_timeout.stdout)
-        stderr = _clean_stream(initial_timeout.stderr)
-        termination = "sigterm"
-        cleanup_reaped = False
+        process = _spawn_probe_child(
+            [sys.executable, "-c", child, str(index), str(matmul_size)],
+            corex_env(),
+        )
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        except OSError as error:
-            termination = f"sigterm_error:{type(error).__name__}"
-        try:
-            final_stdout, final_stderr = process.communicate(
-                timeout=TERM_GRACE_S)
-            stdout = _clean_stream(final_stdout) or stdout
-            stderr = _clean_stream(final_stderr) or stderr
-            cleanup_reaped = True
-        except subprocess.TimeoutExpired as term_timeout:
-            stdout = _clean_stream(term_timeout.stdout) or stdout
-            stderr = _clean_stream(term_timeout.stderr) or stderr
-            termination = "sigkill"
+            stdout, stderr = process.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired as initial_timeout:
+            stdout = _clean_stream(initial_timeout.stdout)
+            stderr = _clean_stream(initial_timeout.stderr)
+            termination = "sigterm"
+            cleanup_reaped = False
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
             except OSError as error:
-                termination = f"sigkill_error:{type(error).__name__}"
+                termination = f"sigterm_error:{type(error).__name__}"
             try:
                 final_stdout, final_stderr = process.communicate(
-                    timeout=KILL_GRACE_S)
+                    timeout=TERM_GRACE_S)
                 stdout = _clean_stream(final_stdout) or stdout
                 stderr = _clean_stream(final_stderr) or stderr
                 cleanup_reaped = True
-            except subprocess.TimeoutExpired as kill_timeout:
-                stdout = _clean_stream(kill_timeout.stdout) or stdout
-                stderr = _clean_stream(kill_timeout.stderr) or stderr
-                termination = "cleanup_failed"
-        return {
-            "gpu": index,
-            "ok": False,
-            "stage": "timeout",
-            "last_progress_stage": _last_progress_stage(stdout),
-            "returncode": 124,
-            "child_returncode": process.returncode,
-            "termination": termination,
-            "cleanup_reaped": cleanup_reaped,
-            "stdout": stdout,
-            "stderr": stderr,
-        }
+            except subprocess.TimeoutExpired as term_timeout:
+                stdout = _clean_stream(term_timeout.stdout) or stdout
+                stderr = _clean_stream(term_timeout.stderr) or stderr
+                termination = "sigkill"
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except OSError as error:
+                    termination = f"sigkill_error:{type(error).__name__}"
+                try:
+                    final_stdout, final_stderr = process.communicate(
+                        timeout=KILL_GRACE_S)
+                    stdout = _clean_stream(final_stdout) or stdout
+                    stderr = _clean_stream(final_stderr) or stderr
+                    cleanup_reaped = True
+                except subprocess.TimeoutExpired as kill_timeout:
+                    stdout = _clean_stream(kill_timeout.stdout) or stdout
+                    stderr = _clean_stream(kill_timeout.stderr) or stderr
+                    termination = "cleanup_failed"
+            if cleanup_reaped:
+                _ACTIVE_CHILD = None
+            return {
+                "gpu": index,
+                "ok": False,
+                "stage": "timeout",
+                "last_progress_stage": _last_progress_stage(stdout),
+                "returncode": 124,
+                "child_returncode": process.returncode,
+                "termination": termination,
+                "cleanup_reaped": cleanup_reaped,
+                "stdout": stdout,
+                "stderr": stderr,
+            }
 
-    stdout = stdout.strip()
-    stderr = stderr.strip()
-    parsed: dict[str, Any] | None = None
-    if stdout:
-        last_line = stdout.splitlines()[-1]
-        try:
-            parsed = json.loads(last_line)
-        except json.JSONDecodeError:
-            parsed = None
-    if parsed is None:
-        parsed = {
-            "gpu": index,
-            "ok": False,
-            "stage": "parse_output",
-        }
-    parsed["returncode"] = process.returncode
-    if stderr:
-        parsed["stderr"] = stderr
-    if process.returncode != 0:
-        parsed["ok"] = False
-    return parsed
+        stdout = stdout.strip()
+        stderr = stderr.strip()
+        parsed: dict[str, Any] | None = None
+        if stdout:
+            last_line = stdout.splitlines()[-1]
+            try:
+                parsed = json.loads(last_line)
+            except json.JSONDecodeError:
+                parsed = None
+        if parsed is None:
+            parsed = {
+                "gpu": index,
+                "ok": False,
+                "stage": "parse_output",
+            }
+        parsed["returncode"] = process.returncode
+        if stderr:
+            parsed["stderr"] = stderr
+        if process.returncode != 0:
+            parsed["ok"] = False
+        _ACTIVE_CHILD = None
+        return parsed
+    except ParentTermination:
+        _cleanup_active_child()
+        raise
 
 
 def parse_gpus(value: str) -> list[int]:
@@ -211,10 +295,30 @@ def main() -> int:
     parser.add_argument("--json-out", type=Path)
     args = parser.parse_args()
 
-    results = [
-        probe_gpu(index, args.timeout_s, args.matmul_size)
-        for index in args.gpus
-    ]
+    previous_handlers = {
+        signum: signal.getsignal(signum)
+        for signum in (signal.SIGTERM, signal.SIGINT)
+    }
+    for signum in previous_handlers:
+        signal.signal(signum, _parent_signal_handler)
+    try:
+        results = [
+            probe_gpu(index, args.timeout_s, args.matmul_size)
+            for index in args.gpus
+        ]
+    except ParentTermination as termination:
+        cleanup_ok = _cleanup_active_child()
+        print(
+            f"GPU preflight interrupted by signal {termination.signum}; "
+            f"child_cleanup_ok={str(cleanup_ok).lower()}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 128 + termination.signum
+    finally:
+        _cleanup_active_child()
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
     for result in results:
         status = "PASS" if result.get("ok") else "FAIL"
         detail = json.dumps(result, sort_keys=True, ensure_ascii=False)
