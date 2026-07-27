@@ -72,6 +72,49 @@ def _bi100_chat_request_shape(request):
     }
 
 
+def _bi100_validation_reason(errors):
+    categories = set()
+    validation_errors = errors if isinstance(errors, (list, tuple)) else ()
+    for error in validation_errors:
+        if not isinstance(error, dict):
+            continue
+        location = error.get("loc")
+        if not isinstance(location, (list, tuple)):
+            continue
+        fields = [
+            value for value in location
+            if isinstance(value, str) and value not in ("body", "query", "path")
+        ]
+        if not fields:
+            continue
+        field = fields[0]
+        if field == "messages":
+            categories.add("messages")
+        elif field in ("tools", "tool_choice", "parallel_tool_calls"):
+            categories.add("tools")
+        elif field == "response_format":
+            categories.add("response_format")
+        elif field in ("stream", "stream_options"):
+            categories.add("streaming")
+        elif field in ("n", "max_tokens", "min_tokens", "stop"):
+            categories.add("generation")
+        elif field in (
+                "temperature", "top_p", "top_k", "frequency_penalty",
+                "presence_penalty", "repetition_penalty", "seed"):
+            categories.add("sampling")
+        elif field == "model":
+            categories.add("model")
+        else:
+            categories.add("other")
+
+    for category in (
+            "messages", "tools", "response_format", "streaming", "generation",
+            "sampling", "model", "other"):
+        if category in categories:
+            return f"request_validation_{category}"
+    return "request_validation_unknown"
+
+
 def _bi100_startup_trace(message: str) -> None:
     if os.getenv("BI100_EXECUTOR_STARTUP_DEBUG") == "1":
         stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -524,10 +567,33 @@ def build_app(args: Namespace) -> FastAPI:
     )
 
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(_, exc):
-        logger.warning(
-            "[BI100 4XX] endpoint=request_validation code=400 "
-            "reason=request_validation")
+    async def validation_exception_handler(raw_request, exc):
+        validation_errors = exc.errors()
+        reason = _bi100_validation_reason(validation_errors)
+        body = getattr(exc, "body", None)
+        if (raw_request.url.path.endswith("/v1/chat/completions")
+                and isinstance(body, dict)):
+            shape = _bi100_chat_request_shape(body)
+            logger.warning(
+                "[BI100 4XX] endpoint=request_validation code=400 reason=%s "
+                "messages=%d systems=%d tools=%d image=%d stream=%d n=%s "
+                "errors=%d",
+                reason,
+                shape["message_count"],
+                shape["system_count"],
+                shape["tool_count"],
+                int(shape["has_image"]),
+                int(shape["stream"]),
+                shape["n"] if shape["n"] is not None else "unset",
+                len(validation_errors),
+            )
+        else:
+            logger.warning(
+                "[BI100 4XX] endpoint=request_validation code=400 reason=%s "
+                "errors=%d",
+                reason,
+                len(validation_errors),
+            )
         chat = app.state.openai_serving_chat
         err = chat.create_error_response(message=str(exc))
         return JSONResponse(err.model_dump(),

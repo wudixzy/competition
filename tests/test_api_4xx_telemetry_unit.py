@@ -11,6 +11,7 @@ HELPERS = {
     "_bi100_scalar",
     "_bi100_chat_4xx_reason",
     "_bi100_chat_request_shape",
+    "_bi100_validation_reason",
 }
 
 
@@ -36,6 +37,8 @@ class Api4xxTelemetryTest(unittest.TestCase):
         helpers = _load_helpers()
         cls.reason = staticmethod(helpers["_bi100_chat_4xx_reason"])
         cls.shape = staticmethod(helpers["_bi100_chat_request_shape"])
+        cls.validation_reason = staticmethod(
+            helpers["_bi100_validation_reason"])
 
     def test_known_errors_have_fixed_reason_codes(self):
         self.assertEqual(
@@ -83,10 +86,50 @@ class Api4xxTelemetryTest(unittest.TestCase):
             "n": 2,
         })
 
+    def test_validation_errors_have_bounded_reason_codes(self):
+        self.assertEqual(
+            self.validation_reason([{
+                "loc": ("body", "messages", 0, "content"),
+                "type": "string_type",
+                "input": "private message",
+            }]),
+            "request_validation_messages",
+        )
+        self.assertEqual(
+            self.validation_reason([{
+                "loc": ("body", "tools", 0, "function", "parameters"),
+                "type": "dict_type",
+                "input": {"private": "schema"},
+            }]),
+            "request_validation_tools",
+        )
+        self.assertEqual(
+            self.validation_reason([{
+                "loc": ("body", "temperature"),
+                "type": "float_parsing",
+                "input": "private value",
+            }]),
+            "request_validation_sampling",
+        )
+        self.assertEqual(
+            self.validation_reason([{
+                "loc": ("body", "private_extension"),
+                "type": "extra_forbidden",
+                "input": "private value",
+            }]),
+            "request_validation_other",
+        )
+        self.assertEqual(
+            self.validation_reason([{"loc": ("body",)}]),
+            "request_validation_unknown",
+        )
+
     def test_runtime_logs_reason_without_raw_error_message(self):
         source = API_SERVER.read_text()
         self.assertIn("[BI100 4XX] endpoint=chat", source)
-        self.assertIn("reason=request_validation", source)
+        self.assertIn("[BI100 4XX] endpoint=request_validation", source)
+        self.assertIn("_bi100_validation_reason(validation_errors)", source)
+        self.assertIn("_bi100_chat_request_shape(body)", source)
         self.assertIn("_bi100_log_chat_4xx(request, generator)", source)
         self.assertNotIn("[BI100 4XX] message=", source)
 
