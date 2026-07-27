@@ -125,6 +125,16 @@ def main() -> int:
         activated = activation(gate_up)
         return direct.w2_reduce(activated, w2, ids, weights)
 
+    def hybrid_exact_tail_from_route(
+        states: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor,
+    ):
+        gate_up = direct.w13(states, w13, ids)
+        activated = activation(gate_up)
+        selected_w2 = torch.index_select(w2, 0, ids)
+        expert_output = torch.bmm(
+            selected_w2, activated.unsqueeze(-1)).squeeze(-1)
+        return reducer.serial_float(expert_output, weights)
+
     def fused_from_route(
         states: torch.Tensor, weights: torch.Tensor, ids: torch.Tensor,
     ):
@@ -145,6 +155,8 @@ def main() -> int:
     direct_tail = direct.w2_reduce(
         reference_activation, w2, ids, weights)
     staged = staged_from_route(hidden_states, weights, ids)
+    hybrid_exact_tail = hybrid_exact_tail_from_route(
+        hidden_states, weights, ids)
     direct_activation = (
         direct.w13_silu(hidden_states, w13, ids)
         if fused_available else None
@@ -170,9 +182,13 @@ def main() -> int:
             hidden_states, weights, ids),
         "staged_fixed": lambda: staged_from_route(
             hidden_states, weights, ids),
+        "hybrid_exact_tail_fixed": lambda: hybrid_exact_tail_from_route(
+            hidden_states, weights, ids),
         "baseline_routed": lambda: baseline_from_route(
             hidden_states, *route(router_logits)),
         "staged_routed": lambda: staged_from_route(
+            hidden_states, *route(router_logits)),
+        "hybrid_exact_tail_routed": lambda: hybrid_exact_tail_from_route(
             hidden_states, *route(router_logits)),
     }
     if fused_available:
@@ -192,10 +208,16 @@ def main() -> int:
         timings[candidate]["speedup_vs_baseline"] = (
             timings["baseline_fixed"]["median_ms"]
             / timings[candidate]["median_ms"])
+    timings["hybrid_exact_tail_fixed"]["speedup_vs_baseline"] = (
+        timings["baseline_fixed"]["median_ms"]
+        / timings["hybrid_exact_tail_fixed"]["median_ms"])
     for candidate in ("staged_routed",):
         timings[candidate]["speedup_vs_baseline"] = (
             timings["baseline_routed"]["median_ms"]
             / timings[candidate]["median_ms"])
+    timings["hybrid_exact_tail_routed"]["speedup_vs_baseline"] = (
+        timings["baseline_routed"]["median_ms"]
+        / timings["hybrid_exact_tail_routed"]["median_ms"])
     if fused_available:
         timings["fused_fixed"]["speedup_vs_baseline"] = (
             timings["baseline_fixed"]["median_ms"]
@@ -205,7 +227,8 @@ def main() -> int:
             / timings["fused_routed"]["median_ms"])
 
     candidate_names = (
-        ("staged", "fused") if fused_available else ("staged",)
+        ("staged", "hybrid_exact_tail", "fused")
+        if fused_available else ("staged", "hybrid_exact_tail")
     )
     max_abs = {name: 0.0 for name in candidate_names}
     mean_abs = {name: [] for name in candidate_names}
@@ -223,6 +246,8 @@ def main() -> int:
         expected = baseline_from_route(step_hidden, step_weights, step_ids)
         candidates = {
             "staged": staged_from_route(
+                step_hidden, step_weights, step_ids),
+            "hybrid_exact_tail": hybrid_exact_tail_from_route(
                 step_hidden, step_weights, step_ids),
         }
         if fused_available:
@@ -247,6 +272,8 @@ def main() -> int:
                 max_step_relative_l2[name], step_relative_l2)
 
     report = {
+        "schema": "bi100-moe-direct-routed-v2",
+        "version": 2,
         "device": torch.cuda.get_device_name(device),
         "shape": {
             "experts": experts,
@@ -272,6 +299,7 @@ def main() -> int:
             "direct_w13": compare(direct_gate, reference_gate),
             "direct_w2_reduce": compare(direct_tail, reference),
             "staged": compare(staged, reference),
+            "hybrid_exact_tail": compare(hybrid_exact_tail, reference),
         },
         "sequence": {
             name: {
