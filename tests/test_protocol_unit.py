@@ -189,6 +189,19 @@ class ProtocolUnitTest(unittest.TestCase):
         none = self.request(tools=[_tool()], tool_choice="none")
         self.assertEqual(none.tool_choice, "none")
 
+    def test_explicit_strict_false_is_accepted_but_not_forwarded(self):
+        tool = _tool()
+        tool["function"]["strict"] = False
+        request = self.request(tools=[tool])
+        self.assertIs(request.tools[0].function.strict, False)
+        self.assertNotIn(
+            "strict", request.tools[0].model_dump()["function"])
+
+    def test_strict_true_is_rejected_instead_of_silently_degraded(self):
+        tool = _tool()
+        tool["function"]["strict"] = True
+        self.assert_validation_error(tools=[tool])
+
     def test_named_tool_requires_matching_tool_and_conflicts_with_guided_json(self):
         named = {
             "type": "function",

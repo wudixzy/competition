@@ -140,6 +140,19 @@ class FunctionDefinition(OpenAIBaseModel):
     name: str
     description: Optional[str] = None
     parameters: Optional[Dict[str, Any]] = None
+    # OpenAI clients commonly serialize strict=false explicitly. It is a
+    # semantic no-op, so accept it but keep it out of the tokenizer template.
+    # strict=true requires constrained tool decoding that this runtime does not
+    # provide and must not be silently degraded to ordinary auto tool choice.
+    strict: Optional[bool] = Field(default=None, exclude=True)
+
+    @model_validator(mode="after")
+    def reject_unsupported_strict_tools(self):
+        if self.strict is True:
+            raise ValueError(
+                "Function tools with strict=true are not supported by this "
+                "runtime.")
+        return self
 
 
 class ChatCompletionToolsParam(OpenAIBaseModel):
