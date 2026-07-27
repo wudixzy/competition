@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,14 @@ OBSERVATION_FIELDS = {
 def is_sha256(value: Any) -> bool:
     return (isinstance(value, str) and len(value) == 64
             and all(character in "0123456789abcdef" for character in value))
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def atomic_write(path: Path, report: Json) -> None:
@@ -259,6 +268,10 @@ def main() -> int:
         json.loads(args.baseline.read_text(encoding="utf-8")),
         json.loads(args.candidate.read_text(encoding="utf-8")),
     )
+    report["inputs"] = {
+        "baseline_file_sha256": file_sha256(args.baseline),
+        "candidate_file_sha256": file_sha256(args.candidate),
+    }
     atomic_write(args.out, report)
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report["qualified"] else 1

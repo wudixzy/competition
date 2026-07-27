@@ -3,8 +3,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -204,6 +207,47 @@ class AgentWorkloadComparisonUnitTest(unittest.TestCase):
         self.assertFalse(report["qualified"])
         self.assertIn(
             "candidate: privacy declaration is invalid", report["reasons"])
+
+    def test_cli_binds_exact_input_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline_path = root / "baseline.json"
+            candidate_path = root / "candidate.json"
+            output_path = root / "comparison.json"
+            baseline_path.write_text(
+                json.dumps(make_report("fine32"), sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            candidate_path.write_text(
+                json.dumps(make_report("admission64"), sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    str(baseline_path),
+                    str(candidate_path),
+                    "--out",
+                    str(output_path),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            comparison = json.loads(
+                output_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                comparison["inputs"],
+                {
+                    "baseline_file_sha256": MODULE.file_sha256(
+                        baseline_path),
+                    "candidate_file_sha256": MODULE.file_sha256(
+                        candidate_path),
+                },
+            )
 
 
 if __name__ == "__main__":
