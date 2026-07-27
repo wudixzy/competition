@@ -33,6 +33,22 @@ class M170DiagnosticHttpRunnerTest(unittest.TestCase):
         self.assertIn("--limit-mm-per-prompt image=2", self.source)
         self.assertIn("compare_qwen36_compat_http_ab.py", self.source)
 
+    def test_each_arm_uses_a_preflighted_distinct_port(self):
+        self.assertIn("check_port_available()", self.source)
+        self.assertIn('sock.bind(("", int(sys.argv[1])))', self.source)
+        self.assertIn('"$CONTROL_REVISION" 400 1 0 "$PORT"', self.source)
+        self.assertIn(
+            '"$CANDIDATE_REVISION" 200 1 1 "$((PORT + 1))"',
+            self.source,
+        )
+        self.assertIn(
+            '"$CANDIDATE_REVISION" 200 2 1 "$((PORT + 2))"',
+            self.source,
+        )
+        self.assertIn('"port_preflight": rc("port_preflight.rc")',
+                      self.source)
+        self.assertIn('"arm_ports": {', self.source)
+
     def test_reference_compute_and_capacity_contract_are_fixed(self):
         self.assertIn("--max-model-len 262144", self.source)
         self.assertIn("--tensor-parallel-size 1", self.source)

@@ -29,8 +29,8 @@ if [[ ! "$GPU_INDEX" =~ ^[0-9]+$ ]]; then
     echo "GPU_INDEX must be a non-negative integer" >&2
     exit 2
 fi
-if [[ ! "$PORT" =~ ^[0-9]+$ || "$PORT" -lt 1 || "$PORT" -gt 65535 ]]; then
-    echo "PORT must be between 1 and 65535" >&2
+if [[ ! "$PORT" =~ ^[0-9]+$ || "$PORT" -lt 1 || "$PORT" -gt 65533 ]]; then
+    echo "PORT must be between 1 and 65533 for three isolated arms" >&2
     exit 2
 fi
 if [[ ! "$STARTUP_TIMEOUT_S" =~ ^[1-9][0-9]*$ ]]; then
@@ -151,6 +151,17 @@ run_preflight() {
         > "$output.stdout" 2> "$output.stderr"
 }
 
+check_port_available() {
+    local port=$1
+    python3 - "$port" <<'PY'
+import socket
+import sys
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("", int(sys.argv[1])))
+PY
+}
+
 stop_active_group() {
     local rc=0
     if [[ -n "$ACTIVE_PGID" ]]; then
@@ -193,8 +204,9 @@ write_arm_status() {
     local expected_system_status=$3
     local image_limit=$4
     local runtime_revision=$5
+    local arm_port=$6
     python3 - "$arm" "$final_rc" "$expected_system_status" \
-            "$image_limit" "$runtime_revision" <<'PY'
+            "$image_limit" "$runtime_revision" "$arm_port" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -215,14 +227,16 @@ def sha(name):
         if path.is_file() else None
 
 report = {
-    "schema": "bi100-m1-70-diagnostic-http-arm-v2",
-    "version": 2,
+    "schema": "bi100-m1-70-diagnostic-http-arm-v3",
+    "version": 3,
     "qualified": int(sys.argv[2]) == 0,
     "runtime_revision": sys.argv[5],
+    "port": int(sys.argv[6]),
     "multiple_system_parts_expected_status": int(sys.argv[3]),
     "image_limit": int(sys.argv[4]),
     "gates": {
         "preflight_before": rc("preflight_before.rc"),
+        "port_preflight": rc("port_preflight.rc"),
         "startup": rc("startup.rc"),
         "probe": rc("probe.rc"),
         "cleanup": rc("cleanup.rc"),
@@ -254,6 +268,7 @@ run_arm() {
     local expected_system_status=$4
     local image_limit=$5
     local require_attribution=$6
+    local arm_port=$7
     local arm="$RUN_ROOT/$label"
     local arm_rc=0
     local rc=0
@@ -275,7 +290,21 @@ run_arm() {
     if [[ $rc -ne 0 ]]; then
         write_arm_status \
             "$arm" 1 "$expected_system_status" "$image_limit" \
-            "$runtime_revision"
+            "$runtime_revision" "$arm_port"
+        return 1
+    fi
+
+    set +e
+    check_port_available "$arm_port" \
+        > "$arm/port_preflight.stdout" \
+        2> "$arm/port_preflight.stderr"
+    rc=$?
+    set -e
+    printf '%s\n' "$rc" > "$arm/port_preflight.rc"
+    if [[ $rc -ne 0 ]]; then
+        write_arm_status \
+            "$arm" 1 "$expected_system_status" "$image_limit" \
+            "$runtime_revision" "$arm_port"
         return 1
     fi
 
@@ -283,7 +312,7 @@ run_arm() {
         python3
         -m vllm.entrypoints.openai.api_server
         --host 127.0.0.1
-        --port "$PORT"
+        --port "$arm_port"
         --model "$MODEL_PATH"
         --served-model-name llm
         --max-model-len 262144
@@ -346,7 +375,7 @@ run_arm() {
         arm_rc=1
     else
         for _ in $(seq 1 "$STARTUP_TIMEOUT_S"); do
-            if python3 - "$PORT" <<'PY' >/dev/null 2>&1
+            if python3 - "$arm_port" <<'PY' >/dev/null 2>&1
 import sys
 import urllib.request
 
@@ -367,7 +396,7 @@ PY
         printf '%s\n' 0 > "$arm/startup.rc"
         set +e
         python3 "$ROOT/tests/qwen36_compat_http_gate.py" \
-            --base "http://127.0.0.1:$PORT" \
+            --base "http://127.0.0.1:$arm_port" \
             --model-path "$MODEL_PATH" \
             --timeout-s 600 \
             --multiple-system-parts-expected-status \
@@ -450,14 +479,14 @@ PY
 
     write_arm_status \
         "$arm" "$arm_rc" "$expected_system_status" "$image_limit" \
-        "$runtime_revision"
+        "$runtime_revision" "$arm_port"
     return "$arm_rc"
 }
 
 write_runner_status() {
     local final_rc=$1
     python3 - "$RUN_ROOT" "$INSTANCE" "$SOURCE_REVISION" \
-            "$SOURCE_BRANCH" "$GPU_INDEX" "$final_rc" <<'PY'
+            "$SOURCE_BRANCH" "$GPU_INDEX" "$final_rc" "$PORT" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -478,14 +507,19 @@ def sha(name):
         if path.is_file() else None
 
 report = {
-    "schema": "bi100-m1-70-diagnostic-http-ab-runner-v2",
-    "version": 2,
+    "schema": "bi100-m1-70-diagnostic-http-ab-runner-v3",
+    "version": 3,
     "qualified": int(sys.argv[6]) == 0,
     "source_revision": sys.argv[3],
     "source_branch": sys.argv[4],
     "instance": sys.argv[2],
     "physical_gpu": int(sys.argv[5]),
     "returncode": int(sys.argv[6]),
+    "arm_ports": {
+        "baseline_default": int(sys.argv[7]),
+        "candidate_default": int(sys.argv[7]) + 1,
+        "candidate_image2": int(sys.argv[7]) + 2,
+    },
     "gates": {
         "checkpoint_verify": rc("checkpoint_verify.rc"),
         "runtime_pair": rc("runtime_pair.rc"),
@@ -645,7 +679,7 @@ INITIAL_PREFLIGHT_PASSED=1
 CURRENT_STAGE=baseline_default
 set +e
 run_arm baseline_default "$CONTROL_RUNTIME_SITE_PACKAGES" \
-    "$CONTROL_REVISION" 400 1 0
+    "$CONTROL_REVISION" 400 1 0 "$PORT"
 rc=$?
 set -e
 printf '%s\n' "$rc" > "$RUN_ROOT/baseline_default.rc"
@@ -654,7 +688,7 @@ printf '%s\n' "$rc" > "$RUN_ROOT/baseline_default.rc"
 CURRENT_STAGE=candidate_default
 set +e
 run_arm candidate_default "$CANDIDATE_RUNTIME_SITE_PACKAGES" \
-    "$CANDIDATE_REVISION" 200 1 1
+    "$CANDIDATE_REVISION" 200 1 1 "$((PORT + 1))"
 rc=$?
 set -e
 printf '%s\n' "$rc" > "$RUN_ROOT/candidate_default.rc"
@@ -663,7 +697,7 @@ printf '%s\n' "$rc" > "$RUN_ROOT/candidate_default.rc"
 CURRENT_STAGE=candidate_image2
 set +e
 run_arm candidate_image2 "$CANDIDATE_RUNTIME_SITE_PACKAGES" \
-    "$CANDIDATE_REVISION" 200 2 1
+    "$CANDIDATE_REVISION" 200 2 1 "$((PORT + 2))"
 rc=$?
 set -e
 printf '%s\n' "$rc" > "$RUN_ROOT/candidate_image2.rc"
