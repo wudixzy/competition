@@ -1,0 +1,114 @@
+{
+  "case_count": 11,
+  "cases": [
+    {
+      "actual": "accept",
+      "errors": [],
+      "expected": "accept",
+      "matched": true,
+      "name": "basic_text"
+    },
+    {
+      "actual": "accept",
+      "errors": [],
+      "expected": "accept",
+      "matched": true,
+      "name": "function_tool_default"
+    },
+    {
+      "actual": "accept",
+      "errors": [],
+      "expected": "accept",
+      "matched": true,
+      "name": "function_tool_strict_false",
+      "strict_forwarded_to_template": false
+    },
+    {
+      "actual": "reject",
+      "errors": [
+        {
+          "location": [
+            "tools",
+            0,
+            "function"
+          ],
+          "type": "value_error"
+        }
+      ],
+      "expected": "reject",
+      "matched": true,
+      "name": "function_tool_strict_true"
+    },
+    {
+      "actual": "reject",
+      "errors": [
+        {
+          "location": [],
+          "type": "value_error"
+        }
+      ],
+      "expected": "reject",
+      "matched": true,
+      "name": "tool_choice_required"
+    },
+    {
+      "actual": "accept",
+      "errors": [],
+      "expected": "accept",
+      "matched": true,
+      "name": "assistant_tool_history_null_content"
+    },
+    {
+      "actual": "accept",
+      "errors": [],
+      "expected": "accept",
+      "matched": true,
+      "name": "tool_result_text_parts"
+    },
+    {
+      "actual": "accept",
+      "errors": [],
+      "expected": "accept",
+      "matched": true,
+      "name": "image_url_data"
+    },
+    {
+      "actual": "accept",
+      "errors": [],
+      "expected": "accept",
+      "matched": true,
+      "name": "multiple_system_text"
+    },
+    {
+      "actual": "accept",
+      "argument_object_preserved": true,
+      "errors": [],
+      "expected": "accept",
+      "matched": true,
+      "name": "assistant_tool_arguments_object"
+    },
+    {
+      "actual": "reject",
+      "errors": [
+        {
+          "location": [],
+          "type": "value_error"
+        }
+      ],
+      "expected": "reject",
+      "matched": true,
+      "name": "assistant_tool_arguments_invalid_json"
+    }
+  ],
+  "matched_count": 11,
+  "mismatch_count": 0,
+  "mismatches": [],
+  "package_versions": {
+    "openai": "1.108.2",
+    "pydantic": "2.11.9",
+    "vllm": "0.6.3+corex.3.2.3"
+  },
+  "qualified": true,
+  "schema": "bi100-chat-request-compat-v1",
+  "synthetic_only": true
+}

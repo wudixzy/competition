@@ -1,0 +1,233 @@
+{
+  "block_major_cache_engine_patch": true,
+  "block_major_worker_capacity_patch": true,
+  "block_manager_base_sha256": "15b280e3f5c38d463bfbab34d74bdda40cb9d3f72b229e7671b111906163566e",
+  "cache_engine_sha256": "2b9c72dd954476dc5446d84a3318e6defc447f56b13c1bc60a7a02afe80ea331",
+  "cache_trace_patcher_sha256": "b0d11ab04573fbd3b9010189f169429607e427ff108f9e3d653aeec251765bc0",
+  "files": {
+    "api_server": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/entrypoints/openai/api_server.py",
+      "installed_sha256": "74da3b79b7bd5efb058625e65d8b39c26242d1544a0f9feac9008d7c4c9ed23b",
+      "same": true,
+      "source_sha256": "74da3b79b7bd5efb058625e65d8b39c26242d1544a0f9feac9008d7c4c9ed23b"
+    },
+    "bi100_env": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/bi100_env.py",
+      "installed_sha256": "25e788f6810c210fcae663f4da5d171b69237becb2a8191b4518334b7ddda75e",
+      "same": true,
+      "source_sha256": "25e788f6810c210fcae663f4da5d171b69237becb2a8191b4518334b7ddda75e"
+    },
+    "bi100_profile": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/bi100_profile.py",
+      "installed_sha256": "b029d669540ebb84f8ef3cc75e953faf174ea5ff216ff299e2976338588b57f6",
+      "same": true,
+      "source_sha256": "b029d669540ebb84f8ef3cc75e953faf174ea5ff216ff299e2976338588b57f6"
+    },
+    "block_major_kv_cache": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/block_major_kv_cache.py",
+      "installed_sha256": "73eb881836a24da302ecd436fa52736dd31dbe033e79d3b2203c13cbec4a7421",
+      "same": true,
+      "source_sha256": "73eb881836a24da302ecd436fa52736dd31dbe033e79d3b2203c13cbec4a7421"
+    },
+    "block_major_kv_extension": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/corex_block_major_kv_transfer.so",
+      "installed_sha256": "7e2aafd8dc755b0ee16c3b9bb812b95548fc042bbaa840dd9db7d2c51a10474c",
+      "same": true,
+      "source_sha256": "7e2aafd8dc755b0ee16c3b9bb812b95548fc042bbaa840dd9db7d2c51a10474c"
+    },
+    "block_manager": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/core/block_manager_v2.py",
+      "installed_sha256": "19257a4e050e509dbc4926c9fc52cf3b0ea5be642f832619c7e6aae7ea65d049",
+      "same": true,
+      "source_sha256": "19257a4e050e509dbc4926c9fc52cf3b0ea5be642f832619c7e6aae7ea65d049"
+    },
+    "block_table": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/core/block/block_table.py",
+      "installed_sha256": "4a6b6313cd20d3de6c217e9a984039b93485d3858f87af883f35a285db27e268",
+      "same": true,
+      "source_sha256": "4a6b6313cd20d3de6c217e9a984039b93485d3858f87af883f35a285db27e268"
+    },
+    "cache_engine": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/worker/cache_engine.py",
+      "installed_sha256": "2b9c72dd954476dc5446d84a3318e6defc447f56b13c1bc60a7a02afe80ea331",
+      "same": true,
+      "source_sha256": "2b9c72dd954476dc5446d84a3318e6defc447f56b13c1bc60a7a02afe80ea331"
+    },
+    "cache_trace_outputs": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/outputs.py",
+      "installed_sha256": "4ebe3ab3f868cdd1d5d24fd0fc6611abc14eb2235ef9ab3a03c1efe4e124bc36",
+      "same": true,
+      "source_sha256": "4ebe3ab3f868cdd1d5d24fd0fc6611abc14eb2235ef9ab3a03c1efe4e124bc36"
+    },
+    "chat_utils": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/entrypoints/chat_utils.py",
+      "installed_sha256": "8a9ecf4bb1f29953036c491f869cab982f325dcf4412e7799c0108bc0b63161b",
+      "same": true,
+      "source_sha256": "8a9ecf4bb1f29953036c491f869cab982f325dcf4412e7799c0108bc0b63161b"
+    },
+    "cli_args": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/entrypoints/openai/cli_args.py",
+      "installed_sha256": "04f4c6ac0c82b5111279205cda3204cf7f7894972acd603828a2de87d0a5fa57",
+      "same": true,
+      "source_sha256": "04f4c6ac0c82b5111279205cda3204cf7f7894972acd603828a2de87d0a5fa57"
+    },
+    "content_cache": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/core/block/cpu_kv_content_cache.py",
+      "installed_sha256": "99268eb7199dae108e353b657f1b4e4a78bc5638e046f119314f3cf68105c31c",
+      "same": true,
+      "source_sha256": "99268eb7199dae108e353b657f1b4e4a78bc5638e046f119314f3cf68105c31c"
+    },
+    "cpu_gpu_block_allocator": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/core/block/cpu_gpu_block_allocator.py",
+      "installed_sha256": "cdbc0400a584bef62618fa580de42cd12b5e2663c97fb01e6c3fa1f5bb27d9d0",
+      "same": true,
+      "source_sha256": "cdbc0400a584bef62618fa580de42cd12b5e2663c97fb01e6c3fa1f5bb27d9d0"
+    },
+    "evictor": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/core/evictor_v2.py",
+      "installed_sha256": "c4e1299af673da933d181cd2ff6b5c941eeda38c2e3119610690a5f62c437e04",
+      "same": true,
+      "source_sha256": "c4e1299af673da933d181cd2ff6b5c941eeda38c2e3119610690a5f62c437e04"
+    },
+    "gdn_prefix": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/gdn_prefix.py",
+      "installed_sha256": "a48da42ad3e240d2bf8c3bf491d16c25608d542e39d394fc4ebead02d67b37a0",
+      "same": true,
+      "source_sha256": "a48da42ad3e240d2bf8c3bf491d16c25608d542e39d394fc4ebead02d67b37a0"
+    },
+    "mamba_cache": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/model_executor/models/mamba_cache.py",
+      "installed_sha256": "7d8ae53aca32e82518649160151995a9c583102ff47f8e1873e9d77b3dfc132c",
+      "same": true,
+      "source_sha256": "7d8ae53aca32e82518649160151995a9c583102ff47f8e1873e9d77b3dfc132c"
+    },
+    "model_runner": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/worker/model_runner.py",
+      "installed_sha256": "9544ecc5092214edc6ffad26279298025bdee5c57f6e4238e4c55c0b6febdee8",
+      "same": true,
+      "source_sha256": "9544ecc5092214edc6ffad26279298025bdee5c57f6e4238e4c55c0b6febdee8"
+    },
+    "moe_config": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/transformers/models/qwen3_5_moe/configuration_qwen3_5_moe.py",
+      "installed_sha256": "05653d043a9d880abb9b438c69c518c7a8667efcef1984c409611b995254d19f",
+      "same": true,
+      "source_sha256": "05653d043a9d880abb9b438c69c518c7a8667efcef1984c409611b995254d19f"
+    },
+    "paged_attention": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/attention/ops/paged_attn.py",
+      "installed_sha256": "b2b6cd837ba6e455ea9e0ec3f4d897e0b609517f5f9b83d8e8831575f0ef7cdf",
+      "same": true,
+      "source_sha256": "b2b6cd837ba6e455ea9e0ec3f4d897e0b609517f5f9b83d8e8831575f0ef7cdf"
+    },
+    "prefix_caching_block": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/core/block/prefix_caching_block.py",
+      "installed_sha256": "91e3dc70899256c0ffe179d8a3422d572cd76ac15cf9cfcc729443875d704991",
+      "same": true,
+      "source_sha256": "91e3dc70899256c0ffe179d8a3422d572cd76ac15cf9cfcc729443875d704991"
+    },
+    "protocol": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/entrypoints/openai/protocol.py",
+      "installed_sha256": "c25e5736c749b32151b0cae891eb300a7d6c8e8bb1a64a58058999514ce57262",
+      "same": true,
+      "source_sha256": "c25e5736c749b32151b0cae891eb300a7d6c8e8bb1a64a58058999514ce57262"
+    },
+    "reasoning_abs": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/reasoning/abs_reasoning_parsers.py",
+      "installed_sha256": "c377faa979fdecfeefcdc08df3c897aae38bb166d006454036ffd7050317dafa",
+      "same": true,
+      "source_sha256": "c377faa979fdecfeefcdc08df3c897aae38bb166d006454036ffd7050317dafa"
+    },
+    "reasoning_init": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/reasoning/__init__.py",
+      "installed_sha256": "b4f6de9e33b8bbd73c1e3ea08aeca3d3c4ad2895919fdaa538a562d71d6b2002",
+      "same": true,
+      "source_sha256": "b4f6de9e33b8bbd73c1e3ea08aeca3d3c4ad2895919fdaa538a562d71d6b2002"
+    },
+    "reasoning_qwen3": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/reasoning/qwen3_reasoning_parser.py",
+      "installed_sha256": "b4247d846581ba8d45296cb12d2ed574a5017bf791cd1639564bef0fcdcebe74",
+      "same": true,
+      "source_sha256": "b4247d846581ba8d45296cb12d2ed574a5017bf791cd1639564bef0fcdcebe74"
+    },
+    "scheduler": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/core/scheduler.py",
+      "installed_sha256": "6868f48a8da64b2dc49590706c642d611d95ab56d79b639b189b3bb6324c8229",
+      "same": true,
+      "source_sha256": "6868f48a8da64b2dc49590706c642d611d95ab56d79b639b189b3bb6324c8229"
+    },
+    "sequence": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/sequence.py",
+      "installed_sha256": "b5085c1199c5ee29c781cc57a6c5c28c180ee44c324b4688ace44fa1194ccda6",
+      "same": true,
+      "source_sha256": "b5085c1199c5ee29c781cc57a6c5c28c180ee44c324b4688ace44fa1194ccda6"
+    },
+    "serving_chat": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/entrypoints/openai/serving_chat.py",
+      "installed_sha256": "3326f6c166dc671afbd690ebd98676de7cd95cb2bbc0d19b276b8d13929b47d5",
+      "same": true,
+      "source_sha256": "3326f6c166dc671afbd690ebd98676de7cd95cb2bbc0d19b276b8d13929b47d5"
+    },
+    "tool_parser": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/entrypoints/openai/tool_parsers/qwen3coder_tool_parser.py",
+      "installed_sha256": "7281149b5d6b289c7648e6b04124fcf127d07cdb1b5d3173b7e5e8059640b0cd",
+      "same": true,
+      "source_sha256": "7281149b5d6b289c7648e6b04124fcf127d07cdb1b5d3173b7e5e8059640b0cd"
+    },
+    "transformers_qwen3_5_config": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/transformers/models/qwen3_5/configuration_qwen3_5.py",
+      "installed_sha256": "455cf765fe7a9490a486031b215a021b38fd5e868c2713d345a2eed5213dae5a",
+      "same": true,
+      "source_sha256": "455cf765fe7a9490a486031b215a021b38fd5e868c2713d345a2eed5213dae5a"
+    },
+    "transformers_qwen3_5_init": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/transformers/models/qwen3_5/__init__.py",
+      "installed_sha256": "3fd1a86bae1a56bcbac7d10839d48337abd27c8efb578644b77699bfa8a10b5c",
+      "same": true,
+      "source_sha256": "3fd1a86bae1a56bcbac7d10839d48337abd27c8efb578644b77699bfa8a10b5c"
+    },
+    "transformers_qwen3_5_moe_init": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/transformers/models/qwen3_5_moe/__init__.py",
+      "installed_sha256": "4f596d506120c7dcd2e224df1867bfd6c181110585a9e464a587338fc0d54c61",
+      "same": true,
+      "source_sha256": "4f596d506120c7dcd2e224df1867bfd6c181110585a9e464a587338fc0d54c61"
+    },
+    "vllm_model": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/model_executor/models/qwen3_5.py",
+      "installed_sha256": "7cd29e812931a849d1c12b93bf9f25f854dc42cb0b2ec3cb507276d867b1c415",
+      "same": true,
+      "source_sha256": "7cd29e812931a849d1c12b93bf9f25f854dc42cb0b2ec3cb507276d867b1c415"
+    },
+    "worker": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/worker/worker.py",
+      "installed_sha256": "155661a95adfbfe68aeb68cea89d19f5b4370403162c5ddcb48c0297a48966b8",
+      "same": true,
+      "source_sha256": "155661a95adfbfe68aeb68cea89d19f5b4370403162c5ddcb48c0297a48966b8"
+    },
+    "xformers_backend": {
+      "installed_path": "/root/m1-68-runtime-cdb1bc4/site-packages/vllm/attention/backends/xformers.py",
+      "installed_sha256": "2f35a9a1f4af7b4d1473a3b81737b0abe0a04c9a5e00fc2f5374873b6d07bddb",
+      "same": true,
+      "source_sha256": "2f35a9a1f4af7b4d1473a3b81737b0abe0a04c9a5e00fc2f5374873b6d07bddb"
+    }
+  },
+  "installer_sha256": "00a873aa8c46b922cbdaa8a1a9a6f5cd1b3f17cff8097b43921bfe142d9be85f",
+  "model_runner_sha256": "9544ecc5092214edc6ffad26279298025bdee5c57f6e4238e4c55c0b6febdee8",
+  "offline_metadata_normalizer_sha256": "d54d89bb15df1be93bbc8447e43b080402629f217305ea8941c81154bce5c47a",
+  "profile_attention_layer_patch": true,
+  "qualified": true,
+  "runtime_root": "/root/m1-68-runtime-cdb1bc4",
+  "runtime_tree_sha256": "5196f4030ddc23a716f1f8d89f2c9967aabf3d2c90f361244b8062e37d563d8c",
+  "schema": "bi100-bare-host-runtime-install-v2",
+  "site_packages": "/root/m1-68-runtime-cdb1bc4/site-packages",
+  "source_revision": "cdb1bc41f728a5610a3632ad7923d73a90748919",
+  "source_tree_clean": true,
+  "startup_profile_guard_patch": true,
+  "system_site_packages_modified": false,
+  "version": 2,
+  "versions": {
+    "torch": "2.1.0+corex.3.2.3",
+    "transformers": "4.55.3",
+    "vllm": "0.6.3+corex.3.2.3"
+  },
+  "worker_sha256": "155661a95adfbfe68aeb68cea89d19f5b4370403162c5ddcb48c0297a48966b8"
+}

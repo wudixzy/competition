@@ -1,0 +1,14 @@
+{
+  "schema": "bi100-chat-request-compat-v1-baseline-failure",
+  "synthetic_only": true,
+  "qualified": false,
+  "overlay": "/root/m1-65-runtime-c78d55d0a7637baf4910af68b6d6ba4e286a1254",
+  "script": "tests/probe_chat_request_compat.py",
+  "exit_code": 1,
+  "failure_signature": "TypeError: 'pydantic_core._pydantic_core.ValidatorIterator' object is not subscriptable",
+  "report_kind": "script_exception_no_json_emitted",
+  "privacy": {
+    "contains_prompt_or_response_text": false,
+    "contains_model_weights": false
+  }
+}
