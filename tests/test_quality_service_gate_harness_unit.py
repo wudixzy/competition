@@ -46,6 +46,22 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("--allow-bare-engine-n2-skip", functional)
 
+    def test_strict_reference_profile_disables_rejected_pair_only(self):
+        self.assertIn(
+            "BI100_QUALITY_KERNEL_PROFILE:-submission", self.source)
+        self.assertIn("strict-reference)", self.source)
+        self.assertIn("MOE_DIRECT=0", self.source)
+        self.assertIn("GDN_PACKED=0", self.source)
+        self.assertIn(
+            'export BI100_MOE_COREX_DIRECT_ROUTED="$MOE_DIRECT"',
+            self.source,
+        )
+        self.assertIn(
+            'export BI100_GDN_COREX_PACKED_DECODE="$GDN_PACKED"',
+            self.source,
+        )
+        self.assertIn('--kernel-profile "$KERNEL_PROFILE"', self.source)
+
     def test_raw_run_artifacts_cannot_enter_repository(self):
         self.assertIn(
             "quality run output must stay outside the source repository",
