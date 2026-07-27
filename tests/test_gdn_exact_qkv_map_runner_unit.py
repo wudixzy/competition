@@ -41,6 +41,8 @@ class ExactQkvMapRunnerTests(unittest.TestCase):
                 "preflight_comparison"):
             self.assertIn(f'"{gate}": read_rc(', self.runner)
         self.assertIn("tests/service_postflight_gate.py", self.runner)
+        self.assertIn("--settle-timeout-s 30 --clean-samples 3",
+                      self.runner)
         self.assertIn("run_preflight after", self.runner)
         self.assertIn("Gloo.*(failed|reset|error)", self.runner)
         self.assertIn(

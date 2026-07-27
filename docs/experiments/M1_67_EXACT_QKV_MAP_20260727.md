@@ -59,6 +59,9 @@ The exit trap then checks residual API/worker and GPU processes, scans
 fatal/OOM/Gloo/NCCL/worker-loss and timeout signatures, repeats the selected
 GPU preflight, and compares pre/post GPU state. Any cleanup or postflight
 failure invalidates the component result.
+The residual scan requires three consecutive clean observations within 30
+seconds and preserves every failed observation. A short platform health query
+can settle, while a persistent or repeatedly reappearing holder still fails.
 
 ## Current status
 
