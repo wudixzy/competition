@@ -47,12 +47,16 @@ git -C "$ROOT" rev-parse HEAD > "$RUN_ROOT/source_revision.txt"
 git -C "$ROOT" branch --show-current > "$RUN_ROOT/source_branch.txt"
 ACTIVE_CHILD_PID=""
 ACTIVE_CHILD_PGID=""
-CHILD_TERM_GRACE_S=900
-CHILD_KILL_GRACE_S=30
+ACTIVE_CHILD_STARTTIME=""
+ACTIVE_CHILD_SESSION_TOKEN=""
+ACTIVE_CHILD_IDENTITY=""
+CHILD_TERM_GRACE_S=60
+CHILD_KILL_GRACE_S=20
 
 write_status() {
     local final_rc=$1
     python3 - "$RUN_ROOT" "$INSTANCE" "$final_rc" <<'PY'
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -66,8 +70,8 @@ def read_rc(path):
     return int(value) if value.isdigit() else None
 
 report = {
-    "schema": "bi100-admission64-quality-ab-runner-v1",
-    "version": 1,
+    "schema": "bi100-admission64-quality-ab-runner-v2",
+    "version": 2,
     "source_revision": (root / "source_revision.txt").read_text(
         encoding="utf-8").strip(),
     "source_branch": (root / "source_branch.txt").read_text(
@@ -83,6 +87,10 @@ report = {
         "aggregate": read_rc(root / "aggregate.rc"),
         "orchestrator_cleanup": read_rc(
             root / "orchestrator_cleanup.rc"),
+        "orchestrator_recovery": read_rc(
+            root / "orchestrator_recovery.rc"),
+        "orchestrator_recovery_clean": read_rc(
+            root / "orchestrator_recovery_clean.rc"),
         "orchestrator_postflight": read_rc(
             root / "orchestrator_postflight.rc"),
         "orchestrator_preflight_after": read_rc(
@@ -96,29 +104,124 @@ report = {
     "default_policy_change_authorized": False,
     "production_promotion_authorized": False,
 }
+artifacts = {}
+for name, relative_path in (
+    ("control_child_identity", "control_child_identity.json"),
+    ("control_service_identity", "control/process_group_identity.json"),
+    ("candidate_child_identity", "candidate_child_identity.json"),
+    ("candidate_service_identity", "candidate/process_group_identity.json"),
+    ("orchestrator_recovery", "orchestrator_recovery.json"),
+    ("orchestrator_recovery_clean", "orchestrator_recovery_clean.json"),
+):
+    path = root / relative_path
+    artifacts[f"{name}_sha256"] = (
+        hashlib.sha256(path.read_bytes()).hexdigest()
+        if path.is_file() else None
+    )
+report["artifacts"] = artifacts
 (root / "runner_status.json").write_text(
     json.dumps(report, indent=2, sort_keys=True) + "\n",
     encoding="utf-8")
 PY
 }
 
+read_process_starttime() {
+    python3 - "$1" <<'PY'
+from pathlib import Path
+import sys
+
+value = (Path("/proc") / sys.argv[1] / "stat").read_text(encoding="ascii")
+tail = value[value.rfind(")") + 2:].split()
+print(tail[19])
+PY
+}
+
+active_child_is_same() {
+    local observed
+    [[ -n "$ACTIVE_CHILD_PID" && -n "$ACTIVE_CHILD_STARTTIME" ]] || return 1
+    observed=$(read_process_starttime "$ACTIVE_CHILD_PID" 2>/dev/null) \
+        || return 1
+    [[ "$observed" == "$ACTIVE_CHILD_STARTTIME" ]]
+}
+
 stop_active_child() {
     local rc=0
-    if [[ -z "$ACTIVE_CHILD_PID" || -z "$ACTIVE_CHILD_PGID" ]]; then
+    if [[ -z "$ACTIVE_CHILD_PID" ]]; then
         return 0
     fi
-    # The child owns a TP4 service and performs its own 60-second shutdown,
-    # process reaping, service postflight, and four-GPU postflight.
-    bi100_stop_process_group \
-        "$ACTIVE_CHILD_PGID" "$ACTIVE_CHILD_PID" \
-        "$CHILD_TERM_GRACE_S" "$CHILD_KILL_GRACE_S" || rc=$?
-    ACTIVE_CHILD_PID=""
-    ACTIVE_CHILD_PGID=""
+    if [[ -n "$ACTIVE_CHILD_PGID" ]]; then
+        bi100_stop_process_group \
+            "$ACTIVE_CHILD_PGID" "$ACTIVE_CHILD_PID" \
+            "$CHILD_TERM_GRACE_S" "$CHILD_KILL_GRACE_S" \
+            "$ACTIVE_CHILD_STARTTIME" \
+            "$ACTIVE_CHILD_SESSION_TOKEN" || rc=$?
+    else
+        if active_child_is_same; then
+            kill -TERM "$ACTIVE_CHILD_PID" 2>/dev/null || true
+            for _ in $(seq 1 "$CHILD_TERM_GRACE_S"); do
+                active_child_is_same || break
+                sleep 1
+            done
+        fi
+        if active_child_is_same; then
+            kill -KILL "$ACTIVE_CHILD_PID" 2>/dev/null || true
+            for _ in $(seq 1 "$CHILD_KILL_GRACE_S"); do
+                active_child_is_same || break
+                sleep 1
+            done
+        fi
+    fi
+    wait "$ACTIVE_CHILD_PID" 2>/dev/null || true
+    if active_child_is_same; then
+        echo "A/B child survived scoped cleanup" >&2
+        rc=1
+    fi
+    if [[ $rc -eq 0 ]]; then
+        ACTIVE_CHILD_PID=""
+        ACTIVE_CHILD_PGID=""
+        ACTIVE_CHILD_STARTTIME=""
+        ACTIVE_CHILD_SESSION_TOKEN=""
+        ACTIVE_CHILD_IDENTITY=""
+    fi
     return "$rc"
 }
 
+recover_recorded_children() {
+    local identities=()
+    local path
+    for path in \
+        "$RUN_ROOT/control_child_identity.json" \
+        "$RUN_ROOT/control/process_group_identity.json" \
+        "$RUN_ROOT/candidate_child_identity.json" \
+        "$RUN_ROOT/candidate/process_group_identity.json"; do
+        if [[ -f "$path" ]]; then
+            identities+=(--identity "$path")
+        fi
+    done
+    python3 "$ROOT/scripts/cleanup_recorded_bi100_sessions.py" \
+        "${identities[@]}" \
+        --out "$RUN_ROOT/orchestrator_recovery.json" \
+        > "$RUN_ROOT/orchestrator_recovery.stdout" \
+        2> "$RUN_ROOT/orchestrator_recovery.stderr"
+}
+
+qualify_recorded_children() {
+    python3 "$ROOT/tests/qualify_recorded_session_cleanup.py" \
+        "$RUN_ROOT/orchestrator_recovery.json" \
+        --expected-identity "$RUN_ROOT/control_child_identity.json" \
+        --expected-identity \
+            "$RUN_ROOT/control/process_group_identity.json" \
+        --expected-identity "$RUN_ROOT/candidate_child_identity.json" \
+        --expected-identity \
+            "$RUN_ROOT/candidate/process_group_identity.json" \
+        --out "$RUN_ROOT/orchestrator_recovery_clean.json" \
+        > "$RUN_ROOT/orchestrator_recovery_clean.stdout" \
+        2> "$RUN_ROOT/orchestrator_recovery_clean.stderr"
+}
+
 run_orchestrator_postflight() {
-    python3 "$ROOT/tests/service_postflight_gate.py" \
+    timeout --signal=TERM --kill-after=70s 240s \
+        python3 "$ROOT/tests/service_postflight_gate.py" \
         --gpus 0,1,2,3 \
         --settle-timeout-s 30 --clean-samples 3 \
         --sample-interval-s 1 \
@@ -140,7 +243,7 @@ scan_orchestrator_fatal_logs() {
     local file
     local found=0
     local pattern
-    pattern='CUDA error|SIGSEGV|Fatal Python error|out of memory|AssertionError|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|Connection reset by peer|worker.*(died|lost|exited unexpectedly)|TimeoutError|engine iteration timed out|watchdog.*tim(e|ed) out'
+    pattern='CUDA error|SIGSEGV|Fatal Python error|out of memory|device-side assert|AssertionError|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|Connection reset by peer|worker.*(died|lost|exited unexpectedly)|Timeout(Error|Expired)|engine iteration timed out|watchdog.*tim(e|ed) out|scheduler requested a missing GDN prefix state|non-finite GatedDeltaNet'
     : > "$RUN_ROOT/orchestrator_fatal_scan.txt"
     while IFS= read -r -d '' file; do
         if grep -Eiq "$pattern" "$file"; then
@@ -150,7 +253,9 @@ scan_orchestrator_fatal_logs() {
                 >> "$RUN_ROOT/orchestrator_fatal_scan.txt" || true
             found=1
         fi
-    done < <(find "$RUN_ROOT" -type f -name server.log -print0)
+    done < <(find "$RUN_ROOT" -type f \
+        \( -name '*.log' -o -name '*.stdout' -o -name '*.stderr' \) \
+        -print0)
     return "$found"
 }
 
@@ -161,31 +266,45 @@ scan_orchestrator_timeouts() {
     : > "$RUN_ROOT/orchestrator_timeout_scan.txt"
     while IFS= read -r -d '' file; do
         value=$(tr -d '[:space:]' < "$file")
+        if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+            printf '%s=malformed:%s\n' "$file" "$value" \
+                >> "$RUN_ROOT/orchestrator_timeout_scan.txt"
+            found=1
+            continue
+        fi
         case "$value" in
-            124|137)
+            124|137|143)
                 printf '%s=%s\n' "$file" "$value" \
                     >> "$RUN_ROOT/orchestrator_timeout_scan.txt"
                 found=1
                 ;;
         esac
-    done < <(find "$RUN_ROOT" -type f \
-        \( -name startup.rc -o -name quality.rc \
-        -o -name agent_workload.rc \) -print0)
+    done < <(find "$RUN_ROOT" -type f -name '*.rc' -print0)
     return "$found"
 }
 
 finish() {
     local rc=$?
     local cleanup_rc=0
+    local recovery_rc=0
+    local recovery_clean_rc=0
     local postflight_rc=0
     local preflight_rc=0
     local fatal_rc=0
     local timeout_rc=0
-    trap - EXIT TERM INT
+    trap - EXIT
+    trap '' TERM INT
     set +e
     stop_active_child
     cleanup_rc=$?
     printf '%s\n' "$cleanup_rc" > "$RUN_ROOT/orchestrator_cleanup.rc"
+    recover_recorded_children
+    recovery_rc=$?
+    printf '%s\n' "$recovery_rc" > "$RUN_ROOT/orchestrator_recovery.rc"
+    qualify_recorded_children
+    recovery_clean_rc=$?
+    printf '%s\n' "$recovery_clean_rc" \
+        > "$RUN_ROOT/orchestrator_recovery_clean.rc"
     run_orchestrator_postflight
     postflight_rc=$?
     printf '%s\n' "$postflight_rc" \
@@ -200,7 +319,8 @@ finish() {
     scan_orchestrator_timeouts
     timeout_rc=$?
     printf '%s\n' "$timeout_rc" > "$RUN_ROOT/orchestrator_timeout_scan.rc"
-    if [[ $cleanup_rc -ne 0 || $postflight_rc -ne 0 \
+    if [[ $cleanup_rc -ne 0 || $recovery_rc -ne 0 \
+            || $recovery_clean_rc -ne 0 || $postflight_rc -ne 0 \
             || $preflight_rc -ne 0 || $fatal_rc -ne 0 \
             || $timeout_rc -ne 0 ]]; then
         rc=1
@@ -213,26 +333,83 @@ trap 'exit 130' INT
 trap finish EXIT
 
 run_arm() {
-    local policy=$1
-    local label=$2
-    local output=$3
+    local arm=$1
+    local policy=$2
+    local label=$3
+    local output=$4
+    local identity="$RUN_ROOT/${arm}_child_identity.json"
+    local identity_ok=0
     local observed_pgid=""
-    setsid env BI100_QUALITY_KERNEL_PROFILE=submission \
-        "$ROOT/scripts/run_quality_service_gate.sh" \
-        functional "$policy" direct 0 lru \
-        "$label" "$INSTANCE" "$output" &
+    local observed_token=""
+    local observed_identity=""
+    (
+        exec python3 "$ROOT/scripts/exec_bi100_session.py" \
+            "$identity" -- \
+            env BI100_QUALITY_KERNEL_PROFILE=submission \
+            "$ROOT/scripts/run_quality_service_gate.sh" \
+            functional "$policy" direct 0 lru \
+            "$label" "$INSTANCE" "$output"
+    ) > "$RUN_ROOT/${policy}_runner.stdout" \
+      2> "$RUN_ROOT/${policy}_runner.stderr" &
     ACTIVE_CHILD_PID=$!
-    ACTIVE_CHILD_PGID=$ACTIVE_CHILD_PID
+    ACTIVE_CHILD_STARTTIME=""
     for _ in $(seq 1 20); do
-        observed_pgid=$(ps -o pgid= -p "$ACTIVE_CHILD_PID" 2>/dev/null \
-            | tr -d ' ')
-        [[ -n "$observed_pgid" ]] && break
+        ACTIVE_CHILD_STARTTIME=$(
+            read_process_starttime "$ACTIVE_CHILD_PID" 2>/dev/null || true)
+        [[ -n "$ACTIVE_CHILD_STARTTIME" ]] && break
+        kill -0 "$ACTIVE_CHILD_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+    if [[ -z "$ACTIVE_CHILD_STARTTIME" ]]; then
+        wait "$ACTIVE_CHILD_PID" 2>/dev/null || true
+        ACTIVE_CHILD_PID=""
+        ACTIVE_CHILD_IDENTITY=""
+        return 125
+    fi
+    ACTIVE_CHILD_IDENTITY=$identity
+    for _ in $(seq 1 20); do
+        if [[ -s "$identity" ]]; then
+            if observed_identity=$(python3 - "$identity" \
+                    "$ACTIVE_CHILD_PID" "$ACTIVE_CHILD_STARTTIME" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected_pid = int(sys.argv[2])
+expected_starttime = int(sys.argv[3])
+token = value.get("session_token")
+if (
+    value.get("schema") != "bi100-process-session-v1"
+    or value.get("version") != 1
+    or value.get("pid") != expected_pid
+    or value.get("pgid") != expected_pid
+    or value.get("sid") != expected_pid
+    or value.get("starttime_ticks") != expected_starttime
+    or not isinstance(token, str)
+    or len(token) != 32
+    or any(character not in "0123456789abcdef" for character in token)
+):
+    raise SystemExit(1)
+print(value["pgid"], token)
+PY
+            ); then
+                read -r observed_pgid observed_token <<< "$observed_identity"
+                if [[ "$observed_pgid" == "$ACTIVE_CHILD_PID" \
+                        && "$observed_token" =~ ^[0-9a-f]{32}$ ]]; then
+                    identity_ok=1
+                    ACTIVE_CHILD_PGID=$observed_pgid
+                    ACTIVE_CHILD_SESSION_TOKEN=$observed_token
+                    break
+                fi
+            fi
+        fi
+        active_child_is_same || break
         sleep 1
     done
-    if [[ -z "${observed_pgid:-}" \
-            || "$observed_pgid" != "$ACTIVE_CHILD_PGID" ]]; then
-        echo "A/B arm did not enter an isolated process group" >&2
-        return 1
+    if [[ "$identity_ok" != 1 ]]; then
+        stop_active_child
+        return 125
     fi
     set +e
     wait "$ACTIVE_CHILD_PID"
@@ -240,18 +417,22 @@ run_arm() {
     set -e
     ACTIVE_CHILD_PID=""
     ACTIVE_CHILD_PGID=""
+    ACTIVE_CHILD_STARTTIME=""
+    ACTIVE_CHILD_SESSION_TOKEN=""
+    ACTIVE_CHILD_IDENTITY=""
     return "$rc"
 }
 
 set +e
-run_arm fine32 m1-85-control-fine32 "$RUN_ROOT/control"
+run_arm control fine32 m1-85-control-fine32 "$RUN_ROOT/control"
 control_rc=$?
 set -e
 printf '%s\n' "$control_rc" > "$RUN_ROOT/control.rc"
 [[ $control_rc -eq 0 ]]
 
 set +e
-run_arm admission64 m1-85-candidate-admission64 "$RUN_ROOT/candidate"
+run_arm candidate admission64 m1-85-candidate-admission64 \
+    "$RUN_ROOT/candidate"
 candidate_rc=$?
 set -e
 printf '%s\n' "$candidate_rc" > "$RUN_ROOT/candidate.rc"

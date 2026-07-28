@@ -13,7 +13,10 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         cls.source = HARNESS.read_text(encoding="utf-8")
 
     def test_every_run_uses_fresh_service_and_four_gpu_preflights(self):
-        self.assertIn('setsid "$ROOT/launch_service"', self.source)
+        self.assertIn("exec_bi100_session.py", self.source)
+        self.assertIn(
+            '"$RUN_ROOT/process_group_identity.json"', self.source)
+        self.assertIn('"$ROOT/launch_service"', self.source)
         self.assertIn('run_preflight before', self.source)
         self.assertIn('run_preflight after', self.source)
         self.assertIn('--gpus 0,1,2,3', self.source)
@@ -24,7 +27,7 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         contract = self.source.index("build_quality_runtime_contract.py")
         allocator = self.source.index("prefix_namespace_fork_gate.py")
         broadcast = self.source.index("gdn_action_broadcast_gate.py")
-        service = self.source.index('setsid "$ROOT/launch_service"')
+        service = self.source.index('"$ROOT/launch_service"')
         self.assertLess(identity, contract)
         self.assertLess(contract, allocator)
         self.assertLess(allocator, broadcast)
@@ -84,20 +87,25 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
                 "worker.*(died|lost|exited unexpectedly)",
                 "Gloo.*(failed|reset|error)",
                 "NCCL.*(failed|abort|error)",
-                "Connection reset by peer", "TimeoutError"):
+                "Connection reset by peer", "Timeout(Error|Expired)"):
             self.assertIn(marker, self.source)
 
     def test_cleanup_has_grace_period_and_fail_closed_postflight(self):
         self.assertIn(
-            'bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
+            '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20 \\',
             self.source,
         )
         self.assertIn(
-            '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20 || rc=$?',
+            '"$ACTIVE_STARTTIME" "$ACTIVE_SESSION_TOKEN" || rc=$?',
             self.source,
         )
         self.assertIn('return "$rc"', self.source)
-        self.assertIn("trap - EXIT TERM INT", self.source)
+        self.assertIn("trap - EXIT", self.source)
+        self.assertIn("trap '' TERM INT", self.source)
+        self.assertIn(
+            "cleanup_recorded_bi100_sessions.py", self.source)
+        self.assertIn(
+            "qualify_recorded_session_cleanup.py", self.source)
         self.assertIn("tests/service_postflight_gate.py", self.source)
         self.assertIn("--settle-timeout-s 30 --clean-samples 3",
                       self.source)
@@ -106,13 +114,17 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertIn("tests/summarize_api_4xx_log.py", self.source)
         self.assertIn('"timeout_scan": read_rc(', self.source)
         cleanup = self.source.index("stop_service\n")
+        recovery = self.source.index("recover_service_session\n")
         process_scan = self.source.index("run_service_postflight\n")
         gpu_preflight = self.source.index("run_preflight after")
+        self.assertLess(cleanup, recovery)
+        self.assertLess(recovery, process_scan)
         self.assertLess(cleanup, process_scan)
         self.assertLess(process_scan, gpu_preflight)
         self.assertNotIn("pkill", self.source)
         for gate in (
-                "cleanup", "service_postflight", "fatal_scan",
+                "process_group", "cleanup", "service_recovery",
+                "service_recovery_clean", "service_postflight", "fatal_scan",
                 "api_4xx_attribution",
                 "timeout_scan", "preflight_after",
                 "preflight_comparison"):

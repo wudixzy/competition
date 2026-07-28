@@ -1,5 +1,6 @@
 #!/bin/bash
 set -Eeuo pipefail
+umask 077
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/scripts/lib/process_group.sh"
@@ -21,6 +22,8 @@ MODEL_PATH=${MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
 KERNEL_PROFILE=${BI100_QUALITY_KERNEL_PROFILE:-submission}
 ACTIVE_PID=""
 ACTIVE_PGID=""
+ACTIVE_STARTTIME=""
+ACTIVE_SESSION_TOKEN=""
 SERVICE_STARTED=0
 BEFORE_PREFLIGHT_PASSED=0
 
@@ -210,6 +213,24 @@ wait_for_port_free() {
     return 1
 }
 
+read_process_starttime() {
+    python3 - "$1" <<'PY'
+from pathlib import Path
+import sys
+
+value = (Path("/proc") / sys.argv[1] / "stat").read_text(encoding="ascii")
+tail = value[value.rfind(")") + 2:].split()
+print(tail[19])
+PY
+}
+
+active_pid_is_same() {
+    local observed
+    [[ -n "$ACTIVE_PID" && -n "$ACTIVE_STARTTIME" ]] || return 1
+    observed=$(read_process_starttime "$ACTIVE_PID" 2>/dev/null) || return 1
+    [[ "$observed" == "$ACTIVE_STARTTIME" ]]
+}
+
 run_preflight() {
     local name=$1
     local rc=0
@@ -232,14 +253,52 @@ stop_service() {
     if [[ -n "$ACTIVE_PGID" ]]; then
         # Allow TP4 workers and collective runtimes a full minute to unwind.
         # SIGKILL is only used for live members after this grace period.
-        bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" 60 20 || rc=$?
+        bi100_stop_process_group \
+            "$ACTIVE_PGID" "$ACTIVE_PID" 60 20 \
+            "$ACTIVE_STARTTIME" "$ACTIVE_SESSION_TOKEN" || rc=$?
     elif [[ -n "$ACTIVE_PID" ]]; then
-        echo "service PID lacks a verified process group" >&2
-        rc=2
+        if active_pid_is_same; then
+            kill -TERM "$ACTIVE_PID" 2>/dev/null || true
+            for _ in $(seq 1 60); do
+                active_pid_is_same || break
+                sleep 1
+            done
+        fi
+        if active_pid_is_same; then
+            kill -KILL "$ACTIVE_PID" 2>/dev/null || true
+            for _ in $(seq 1 20); do
+                active_pid_is_same || break
+                sleep 1
+            done
+        fi
+        wait "$ACTIVE_PID" 2>/dev/null || true
+        if active_pid_is_same; then
+            echo "unisolated service leader survived cleanup" >&2
+            rc=1
+        fi
     fi
     ACTIVE_PID=""
     ACTIVE_PGID=""
+    ACTIVE_STARTTIME=""
+    ACTIVE_SESSION_TOKEN=""
     return "$rc"
+}
+
+recover_service_session() {
+    python3 "$ROOT/scripts/cleanup_recorded_bi100_sessions.py" \
+        --identity "$RUN_ROOT/process_group_identity.json" \
+        --out "$RUN_ROOT/service_recovery.json" \
+        > "$RUN_ROOT/service_recovery.stdout" \
+        2> "$RUN_ROOT/service_recovery.stderr"
+}
+
+qualify_service_recovery() {
+    python3 "$ROOT/tests/qualify_recorded_session_cleanup.py" \
+        "$RUN_ROOT/service_recovery.json" \
+        --expected-identity "$RUN_ROOT/process_group_identity.json" \
+        --out "$RUN_ROOT/service_recovery_clean.json" \
+        > "$RUN_ROOT/service_recovery_clean.stdout" \
+        2> "$RUN_ROOT/service_recovery_clean.stderr"
 }
 
 scan_fatal_log() {
@@ -249,7 +308,7 @@ scan_fatal_log() {
         return 1
     fi
     local pattern
-    pattern='CUDA error|SIGSEGV|Fatal Python error|out of memory|AssertionError|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|Connection reset by peer|worker.*(died|lost|exited unexpectedly)|TimeoutError|engine iteration timed out|watchdog.*tim(e|ed) out'
+    pattern='CUDA error|SIGSEGV|Fatal Python error|out of memory|device-side assert|AssertionError|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|Connection reset by peer|worker.*(died|lost|exited unexpectedly)|Timeout(Error|Expired)|engine iteration timed out|watchdog.*tim(e|ed) out|scheduler requested a missing GDN prefix state|non-finite GatedDeltaNet'
     if grep -Eiq "$pattern" \
             "$RUN_ROOT/server.log"; then
         grep -Ein "$pattern" \
@@ -263,7 +322,8 @@ scan_fatal_log() {
 
 run_service_postflight() {
     local rc=0
-    if python3 "$ROOT/tests/service_postflight_gate.py" \
+    if timeout --signal=TERM --kill-after=70s 240s \
+            python3 "$ROOT/tests/service_postflight_gate.py" \
             --gpus 0,1,2,3 \
             --settle-timeout-s 30 --clean-samples 3 \
             --sample-interval-s 1 \
@@ -283,17 +343,22 @@ scan_runner_timeouts() {
     local value
     local found=0
     : > "$RUN_ROOT/timeout_scan.txt"
-    for file in startup.rc quality.rc agent_workload.rc; do
-        [[ -f "$RUN_ROOT/$file" ]] || continue
-        value=$(tr -d '[:space:]' < "$RUN_ROOT/$file")
+    while IFS= read -r -d '' file; do
+        value=$(tr -d '[:space:]' < "$file")
+        if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+            printf '%s=malformed:%s\n' "$file" "$value" \
+                >> "$RUN_ROOT/timeout_scan.txt"
+            found=1
+            continue
+        fi
         case "$value" in
-            124|137)
+            124|137|143)
                 printf '%s=%s\n' "$file" "$value" \
                     >> "$RUN_ROOT/timeout_scan.txt"
                 found=1
                 ;;
         esac
-    done
+    done < <(find "$RUN_ROOT" -type f -name '*.rc' -print0)
     printf '%s\n' "$found" > "$RUN_ROOT/timeout_scan.rc"
     return "$found"
 }
@@ -318,8 +383,8 @@ def read_rc(name):
     return int(value) if value.isdigit() else None
 
 report = {
-    "schema": "bi100-quality-service-gate-status-v1",
-    "version": 1,
+    "schema": "bi100-quality-service-gate-status-v2",
+    "version": 2,
     "suite": sys.argv[2],
     "optimization": {
         "gdn_cache_policy": sys.argv[3],
@@ -341,12 +406,15 @@ report = {
         "prefix_allocator": read_rc("prefix_allocator.rc"),
         "gdn_action_broadcast": read_rc("gdn_action_broadcast.rc"),
         "preflight_before": read_rc("preflight_before.rc"),
+        "process_group": read_rc("process_group.rc"),
         "startup": read_rc("startup.rc"),
         "startup_contract": read_rc("startup_contract.rc"),
         "quality": read_rc("quality.rc"),
         "agent_workload": read_rc("agent_workload.rc"),
         "api_4xx_attribution": read_rc("api_4xx_attribution.rc"),
         "cleanup": read_rc("cleanup.rc"),
+        "service_recovery": read_rc("service_recovery.rc"),
+        "service_recovery_clean": read_rc("service_recovery_clean.rc"),
         "service_postflight": read_rc("service_postflight.rc"),
         "fatal_scan": read_rc("fatal_scan.rc"),
         "timeout_scan": read_rc("timeout_scan.rc"),
@@ -362,6 +430,9 @@ contract = root / "runtime_contract.json"
 quality = root / "quality_report.json"
 agent = root / "agent_workload.json"
 api_4xx = root / "api_4xx_attribution.json"
+process_group = root / "process_group_identity.json"
+service_recovery = root / "service_recovery.json"
+service_recovery_clean = root / "service_recovery_clean.json"
 report["artifacts"] = {
     "runtime_contract_sha256": (
         hashlib.sha256(contract.read_bytes()).hexdigest()
@@ -375,6 +446,15 @@ report["artifacts"] = {
     "api_4xx_attribution_sha256": (
         hashlib.sha256(api_4xx.read_bytes()).hexdigest()
         if api_4xx.is_file() else None),
+    "process_group_identity_sha256": (
+        hashlib.sha256(process_group.read_bytes()).hexdigest()
+        if process_group.is_file() else None),
+    "service_recovery_sha256": (
+        hashlib.sha256(service_recovery.read_bytes()).hexdigest()
+        if service_recovery.is_file() else None),
+    "service_recovery_clean_sha256": (
+        hashlib.sha256(service_recovery_clean.read_bytes()).hexdigest()
+        if service_recovery_clean.is_file() else None),
 }
 (root / "status.json").write_text(
     json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -384,6 +464,8 @@ PY
 finish() {
     local primary_rc=$?
     local cleanup_rc=0
+    local recovery_rc=0
+    local recovery_clean_rc=0
     local service_postflight_rc=0
     local fatal_rc=0
     local api_4xx_rc=0
@@ -391,16 +473,22 @@ finish() {
     local after_rc=0
     local comparison_rc=0
     local final_rc=$primary_rc
-    trap - EXIT TERM INT
+    trap - EXIT
+    trap '' TERM INT
     set +e
 
     if [[ "$SERVICE_STARTED" == 1 ]]; then
         stop_service
         cleanup_rc=$?
-        if [[ $cleanup_rc -eq 0 ]]; then
-            wait_for_port_free
-            cleanup_rc=$?
-        fi
+    fi
+    recover_service_session
+    recovery_rc=$?
+    qualify_service_recovery
+    recovery_clean_rc=$?
+    if ! wait_for_port_free; then
+        cleanup_rc=1
+    fi
+    if [[ "$SERVICE_STARTED" == 1 ]]; then
         scan_fatal_log
         fatal_rc=$?
         if [[ -f "$RUN_ROOT/server.log" ]]; then
@@ -413,9 +501,15 @@ finish() {
         else
             api_4xx_rc=1
         fi
+    else
+        fatal_rc=1
+        api_4xx_rc=1
     fi
     printf '%s\n' "$api_4xx_rc" > "$RUN_ROOT/api_4xx_attribution.rc"
     printf '%s\n' "$cleanup_rc" > "$RUN_ROOT/cleanup.rc"
+    printf '%s\n' "$recovery_rc" > "$RUN_ROOT/service_recovery.rc"
+    printf '%s\n' "$recovery_clean_rc" \
+        > "$RUN_ROOT/service_recovery_clean.rc"
     run_service_postflight
     service_postflight_rc=$?
     scan_runner_timeouts
@@ -439,7 +533,9 @@ finish() {
         printf '%s\n' "$comparison_rc" > "$RUN_ROOT/preflight_comparison.rc"
     fi
 
-    if [[ $cleanup_rc -ne 0 || $service_postflight_rc -ne 0 \
+    if [[ $cleanup_rc -ne 0 || $recovery_rc -ne 0 \
+            || $recovery_clean_rc -ne 0 \
+            || $service_postflight_rc -ne 0 \
             || $fatal_rc -ne 0 || $api_4xx_rc -ne 0 \
             || $timeout_rc -ne 0 \
             || $after_rc -ne 0 || $comparison_rc -ne 0 ]]; then
@@ -514,20 +610,69 @@ run_preflight before
 BEFORE_PREFLIGHT_PASSED=1
 port_is_free
 
-setsid "$ROOT/launch_service" > "$RUN_ROOT/server.log" 2>&1 < /dev/null &
+(
+    exec python3 "$ROOT/scripts/exec_bi100_session.py" \
+        "$RUN_ROOT/process_group_identity.json" -- \
+        "$ROOT/launch_service"
+) > "$RUN_ROOT/server.log" 2>&1 < /dev/null &
 ACTIVE_PID=$!
-ACTIVE_PGID=$ACTIVE_PID
 SERVICE_STARTED=1
 printf '%s\n' "$ACTIVE_PID" > "$RUN_ROOT/server.pid"
 for _ in $(seq 1 20); do
-    observed_pgid=$(ps -o pgid= -p "$ACTIVE_PID" 2>/dev/null | tr -d ' ')
-    [[ -n "$observed_pgid" ]] && break
+    ACTIVE_STARTTIME=$(
+        read_process_starttime "$ACTIVE_PID" 2>/dev/null || true)
+    [[ -n "$ACTIVE_STARTTIME" ]] && break
+    kill -0 "$ACTIVE_PID" 2>/dev/null || break
+    sleep 0.1
+done
+identity_ok=0
+observed_identity=""
+for _ in $(seq 1 20); do
+    if [[ -n "$ACTIVE_STARTTIME" \
+            && -s "$RUN_ROOT/process_group_identity.json" ]]; then
+        if observed_identity=$(python3 - \
+                "$RUN_ROOT/process_group_identity.json" \
+                "$ACTIVE_PID" "$ACTIVE_STARTTIME" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected_pid = int(sys.argv[2])
+expected_starttime = int(sys.argv[3])
+token = value.get("session_token")
+if (
+    value.get("schema") != "bi100-process-session-v1"
+    or value.get("version") != 1
+    or value.get("pid") != expected_pid
+    or value.get("pgid") != expected_pid
+    or value.get("sid") != expected_pid
+    or value.get("starttime_ticks") != expected_starttime
+    or not isinstance(token, str)
+    or len(token) != 32
+    or any(character not in "0123456789abcdef" for character in token)
+):
+    raise SystemExit(1)
+print(value["pgid"], token)
+PY
+        ); then
+            read -r ACTIVE_PGID ACTIVE_SESSION_TOKEN <<< "$observed_identity"
+            if [[ "$ACTIVE_PGID" == "$ACTIVE_PID" \
+                    && "$ACTIVE_SESSION_TOKEN" =~ ^[0-9a-f]{32}$ ]]; then
+                identity_ok=1
+                break
+            fi
+        fi
+    fi
+    active_pid_is_same || break
     sleep 1
 done
-if [[ -z "${observed_pgid:-}" || "$observed_pgid" != "$ACTIVE_PGID" ]]; then
-    echo "service did not enter an isolated process group" >&2
+if [[ "$identity_ok" != 1 ]]; then
+    printf '%s\n' 125 > "$RUN_ROOT/process_group.rc"
+    echo "service process-group identity was not attested" >&2
     exit 1
 fi
+printf '%s\n' 0 > "$RUN_ROOT/process_group.rc"
 printf '%s\n' "$ACTIVE_PGID" > "$RUN_ROOT/server.pgid"
 
 startup_rc=1
@@ -536,7 +681,7 @@ for _ in $(seq 1 360); do
         startup_rc=0
         break
     fi
-    if ! kill -0 "$ACTIVE_PID" 2>/dev/null; then
+    if ! active_pid_is_same; then
         tail -120 "$RUN_ROOT/server.log" >&2 || true
         break
     fi

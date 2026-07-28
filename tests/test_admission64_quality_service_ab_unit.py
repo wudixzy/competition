@@ -25,6 +25,7 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(COMPARE)
 
 RUNNER = ROOT / "scripts/run_m1_85_admission64_quality_ab.sh"
+QUALITY_RUNNER = ROOT / "scripts/run_quality_service_gate.sh"
 REVISION = "a" * 40
 INSTANCE = "private-tp4"
 BRANCH = "test/M1-85-admission64-quality-ab-20260728"
@@ -34,12 +35,18 @@ FILE_SHA256S = {
         "quality_report": "2" * 64,
         "agent_workload": "3" * 64,
         "api_4xx_attribution": "4" * 64,
+        "process_group_identity": "9" * 64,
+        "service_recovery": "a" * 64,
+        "service_recovery_clean": "c" * 64,
     },
     "candidate": {
         "runtime_contract": "5" * 64,
         "quality_report": "6" * 64,
         "agent_workload": "7" * 64,
         "api_4xx_attribution": "8" * 64,
+        "process_group_identity": "0" * 64,
+        "service_recovery": "b" * 64,
+        "service_recovery_clean": "d" * 64,
     },
 }
 
@@ -84,7 +91,7 @@ def contract(policy: str) -> dict:
 def status(policy: str) -> dict:
     return {
         "schema": COMPARE.STATUS_SCHEMA,
-        "version": 1,
+        "version": 2,
         "suite": "functional",
         "optimization": {
             **COMPARE.EXPECTED_COMMON_OPTIMIZATION,
@@ -111,6 +118,12 @@ def status(policy: str) -> dict:
                 "agent_workload"],
             "api_4xx_attribution_sha256": FILE_SHA256S[policy_key(policy)][
                 "api_4xx_attribution"],
+            "process_group_identity_sha256": FILE_SHA256S[
+                policy_key(policy)]["process_group_identity"],
+            "service_recovery_sha256": FILE_SHA256S[
+                policy_key(policy)]["service_recovery"],
+            "service_recovery_clean_sha256": FILE_SHA256S[
+                policy_key(policy)]["service_recovery_clean"],
         },
     }
 
@@ -202,6 +215,19 @@ def api_4xx_report() -> dict:
     }
 
 
+def process_identity(policy: str) -> dict:
+    pid = 100 if policy == "fine32" else 200
+    return {
+        "schema": "bi100-process-session-v1",
+        "version": 1,
+        "pid": pid,
+        "pgid": pid,
+        "sid": pid,
+        "starttime_ticks": pid * 10,
+        "session_token": "1" * 32 if policy == "fine32" else "2" * 32,
+    }
+
+
 def compare_fixture() -> dict:
     return COMPARE.compare(
         control_status=status("fine32"),
@@ -210,6 +236,8 @@ def compare_fixture() -> dict:
         candidate_contract=contract("admission64"),
         control_4xx=api_4xx_report(),
         candidate_4xx=api_4xx_report(),
+        control_process_identity=process_identity("fine32"),
+        candidate_process_identity=process_identity("admission64"),
         quality_comparison=quality_comparison(),
         agent_comparison=agent_comparison(),
         file_sha256s=copy.deepcopy(FILE_SHA256S),
@@ -246,6 +274,8 @@ class Admission64QualityServiceAbTest(unittest.TestCase):
             candidate_contract=contract("admission64"),
             control_4xx=api_4xx_report(),
             candidate_4xx=api_4xx_report(),
+            control_process_identity=process_identity("fine32"),
+            candidate_process_identity=process_identity("admission64"),
             quality_comparison=quality_comparison(),
             agent_comparison=agent_comparison(),
             file_sha256s=copy.deepcopy(FILE_SHA256S),
@@ -264,6 +294,8 @@ class Admission64QualityServiceAbTest(unittest.TestCase):
             candidate_contract=contract("admission64"),
             control_4xx=api_4xx_report(),
             candidate_4xx=api_4xx_report(),
+            control_process_identity=process_identity("fine32"),
+            candidate_process_identity=process_identity("admission64"),
             quality_comparison=quality_comparison(),
             agent_comparison=agent_comparison(),
             file_sha256s=copy.deepcopy(FILE_SHA256S),
@@ -282,6 +314,8 @@ class Admission64QualityServiceAbTest(unittest.TestCase):
             candidate_contract=candidate_contract,
             control_4xx=api_4xx_report(),
             candidate_4xx=api_4xx_report(),
+            control_process_identity=process_identity("fine32"),
+            candidate_process_identity=process_identity("admission64"),
             quality_comparison=quality_comparison(),
             agent_comparison=agent_comparison(),
             file_sha256s=copy.deepcopy(FILE_SHA256S),
@@ -304,6 +338,8 @@ class Admission64QualityServiceAbTest(unittest.TestCase):
             candidate_contract=contract("admission64"),
             control_4xx=api_4xx_report(),
             candidate_4xx=candidate_4xx,
+            control_process_identity=process_identity("fine32"),
+            candidate_process_identity=process_identity("admission64"),
             quality_comparison=quality_comparison(),
             agent_comparison=agent_comparison(),
             file_sha256s=copy.deepcopy(FILE_SHA256S),
@@ -322,6 +358,8 @@ class Admission64QualityServiceAbTest(unittest.TestCase):
             candidate_contract=contract("admission64"),
             control_4xx=api_4xx_report(),
             candidate_4xx=api_4xx_report(),
+            control_process_identity=process_identity("fine32"),
+            candidate_process_identity=process_identity("admission64"),
             quality_comparison=quality,
             agent_comparison=agent_comparison(),
             file_sha256s=copy.deepcopy(FILE_SHA256S),
@@ -331,6 +369,49 @@ class Admission64QualityServiceAbTest(unittest.TestCase):
             "quality: qualified case evidence is incomplete",
             result["reasons"],
         )
+
+    def test_malformed_process_identity_is_rejected(self):
+        candidate_identity = process_identity("admission64")
+        candidate_identity["starttime_ticks"] = 0
+        result = COMPARE.compare(
+            control_status=status("fine32"),
+            candidate_status=status("admission64"),
+            control_contract=contract("fine32"),
+            candidate_contract=contract("admission64"),
+            control_4xx=api_4xx_report(),
+            candidate_4xx=api_4xx_report(),
+            control_process_identity=process_identity("fine32"),
+            candidate_process_identity=candidate_identity,
+            quality_comparison=quality_comparison(),
+            agent_comparison=agent_comparison(),
+            file_sha256s=copy.deepcopy(FILE_SHA256S),
+        )
+        self.assertFalse(result["qualified"])
+        self.assertIn(
+            "candidate: process identity is not attested",
+            result["reasons"],
+        )
+
+    def test_reused_process_session_token_is_rejected(self):
+        candidate_identity = process_identity("admission64")
+        candidate_identity["session_token"] = process_identity(
+            "fine32")["session_token"]
+        result = COMPARE.compare(
+            control_status=status("fine32"),
+            candidate_status=status("admission64"),
+            control_contract=contract("fine32"),
+            candidate_contract=contract("admission64"),
+            control_4xx=api_4xx_report(),
+            candidate_4xx=api_4xx_report(),
+            control_process_identity=process_identity("fine32"),
+            candidate_process_identity=candidate_identity,
+            quality_comparison=quality_comparison(),
+            agent_comparison=agent_comparison(),
+            file_sha256s=copy.deepcopy(FILE_SHA256S),
+        )
+        self.assertFalse(result["qualified"])
+        self.assertIn(
+            "A/B process session tokens must differ", result["reasons"])
 
     def test_cli_binds_exact_arm_artifacts(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -354,6 +435,24 @@ class Admission64QualityServiceAbTest(unittest.TestCase):
                         arm_root / "api_4xx_attribution.json",
                         api_4xx_report(),
                     ),
+                    "process_group_identity": write_json(
+                        arm_root / "process_group_identity.json",
+                        {
+                            "schema": "bi100-process-session-v1",
+                            "version": 1,
+                            "pid": 100 if arm == "control" else 200,
+                            "pgid": 100 if arm == "control" else 200,
+                            "sid": 100 if arm == "control" else 200,
+                            "starttime_ticks": (
+                                1000 if arm == "control" else 2000),
+                            "session_token": (
+                                "1" * 32 if arm == "control" else "2" * 32),
+                        },
+                    ),
+                    "service_recovery": write_json(
+                        arm_root / "service_recovery.json", {}),
+                    "service_recovery_clean": write_json(
+                        arm_root / "service_recovery_clean.json", {}),
                 }
                 arm_status = status(policy)
                 arm_status["artifacts"] = {
@@ -365,6 +464,12 @@ class Admission64QualityServiceAbTest(unittest.TestCase):
                         "agent_workload"],
                     "api_4xx_attribution_sha256": arm_hashes[arm][
                         "api_4xx_attribution"],
+                    "process_group_identity_sha256": arm_hashes[arm][
+                        "process_group_identity"],
+                    "service_recovery_sha256": arm_hashes[arm][
+                        "service_recovery"],
+                    "service_recovery_clean_sha256": arm_hashes[arm][
+                        "service_recovery_clean"],
                 }
                 write_json(arm_root / "status.json", arm_status)
 
@@ -407,6 +512,11 @@ class Admission64QualityServiceAbTest(unittest.TestCase):
             aggregate = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertTrue(aggregate["qualified"], aggregate)
             self.assertIn("inputs", aggregate)
+            self.assertEqual(
+                aggregate["inputs"][
+                    "control_process_group_identity_sha256"],
+                arm_hashes["control"]["process_group_identity"],
+            )
 
 
 class Admission64QualityRunnerStaticTest(unittest.TestCase):
@@ -414,19 +524,23 @@ class Admission64QualityRunnerStaticTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = RUNNER.read_text(encoding="utf-8")
+        cls.quality_source = QUALITY_RUNNER.read_text(encoding="utf-8")
         cls.comparator_source = (
             TESTS / "compare_admission64_quality_service_ab.py"
         ).read_text(encoding="utf-8")
 
     def test_fixed_order_changes_only_cache_policy(self):
         control = self.source.index(
-            "run_arm fine32 m1-85-control-fine32")
+            "run_arm control fine32 m1-85-control-fine32")
         candidate = self.source.index(
-            "run_arm admission64 m1-85-candidate-admission64")
+            "run_arm candidate admission64 m1-85-candidate-admission64")
         self.assertLess(control, candidate)
         self.assertIn(
-            '"$ROOT/scripts/run_quality_service_gate.sh" \\\n'
-            '        functional "$policy" direct 0 lru',
+            '"$ROOT/scripts/run_quality_service_gate.sh" \\',
+            self.source,
+        )
+        self.assertIn(
+            'functional "$policy" direct 0 lru',
             self.source,
         )
         self.assertIn(
@@ -444,14 +558,90 @@ class Admission64QualityRunnerStaticTest(unittest.TestCase):
         self.assertIn("source \"$ROOT/scripts/lib/process_group.sh\"",
                       self.source)
         self.assertIn("bi100_stop_process_group", self.source)
-        self.assertIn("CHILD_TERM_GRACE_S=900", self.source)
+        self.assertIn("CHILD_TERM_GRACE_S=60", self.source)
+        self.assertIn("CHILD_KILL_GRACE_S=20", self.source)
+        self.assertNotIn("CHILD_TERM_GRACE_S=900", self.source)
+        self.assertIn("exec_bi100_session.py", self.source)
+        self.assertIn("ACTIVE_CHILD_STARTTIME", self.source)
+        self.assertIn("ACTIVE_CHILD_SESSION_TOKEN", self.source)
+        self.assertIn("cleanup_recorded_bi100_sessions.py", self.source)
+        self.assertIn("qualify_recorded_session_cleanup.py", self.source)
+        self.assertIn("orchestrator_recovery_clean", self.source)
+        self.assertIn(
+            '"schema": "bi100-admission64-quality-ab-runner-v2"',
+            self.source,
+        )
+        self.assertIn('"control_child_identity",', self.source)
+        self.assertIn('"control_service_identity",', self.source)
+        self.assertIn('"candidate_child_identity",', self.source)
+        self.assertIn('"candidate_service_identity",', self.source)
+        self.assertIn(
+            '"$RUN_ROOT/control/process_group_identity.json"',
+            self.source,
+        )
+        self.assertIn(
+            '"$RUN_ROOT/candidate/process_group_identity.json"',
+            self.source,
+        )
+        self.assertIn('artifacts[f"{name}_sha256"]', self.source)
         self.assertIn("trap finish EXIT", self.source)
+        self.assertIn("trap '' TERM INT", self.source)
         self.assertIn("service_postflight_gate.py", self.source)
         self.assertIn("--gpus 0,1,2,3", self.source)
         self.assertIn("bi100_preflight.py", self.source)
         self.assertIn("scan_orchestrator_fatal_logs", self.source)
         self.assertIn("scan_orchestrator_timeouts", self.source)
+        self.assertIn("-name '*.stdout'", self.source)
+        self.assertIn("-name '*.stderr'", self.source)
+        self.assertIn("-name '*.rc'", self.source)
+        self.assertIn("124|137|143", self.source)
         self.assertNotIn("pkill", self.source)
+
+    def test_inner_service_is_attested_and_gracefully_reaped(self):
+        self.assertIn("exec_bi100_session.py", self.quality_source)
+        self.assertIn(
+            '"$RUN_ROOT/process_group_identity.json"', self.quality_source)
+        self.assertIn(
+            '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
+            self.quality_source,
+        )
+        self.assertIn("ACTIVE_STARTTIME", self.quality_source)
+        self.assertIn("ACTIVE_SESSION_TOKEN", self.quality_source)
+        self.assertIn("active_pid_is_same", self.quality_source)
+        self.assertIn("wait \"$ACTIVE_PID\"", self.quality_source)
+        self.assertIn("trap '' TERM INT", self.quality_source)
+        self.assertIn(
+            "cleanup_recorded_bi100_sessions.py", self.quality_source)
+        self.assertIn(
+            "qualify_recorded_session_cleanup.py", self.quality_source)
+        self.assertNotIn(
+            'setsid "$ROOT/launch_service"', self.quality_source)
+        self.assertNotIn("pkill", self.quality_source)
+
+    def test_inner_status_binds_process_identity_and_timeout_scans(self):
+        self.assertIn(
+            '"schema": "bi100-quality-service-gate-status-v2"',
+            self.quality_source,
+        )
+        self.assertIn(
+            '"process_group": read_rc("process_group.rc")',
+            self.quality_source,
+        )
+        self.assertIn(
+            '"process_group_identity_sha256"', self.quality_source)
+        self.assertIn(
+            '"service_recovery": read_rc("service_recovery.rc")',
+            self.quality_source,
+        )
+        self.assertIn(
+            '"service_recovery_clean": read_rc("service_recovery_clean.rc")',
+            self.quality_source,
+        )
+        self.assertIn('"service_recovery_sha256"', self.quality_source)
+        self.assertIn(
+            '"service_recovery_clean_sha256"', self.quality_source)
+        self.assertIn("-name '*.rc'", self.quality_source)
+        self.assertIn("124|137|143", self.quality_source)
 
 
 if __name__ == "__main__":

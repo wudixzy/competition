@@ -18,21 +18,24 @@ import summarize_api_4xx_log as api_4xx
 
 
 Json = dict[str, Any]
-SCHEMA = "bi100-admission64-quality-service-ab-v1"
-VERSION = 1
-STATUS_SCHEMA = "bi100-quality-service-gate-status-v1"
+SCHEMA = "bi100-admission64-quality-service-ab-v2"
+VERSION = 2
+STATUS_SCHEMA = "bi100-quality-service-gate-status-v2"
 EXPECTED_STATUS_GATES = {
     "runtime_identity",
     "runtime_contract",
     "prefix_allocator",
     "gdn_action_broadcast",
     "preflight_before",
+    "process_group",
     "startup",
     "startup_contract",
     "quality",
     "agent_workload",
     "api_4xx_attribution",
     "cleanup",
+    "service_recovery",
+    "service_recovery_clean",
     "service_postflight",
     "fatal_scan",
     "timeout_scan",
@@ -73,6 +76,15 @@ EXPECTED_QUALITY_COMPARISON_PRIVACY = {
     "contains_raw_requests": False,
     "contains_raw_model_outputs": False,
     "contains_credentials": False,
+}
+EXPECTED_PROCESS_IDENTITY_FIELDS = {
+    "schema",
+    "version",
+    "pid",
+    "pgid",
+    "sid",
+    "starttime_ticks",
+    "session_token",
 }
 EXPECTED_AGENT_CASES = len(
     agent_compare.workload.load_manifest(
@@ -146,7 +158,7 @@ def _status_reasons(
     reasons: list[str] = []
     if not isinstance(status, dict):
         return [f"{label}: status root must be an object"]
-    if status.get("schema") != STATUS_SCHEMA or status.get("version") != 1:
+    if status.get("schema") != STATUS_SCHEMA or status.get("version") != 2:
         reasons.append(f"{label}: status schema or version is invalid")
     if status.get("suite") != "functional":
         reasons.append(f"{label}: suite must be functional")
@@ -183,6 +195,9 @@ def _status_reasons(
             "quality_report",
             "agent_workload",
             "api_4xx_attribution",
+            "process_group_identity",
+            "service_recovery",
+            "service_recovery_clean",
         }
         or any(not _is_sha256(value) for value in file_sha256s.values())
     ):
@@ -192,6 +207,11 @@ def _status_reasons(
         "quality_report_sha256": file_sha256s["quality_report"],
         "agent_workload_sha256": file_sha256s["agent_workload"],
         "api_4xx_attribution_sha256": file_sha256s["api_4xx_attribution"],
+        "process_group_identity_sha256": file_sha256s[
+            "process_group_identity"],
+        "service_recovery_sha256": file_sha256s["service_recovery"],
+        "service_recovery_clean_sha256": file_sha256s[
+            "service_recovery_clean"],
     }
     if artifacts != expected_artifacts:
         reasons.append(f"{label}: status artifact bindings differ")
@@ -382,6 +402,34 @@ def _api_4xx_reasons(report: Any, label: str) -> list[str]:
     return reasons
 
 
+def _process_identity_reasons(identity: Any, label: str) -> list[str]:
+    if not isinstance(identity, dict):
+        return [f"{label}: process identity root must be an object"]
+    reasons: list[str] = []
+    if set(identity) != EXPECTED_PROCESS_IDENTITY_FIELDS:
+        reasons.append(f"{label}: process identity fields are invalid")
+    pid = identity.get("pid")
+    starttime = identity.get("starttime_ticks")
+    token = identity.get("session_token")
+    if (
+        identity.get("schema") != "bi100-process-session-v1"
+        or identity.get("version") != 1
+        or not isinstance(pid, int)
+        or isinstance(pid, bool)
+        or pid <= 1
+        or identity.get("pgid") != pid
+        or identity.get("sid") != pid
+        or not isinstance(starttime, int)
+        or isinstance(starttime, bool)
+        or starttime <= 0
+        or not isinstance(token, str)
+        or len(token) != 32
+        or any(character not in "0123456789abcdef" for character in token)
+    ):
+        reasons.append(f"{label}: process identity is not attested")
+    return reasons
+
+
 def compare(
     *,
     control_status: Any,
@@ -390,6 +438,8 @@ def compare(
     candidate_contract: Any,
     control_4xx: Any,
     candidate_4xx: Any,
+    control_process_identity: Any,
+    candidate_process_identity: Any,
     quality_comparison: Any,
     agent_comparison: Any,
     file_sha256s: dict[str, dict[str, str]],
@@ -445,6 +495,17 @@ def compare(
     ))
     reasons.extend(_api_4xx_reasons(control_4xx, "control"))
     reasons.extend(_api_4xx_reasons(candidate_4xx, "candidate"))
+    reasons.extend(_process_identity_reasons(
+        control_process_identity, "control"))
+    reasons.extend(_process_identity_reasons(
+        candidate_process_identity, "candidate"))
+    if (
+        isinstance(control_process_identity, dict)
+        and isinstance(candidate_process_identity, dict)
+        and control_process_identity.get("session_token")
+        == candidate_process_identity.get("session_token")
+    ):
+        reasons.append("A/B process session tokens must differ")
 
     policy_only_delta = False
     if (
@@ -545,6 +606,9 @@ def _arm_paths(root: Path) -> dict[str, Path]:
         "quality_report": root / "quality_report.json",
         "agent_workload": root / "agent_workload.json",
         "api_4xx_attribution": root / "api_4xx_attribution.json",
+        "process_group_identity": root / "process_group_identity.json",
+        "service_recovery": root / "service_recovery.json",
+        "service_recovery_clean": root / "service_recovery_clean.json",
     }
 
 
@@ -578,6 +642,10 @@ def main() -> int:
         candidate_contract=_load(candidate_paths["runtime_contract"]),
         control_4xx=_load(control_paths["api_4xx_attribution"]),
         candidate_4xx=_load(candidate_paths["api_4xx_attribution"]),
+        control_process_identity=_load(
+            control_paths["process_group_identity"]),
+        candidate_process_identity=_load(
+            candidate_paths["process_group_identity"]),
         quality_comparison=_load(args.quality_comparison),
         agent_comparison=_load(args.agent_comparison),
         file_sha256s=file_sha256s,
@@ -589,6 +657,18 @@ def main() -> int:
             "runtime_contract"],
         "candidate_runtime_contract_sha256": file_sha256s["candidate"][
             "runtime_contract"],
+        "control_process_group_identity_sha256": file_sha256s["control"][
+            "process_group_identity"],
+        "candidate_process_group_identity_sha256": file_sha256s["candidate"][
+            "process_group_identity"],
+        "control_service_recovery_sha256": file_sha256s["control"][
+            "service_recovery"],
+        "candidate_service_recovery_sha256": file_sha256s["candidate"][
+            "service_recovery"],
+        "control_service_recovery_clean_sha256": file_sha256s["control"][
+            "service_recovery_clean"],
+        "candidate_service_recovery_clean_sha256": file_sha256s["candidate"][
+            "service_recovery_clean"],
         "quality_comparison_sha256": _file_sha256(args.quality_comparison),
         "agent_comparison_sha256": _file_sha256(args.agent_comparison),
     }

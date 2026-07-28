@@ -33,9 +33,15 @@ class M165ServiceAbHarnessTest(unittest.TestCase):
         self.assertIn("functional|long-context|decode)", self.service_gate)
         self.assertIn("gdn_combined_qk_decode_api.py", self.service_gate)
         self.assertIn(
-            'bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
+            '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20 \\',
             self.service_gate,
         )
+        self.assertIn(
+            '"$ACTIVE_STARTTIME" "$ACTIVE_SESSION_TOKEN" || rc=$?',
+            self.service_gate,
+        )
+        self.assertIn(
+            "cleanup_recorded_bi100_sessions.py", self.service_gate)
         self.assertIn("tests/service_postflight_gate.py", self.service_gate)
         self.assertIn("--settle-timeout-s 30 --clean-samples 3",
                       self.service_gate)
