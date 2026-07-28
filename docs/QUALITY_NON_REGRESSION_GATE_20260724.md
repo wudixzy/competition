@@ -64,16 +64,22 @@ Every invocation starts exactly one fresh TP4 service, runs four-GPU preflight
 before and after, validates physical KV-block reuse and both installed
 model-input GDN action broadcasts, validates the startup contract, executes
 one quality surface, and scans fatal/OOM/Gloo/NCCL/worker-loss/timeout
-signatures. Cleanup is limited to the process group created by that invocation:
-send `SIGTERM`, wait at least 60 seconds for TP4 workers and collective
-runtimes to exit, use `SIGKILL` only for surviving members, and then reap the
-leader. Do not use broad `pkill` cleanup.
+signatures. Cleanup is limited to the process group created by that invocation.
+Before service execution, an atomic identity binds PID, PGID, SID, Linux
+starttime, and a random session token. Send `SIGTERM` only after all identity
+fields match, wait 60 seconds for TP4 workers and collective runtimes to exit,
+use `SIGKILL` only for verified surviving members, and then reap the leader.
+Do not use broad `pkill` cleanup.
 
 The `EXIT`/signal trap always performs residual API-server and worker scans,
 open-GPU-device scans, and a repeated per-card CUDA preflight. Cleanup,
 postflight, fatal scan, timeout scan, final preflight, and preflight comparison
-are independent fail-closed gates. A nonzero or missing required result makes
-the experiment invalid, even when its request or performance report passed.
+are independent fail-closed gates. A recorded-session recovery scan runs after
+normal cleanup. It may signal verified leftovers to restore the host, but any
+such emergency signal invalidates the experiment; valid evidence requires an
+already-quiescent process tree and a complete token scan. A nonzero or missing
+required result makes the experiment invalid, even when its request or
+performance report passed.
 The process/GPU scan requires three consecutive clean observations within a
 30-second settling window. This tolerates a short platform health query without
 ignoring it: every failed observation remains in the JSON report, while any

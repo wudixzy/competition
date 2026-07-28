@@ -41,10 +41,13 @@ allowed to differ and are bound to their status files.
 ## Qualification contract
 
 Each service arm must pass every startup, runtime identity, allocator,
-scheduler/worker broadcast, functional, Agent, 4xx attribution, cleanup,
+scheduler/worker broadcast, process-identity, functional, Agent, 4xx
+attribution, cleanup, recorded-session recovery, recovery qualification,
 postflight, fatal-scan, timeout-scan, and before/after GPU preflight gate.
-Status artifact SHA-256 values must bind the exact runtime contract, functional
-report, Agent report, and 4xx report used by the aggregate decision.
+Status artifact SHA-256 values must bind the exact runtime contract, process
+identity, recovery reports, functional report, Agent report, and 4xx report
+used by the aggregate decision. New runs use quality-service status v2 and
+aggregate v2; v1 evidence cannot be mixed into this decision.
 
 The functional comparator requires all 53 cases to preserve HTTP status,
 finish reasons, tokenization, deterministic normalized outputs, completion
@@ -63,15 +66,26 @@ quality report.
 
 ## Lifecycle
 
-Every arm starts in its own process group. The child quality runner sends
-SIGTERM, waits 60 seconds for the API server, TP4 workers, and collective
-runtimes to exit, sends SIGKILL only to verified survivors, waits/reaps, checks
-for process and GPU residue, repeats four-GPU preflight, and scans for fatal,
-Gloo, NCCL, worker-loss, and timeout evidence.
+Every A/B arm and every API service starts through
+`exec_bi100_session.py`. The atomic identity binds PID, PGID, SID, Linux
+starttime, and a random per-session token before the target is executed. The
+child quality runner sends SIGTERM only to the verified API-service group,
+waits 60 seconds for the server, TP4 workers, and collective runtimes to exit,
+sends SIGKILL only to verified survivors, and waits/reaps the leader.
 
-The outer A/B runner has an independent trap. It allows the child up to 900
-seconds to finish its own cleanup before escalating, then performs another
-process postflight, four-GPU preflight, and aggregate fatal/timeout scan.
+The child then performs a recorded-session recovery scan. A recovery signal
+may clean an abnormal run, but it invalidates that run: qualification requires
+the identity to be already quiescent, a complete token scan, no TERM or KILL,
+and zero live or escaped processes. Postflight, four-GPU preflight, fatal
+scanning, and timeout scanning run after cleanup.
+
+The outer A/B runner has an independent 60-second TERM and 20-second KILL
+window. Its finalizer validates both A/B runner identities and both nested
+service identities, so a service that escaped because its child runner was
+forcibly terminated can still be cleaned without a broad process search.
+Normal qualification requires all four identities to be already quiescent.
+Repeated TERM or INT is ignored while either finalizer is completing its
+bounded cleanup and evidence writes.
 
 ## Interpretation
 

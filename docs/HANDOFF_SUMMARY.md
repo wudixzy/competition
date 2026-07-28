@@ -1,5 +1,32 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-28 M1-90 admission64 runner 生命周期
+
+- 私有分支
+  `fix/M1-90-admission64-runner-lifecycle-20260728` 的实现提交为
+  `9334866`，基于 M1-89 文档提交 `1d83a10`。本轮只加固待执行的 M1-85
+  `fine32/direct` 对 `admission64/direct` TP4 完整质量 A/B，不修改模型计算、
+  缓存算法、请求语义、正式 YAML、Dockerfile、默认开关、main 或可见性。
+- 审计修复了一个确定性 runner 缺陷：实际 identity 文件使用
+  `fine32/admission64`，恢复门禁却读取 `control/candidate`，原实现即使完整跑完
+  也无法形成有效恢复证据。现在 control/candidate 路径统一。
+- 外层 A/B child 与内层 API service 均通过 session-v1 helper 启动，身份绑定
+  PID/PGID/SID、`/proc` starttime 和随机 token。正常清理只向匹配身份的进程组
+  发 TERM，等待 60 秒，仍存活才发 KILL，再 wait/reap；不使用 `pkill`。
+- 内层 runner 正常清理后执行记录身份恢复；外层最终器再按固定顺序检查 control
+  runner/service 和 candidate runner/service 四个身份。应急恢复可以清场，但只要
+  发过 TERM/KILL、token 扫描不完整、存在 escaped/live process 或证据缺失，该轮
+  A/B 就失去资格。
+- quality service status 与 admission64 aggregate 升级为 v2，绑定 identity 和
+  recovery SHA；聚合器还校验 session 结构并拒绝 A/B token 复用。fatal 扫描扩展到
+  CoreX/CUDA、OOM、Gloo/NCCL、worker loss、missing GDN state 与 non-finite，
+  所有 `*.rc` 都检查 `124/137/143`。
+- 本地 focused 生命周期测试 `37/37`，完整 tests-root `1050` 项通过、25 项依赖
+  skip，submission preflight `9/9`，质量数据与 53 项指标 manifest 均通过。
+  这只是 runner/证据合同验证；没有新增 GPU 服务、模型质量、cold/warm、TP4
+  稳定性、性能或官方分数结论。详情见
+  `docs/experiments/M1_90_ADMISSION64_RUNNER_LIFECYCLE_20260728.md`。
+
 ## 2026-07-28 M1-89 多模态缓存命名空间与服务门禁
 
 - 最新私有分支为
