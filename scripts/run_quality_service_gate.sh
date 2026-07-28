@@ -20,6 +20,10 @@ INSTANCE=$7
 RUN_ROOT=$8
 MODEL_PATH=${MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
 KERNEL_PROFILE=${BI100_QUALITY_KERNEL_PROFILE:-submission}
+RUN_FUSED_OUTPUT_DIAGNOSTIC=${BI100_RUN_FUSED_OUTPUT_DIAGNOSTIC:-0}
+FUSED_OUTPUT_DIAGNOSTIC_RUN_ID=${BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID:-}
+FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY=${BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY:-}
+unset BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY
 ACTIVE_PID=""
 ACTIVE_PGID=""
 ACTIVE_STARTTIME=""
@@ -75,6 +79,32 @@ case "$KERNEL_PROFILE" in
         exit 2
         ;;
 esac
+case "$RUN_FUSED_OUTPUT_DIAGNOSTIC" in
+    0|1) ;;
+    *)
+        echo "BI100_RUN_FUSED_OUTPUT_DIAGNOSTIC must be 0 or 1" >&2
+        exit 2
+        ;;
+esac
+if [[ "$RUN_FUSED_OUTPUT_DIAGNOSTIC" == 1 ]]; then
+    if [[ "$SUITE" != functional || "$POLICY" != admission64 \
+            || "$RESTORE_MODE" != hybrid64 ]]; then
+        echo "fused output diagnostics require functional admission64/hybrid64" \
+            >&2
+        exit 2
+    fi
+    if [[ -z "$FUSED_OUTPUT_DIAGNOSTIC_RUN_ID" \
+            || ! "$FUSED_OUTPUT_DIAGNOSTIC_RUN_ID" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+        echo "BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID is required and invalid" \
+            >&2
+        exit 2
+    fi
+    if [[ ! "$FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY" =~ ^[0-9a-f]{64}$ ]]; then
+        echo "BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY is required and invalid" \
+            >&2
+        exit 2
+    fi
+fi
 
 RUN_ROOT=$(python3 - "$RUN_ROOT" <<'PY'
 from pathlib import Path
@@ -418,6 +448,8 @@ report = {
         "startup_contract": read_rc("startup_contract.rc"),
         "quality": read_rc("quality.rc"),
         "agent_workload": read_rc("agent_workload.rc"),
+        "fused_output_diagnostic": read_rc(
+            "fused_output_diagnostic.rc"),
         "api_4xx_attribution": read_rc("api_4xx_attribution.rc"),
         "cleanup": read_rc("cleanup.rc"),
         "service_recovery": read_rc("service_recovery.rc"),
@@ -436,6 +468,7 @@ report = {
 contract = root / "runtime_contract.json"
 quality = root / "quality_report.json"
 agent = root / "agent_workload.json"
+fused_output = root / "fused_output_diagnostic.json"
 api_4xx = root / "api_4xx_attribution.json"
 process_group = root / "process_group_identity.json"
 service_recovery = root / "service_recovery.json"
@@ -450,6 +483,9 @@ report["artifacts"] = {
     "agent_workload_sha256": (
         hashlib.sha256(agent.read_bytes()).hexdigest()
         if agent.is_file() else None),
+    "fused_output_diagnostic_sha256": (
+        hashlib.sha256(fused_output.read_bytes()).hexdigest()
+        if fused_output.is_file() else None),
     "api_4xx_attribution_sha256": (
         hashlib.sha256(api_4xx.read_bytes()).hexdigest()
         if api_4xx.is_file() else None),
@@ -721,6 +757,32 @@ printf '%s\n' "$rc" > "$RUN_ROOT/startup_contract.rc"
 
 set +e
 if [[ "$SUITE" == functional ]]; then
+    fused_output_rc=0
+    if [[ "$RUN_FUSED_OUTPUT_DIAGNOSTIC" == 1 ]]; then
+        diagnostic_mode=control
+        if [[ "$FUSED_PREFILL" == 1 ]]; then
+            diagnostic_mode=candidate
+        fi
+        timeout --signal=TERM --kill-after=30s 5400s \
+            env BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY="$FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY" \
+            python3 \
+            "$ROOT/tests/diagnose_m1_116_fused_prefill_output.py" \
+            --base http://127.0.0.1:8000 \
+            --model-path "$MODEL_PATH" \
+            --runtime-contract "$RUN_ROOT/runtime_contract.json" \
+            --runtime-identity "$RUNTIME_IDENTITY" \
+            --source-revision "$(git -C "$ROOT" rev-parse HEAD)" \
+            --instance "$INSTANCE" \
+            --mode "$diagnostic_mode" \
+            --run-id "$FUSED_OUTPUT_DIAGNOSTIC_RUN_ID" \
+            --timeout-s 1800 \
+            --out "$RUN_ROOT/fused_output_diagnostic.json" \
+            > "$RUN_ROOT/fused_output_diagnostic.stdout" \
+            2> "$RUN_ROOT/fused_output_diagnostic.stderr"
+        fused_output_rc=$?
+        printf '%s\n' "$fused_output_rc" \
+            > "$RUN_ROOT/fused_output_diagnostic.rc"
+    fi
     timeout --signal=TERM --kill-after=30s 21600s \
         "$ROOT/scripts/run_quality_functional_gate.sh" \
         http://127.0.0.1:8000 "$MODEL_PATH" \
@@ -745,7 +807,8 @@ if [[ "$SUITE" == functional ]]; then
     agent_rc=$?
     printf '%s\n' "$agent_rc" > "$RUN_ROOT/agent_workload.rc"
     rc=0
-    if [[ $quality_rc -ne 0 || $agent_rc -ne 0 ]]; then
+    if [[ $quality_rc -ne 0 || $agent_rc -ne 0 \
+            || $fused_output_rc -ne 0 ]]; then
         rc=1
     fi
 elif [[ "$SUITE" == long-context ]]; then

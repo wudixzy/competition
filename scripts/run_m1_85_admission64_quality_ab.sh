@@ -13,13 +13,20 @@ fi
 INSTANCE=$1
 QUALITY_AB_VARIANT=${BI100_QUALITY_AB_VARIANT:-admission64-policy}
 case "$QUALITY_AB_VARIANT" in
-    admission64-policy|m1-112-fused-prefill) ;;
+    admission64-policy|m1-112-fused-prefill|\
+m1-116-fused-prefill-adjudication) ;;
     *)
-        echo "BI100_QUALITY_AB_VARIANT must be admission64-policy or m1-112-fused-prefill" \
+        echo "BI100_QUALITY_AB_VARIANT is invalid" \
             >&2
         exit 2
         ;;
 esac
+FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY=""
+if [[ "$QUALITY_AB_VARIANT" == \
+        m1-116-fused-prefill-adjudication ]]; then
+    FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY=$(
+        python3 -c 'import secrets; print(secrets.token_hex(32))')
+fi
 RUN_ROOT=$(python3 - "$2" <<'PY'
 from pathlib import Path
 import sys
@@ -82,11 +89,15 @@ def read_rc(path):
 
 report = {
     "schema": (
-        "bi100-fused-prefill-quality-ab-runner-v1"
-        if variant == "m1-112-fused-prefill"
-        else "bi100-admission64-quality-ab-runner-v2"
+        "bi100-fused-prefill-quality-adjudication-ab-runner-v1"
+        if variant == "m1-116-fused-prefill-adjudication"
+        else (
+            "bi100-fused-prefill-quality-ab-runner-v1"
+            if variant == "m1-112-fused-prefill"
+            else "bi100-admission64-quality-ab-runner-v2"
+        )
     ),
-    "version": 1 if variant == "m1-112-fused-prefill" else 2,
+    "version": 2 if variant == "admission64-policy" else 1,
     "source_revision": (root / "source_revision.txt").read_text(
         encoding="utf-8").strip(),
     "source_branch": (root / "source_branch.txt").read_text(
@@ -95,7 +106,7 @@ report = {
     "returncode": int(sys.argv[3]),
     "fixed_order": (
         ["fused-off", "fused-on"]
-        if variant == "m1-112-fused-prefill"
+        if variant != "admission64-policy"
         else ["fine32", "admission64"]
     ),
     "gates": {
@@ -104,6 +115,8 @@ report = {
         "quality_comparison": read_rc(root / "quality_comparison.rc"),
         "agent_comparison": read_rc(root / "agent_comparison.rc"),
         "aggregate": read_rc(root / "aggregate.rc"),
+        "fused_output_comparison": read_rc(
+            root / "fused_output_comparison.rc"),
         "orchestrator_cleanup": read_rc(
             root / "orchestrator_cleanup.rc"),
         "orchestrator_recovery": read_rc(
@@ -131,6 +144,7 @@ for name, relative_path in (
     ("candidate_service_identity", "candidate/process_group_identity.json"),
     ("orchestrator_recovery", "orchestrator_recovery.json"),
     ("orchestrator_recovery_clean", "orchestrator_recovery_clean.json"),
+    ("fused_output_comparison", "fused_output_comparison.json"),
 ):
     path = root / relative_path
     artifacts[f"{name}_sha256"] = (
@@ -359,7 +373,7 @@ run_arm() {
     local restore_mode=direct
     local fused_prefill=0
     local runner_name=$policy
-    if [[ "$QUALITY_AB_VARIANT" == m1-112-fused-prefill ]]; then
+    if [[ "$QUALITY_AB_VARIANT" != admission64-policy ]]; then
         restore_mode=hybrid64
         runner_name=$arm
         if [[ "$arm" == candidate ]]; then
@@ -371,10 +385,19 @@ run_arm() {
     local observed_pgid=""
     local observed_token=""
     local observed_identity=""
+    local runner_env=(BI100_QUALITY_KERNEL_PROFILE=submission)
+    if [[ "$QUALITY_AB_VARIANT" == \
+            m1-116-fused-prefill-adjudication ]]; then
+        runner_env+=(
+            BI100_RUN_FUSED_OUTPUT_DIAGNOSTIC=1
+            BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID=m1-109-pair-1-20260729
+            BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY="$FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY"
+        )
+    fi
     (
         exec python3 "$ROOT/scripts/exec_bi100_session.py" \
             "$identity" -- \
-            env BI100_QUALITY_KERNEL_PROFILE=submission \
+            env "${runner_env[@]}" \
             "$ROOT/scripts/run_quality_service_gate.sh" \
             functional "$policy" "$restore_mode" "$fused_prefill" lru \
             "$label" "$INSTANCE" "$output"
@@ -456,6 +479,10 @@ set +e
 if [[ "$QUALITY_AB_VARIANT" == m1-112-fused-prefill ]]; then
     run_arm control admission64 m1-112-control-fused-off \
         "$RUN_ROOT/control"
+elif [[ "$QUALITY_AB_VARIANT" == \
+        m1-116-fused-prefill-adjudication ]]; then
+    run_arm control admission64 m1-116-control-fused-off \
+        "$RUN_ROOT/control"
 else
     run_arm control fine32 m1-85-control-fine32 "$RUN_ROOT/control"
 fi
@@ -467,6 +494,10 @@ printf '%s\n' "$control_rc" > "$RUN_ROOT/control.rc"
 set +e
 if [[ "$QUALITY_AB_VARIANT" == m1-112-fused-prefill ]]; then
     run_arm candidate admission64 m1-112-candidate-fused-on \
+        "$RUN_ROOT/candidate"
+elif [[ "$QUALITY_AB_VARIANT" == \
+        m1-116-fused-prefill-adjudication ]]; then
+    run_arm candidate admission64 m1-116-candidate-fused-on \
         "$RUN_ROOT/candidate"
 else
     run_arm candidate admission64 m1-85-candidate-admission64 \
@@ -502,7 +533,7 @@ printf '%s\n' "$agent_comparison_rc" \
     > "$RUN_ROOT/agent_comparison.rc"
 
 set +e
-if [[ "$QUALITY_AB_VARIANT" == m1-112-fused-prefill ]]; then
+if [[ "$QUALITY_AB_VARIANT" != admission64-policy ]]; then
     python3 "$ROOT/tests/compare_fused_prefill_quality_service_ab.py" \
         --control-root "$RUN_ROOT/control" \
         --candidate-root "$RUN_ROOT/candidate" \
@@ -525,6 +556,23 @@ aggregate_rc=$?
 set -e
 printf '%s\n' "$aggregate_rc" > "$RUN_ROOT/aggregate.rc"
 
+fused_output_comparison_rc=0
+if [[ "$QUALITY_AB_VARIANT" == \
+        m1-116-fused-prefill-adjudication ]]; then
+    set +e
+    python3 "$ROOT/tests/compare_m1_116_fused_prefill_output.py" \
+        "$RUN_ROOT/control/fused_output_diagnostic.json" \
+        "$RUN_ROOT/candidate/fused_output_diagnostic.json" \
+        --out "$RUN_ROOT/fused_output_comparison.json" \
+        > "$RUN_ROOT/fused_output_comparison.stdout" \
+        2> "$RUN_ROOT/fused_output_comparison.stderr"
+    fused_output_comparison_rc=$?
+    set -e
+    printf '%s\n' "$fused_output_comparison_rc" \
+        > "$RUN_ROOT/fused_output_comparison.rc"
+fi
+
 [[ $quality_comparison_rc -eq 0 ]]
 [[ $agent_comparison_rc -eq 0 ]]
 [[ $aggregate_rc -eq 0 ]]
+[[ $fused_output_comparison_rc -eq 0 ]]
