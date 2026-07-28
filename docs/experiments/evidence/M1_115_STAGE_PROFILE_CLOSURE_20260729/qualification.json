@@ -1,0 +1,93 @@
+{
+  "schema": "bi100-m1-115-stage-profile-qualification-v1",
+  "version": 1,
+  "qualified": true,
+  "source": {
+    "branch": "exp/M1-115-stage-profile-closure-20260729",
+    "commit": "0d0a55918e2c39fc4de0cb7c7e609823d54679e1"
+  },
+  "runtime": {
+    "instance": "ssh-73ca29ba",
+    "gpu_count": 4,
+    "experiment_kind": "four_concurrent_single_gpu_component_cells",
+    "full_model_tp4_service_used": false,
+    "run_root": "/tmp/m1-115-stage-profile-0d0a559-20260729-v1",
+    "runner_returncode": 0
+  },
+  "extensions": {
+    "production_sha256": "ad4ea7707bb2f2bfe04e07a7ad5fd58a647232be70a3056937a0d738c8254bff",
+    "profile_sha256": "0f22a98cde885829416a26ae58067a5684cb9d90067dd9e46a4bc1abbf4d9b48"
+  },
+  "gates": {
+    "comparison": 0,
+    "fatal_scan": 0,
+    "final_postflight": 0,
+    "preflight_after": 0,
+    "preflight_comparison": 0
+  },
+  "cases": [
+    {
+      "case": "production_dense_q8176",
+      "event_total_median_ms": 40.173822835087776,
+      "event_perturbation": 0.0023448501175202807,
+      "selected_stage_share": {
+        "gather": 0.002301118332953398,
+        "qk": 0.28986652320112977,
+        "softmax": 0.16974462507529892,
+        "pv": 0.28987876624562314,
+        "merge": 0.0429855146719793
+      },
+      "dominant_stage": "pv"
+    },
+    {
+      "case": "production_65k_q8176",
+      "event_total_median_ms": 295.9066922024358,
+      "event_perturbation": 0.0026700401831782905,
+      "selected_stage_share": {
+        "gather": 0.005588225754563446,
+        "qk": 0.3554838991514624,
+        "softmax": 0.20579668986658517,
+        "pv": 0.35269319327978027,
+        "merge": 0.05214650507961103
+      },
+      "dominant_stage": "qk"
+    },
+    {
+      "case": "production_128k_q8176",
+      "event_total_median_ms": 519.7888497118838,
+      "event_perturbation": 0.002443246617195305,
+      "selected_stage_share": {
+        "gather": 0.005787273670024786,
+        "qk": 0.3600925457378141,
+        "softmax": 0.20791604988049908,
+        "pv": 0.35690039160540676,
+        "merge": 0.052975848753141666
+      },
+      "dominant_stage": "qk"
+    },
+    {
+      "case": "production_235k_q5616",
+      "event_total_median_ms": 664.6160314839799,
+      "event_perturbation": 0.0042842110750132,
+      "selected_stage_share": {
+        "gather": 0.008304845279537582,
+        "qk": 0.3531671411929982,
+        "softmax": 0.20138800564992435,
+        "pv": 0.378214737761521,
+        "merge": 0.05177998771332066
+      },
+      "dominant_stage": "pv"
+    }
+  ],
+  "artifact_sha256": {
+    "comparison": "50221e526e453089c6b9bc5e0888cb10c128f31bdc47c036a10e9e01f5ac766e",
+    "final_postflight": "b4a2973f39802adb832657294a5031987d6678347246fbd225e9e1793567e670",
+    "preflight_comparison": "268b6f0d1231c27b08888938f0452e3b7c77908a3197fad20df8ce39b77848eb"
+  },
+  "decision": {
+    "deeper_fusion_design_selection_authorized": true,
+    "full_model_tp4_service_experiment_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "official_score_claim_authorized": false
+  }
+}
