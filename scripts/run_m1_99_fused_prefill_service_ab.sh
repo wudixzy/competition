@@ -255,7 +255,7 @@ start_service() {
             BI100_GDN_COREX_PACKED_DECODE=1 \
             BI100_GDN_COMBINED_QK_NORM=0 \
             BI100_GDN_CACHE_POLICY=admission64 \
-            BI100_GDN_RESTORE_MODE=direct \
+            BI100_GDN_RESTORE_MODE=hybrid64 \
             BI100_HYBRID_KV_ACCOUNTING=full_attention \
             BI100_CPU_KV_OFFLOAD=0 \
             BI100_BLOCK_MAJOR_CPU_KV=0 \
