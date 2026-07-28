@@ -4,23 +4,24 @@ Date: 2026-07-28
 
 ## Objective
 
-M1-89, M1-84, and M1-86 cover different risks. The installed-runtime gate
+M1-89, M1-84/M1-92, and M1-86 cover different risks. The installed-runtime gate
 checks the real block manager, `Sequence` empty-multimodal behavior, Pillow
 palette/transparency hashing, request-local fallback, and namespace release.
 The current diagnostic service gate checks API, quality-contract,
-compatibility, streaming tool history, prefix reuse, capacity, and lifecycle
-behavior. M1-86 isolates the sole
+compatibility, streaming tool history, valid omitted/auto/named tool choice,
+prefix reuse, capacity, and lifecycle behavior. M1-86 isolates the sole
 `--limit-mm-per-prompt image=2` command delta and checks deterministic
 multi-image output and cache isolation. Running any result alone does not prove
 that all three used the same source and runtime overlay, or that the service
 stages used the same diagnostic checkpoint and physical GPU.
 
-M1-87 v3 runs those three gates sequentially and produces one fail-closed
+M1-87 v4 runs those gates sequentially and produces one fail-closed
 identity and lifecycle decision. The installed-runtime integration is commit
 `9ecbf30`; commit `d5f9b85` upgrades M1-86 to the palette/transparency
-service-level v2 contract and binds that evidence into M1-87 v3. Both are on
-the private `fix/M1-89-multimodal-cache-namespace-20260728` branch. They change
-test infrastructure only. They do not
+service-level v2 contract and binds that evidence into M1-87 v3. M1-92 adds
+the valid tool-choice gate and upgrades the aggregate to v4 on the private
+`exp/M1-92-tool-choice-gate-20260728` branch. These changes affect test
+infrastructure only. They do not
 change model code, weights, dtype, tokenizer, chat template, request semantics,
 cache policy, `computility-run.yaml`, Dockerfile, or a production default.
 
@@ -32,12 +33,13 @@ immutable overlay installed from the exact current HEAD:
 1. verify that the immutable overlay matches the exact current source;
 2. from `/tmp`, run the M1-89 installed-runtime v2 gate without model or GPU
    execution;
-3. run the current M1-84 diagnostic service gate at TP1;
+3. run the current M1-84 diagnostic service gate at TP1, including the M1-92
+   omitted/auto/named tool-choice HTTP gate;
 4. require an independent service postflight and GPU preflight;
 5. run the fixed M1-86 control/candidate multi-image A/B at TP1;
 6. recover only process groups recorded by this run, then require final service
    postflight, GPU preflight, recursive fatal scan, and timeout scan;
-7. bind all three stages into the v3 `queue_status.json`.
+7. bind all stages into the v4 `queue_status.json`.
 
 The diagnostic and multi-image services use different fixed loopback ports.
 Those two service stages use the same four-layer structural real-weight
@@ -93,7 +95,7 @@ preflight comparisons to the declared `CUDA_VISIBLE_DEVICES`.
 The aggregate binds:
 
 - the M1-89 overlay identity and nine-check installed-runtime report;
-- the full M1-84 status artifact manifest;
+- the full M1-84 status artifact manifest, including the M1-92 report;
 - the M1-86 v2 runner manifest and every input consumed by its comparison,
   including 7/11 control/candidate v4 trace records for palette and
   transparency cold/warm isolation;
@@ -108,13 +110,11 @@ the aggregate.
 
 ## Current status
 
-Implementation and CPU-only validation are complete on the current private
-M1-89 branch. Focused M1-86/M1-87 tests passed 53 of 53; complete tests-root
-discovery passed 1039 tests with 25 dependency skips. Submission preflight
-passed 9 of 9, and the fixed quality-data and 53-case metric manifests passed.
-No BI100 result has been claimed. The latest bounded SSH probe still failed in
-the TLS ProxyCommand layer before authentication, and the local host has no
-usable CoreX GPU or Pillow installation.
+M1-92 implementation and local contract validation are complete on the
+current private experiment branch. No BI100 result has been claimed. The
+latest bounded SSH probe still failed in the TLS ProxyCommand layer before
+authentication, and the local host has no usable CoreX GPU or Pillow
+installation.
 
 The four-layer checkpoint is suitable for parser, compatibility, cache
 isolation, capacity, and lifecycle diagnostics. It does not establish
@@ -122,7 +122,10 @@ full-model semantic quality, TP4 correctness, the complete official functional
 matrix, the 881-request performance result, or any competition threshold.
 The M1-89 installed-runtime gate covers real Pillow namespace behavior.
 M1-86 v2 now supplies the missing service-level palette/transparency cold/warm
-contract, but it remains unexecuted until a BI100 host recovers.
+contract, while M1-92 supplies the missing valid tool-choice service contract.
+Both remain unexecuted until a BI100 host recovers. `tool_choice="required"`
+and `strict=true` remain explicit compatibility gaps and are not counted as
+successful requests.
 
 ## Invocation after GPU recovery
 
@@ -148,7 +151,7 @@ privacy-safe structured evidence after manual review.
 
 ## Interpretation
 
-A qualified M1-87 result authorizes only the single-GPU structural diagnostic
+A qualified M1-87 v4 result authorizes only the single-GPU structural diagnostic
 phase. Full-model TP4 functional, cold/warm correctness, long-context,
 multimodal, tool/reasoning, semantic-quality, and performance gates remain
 mandatory. M1-87 never authorizes changing `main`, formal YAML, repository

@@ -1,5 +1,31 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-28 M1-92 工具选择单卡门禁
+
+- 私有实验分支为 `exp/M1-92-tool-choice-gate-20260728`。历史未绑定平台结果
+  的 690 个工具请求中有 226 个 4xx；现有 M1-68/M1-84 已覆盖
+  `strict=false`、assistant 工具历史 JSON 字符串/对象和 streaming SSE，但单卡
+  服务队列未覆盖官方功能门禁使用的 omitted、`auto` 与命名函数选择。
+- 新门禁对三种合法模式分别执行非流式与 streaming 固定 greedy 请求，要求
+  HTTP 200、`finish_reason=tool_calls`、单一函数调用、合法 JSON object 参数、
+  usage/SSE 正确。omitted 与显式 `auto` 必须等价；每种模式的非流式/SSE
+  语义摘要必须一致。不同语义的 named 与 auto 不强求文本完全相同。
+- 报告仅保存摘要、计数和布尔门禁，不保存 prompt、函数名、参数、模型输出或
+  原始 SSE。当前 CoreX 基线不支持 `tool_choice=required` 与 `strict=true`；
+  它们明确标记为兼容缺口和未评估能力，不能伪造成成功响应，也不能作为规范
+  负测抵销成功率。
+- M1-84 服务 runner 已绑定该报告，M1-87 聚合升级为 v4 并 fail-closed 校验
+  gate 集合、artifact SHA 与工具选择摘要。原有本轮进程组证明、TERM 60 秒、
+  survivor-only KILL、wait/reap、postflight、重复 GPU preflight、fatal/timeout
+  扫描保持不变。
+- M1-92/M1-87 聚焦契约 `37/37`，完整 tests-root `1079` 项通过、25 项依赖
+  skip，submission preflight `9/9`，质量数据与 53 项指标 manifest 均通过；
+  尚未运行真实 BI100。`ssh-73ca29ba` 最新有界探测仍在 TLS ProxyCommand 层
+  断开，没有执行远端命令或占用 GPU。恢复后先跑固定 M1-91 数值/性能门禁，
+  再跑 M1-87 v4 单卡服务队列；通过后仍必须做完整 TP4 模型能力、长上下文、
+  cold/warm、稳定性与性能 A/B。详情见
+  `docs/experiments/M1_92_TOOL_CHOICE_SINGLE_GPU_GATE_20260728.md`。
+
 ## 2026-07-28 M1-91 补偿累加 W13 单卡门禁
 
 - 私有实验分支为 `exp/M1-91-compensated-w13-20260728`，实现提交

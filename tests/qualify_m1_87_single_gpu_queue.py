@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bind M1-89 runtime, M1-84 functional, and M1-86 image gates."""
+"""Bind M1-89 runtime, M1-84/M1-92 functional, and M1-86 image gates."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from typing import Any
 
 
 Json = dict[str, Any]
-SCHEMA = "bi100-m1-87-single-gpu-queue-v3"
+SCHEMA = "bi100-m1-87-single-gpu-queue-v4"
 CACHE_NAMESPACE_SCHEMA = "qwen36-cache-namespace-runtime-gate-v2"
 DIAGNOSTIC_SCHEMA = "qwen36-diagnostic-service-gate-v1"
 IMAGE_RUNNER_SCHEMA = "bi100-m1-86-multi-image-ab-runner-v1"
@@ -48,6 +48,7 @@ DIAGNOSTIC_GATE_NAMES = frozenset({
     "quality_contract",
     "compat_http",
     "tool_http",
+    "tool_choice_http",
     "prefix_boundary",
     "cleanup",
     "cleanup_status",
@@ -72,6 +73,7 @@ DIAGNOSTIC_ARTIFACT_NAMES = frozenset({
     "quality_contract_gate.json",
     "compat_http_gate.json",
     "tool_http_gate.json",
+    "tool_choice_http_gate.json",
     "prefix_boundary.json",
     "server.log",
     "cleanup_status.json",
@@ -373,6 +375,9 @@ def qualify(
     tool_http_summary = diagnostic.get("tool_http_summary")
     if not isinstance(tool_http_summary, dict):
         tool_http_summary = {}
+    tool_choice_http_summary = diagnostic.get("tool_choice_http_summary")
+    if not isinstance(tool_choice_http_summary, dict):
+        tool_choice_http_summary = {}
     if (
         diagnostic.get("schema") != DIAGNOSTIC_SCHEMA
         or diagnostic.get("version") != 1
@@ -388,6 +393,20 @@ def qualify(
             "streaming_contract_qualified") is not True
         or tool_http_summary.get(
             "streaming_equivalence_qualified") is not True
+        or tool_choice_http_summary.get("qualified") is not True
+        or tool_choice_http_summary.get("case_count") != 7
+        or tool_choice_http_summary.get(
+            "all_valid_modes_http_200") is not True
+        or tool_choice_http_summary.get(
+            "nonstream_stream_semantics_exact") is not True
+        or tool_choice_http_summary.get(
+            "omitted_auto_semantics_exact") is not True
+        or tool_choice_http_summary.get(
+            "tool_calls_structurally_valid") is not True
+        or tool_choice_http_summary.get(
+            "strict_true_evaluated") is not False
+        or tool_choice_http_summary.get(
+            "required_tool_choice_evaluated") is not False
         or not _authority_is_diagnostic(diagnostic)
     ):
         reasons.append("M1-84 functional diagnostic did not qualify")

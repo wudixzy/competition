@@ -109,6 +109,13 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
             '"tool_http": read_rc("tool_http_gate.rc")',
             '"streaming_contract_qualified": (',
             '"streaming_equivalence_qualified": (',
+            "qwen36_tool_choice_http_gate.py",
+            "tool_choice_http_gate.json",
+            '"tool_choice_http": read_rc("tool_choice_http_gate.rc")',
+            '"all_valid_modes_http_200": (',
+            '"nonstream_stream_semantics_exact": (',
+            '"omitted_auto_semantics_exact": (',
+            '"tool_calls_structurally_valid": (',
             "bi100_stop_process_group",
             '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20 \\\n'
             '            "$ACTIVE_STARTTIME" "$ACTIVE_SESSION_TOKEN"',

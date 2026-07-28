@@ -773,6 +773,21 @@ else
     overall_rc=1
 fi
 
+if timeout --signal=TERM --kill-after=70s 2400s \
+        python3 "$ROOT/tests/qwen36_tool_choice_http_gate.py" \
+        --base "http://127.0.0.1:$PORT" \
+        --model-path "$MODEL_PATH" \
+        --timeout-s 300 \
+        --json-out "$RUN_ROOT/tool_choice_http_gate.json" \
+        > "$RUN_ROOT/tool_choice_http_gate.stdout" \
+        2> "$RUN_ROOT/tool_choice_http_gate.stderr"; then
+    printf '%s\n' 0 > "$RUN_ROOT/tool_choice_http_gate.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/tool_choice_http_gate.rc"
+    overall_rc=1
+fi
+
 if timeout --signal=TERM --kill-after=70s 1200s \
         python3 "$ROOT/tests/prefix_boundary_api.py" \
         --base "http://127.0.0.1:$PORT" \
@@ -841,6 +856,9 @@ compat_http = json.loads((root / "compat_http_gate.json").read_text()) \
     if (root / "compat_http_gate.json").is_file() else None
 tool_http = json.loads((root / "tool_http_gate.json").read_text()) \
     if (root / "tool_http_gate.json").is_file() else None
+tool_choice_http = json.loads(
+    (root / "tool_choice_http_gate.json").read_text()) \
+    if (root / "tool_choice_http_gate.json").is_file() else None
 prefix = json.loads((root / "prefix_boundary.json").read_text()) \
     if (root / "prefix_boundary.json").is_file() else None
 overlay = json.loads(
@@ -864,6 +882,7 @@ gates = {
     "quality_contract": read_rc("quality_contract_gate.rc"),
     "compat_http": read_rc("compat_http_gate.rc"),
     "tool_http": read_rc("tool_http_gate.rc"),
+    "tool_choice_http": read_rc("tool_choice_http_gate.rc"),
     "prefix_boundary": read_rc("prefix_boundary.rc"),
     "cleanup": read_rc("cleanup.rc"),
     "cleanup_status": read_rc("cleanup_status.rc"),
@@ -932,6 +951,26 @@ report = {
             tool_http.get("config", {}).get(
                 "object_history_expected_status")),
     } if tool_http else None,
+    "tool_choice_http_summary": {
+        "qualified": tool_choice_http.get("qualified"),
+        "case_count": tool_choice_http.get("case_count"),
+        "all_valid_modes_http_200": (
+            tool_choice_http.get("checks", {}).get(
+                "all_valid_modes_http_200")),
+        "nonstream_stream_semantics_exact": (
+            tool_choice_http.get("checks", {}).get(
+                "nonstream_stream_semantics_exact")),
+        "omitted_auto_semantics_exact": (
+            tool_choice_http.get("checks", {}).get(
+                "omitted_auto_semantics_exact")),
+        "tool_calls_structurally_valid": (
+            tool_choice_http.get("checks", {}).get(
+                "tool_calls_structurally_valid")),
+        "strict_true_evaluated": tool_choice_http.get(
+            "strict_true_evaluated"),
+        "required_tool_choice_evaluated": tool_choice_http.get(
+            "required_tool_choice_evaluated"),
+    } if tool_choice_http else None,
     "prefix_summary": {
         "partial_cached_tokens": (
             prefix.get("partial_cache", {}).get("cached_tokens")),
@@ -953,6 +992,7 @@ report = {
             "quality_contract_gate.json",
             "compat_http_gate.json",
             "tool_http_gate.json",
+            "tool_choice_http_gate.json",
             "prefix_boundary.json",
             "server.log",
             "cleanup_status.json",

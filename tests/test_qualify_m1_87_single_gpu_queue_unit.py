@@ -130,6 +130,16 @@ class M187QueueQualifierUnitTest(unittest.TestCase):
                     "streaming_contract_qualified": True,
                     "streaming_equivalence_qualified": True,
                 },
+                "tool_choice_http_summary": {
+                    "qualified": True,
+                    "case_count": 7,
+                    "all_valid_modes_http_200": True,
+                    "nonstream_stream_semantics_exact": True,
+                    "omitted_auto_semantics_exact": True,
+                    "tool_calls_structurally_valid": True,
+                    "strict_true_evaluated": False,
+                    "required_tool_choice_evaluated": False,
+                },
                 "artifact_sha256": diagnostic_artifacts,
                 **authority,
             },
@@ -454,6 +464,31 @@ class M187QueueQualifierUnitTest(unittest.TestCase):
         path = self.root / "m1_84" / "status.json"
         value = json.loads(path.read_text(encoding="utf-8"))
         value["tool_http_summary"] = None
+        self._write(path, value)
+        report = self._qualify()
+        self.assertFalse(report["qualified"])
+        self.assertIn(
+            "M1-84 functional diagnostic did not qualify",
+            report["reasons"],
+        )
+
+    def test_missing_tool_choice_summary_fails_closed(self) -> None:
+        path = self.root / "m1_84" / "status.json"
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["tool_choice_http_summary"] = None
+        self._write(path, value)
+        report = self._qualify()
+        self.assertFalse(report["qualified"])
+        self.assertIn(
+            "M1-84 functional diagnostic did not qualify",
+            report["reasons"],
+        )
+
+    def test_omitted_auto_drift_fails_closed(self) -> None:
+        path = self.root / "m1_84" / "status.json"
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["tool_choice_http_summary"][
+            "omitted_auto_semantics_exact"] = False
         self._write(path, value)
         report = self._qualify()
         self.assertFalse(report["qualified"])
