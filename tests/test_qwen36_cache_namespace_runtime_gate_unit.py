@@ -18,6 +18,17 @@ SPEC.loader.exec_module(MODULE)
 
 class CacheNamespaceRuntimeGateUnitTest(unittest.TestCase):
 
+    def test_v2_contract_matches_runtime_empty_mapping_semantics(self):
+        self.assertEqual(
+            MODULE.SCHEMA, "qwen36-cache-namespace-runtime-gate-v2")
+        self.assertEqual(MODULE.VERSION, 2)
+        self.assertIn(
+            "empty_multimodal_matches_text", MODULE.REQUIRED_CHECKS)
+        self.assertNotIn(
+            "empty_multimodal_separated_from_text",
+            MODULE.REQUIRED_CHECKS,
+        )
+
     def test_exact_success_shape_qualifies(self):
         checks = {name: True for name in MODULE.REQUIRED_CHECKS}
         qualified, reasons = MODULE.qualify_checks(checks, {})

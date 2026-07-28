@@ -62,8 +62,9 @@ PrefixHash = _class_with_methods(
 NamespaceHash = _class_with_methods(
     BLOCK_MANAGER, "BlockSpaceManagerV2", {
         "_adapter_cache_namespace", "_build_runtime_cache_namespace",
-        "_get_cache_namespace", "_sort_map_keys", "_hash_multi_modal_obj",
-        "_hash_multi_modal_namespace", "_request_local_fallback_cache_namespace",
+        "_get_cache_namespace", "_has_multi_modal_payload", "_sort_map_keys",
+        "_hash_multi_modal_obj", "_hash_multi_modal_namespace",
+        "_request_local_fallback_cache_namespace",
         "release_request_cache_namespace",
     }, "NamespaceHash")
 
@@ -319,6 +320,35 @@ class PrefixContentHashTest(unittest.TestCase):
             sequence, "request-a", seq_group)
         self.assertEqual(len(namespace), 32)
         self.assertIn("request-a", instance._request_local_namespace)
+
+    def test_empty_multimodal_mapping_uses_text_namespace(self):
+        class AmbiguousEmptyMapping(dict):
+
+            def __bool__(self):
+                raise AssertionError("truthiness must not be evaluated")
+
+        instance = NamespaceHash()
+        instance._runtime_cache_namespace = b"r" * 32
+        instance._request_local_namespace = {}
+        instance._warned_mm_namespace_requests = set()
+        seq_group = SimpleNamespace(
+            lora_request=None, prompt_adapter_request=None)
+
+        text = instance._get_cache_namespace(
+            SimpleNamespace(multi_modal_data=None), "text", seq_group)
+        empty = instance._get_cache_namespace(
+            SimpleNamespace(multi_modal_data=AmbiguousEmptyMapping()),
+            "empty",
+            seq_group,
+        )
+        nonempty = instance._get_cache_namespace(
+            SimpleNamespace(multi_modal_data={"metadata": "present"}),
+            "nonempty",
+            seq_group,
+        )
+
+        self.assertEqual(text, empty)
+        self.assertNotEqual(text, nonempty)
 
     def test_request_local_namespace_is_fresh_after_release(self):
         instance = NamespaceHash()

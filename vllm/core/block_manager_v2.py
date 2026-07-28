@@ -235,6 +235,20 @@ class BlockSpaceManagerV2(BlockSpaceManager):
                 encoder_seq, cache_namespace=encoder_cache_namespace)
             self.cross_block_tables[request_id] = block_table
 
+    @staticmethod
+    def _has_multi_modal_payload(multi_modal_data: Any) -> bool:
+        if multi_modal_data is None:
+            return False
+        if isinstance(multi_modal_data, Mapping):
+            try:
+                return len(multi_modal_data) > 0
+            except (TypeError, ValueError, RuntimeError, OSError,
+                    OverflowError, AttributeError, LookupError, struct.error):
+                # Treat an unusual mapping as payload and let normalization
+                # either identify it or select request-local isolation.
+                return True
+        return True
+
     def _get_cache_namespace(self, seq: Sequence, request_id: str,
                              seq_group: SequenceGroup) -> bytes:
         digest = hashlib.sha256()
@@ -242,10 +256,11 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         digest.update(self._runtime_cache_namespace)
         digest.update(self._adapter_cache_namespace(seq_group))
 
-        if seq.multi_modal_data is not None:
+        multi_modal_data = seq.multi_modal_data
+        if self._has_multi_modal_payload(multi_modal_data):
             try:
                 mm_namespace = self._hash_multi_modal_namespace(
-                    seq.multi_modal_data)
+                    multi_modal_data)
             except (TypeError, ValueError, RuntimeError, OSError,
                     OverflowError, AttributeError, LookupError, struct.error):
                 if request_id not in self._warned_mm_namespace_requests:

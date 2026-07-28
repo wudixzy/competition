@@ -16,14 +16,14 @@ from typing import Any, Callable
 from unittest.mock import patch
 
 
-SCHEMA = "qwen36-cache-namespace-runtime-gate-v1"
-VERSION = 1
+SCHEMA = "qwen36-cache-namespace-runtime-gate-v2"
+VERSION = 2
 REQUIRED_CHECKS = (
     "module_bound_to_overlay",
     "same_palette_stable",
     "different_palette_isolated",
     "different_transparency_isolated",
-    "empty_multimodal_separated_from_text",
+    "empty_multimodal_matches_text",
     "truthiness_not_evaluated",
     "normalization_error_is_request_local",
     "release_clears_request_state",
@@ -102,9 +102,12 @@ def run_gate(
 
     block_manager_module = importlib.import_module(
         "vllm.core.block_manager_v2")
+    sequence_module = importlib.import_module("vllm.sequence")
     image_module = importlib.import_module("PIL.Image")
     manager_class = block_manager_module.BlockSpaceManagerV2
     module_path = Path(block_manager_module.__file__).resolve(strict=True)
+    sequence_module_path = Path(
+        sequence_module.__file__).resolve(strict=True)
     group = SimpleNamespace(
         lora_request=None,
         prompt_adapter_request=None,
@@ -112,7 +115,10 @@ def run_gate(
 
     check(
         "module_bound_to_overlay",
-        lambda: module_path.is_relative_to(runtime_site_packages),
+        lambda: (
+            module_path.is_relative_to(runtime_site_packages)
+            and sequence_module_path.is_relative_to(runtime_site_packages)
+        ),
     )
 
     def palette_checks() -> tuple[bytes, bytes, bytes, bytes]:
@@ -155,17 +161,24 @@ def run_gate(
         and palette_hashes[0] != palette_hashes[3]
     ))
 
-    def empty_multimodal_separated_from_text() -> bool:
+    def empty_multimodal_matches_text() -> bool:
         manager = _new_manager(manager_class)
+        runtime_empty = sequence_module.Sequence.multi_modal_data.__get__(
+            SimpleNamespace(inputs={}),
+            sequence_module.Sequence,
+        )
         text = manager._get_cache_namespace(
             SimpleNamespace(multi_modal_data=None), "text", group)
         empty_multimodal = manager._get_cache_namespace(
-            SimpleNamespace(multi_modal_data={}), "empty-mm", group)
-        return text != empty_multimodal
+            SimpleNamespace(multi_modal_data=runtime_empty),
+            "empty-mm",
+            group,
+        )
+        return runtime_empty == {} and text == empty_multimodal
 
     check(
-        "empty_multimodal_separated_from_text",
-        empty_multimodal_separated_from_text,
+        "empty_multimodal_matches_text",
+        empty_multimodal_matches_text,
     )
 
     def truthiness_not_evaluated() -> bool:
@@ -244,6 +257,7 @@ def run_gate(
         "source_revision": source_revision,
         "runtime_site_packages": str(runtime_site_packages),
         "block_manager_module_sha256": _sha256(module_path),
+        "sequence_module_sha256": _sha256(sequence_module_path),
         "pillow_version": importlib.metadata.version("Pillow"),
         "checks": checks,
         "error_types": errors,
