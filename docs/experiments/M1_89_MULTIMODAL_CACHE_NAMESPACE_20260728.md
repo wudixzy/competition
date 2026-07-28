@@ -4,8 +4,9 @@
 
 `LOCAL CORRECTNESS GATES PASSED; COREX SERVICE EVIDENCE PENDING`.
 
-The implementation is commit `0553769` on the private branch
-`fix/M1-89-multimodal-cache-namespace-20260728`. It does not authorize a
+The runtime implementation is commit `0553769`; the installed-overlay gate is
+commit `8a39916`. Both are on the private branch
+`fix/M1-89-multimodal-cache-namespace-20260728`. They do not authorize a
 `main`, submission YAML, runtime-default, or repository-visibility change.
 
 ## Problem
@@ -58,8 +59,14 @@ tool/reasoning/multimodal capability, context limit, or formal command changed.
   truthiness, request-ID reuse after release, and physical block reuse.
 - A fixed-seed 1000-step state machine compares `fine32`, `admission64`, and
   `off` policy state against an independent `OrderedDict` LRU oracle.
+- `tests/qwen36_cache_namespace_runtime_gate.py` loads the actual installed
+  overlay and real Pillow implementation. It repeats nine fixed checks and
+  writes only booleans, bounded exception types, source/runtime identity, and
+  module SHA-256. Import or initialization failure produces a redacted
+  structured failure report instead of relying on a traceback.
 - Related cache/static/runtime-identity tests: 89 passed, 1 dependency skip.
-- Full tests-root discovery: 1018 passed, 25 dependency skips.
+- Full tests-root discovery after adding the overlay gate: 1026 passed,
+  25 dependency skips.
 - Submission preflight: all 9 checks passed.
 - Quality data and 53-case metric manifests passed.
 - Python/shell syntax and `git diff --check` passed.
@@ -70,8 +77,31 @@ multimodal inference, cold/warm output identity, latency, or throughput.
 
 ## Required remote gate
 
-On a healthy BI100 host, install an immutable overlay built from exactly
-`0553769`, then run a fixed service A/B that checks:
+The latest lightweight monitor attempted the declared `ssh-73ca29ba` endpoint
+three times with a 12-second bound. Every attempt failed in the TLS
+ProxyCommand layer with `Connection closed by UNKNOWN port 65535`; no remote
+command or GPU operation ran.
+
+On a recovered BI100 host, install an immutable overlay built from the exact
+current branch revision. First run
+`tests/verify_bare_host_runtime_identity.py`, then run the non-model gate from
+outside the repository:
+
+```bash
+SOURCE_REVISION=$(git -C /path/to/source rev-parse HEAD)
+RUNTIME=/path/to/immutable/site-packages
+
+cd /tmp
+PYTHONPATH="$RUNTIME:/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages" \
+LD_LIBRARY_PATH="/usr/local/corex/lib:/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib" \
+python3 /path/to/source/tests/qwen36_cache_namespace_runtime_gate.py \
+  --runtime-site-packages "$RUNTIME" \
+  --source-revision "$SOURCE_REVISION" \
+  --out /tmp/m1-89-cache-namespace-runtime-gate.json
+```
+
+Only after runtime identity and all nine installed-overlay checks pass may the
+fixed single-GPU service A/B run. It must check:
 
 - the same image and prompt produce identical cold/warm token output;
 - equal palette images reuse the same namespace;

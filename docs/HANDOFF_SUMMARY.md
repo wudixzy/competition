@@ -14,12 +14,18 @@
   没有该接口时仍兼容。`admission64` 空 live-prefix 的防御性越界也已修复。
 - 新测试覆盖不同 palette/透明度隔离、哈希读取 `OSError` 回退、禁止对象真值求值、
   request ID 释放后重新加盐、物理块号复用，以及固定种子 1000 步 GDN LRU
-  状态机对照。聚焦测试 38 项通过，完整 tests-root 为 1018 项通过、25 项依赖
+  状态机对照。实现提交 `0553769` 后又在 `8a39916` 增加真实 installed-overlay
+  门禁：加载远端实际 vLLM/Pillow，固定执行 9 项检查，输出仅含布尔值、异常类型和
+  身份 SHA。聚焦测试 46 项通过，完整 tests-root 为 1026 项通过、25 项依赖
   skip；preflight 9/9、质量数据和 53 项指标 manifest、语法和 diff 门禁均通过。
 - 本机没有 CoreX GPU，且没有 Pillow；新增 fake-image 测试已强制执行核心哈希
   语义，但还不能声明真实服务多模态、cold/warm 输出一致性或性能通过。健康实例
-  恢复后需用绑定 `0553769` 的 immutable overlay 跑多图同图/异图、palette、
-  transparency、异常回退和完成/中止释放的服务级门禁。
+  恢复后需先验证绑定当前 HEAD 的 immutable overlay，再跑 installed-overlay
+  门禁以及多图同图/异图、palette、transparency、异常回退和完成/中止释放的
+  服务级门禁。
+- 最新轻量 subagent 对 `ssh-73ca29ba` 做了 3 次、每次 12 秒的只读连接尝试，均
+  在 TLS/ProxyCommand 层返回 `Connection closed by UNKNOWN port 65535`；
+  远端命令、GPU 探针和进程操作均未发生，当前不能判断单卡或 TP4 状态。
 - 本轮未修改 `main`、正式 `computility-run.yaml`、Dockerfile、默认开关或仓库
   可见性。详细证据和远端门禁见
   `docs/experiments/M1_89_MULTIMODAL_CACHE_NAMESPACE_20260728.md`。
