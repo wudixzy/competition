@@ -43,11 +43,45 @@ class DatasetPolicyCompareTest(unittest.TestCase):
     def test_candidate_passes_stage_gates_at_boundaries(self):
         report = MODULE.compare(
             summary(21.0, 0.50, 6000.0),
-            summary(20.58, 0.55, 6300.0),
+            summary(20.58, 0.52, 6000.0, ttft=4.08),
         )
         self.assertTrue(report["stage_qualified"])
+        self.assertTrue(report["benefit_paths"][
+            "effective_hit_gain_at_least_2pp"])
+        self.assertFalse(report["benefit_paths"][
+            "weighted_score_gain_at_least_3pct_without_hit_reduction"])
+        self.assertIsNone(report["quality_nonregression_qualified"])
         self.assertIsNone(report["capacity_256k_preserved"])
         self.assertIsNone(report["final_qualified"])
+
+    def test_weighted_path_passes_without_hit_reduction(self):
+        report = MODULE.compare(
+            summary(21.0, 0.55, 6000.0),
+            summary(20.58, 0.55, 6180.0, ttft=4.08),
+        )
+        self.assertTrue(report["stage_qualified"])
+        self.assertFalse(report["benefit_paths"][
+            "effective_hit_gain_at_least_2pp"])
+        self.assertTrue(report["benefit_paths"][
+            "weighted_score_gain_at_least_3pct_without_hit_reduction"])
+
+    def test_weighted_path_rejects_hit_reduction(self):
+        report = MODULE.compare(
+            summary(21.0, 0.55, 6000.0),
+            summary(21.0, 0.54, 6300.0),
+        )
+        self.assertFalse(report["stage_qualified"])
+        self.assertFalse(report["stage_gates"][
+            "cache_benefit_path_qualified"])
+
+    def test_candidate_fails_without_either_benefit_path(self):
+        report = MODULE.compare(
+            summary(21.0, 0.55, 6000.0),
+            summary(21.0, 0.56, 6179.0),
+        )
+        self.assertFalse(report["stage_qualified"])
+        self.assertFalse(report["stage_gates"][
+            "cache_benefit_path_qualified"])
 
     def test_candidate_fails_on_output_regression(self):
         report = MODULE.compare(
@@ -57,6 +91,24 @@ class DatasetPolicyCompareTest(unittest.TestCase):
         self.assertFalse(report["stage_qualified"])
         self.assertFalse(
             report["stage_gates"]["output_tps_regression_at_most_2pct"])
+
+    def test_candidate_fails_on_ttft_regression(self):
+        report = MODULE.compare(
+            summary(21.0, 0.50, 6000.0, ttft=4.0),
+            summary(21.0, 0.53, 6200.0, ttft=4.081),
+        )
+        self.assertFalse(report["stage_qualified"])
+        self.assertFalse(
+            report["stage_gates"]["ttft_p90_regression_at_most_2pct"])
+
+    def test_candidate_must_reach_final_hit_floor(self):
+        report = MODULE.compare(
+            summary(21.0, 0.46, 6000.0),
+            summary(21.0, 0.49, 6200.0),
+        )
+        self.assertFalse(report["stage_qualified"])
+        self.assertFalse(report["stage_gates"][
+            "effective_cache_hit_at_least_50pct"])
 
     def test_final_metrics_do_not_imply_capacity_qualification(self):
         report = MODULE.compare(
@@ -74,6 +126,17 @@ class DatasetPolicyCompareTest(unittest.TestCase):
         self.assertFalse(report["stage_qualified"])
         self.assertFalse(
             report["stage_gates"]["request_contract_identical"])
+
+    def test_invalid_baseline_rejects_comparison(self):
+        baseline = summary(21.0, 0.50, 6000.0)
+        baseline["validation"]["success_rate"] = 0.98
+        report = MODULE.compare(
+            baseline,
+            summary(21.0, 0.53, 6200.0),
+        )
+        self.assertFalse(report["stage_qualified"])
+        self.assertFalse(report["stage_gates"][
+            "baseline_success_rate_at_least_99pct"])
 
 
 if __name__ == "__main__":
