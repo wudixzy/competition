@@ -24,6 +24,12 @@ CASE_NAMES = (
     "stream_two_images_warm",
     "stream_two_images_reversed",
     "stream_two_images_reversed_warm",
+    "stream_palette_a_cold",
+    "stream_palette_a_warm",
+    "stream_palette_b_cold",
+    "stream_palette_b_warm",
+    "stream_transparency_cold",
+    "stream_transparency_warm",
     "post_request_health",
 )
 
@@ -35,6 +41,12 @@ def http_report(candidate: bool = True) -> dict:
         "stream_two_images_warm": 48,
         "stream_two_images_reversed": 16,
         "stream_two_images_reversed_warm": 48,
+        "stream_palette_a_cold": 0,
+        "stream_palette_a_warm": 48,
+        "stream_palette_b_cold": 0,
+        "stream_palette_b_warm": 48,
+        "stream_transparency_cold": 0,
+        "stream_transparency_warm": 48,
     }
     cases = []
     for name in CASE_NAMES:
@@ -42,18 +54,20 @@ def http_report(candidate: bool = True) -> dict:
             evidence = {"max_model_len": 262144}
         elif name == "post_request_health":
             evidence = {"http_status": 200}
-        elif not candidate and name != "stream_one_image_cold":
+        elif not candidate and name.startswith("stream_two_images"):
             evidence = {"skipped": True}
         else:
             evidence = {
                 "http_status": 200,
-                "prompt_tokens": 48 if "two_images" in name else 16,
+                "prompt_tokens": (
+                    16 if name == "stream_one_image_cold" else 48
+                ),
                 "cached_tokens": cached[name],
             }
         cases.append({"name": name, "ok": True, "evidence": evidence})
     return {
-        "schema": "qwen36-diagnostic-multi-image-http-gate-v1",
-        "version": 1,
+        "schema": "qwen36-diagnostic-multi-image-http-gate-v2",
+        "version": 2,
         "qualified": True,
         "cases": cases,
     }
@@ -97,12 +111,37 @@ def candidate_records() -> list[dict]:
     one = (block(1),)
     normal = (block(1), block(2), block(3))
     reversed_images = (block(1), block(4), block(5))
+    palette_a = (block(10), block(11), block(12))
+    palette_b = (block(20), block(21), block(22))
+    transparency = (block(30), block(31), block(32))
     return [
         trace_record(1, one, raw_hit=0, effective_hit=0),
         trace_record(2, normal, raw_hit=1, effective_hit=1),
         trace_record(3, normal, raw_hit=3, effective_hit=3),
         trace_record(4, reversed_images, raw_hit=1, effective_hit=1),
         trace_record(5, reversed_images, raw_hit=3, effective_hit=3),
+        trace_record(6, palette_a, raw_hit=0, effective_hit=0),
+        trace_record(7, palette_a, raw_hit=3, effective_hit=3),
+        trace_record(8, palette_b, raw_hit=0, effective_hit=0),
+        trace_record(9, palette_b, raw_hit=3, effective_hit=3),
+        trace_record(10, transparency, raw_hit=0, effective_hit=0),
+        trace_record(11, transparency, raw_hit=3, effective_hit=3),
+    ]
+
+
+def control_records() -> list[dict]:
+    one = (block(1),)
+    palette_a = (block(10), block(11), block(12))
+    palette_b = (block(20), block(21), block(22))
+    transparency = (block(30), block(31), block(32))
+    return [
+        trace_record(1, one, raw_hit=0, effective_hit=0),
+        trace_record(2, palette_a, raw_hit=0, effective_hit=0),
+        trace_record(3, palette_a, raw_hit=3, effective_hit=3),
+        trace_record(4, palette_b, raw_hit=0, effective_hit=0),
+        trace_record(5, palette_b, raw_hit=3, effective_hit=3),
+        trace_record(6, transparency, raw_hit=0, effective_hit=0),
+        trace_record(7, transparency, raw_hit=3, effective_hit=3),
     ]
 
 
@@ -131,12 +170,16 @@ class QualifyM186MultiImageTraceUnitTest(unittest.TestCase):
     def test_content_bounded_candidate_trace_qualifies(self):
         value = qualify(candidate_records())
         self.assertTrue(value["qualified"], value["reasons"])
-        self.assertEqual(value["trace_count"], 5)
+        self.assertEqual(value["trace_count"], 11)
         self.assertEqual(
             value["content_isolation"][
                 "reversed_initial_prior_common_blocks"],
             1,
         )
+        self.assertEqual(
+            value["palette_isolation"]["distinct_cold_chain_count"], 3)
+        self.assertTrue(all(
+            value["palette_isolation"]["warm_chain_exact"].values()))
         rendered = json.dumps(value)
         self.assertNotIn("block_hashes", rendered)
         self.assertNotIn("request_id_sha256", rendered)
@@ -192,6 +235,49 @@ class QualifyM186MultiImageTraceUnitTest(unittest.TestCase):
             value["reasons"],
         )
 
+    def test_palette_cold_overhit_fails(self):
+        records = candidate_records()
+        records[7]["initial_raw_kv_contiguous_hit_blocks"] = 1
+        records[7]["raw_kv_contiguous_hit_blocks"] = 1
+        records[7]["effective_gdn_hit_blocks"] = 1
+        records[7]["gdn_restore_digest_base64"] = base64.b64encode(
+            block(20)).decode("ascii")
+        records[7]["observed_effective_cached_tokens"] = 16
+        report = http_report()
+        report["cases"][8]["evidence"]["cached_tokens"] = 16
+        value = qualify(records, report)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "stream_palette_b_cold crossed the "
+            "content-hash prefix boundary",
+            value["reasons"],
+        )
+
+    def test_palette_variants_must_have_distinct_hash_chains(self):
+        records = candidate_records()
+        records[7]["block_hashes"] = records[5]["block_hashes"]
+        records[8]["block_hashes"] = records[5]["block_hashes"]
+        value = qualify(records)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "palette or transparency variants share a prompt hash chain",
+            value["reasons"],
+        )
+
+    def test_palette_warm_chain_mismatch_fails(self):
+        records = candidate_records()
+        replacement = (block(30), block(31), block(99))
+        records[10]["block_hashes"] = base64.b64encode(
+            b"".join(replacement)).decode("ascii")
+        records[10]["gdn_restore_digest_base64"] = base64.b64encode(
+            replacement[-1]).decode("ascii")
+        value = qualify(records)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "stream_transparency_warm prompt hash chain differs",
+            value["reasons"],
+        )
+
     def test_chunked_max_raw_hit_does_not_change_initial_boundary(self):
         records = candidate_records()
         records[3]["raw_kv_contiguous_hit_blocks"] = 1000
@@ -229,15 +315,14 @@ class QualifyM186MultiImageTraceUnitTest(unittest.TestCase):
             value["reasons"],
         )
 
-    def test_control_trace_contains_only_cold_one_image(self):
-        one = (block(7),)
+    def test_control_trace_contains_one_image_and_palette_pairs(self):
         value = qualify(
-            [trace_record(1, one, raw_hit=0, effective_hit=0)],
+            control_records(),
             http_report(False),
             "control",
         )
         self.assertTrue(value["qualified"], value["reasons"])
-        self.assertEqual(value["trace_count"], 1)
+        self.assertEqual(value["trace_count"], 7)
 
 
 if __name__ == "__main__":

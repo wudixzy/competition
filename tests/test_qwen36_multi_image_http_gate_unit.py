@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 from pathlib import Path
+import struct
 import sys
 import unittest
 from unittest import mock
+import zlib
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +60,27 @@ def stream_payload(
     }
 
 
+def png_chunks(data_url: str) -> dict[bytes, bytes]:
+    raw = base64.b64decode(data_url.split(",", 1)[1], validate=True)
+    if raw[:8] != b"\x89PNG\r\n\x1a\n":
+        raise AssertionError("PNG signature differs")
+    chunks: dict[bytes, bytes] = {}
+    offset = 8
+    while offset < len(raw):
+        length = struct.unpack(">I", raw[offset:offset + 4])[0]
+        kind = raw[offset + 4:offset + 8]
+        payload = raw[offset + 8:offset + 8 + length]
+        expected_crc = struct.unpack(
+            ">I", raw[offset + 8 + length:offset + 12 + length])[0]
+        if zlib.crc32(kind + payload) & 0xffffffff != expected_crc:
+            raise AssertionError("PNG chunk CRC differs")
+        chunks[kind] = payload
+        offset += 12 + length
+    if offset != len(raw):
+        raise AssertionError("PNG chunk boundary differs")
+    return chunks
+
+
 class FakeClient:
 
     def __init__(
@@ -65,13 +89,18 @@ class FakeClient:
         *,
         warm_drift: bool = False,
         reversed_hit: bool = False,
+        indexed_warm_drift: bool = False,
+        cross_indexed_hit: bool = False,
         max_model_len: int = 262144,
     ) -> None:
         self.image_limit = image_limit
         self.warm_drift = warm_drift
         self.reversed_hit = reversed_hit
+        self.indexed_warm_drift = indexed_warm_drift
+        self.cross_indexed_hit = cross_indexed_hit
         self.max_model_len = max_model_len
         self.seen: dict[tuple[str, ...], int] = {}
+        self.indexed_cold_count = 0
 
     def models(self) -> dict:
         return {
@@ -90,13 +119,23 @@ class FakeClient:
         visits = self.seen.get(order, 0)
         self.seen[order] = visits + 1
         cached_tokens = 32 if visits else 0
+        indexed = (
+            count == 1
+            and order[0].startswith("data:image/png;base64,iVBOR")
+        )
         if self.reversed_hit and count == 2 and visits == 0:
             red_first = "255,0,0" in order[0]
             if not red_first:
                 cached_tokens = 16
+        if indexed and visits == 0:
+            if self.cross_indexed_hit and self.indexed_cold_count:
+                cached_tokens = 16
+            self.indexed_cold_count += 1
         semantic = f"images={count};order={order}"
         if self.warm_drift and count == 2 and visits:
             semantic += ";drift"
+        if self.indexed_warm_drift and indexed and visits:
+            semantic += ";indexed-drift"
         return 200, stream_payload(
             semantic,
             prompt_tokens=128 * count + 64,
@@ -144,10 +183,35 @@ class MultiImageHttpGateUnitTest(unittest.TestCase):
                 request_json=health_request,
             )
 
+    def test_indexed_png_variants_preserve_pixels_and_change_metadata(self):
+        palette_a = MODULE._indexed_png_data_url(
+            ((10, 20, 30), (40, 50, 60)), (255, 255))
+        palette_b = MODULE._indexed_png_data_url(
+            ((200, 20, 30), (40, 50, 60)), (255, 255))
+        transparency = MODULE._indexed_png_data_url(
+            ((10, 20, 30), (40, 50, 60)), (0, 255))
+        a = png_chunks(palette_a)
+        b = png_chunks(palette_b)
+        transparent = png_chunks(transparency)
+        self.assertEqual(a[b"IHDR"], b[b"IHDR"])
+        self.assertEqual(a[b"IHDR"], transparent[b"IHDR"])
+        self.assertNotEqual(a[b"PLTE"], b[b"PLTE"])
+        self.assertEqual(a[b"PLTE"], transparent[b"PLTE"])
+        self.assertEqual(a[b"tRNS"], b[b"tRNS"])
+        self.assertNotEqual(a[b"tRNS"], transparent[b"tRNS"])
+        self.assertEqual(
+            zlib.decompress(a[b"IDAT"]),
+            zlib.decompress(b[b"IDAT"]),
+        )
+        self.assertEqual(
+            zlib.decompress(a[b"IDAT"]),
+            zlib.decompress(transparent[b"IDAT"]),
+        )
+
     def test_control_rejects_only_second_image_and_stays_healthy(self):
         report = self.run_gate(FakeClient(1), 400)
         self.assertTrue(report["qualified"])
-        self.assertEqual(report["case_count"], 7)
+        self.assertEqual(report["case_count"], 13)
         cases = {case["name"]: case for case in report["cases"]}
         self.assertEqual(
             cases["stream_one_image_cold"]["evidence"]["http_status"], 200)
@@ -159,6 +223,13 @@ class MultiImageHttpGateUnitTest(unittest.TestCase):
         )
         self.assertTrue(
             cases["stream_two_images_warm"]["evidence"]["skipped"])
+        for cold_name, warm_name in MODULE.PALETTE_PAIRS:
+            cold = cases[cold_name]["evidence"]
+            warm = cases[warm_name]["evidence"]
+            self.assertEqual(cold["cached_tokens"], 0)
+            self.assertTrue(cold["cross_variant_cached_tokens_zero"])
+            self.assertGreater(warm["cached_tokens"], 0)
+            self.assertTrue(warm["cold_generation_exact"])
         self.assertEqual(
             cases["post_request_health"]["evidence"]["http_status"], 200)
 
@@ -177,6 +248,13 @@ class MultiImageHttpGateUnitTest(unittest.TestCase):
             reversed_images["cache_isolation_deferred_to_trace"])
         self.assertTrue(reversed_warm["cold_generation_exact"])
         self.assertGreater(reversed_warm["cached_tokens"], 0)
+        for cold_name, warm_name in MODULE.PALETTE_PAIRS:
+            cold = cases[cold_name]["evidence"]
+            warm = cases[warm_name]["evidence"]
+            self.assertEqual(cold["cached_tokens"], 0)
+            self.assertTrue(cold["cross_variant_cached_tokens_zero"])
+            self.assertGreater(warm["cached_tokens"], 0)
+            self.assertTrue(warm["cold_generation_exact"])
 
     def test_candidate_fails_closed_on_warm_generation_drift(self):
         report = self.run_gate(FakeClient(2, warm_drift=True), 200)
@@ -192,6 +270,29 @@ class MultiImageHttpGateUnitTest(unittest.TestCase):
                 "stream_two_images_reversed_warm",
             ],
         )
+
+    def test_indexed_palette_warm_generation_drift_fails_closed(self):
+        report = self.run_gate(
+            FakeClient(2, indexed_warm_drift=True), 200)
+        self.assertFalse(report["qualified"])
+        self.assertEqual(
+            [
+                case["name"] for case in report["cases"]
+                if not case["ok"]
+            ],
+            [warm for _, warm in MODULE.PALETTE_PAIRS],
+        )
+
+    def test_cross_palette_cache_hit_fails_closed(self):
+        report = self.run_gate(
+            FakeClient(2, cross_indexed_hit=True), 200)
+        self.assertFalse(report["qualified"])
+        failed = {
+            case["name"] for case in report["cases"]
+            if not case["ok"]
+        }
+        self.assertIn("stream_palette_b_cold", failed)
+        self.assertIn("stream_transparency_cold", failed)
 
     def test_cross_image_cache_accounting_is_deferred_to_trace(self):
         report = self.run_gate(FakeClient(2, reversed_hit=True), 200)

@@ -4,13 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
 from pathlib import Path
+import struct
 import tempfile
 import time
 from typing import Any, Callable
+import zlib
 
 from quality_gate_api import Client
 from qwen36_compat_http_gate import (
@@ -22,8 +25,8 @@ from qwen36_tool_http_gate import _stream_summary
 
 
 Json = dict[str, Any]
-SCHEMA = "qwen36-diagnostic-multi-image-http-gate-v1"
-VERSION = 1
+SCHEMA = "qwen36-diagnostic-multi-image-http-gate-v2"
+VERSION = 2
 SEED = 20260728
 CASE_NAMES = (
     "models_262144_contract",
@@ -32,7 +35,18 @@ CASE_NAMES = (
     "stream_two_images_warm",
     "stream_two_images_reversed",
     "stream_two_images_reversed_warm",
+    "stream_palette_a_cold",
+    "stream_palette_a_warm",
+    "stream_palette_b_cold",
+    "stream_palette_b_warm",
+    "stream_transparency_cold",
+    "stream_transparency_warm",
     "post_request_health",
+)
+PALETTE_PAIRS = (
+    ("stream_palette_a_cold", "stream_palette_a_warm"),
+    ("stream_palette_b_cold", "stream_palette_b_warm"),
+    ("stream_transparency_cold", "stream_transparency_warm"),
 )
 EXACT_FIELDS = (
     "semantic_output_sha256",
@@ -45,13 +59,59 @@ EXACT_FIELDS = (
 )
 
 
-def _payload(colors: list[tuple[int, int, int]]) -> Json:
+def _png_chunk(kind: bytes, payload: bytes) -> bytes:
+    return (
+        struct.pack(">I", len(payload))
+        + kind
+        + payload
+        + struct.pack(">I", zlib.crc32(kind + payload) & 0xffffffff)
+    )
+
+
+def _indexed_png_data_url(
+    palette: tuple[tuple[int, int, int], ...],
+    transparency: tuple[int, ...],
+) -> str:
+    if not 1 <= len(palette) <= 256:
+        raise ValueError("indexed PNG palette must contain 1..256 colors")
+    if len(transparency) != len(palette):
+        raise ValueError("indexed PNG transparency length differs")
+    channels = (*(
+        channel
+        for color in palette
+        for channel in color
+    ), *transparency)
+    if any(
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not 0 <= value <= 255
+        for value in channels
+    ):
+        raise ValueError("indexed PNG channels must be bytes")
+
+    header = struct.pack(">IIBBBBB", 2, 2, 8, 3, 0, 0, 0)
+    palette_bytes = bytes(
+        channel for color in palette for channel in color)
+    # Both rows contain the same index bytes across all variants.
+    scanlines = b"\x00\x00\x01\x00\x01\x00"
+    png = b"".join((
+        b"\x89PNG\r\n\x1a\n",
+        _png_chunk(b"IHDR", header),
+        _png_chunk(b"PLTE", palette_bytes),
+        _png_chunk(b"tRNS", bytes(transparency)),
+        _png_chunk(b"IDAT", zlib.compress(scanlines, level=9)),
+        _png_chunk(b"IEND", b""),
+    ))
+    return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+
+
+def _payload_from_urls(image_urls: list[str]) -> Json:
     content: list[Json] = [
         {
             "type": "image_url",
-            "image_url": {"url": _solid_png_data_url(color)},
+            "image_url": {"url": image_url},
         }
-        for color in colors
+        for image_url in image_urls
     ]
     # The repeated material gives the cache gate multiple complete blocks.
     content.append({
@@ -74,6 +134,12 @@ def _payload(colors: list[tuple[int, int, int]]) -> Json:
             "continuous_usage_stats": False,
         },
     }
+
+
+def _payload(colors: list[tuple[int, int, int]]) -> Json:
+    return _payload_from_urls([
+        _solid_png_data_url(color) for color in colors
+    ])
 
 
 def _request_stream(
@@ -279,6 +345,75 @@ def run_gate(
             },
         )
 
+    palette_a = _indexed_png_data_url(
+        ((10, 20, 30), (40, 50, 60)),
+        (255, 255),
+    )
+    palette_b = _indexed_png_data_url(
+        ((200, 20, 30), (40, 50, 60)),
+        (255, 255),
+    )
+    transparency = _indexed_png_data_url(
+        ((10, 20, 30), (40, 50, 60)),
+        (0, 255),
+    )
+
+    def run_indexed_pair(
+        cold_name: str,
+        warm_name: str,
+        image_url: str,
+    ) -> None:
+        def cold() -> Json:
+            summary = _request_stream(
+                client,
+                _payload_from_urls([image_url]),
+                timeout_s=timeout_s,
+                expected_status=200,
+            )
+            if summary.get("cached_tokens") != 0:
+                raise AssertionError(
+                    f"{cold_name} crossed a multimodal cache namespace")
+            summary["cross_variant_cached_tokens_zero"] = True
+            return summary
+
+        cold_summary = run(cold_name, cold)
+
+        def warm() -> Json:
+            summary = _request_stream(
+                client,
+                _payload_from_urls([image_url]),
+                timeout_s=timeout_s,
+                expected_status=200,
+            )
+            if (
+                cold_summary is None
+                or not _same_generation(cold_summary, summary)
+            ):
+                raise AssertionError(f"{cold_name} cold/warm generation differs")
+            if summary.get("cached_tokens", 0) <= 0:
+                raise AssertionError(
+                    f"{warm_name} has no effective cache hit")
+            summary["cold_generation_exact"] = True
+            return summary
+
+        run(warm_name, warm)
+
+    run_indexed_pair(
+        "stream_palette_a_cold",
+        "stream_palette_a_warm",
+        palette_a,
+    )
+    run_indexed_pair(
+        "stream_palette_b_cold",
+        "stream_palette_b_warm",
+        palette_b,
+    )
+    run_indexed_pair(
+        "stream_transparency_cold",
+        "stream_transparency_warm",
+        transparency,
+    )
+
     run(
         "post_request_health",
         lambda: _health_summary(base, request_json),
@@ -305,6 +440,8 @@ def run_gate(
             "stream": True,
             "temperature": 0,
             "thinking": False,
+            "indexed_png_variants": 3,
+            "indexed_png_dimensions": [2, 2],
         },
         "cases": cases,
         "privacy": {

@@ -184,7 +184,7 @@ class M187QueueQualifierUnitTest(unittest.TestCase):
             self.root / "m1_86" / "comparison.json",
             {
                 "schema": qualifier.IMAGE_COMPARISON_SCHEMA,
-                "version": 1,
+                "version": 2,
                 "qualified": True,
                 "artifact_sha256": comparison_artifacts,
                 "observed": {"physical_gpu": 3},

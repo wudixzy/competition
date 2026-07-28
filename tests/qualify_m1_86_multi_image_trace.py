@@ -15,9 +15,9 @@ from typing import Any
 
 
 Json = dict[str, Any]
-SCHEMA = "bi100-m1-86-multi-image-trace-v1"
-VERSION = 1
-HTTP_SCHEMA = "qwen36-diagnostic-multi-image-http-gate-v1"
+SCHEMA = "bi100-m1-86-multi-image-trace-v2"
+VERSION = 2
+HTTP_SCHEMA = "qwen36-diagnostic-multi-image-http-gate-v2"
 TRACE_MARKER = "[BI100_CACHE_TRACE] "
 CASE_NAMES = (
     "models_262144_contract",
@@ -26,6 +26,12 @@ CASE_NAMES = (
     "stream_two_images_warm",
     "stream_two_images_reversed",
     "stream_two_images_reversed_warm",
+    "stream_palette_a_cold",
+    "stream_palette_a_warm",
+    "stream_palette_b_cold",
+    "stream_palette_b_warm",
+    "stream_transparency_cold",
+    "stream_transparency_warm",
     "post_request_health",
 )
 CANDIDATE_RECORD_CASES = (
@@ -34,8 +40,27 @@ CANDIDATE_RECORD_CASES = (
     "stream_two_images_warm",
     "stream_two_images_reversed",
     "stream_two_images_reversed_warm",
+    "stream_palette_a_cold",
+    "stream_palette_a_warm",
+    "stream_palette_b_cold",
+    "stream_palette_b_warm",
+    "stream_transparency_cold",
+    "stream_transparency_warm",
 )
-CONTROL_RECORD_CASES = ("stream_one_image_cold",)
+CONTROL_RECORD_CASES = (
+    "stream_one_image_cold",
+    "stream_palette_a_cold",
+    "stream_palette_a_warm",
+    "stream_palette_b_cold",
+    "stream_palette_b_warm",
+    "stream_transparency_cold",
+    "stream_transparency_warm",
+)
+PALETTE_PAIRS = (
+    ("stream_palette_a_cold", "stream_palette_a_warm"),
+    ("stream_palette_b_cold", "stream_palette_b_warm"),
+    ("stream_transparency_cold", "stream_transparency_warm"),
+)
 
 
 def _load(path: Path) -> Json:
@@ -183,7 +208,7 @@ def qualify(log_path: Path, report: Json, mode: str) -> Json:
     reasons: list[str] = []
     if (
         report.get("schema") != HTTP_SCHEMA
-        or report.get("version") != 1
+        or report.get("version") != 2
         or report.get("qualified") is not True
     ):
         reasons.append("HTTP report is not qualified")
@@ -280,14 +305,22 @@ def qualify(log_path: Path, report: Json, mode: str) -> Json:
             reasons.append(f"{label} HTTP and trace accounting differ")
         summaries[label] = _trace_summary(record, hashes)
 
+    records_by_name = dict(zip(case_names, records))
+    hashes_by_name = dict(zip(case_names, prompt_hashes))
     isolation: Json = {}
+    palette_isolation: Json = {}
     if mode == "control" and records:
-        if records[0].get("observed_effective_cached_tokens") != 0:
+        if records_by_name.get(
+            "stream_one_image_cold", {}
+        ).get("observed_effective_cached_tokens") != 0:
             reasons.append("control one-image request was not cold")
     elif mode == "candidate" and len(records) == len(case_names):
-        one, normal, normal_warm, reversed_images, reversed_warm = (
-            prompt_hashes
-        )
+        one = hashes_by_name["stream_one_image_cold"]
+        normal = hashes_by_name["stream_two_images_cold"]
+        normal_warm = hashes_by_name["stream_two_images_warm"]
+        reversed_images = hashes_by_name["stream_two_images_reversed"]
+        reversed_warm = hashes_by_name[
+            "stream_two_images_reversed_warm"]
         if normal != normal_warm:
             reasons.append("normal two-image prompt hash chain differs")
         if reversed_images != reversed_warm:
@@ -306,11 +339,11 @@ def qualify(log_path: Path, report: Json, mode: str) -> Json:
             "normal_reversed_common_blocks":
                 _common_prefix(normal, reversed_images),
         }
-        for index, common, label in (
-            (1, normal_prior_common, "stream_two_images_cold"),
-            (3, reversed_prior_common, "stream_two_images_reversed"),
+        for common, label in (
+            (normal_prior_common, "stream_two_images_cold"),
+            (reversed_prior_common, "stream_two_images_reversed"),
         ):
-            record = records[index]
+            record = records_by_name[label]
             raw_hit = record.get(
                 "initial_raw_kv_contiguous_hit_blocks")
             effective_hit = record.get("effective_gdn_hit_blocks")
@@ -327,13 +360,70 @@ def qualify(log_path: Path, report: Json, mode: str) -> Json:
             ):
                 reasons.append(
                     f"{label} crossed the content-hash prefix boundary")
-        for index, label in (
-            (2, "stream_two_images_warm"),
-            (4, "stream_two_images_reversed_warm"),
+        for label in (
+            "stream_two_images_warm",
+            "stream_two_images_reversed_warm",
         ):
-            effective_hit = records[index].get("effective_gdn_hit_blocks")
+            effective_hit = records_by_name[label].get(
+                "effective_gdn_hit_blocks")
             if not _integer(effective_hit, minimum=1):
                 reasons.append(f"{label} has no effective GDN restore")
+
+    if len(records) == len(case_names):
+        cold_chains: list[tuple[bytes, ...]] = []
+        prior_common: dict[str, int] = {}
+        warm_exact: dict[str, bool] = {}
+        for cold_name, warm_name in PALETTE_PAIRS:
+            cold_hashes = hashes_by_name[cold_name]
+            warm_hashes = hashes_by_name[warm_name]
+            cold_index = case_names.index(cold_name)
+            prior = prompt_hashes[:cold_index]
+            common = max(
+                (_common_prefix(cold_hashes, item) for item in prior),
+                default=0,
+            )
+            prior_common[cold_name] = common
+            cold_chains.append(cold_hashes)
+            warm_exact[warm_name] = cold_hashes == warm_hashes
+            if cold_hashes != warm_hashes:
+                reasons.append(f"{warm_name} prompt hash chain differs")
+            if common != 0:
+                reasons.append(
+                    f"{cold_name} did not start in an isolated namespace")
+
+            cold_record = records_by_name[cold_name]
+            initial_hit = cold_record.get(
+                "initial_raw_kv_contiguous_hit_blocks")
+            effective_hit = cold_record.get("effective_gdn_hit_blocks")
+            observed_tokens = cold_record.get(
+                "observed_effective_cached_tokens")
+            block_size = cold_record.get("block_size")
+            if (
+                not _integer(initial_hit)
+                or not _integer(effective_hit)
+                or not _integer(observed_tokens)
+                or not _integer(block_size, minimum=1)
+                or initial_hit > common
+                or effective_hit > common
+                or observed_tokens > common * block_size
+            ):
+                reasons.append(
+                    f"{cold_name} crossed the content-hash prefix boundary")
+
+            warm_hit = records_by_name[warm_name].get(
+                "effective_gdn_hit_blocks")
+            if not _integer(warm_hit, minimum=1):
+                reasons.append(f"{warm_name} has no effective GDN restore")
+
+        distinct_count = len(set(cold_chains))
+        if distinct_count != len(PALETTE_PAIRS):
+            reasons.append(
+                "palette or transparency variants share a prompt hash chain")
+        palette_isolation = {
+            "cold_prior_common_blocks": prior_common,
+            "distinct_cold_chain_count": distinct_count,
+            "warm_chain_exact": warm_exact,
+        }
 
     return {
         "schema": SCHEMA,
@@ -345,6 +435,7 @@ def qualify(log_path: Path, report: Json, mode: str) -> Json:
         "trace_count": len(records),
         "request_summaries": summaries,
         "content_isolation": isolation,
+        "palette_isolation": palette_isolation,
         "privacy": {
             "contains_raw_tokens": False,
             "contains_raw_images": False,

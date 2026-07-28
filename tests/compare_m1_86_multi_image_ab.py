@@ -13,12 +13,12 @@ from typing import Any
 
 
 Json = dict[str, Any]
-SCHEMA = "bi100-m1-86-multi-image-ab-v1"
-VERSION = 1
-GATE_SCHEMA = "qwen36-diagnostic-multi-image-http-gate-v1"
+SCHEMA = "bi100-m1-86-multi-image-ab-v2"
+VERSION = 2
+GATE_SCHEMA = "qwen36-diagnostic-multi-image-http-gate-v2"
 STATUS_SCHEMA = "bi100-m1-86-multi-image-arm-v1"
 CONTRACT_SCHEMA = "bi100-m1-86-service-contract-v1"
-TRACE_SCHEMA = "bi100-m1-86-multi-image-trace-v1"
+TRACE_SCHEMA = "bi100-m1-86-multi-image-trace-v2"
 STATUS_ARTIFACT_NAMES = frozenset({
     "probe",
     "attribution",
@@ -53,7 +53,18 @@ CASE_NAMES = (
     "stream_two_images_warm",
     "stream_two_images_reversed",
     "stream_two_images_reversed_warm",
+    "stream_palette_a_cold",
+    "stream_palette_a_warm",
+    "stream_palette_b_cold",
+    "stream_palette_b_warm",
+    "stream_transparency_cold",
+    "stream_transparency_warm",
     "post_request_health",
+)
+PALETTE_PAIRS = (
+    ("stream_palette_a_cold", "stream_palette_a_warm"),
+    ("stream_palette_b_cold", "stream_palette_b_warm"),
+    ("stream_transparency_cold", "stream_transparency_warm"),
 )
 EXACT_FIELDS = (
     "semantic_output_sha256",
@@ -254,7 +265,7 @@ def compare(
             config = {}
         if (
             report.get("schema") != GATE_SCHEMA
-            or report.get("version") != 1
+            or report.get("version") != 2
             or report.get("qualified") is not True
             or report.get("case_count") != len(CASE_NAMES)
         ):
@@ -269,6 +280,8 @@ def compare(
             or config.get("seed") != 20260728
             or config.get("max_tokens") != 8
             or config.get("thinking") is not False
+            or config.get("indexed_png_variants") != 3
+            or config.get("indexed_png_dimensions") != [2, 2]
         ):
             reasons.append(f"{label} deterministic streaming contract differs")
         privacy = report.get("privacy")
@@ -344,18 +357,96 @@ def compare(
     ):
         reasons.append("candidate reversed-image warm request has no cache hit")
 
+    palette_observed: dict[str, Json] = {}
+    for cold_name, warm_name in PALETTE_PAIRS:
+        control_cold = _evidence(
+            control_cases, cold_name, "control", reasons)
+        control_warm = _evidence(
+            control_cases, warm_name, "control", reasons)
+        candidate_cold = _evidence(
+            candidate_cases, cold_name, "candidate", reasons)
+        candidate_warm_palette = _evidence(
+            candidate_cases, warm_name, "candidate", reasons)
+        for label, cold, warm in (
+            ("control", control_cold, control_warm),
+            ("candidate", candidate_cold, candidate_warm_palette),
+        ):
+            if (
+                cold.get("http_status") != 200
+                or cold.get("cached_tokens") != 0
+                or cold.get("cross_variant_cached_tokens_zero") is not True
+            ):
+                reasons.append(
+                    f"{label} {cold_name} was not cache-isolated")
+            if warm.get("cold_generation_exact") is not True:
+                reasons.append(
+                    f"{label} {warm_name} replay is not exact")
+            if not all(
+                cold.get(field) == warm.get(field)
+                for field in EXACT_FIELDS
+            ):
+                reasons.append(
+                    f"{label} {cold_name} cold/warm summary differs")
+            if (
+                not isinstance(warm.get("cached_tokens"), int)
+                or isinstance(warm.get("cached_tokens"), bool)
+                or warm.get("cached_tokens", 0) <= 0
+            ):
+                reasons.append(
+                    f"{label} {warm_name} has no cache hit")
+        if not all(
+            control_cold.get(field) == candidate_cold.get(field)
+            for field in EXACT_FIELDS
+        ):
+            reasons.append(
+                f"{cold_name} deterministic output differs across arms")
+        palette_observed[cold_name] = {
+            "control_cold_cached_tokens": control_cold.get("cached_tokens"),
+            "control_warm_cached_tokens": control_warm.get("cached_tokens"),
+            "candidate_cold_cached_tokens":
+                candidate_cold.get("cached_tokens"),
+            "candidate_warm_cached_tokens":
+                candidate_warm_palette.get("cached_tokens"),
+        }
+
     for label, trace, expected_count in (
-        ("control", control_trace, 1),
-        ("candidate", candidate_trace, 5),
+        ("control", control_trace, 7),
+        ("candidate", candidate_trace, 11),
     ):
         privacy = trace.get("privacy")
+        palette_isolation = trace.get("palette_isolation")
+        expected_cold = {cold for cold, _ in PALETTE_PAIRS}
+        expected_warm = {warm for _, warm in PALETTE_PAIRS}
         if (
             trace.get("schema") != TRACE_SCHEMA
-            or trace.get("version") != 1
+            or trace.get("version") != 2
             or trace.get("qualified") is not True
             or trace.get("mode") != label
             or trace.get("trace_version") != 4
             or trace.get("trace_count") != expected_count
+            or not isinstance(palette_isolation, dict)
+            or palette_isolation.get("distinct_cold_chain_count") != 3
+            or not isinstance(
+                palette_isolation.get("cold_prior_common_blocks"), dict)
+            or set(
+                palette_isolation.get(
+                    "cold_prior_common_blocks", {})
+            ) != expected_cold
+            or any(
+                value != 0
+                for value in palette_isolation.get(
+                    "cold_prior_common_blocks", {}).values()
+            )
+            or not isinstance(
+                palette_isolation.get("warm_chain_exact"), dict)
+            or set(
+                palette_isolation.get("warm_chain_exact", {})
+            ) != expected_warm
+            or any(
+                value is not True
+                for value in palette_isolation.get(
+                    "warm_chain_exact", {}).values()
+            )
             or not isinstance(privacy, dict)
             or privacy.get("contains_raw_tokens") is not False
             or privacy.get("contains_raw_images") is not False
@@ -616,6 +707,11 @@ def compare(
                 candidate_reversed_warm.get("cached_tokens"),
             "candidate_content_isolation":
                 candidate_trace.get("content_isolation"),
+            "palette_http_cache": palette_observed,
+            "control_palette_isolation":
+                control_trace.get("palette_isolation"),
+            "candidate_palette_isolation":
+                candidate_trace.get("palette_isolation"),
             "control_4xx_reasons":
                 control_attribution.get("by_reason"),
             "candidate_4xx_reasons":

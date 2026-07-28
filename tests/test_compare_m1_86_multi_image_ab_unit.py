@@ -96,16 +96,58 @@ def report(candidate: bool) -> dict:
             ),
         },
         {
+            "name": "stream_palette_a_cold",
+            "ok": True,
+            "evidence": {
+                **generation("palette-a"),
+                "cross_variant_cached_tokens_zero": True,
+            },
+        },
+        {
+            "name": "stream_palette_a_warm",
+            "ok": True,
+            "evidence": generation(
+                "palette-a", cached_tokens=192, exact=True),
+        },
+        {
+            "name": "stream_palette_b_cold",
+            "ok": True,
+            "evidence": {
+                **generation("palette-b"),
+                "cross_variant_cached_tokens_zero": True,
+            },
+        },
+        {
+            "name": "stream_palette_b_warm",
+            "ok": True,
+            "evidence": generation(
+                "palette-b", cached_tokens=192, exact=True),
+        },
+        {
+            "name": "stream_transparency_cold",
+            "ok": True,
+            "evidence": {
+                **generation("transparency"),
+                "cross_variant_cached_tokens_zero": True,
+            },
+        },
+        {
+            "name": "stream_transparency_warm",
+            "ok": True,
+            "evidence": generation(
+                "transparency", cached_tokens=192, exact=True),
+        },
+        {
             "name": "post_request_health",
             "ok": True,
             "evidence": {"http_status": 200, "response_sha256": "b" * 64},
         },
     ]
     return {
-        "schema": "qwen36-diagnostic-multi-image-http-gate-v1",
-        "version": 1,
+        "schema": "qwen36-diagnostic-multi-image-http-gate-v2",
+        "version": 2,
         "qualified": True,
-        "case_count": 7,
+        "case_count": 13,
         "config": {
             "expected_two_image_status": 200 if candidate else 400,
             "stream": True,
@@ -113,6 +155,8 @@ def report(candidate: bool) -> dict:
             "seed": 20260728,
             "max_tokens": 8,
             "thinking": False,
+            "indexed_png_variants": 3,
+            "indexed_png_dimensions": [2, 2],
         },
         "cases": cases,
         "privacy": {
@@ -277,12 +321,12 @@ def capacity(blocks: int = 20000) -> dict:
 
 def trace(candidate: bool) -> dict:
     return {
-        "schema": "bi100-m1-86-multi-image-trace-v1",
-        "version": 1,
+        "schema": "bi100-m1-86-multi-image-trace-v2",
+        "version": 2,
         "qualified": True,
         "mode": "candidate" if candidate else "control",
         "trace_version": 4,
-        "trace_count": 5 if candidate else 1,
+        "trace_count": 11 if candidate else 7,
         "content_isolation": (
             {
                 "normal_initial_prior_common_blocks": 0,
@@ -291,6 +335,19 @@ def trace(candidate: bool) -> dict:
             }
             if candidate else {}
         ),
+        "palette_isolation": {
+            "cold_prior_common_blocks": {
+                "stream_palette_a_cold": 0,
+                "stream_palette_b_cold": 0,
+                "stream_transparency_cold": 0,
+            },
+            "distinct_cold_chain_count": 3,
+            "warm_chain_exact": {
+                "stream_palette_a_warm": True,
+                "stream_palette_b_warm": True,
+                "stream_transparency_warm": True,
+            },
+        },
         "privacy": {
             "contains_raw_tokens": False,
             "contains_raw_images": False,
@@ -412,6 +469,41 @@ class CompareM186MultiImageAbUnitTest(unittest.TestCase):
         self.assertFalse(value["qualified"])
         self.assertIn(
             "one-image deterministic output differs across arms",
+            value["reasons"],
+        )
+
+    def test_palette_cross_variant_http_hit_fails(self):
+        candidate = report(True)
+        cases = {case["name"]: case for case in candidate["cases"]}
+        cases["stream_palette_b_cold"]["evidence"]["cached_tokens"] = 16
+        value = compare(candidate_report=candidate)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "candidate stream_palette_b_cold was not cache-isolated",
+            value["reasons"],
+        )
+
+    def test_palette_output_drift_across_arms_fails(self):
+        candidate = report(True)
+        cases = {case["name"]: case for case in candidate["cases"]}
+        cases["stream_transparency_cold"]["evidence"][
+            "semantic_output_sha256"
+        ] = "drift"
+        value = compare(candidate_report=candidate)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "stream_transparency_cold deterministic output differs "
+            "across arms",
+            value["reasons"],
+        )
+
+    def test_palette_trace_isolation_is_mandatory(self):
+        candidate = trace(True)
+        candidate["palette_isolation"]["distinct_cold_chain_count"] = 2
+        value = compare(candidate_trace=candidate)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "candidate cache trace did not qualify",
             value["reasons"],
         )
 

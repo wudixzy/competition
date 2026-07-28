@@ -13,11 +13,11 @@ from typing import Any
 
 
 Json = dict[str, Any]
-SCHEMA = "bi100-m1-87-single-gpu-queue-v2"
+SCHEMA = "bi100-m1-87-single-gpu-queue-v3"
 CACHE_NAMESPACE_SCHEMA = "qwen36-cache-namespace-runtime-gate-v2"
 DIAGNOSTIC_SCHEMA = "qwen36-diagnostic-service-gate-v1"
 IMAGE_RUNNER_SCHEMA = "bi100-m1-86-multi-image-ab-runner-v1"
-IMAGE_COMPARISON_SCHEMA = "bi100-m1-86-multi-image-ab-v1"
+IMAGE_COMPARISON_SCHEMA = "bi100-m1-86-multi-image-ab-v2"
 OVERLAY_SCHEMA = "bi100-bare-host-runtime-identity-v1"
 POSTFLIGHT_SCHEMA = "bi100-service-postflight-v1"
 RECOVERY_SCHEMA = "bi100-recorded-session-cleanup-v1"
@@ -417,7 +417,7 @@ def qualify(
     comparison_observed = image_comparison.get("observed")
     if (
         image_comparison.get("schema") != IMAGE_COMPARISON_SCHEMA
-        or image_comparison.get("version") != 1
+        or image_comparison.get("version") != 2
         or image_comparison.get("qualified") is not True
         or not isinstance(decision, dict)
         or not isinstance(comparison_observed, dict)
