@@ -30,7 +30,10 @@ class M188W13RoundingGuardRunnerUnitTest(unittest.TestCase):
             'kill -KILL "$ACTIVE_PID"',
             'wait "$ACTIVE_PID"',
             "trap finish EXIT",
+            "trap '' INT TERM",
             "cleanup_recorded_bi100_sessions.py",
+            "qualify_recorded_session_cleanup.py",
+            "scoped_cleanup_clean.rc",
             "service_postflight_gate.py",
             "bi100_preflight.py",
             "compare_bi100_preflights.py",
@@ -52,6 +55,9 @@ class M188W13RoundingGuardRunnerUnitTest(unittest.TestCase):
             '"max_step_flagged_fraction": 0.10',
             '"sequence_steps_per_seed": 500',
             '"term_grace_s": 60',
+            '"kill_grace_s": 20',
+            '"complete_token_scan_required": True',
+            '"schema": "bi100-m1-88-w13-rounding-guard-runner-v2"',
         ):
             self.assertIn(marker, self.source)
 
@@ -91,6 +97,21 @@ class M188W13RoundingGuardRunnerUnitTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("non-negative integer", result.stderr)
+
+    def test_recovery_and_scans_fail_closed(self) -> None:
+        self.assertIn(
+            '--expected-identity "$RUN_ROOT/build_process_identity.json"',
+            self.source,
+        )
+        self.assertIn(
+            '--expected-identity "$RUN_ROOT/benchmark_process_identity.json"',
+            self.source,
+        )
+        self.assertIn("-name '*.stdout'", self.source)
+        self.assertIn("-name '*.stderr'", self.source)
+        self.assertIn("-name '*.rc'", self.source)
+        self.assertIn("124|137|143", self.source)
+        self.assertIn("cleanup_clean_rc -ne 0", self.source)
 
 
 if __name__ == "__main__":

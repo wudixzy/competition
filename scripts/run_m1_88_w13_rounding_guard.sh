@@ -328,6 +328,7 @@ gates = {
     "benchmark": read_rc("benchmark.rc"),
     "qualification": read_rc("qualification.rc"),
     "scoped_cleanup": read_rc("scoped_cleanup.rc"),
+    "scoped_cleanup_clean": read_rc("scoped_cleanup_clean.rc"),
     "fatal_scan": read_rc("fatal_scan.rc"),
     "timeout_scan": read_rc("timeout_scan.rc"),
     "postflight_after": read_rc("postflight_after.rc"),
@@ -335,8 +336,8 @@ gates = {
     "preflight_comparison": read_rc("preflight_comparison.rc"),
 }
 report = {
-    "schema": "bi100-m1-88-w13-rounding-guard-runner-v1",
-    "version": 1,
+    "schema": "bi100-m1-88-w13-rounding-guard-runner-v2",
+    "version": 2,
     "returncode": int(sys.argv[2]),
     "last_stage": sys.argv[3],
     "source_revision": sys.argv[4],
@@ -350,6 +351,7 @@ report = {
         "qualification": sha("qualification.json"),
         "runtime_identity": sha("runtime_identity.json"),
         "scoped_cleanup": sha("scoped_cleanup.json"),
+        "scoped_cleanup_clean": sha("scoped_cleanup_clean.json"),
         "preflight_comparison": sha("preflight_comparison.json"),
     },
     "limits": {
@@ -358,6 +360,8 @@ report = {
         "max_step_flagged_fraction": 0.10,
         "sequence_steps_per_seed": 500,
         "term_grace_s": 60,
+        "kill_grace_s": 20,
+        "complete_token_scan_required": True,
     },
     "production_runtime_changed": False,
     "production_promotion_authorized": False,
@@ -375,13 +379,18 @@ finish() {
     local primary_rc=$?
     local final_rc=$primary_rc
     local cleanup_rc=0
+    local cleanup_clean_rc=0
     local fatal_rc=0
     local timeout_rc=0
     local postflight_rc=0
     local after_rc=0
     local comparison_rc=0
+    local artifact
     local identity_args=()
-    trap - EXIT INT TERM
+    local pattern
+    local value
+    trap - EXIT
+    trap '' INT TERM
     set +e
 
     stop_active_group || cleanup_rc=1
@@ -401,28 +410,52 @@ finish() {
         2> "$RUN_ROOT/scoped_cleanup.stderr"
     [[ $? -eq 0 ]] || cleanup_rc=1
     printf '%s\n' "$cleanup_rc" > "$RUN_ROOT/scoped_cleanup.rc"
+    python3 "$ROOT/tests/qualify_recorded_session_cleanup.py" \
+        "$RUN_ROOT/scoped_cleanup.json" \
+        --expected-identity "$RUN_ROOT/build_process_identity.json" \
+        --expected-identity "$RUN_ROOT/benchmark_process_identity.json" \
+        --out "$RUN_ROOT/scoped_cleanup_clean.json" \
+        > "$RUN_ROOT/scoped_cleanup_clean.stdout" \
+        2> "$RUN_ROOT/scoped_cleanup_clean.stderr"
+    cleanup_clean_rc=$?
+    printf '%s\n' "$cleanup_clean_rc" \
+        > "$RUN_ROOT/scoped_cleanup_clean.rc"
 
-    if grep -Eiq \
-            'CUDA error|SIGSEGV|Fatal Python error|out of memory|device-side assert|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|worker.*(died|lost|exited unexpectedly)' \
-            "$RUN_ROOT"/*.stdout "$RUN_ROOT"/*.stderr 2>/dev/null; then
-        grep -Ein \
-            'CUDA error|SIGSEGV|Fatal Python error|out of memory|device-side assert|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|worker.*(died|lost|exited unexpectedly)' \
-            "$RUN_ROOT"/*.stdout "$RUN_ROOT"/*.stderr \
-            > "$RUN_ROOT/fatal_scan.txt" 2>/dev/null || true
-        fatal_rc=1
-    else
-        : > "$RUN_ROOT/fatal_scan.txt"
-    fi
+    pattern='CUDA error|SIGSEGV|Fatal Python error|out of memory|device-side assert|AssertionError|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|Connection reset by peer|worker.*(died|lost|exited unexpectedly)|Timeout(Error|Expired)|engine iteration timed out|watchdog.*tim(e|ed) out|scheduler requested a missing GDN prefix state|non-finite GatedDeltaNet'
+    : > "$RUN_ROOT/fatal_scan.txt"
+    while IFS= read -r -d '' artifact; do
+        if grep -Eiq "$pattern" "$artifact"; then
+            printf 'file=%s\n' "$artifact" >> "$RUN_ROOT/fatal_scan.txt"
+            grep -Ein "$pattern" "$artifact" \
+                >> "$RUN_ROOT/fatal_scan.txt" || true
+            fatal_rc=1
+        fi
+    done < <(find "$RUN_ROOT" -type f \
+        \( -name '*.log' -o -name '*.stdout' -o -name '*.stderr' \) \
+        -print0)
     printf '%s\n' "$fatal_rc" > "$RUN_ROOT/fatal_scan.rc"
 
-    if find "$RUN_ROOT" -maxdepth 1 -name '*.timeout' \
-            -type f -size +0c -print -quit | grep -q .; then
-        find "$RUN_ROOT" -maxdepth 1 -name '*.timeout' \
-            -type f -size +0c -print > "$RUN_ROOT/timeout_scan.txt"
+    : > "$RUN_ROOT/timeout_scan.txt"
+    while IFS= read -r -d '' artifact; do
+        value=$(tr -d '[:space:]' < "$artifact")
+        if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+            printf '%s=malformed:%s\n' "$artifact" "$value" \
+                >> "$RUN_ROOT/timeout_scan.txt"
+            timeout_rc=1
+            continue
+        fi
+        case "$value" in
+            124|137|143)
+                printf '%s=%s\n' "$artifact" "$value" \
+                    >> "$RUN_ROOT/timeout_scan.txt"
+                timeout_rc=1
+                ;;
+        esac
+    done < <(find "$RUN_ROOT" -type f -name '*.rc' -print0)
+    while IFS= read -r -d '' artifact; do
+        printf '%s\n' "$artifact" >> "$RUN_ROOT/timeout_scan.txt"
         timeout_rc=1
-    else
-        : > "$RUN_ROOT/timeout_scan.txt"
-    fi
+    done < <(find "$RUN_ROOT" -type f -name '*.timeout' -size +0c -print0)
     printf '%s\n' "$timeout_rc" > "$RUN_ROOT/timeout_scan.rc"
 
     run_postflight "$RUN_ROOT/postflight_after"
@@ -451,7 +484,8 @@ finish() {
             > "$RUN_ROOT/preflight_comparison.rc"
     fi
 
-    if [[ $cleanup_rc -ne 0 || $fatal_rc -ne 0 || $timeout_rc -ne 0 \
+    if [[ $cleanup_rc -ne 0 || $cleanup_clean_rc -ne 0 \
+            || $fatal_rc -ne 0 || $timeout_rc -ne 0 \
             || $postflight_rc -ne 0 || $after_rc -ne 0 \
             || $comparison_rc -ne 0 ]]; then
         final_rc=1
