@@ -28,6 +28,26 @@ The result will decide whether the next bounded implementation should fuse
 paged gather with QK, eliminate the score workspace with online softmax/PV, or
 stop this attention direction and return to the model profile.
 
+## Prior closed route
+
+M1-55 already implemented a one-wavefront query-tiled kernel that directly
+read paged K/V, used CoreX FP32 WMMA for QK and PV, retained 512-token online
+softmax partitions in shared memory, and avoided full-query score and output
+workspaces. It must not be reimplemented unchanged.
+
+Its best paged numerical result had output relative L2 `1.3592e-5`, above the
+fixed `1e-5` limit, while the only allowed four-way split-reduction alternative
+reached `1.4863e-5`. The small paged case ran at only `0.407-0.414x` of the
+reference. LSE remained near `4.96e-8`, locating the unresolved error in the
+PV reduction order rather than page addressing, masking, or online-softmax
+state.
+
+M1-110 therefore cannot authorize another one-wavefront copy of M1-55. A
+deeper candidate must either retain the authoritative PV reduction while
+removing a different materialization boundary, demonstrate a distinct
+numerically compliant reduction, or exploit an independently measured stage
+such as launch serialization or gather/compute overlap.
+
 ## Fixed matrix
 
 The runner assigns one production shape to each of four BI100 GPUs:
