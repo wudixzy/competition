@@ -437,7 +437,11 @@ class Api4xxTelemetryTest(unittest.TestCase):
             '"${VLLM_ROOT}/entrypoints/openai/api_server.py"',
             patch_ops,
         )
-        self.assertIn("cmp -s ./api_server.py", patch_ops)
+        self.assertIn("python3 - ./api_server.py", patch_ops)
+        self.assertIn(
+            "runtime api_server overlay identity mismatch",
+            patch_ops,
+        )
         self.assertIn(
             'root / "qwen3_6_scripts/api_server.py"', installer)
         self.assertIn('ConfigDict(extra="forbid")', protocol)
