@@ -14,8 +14,11 @@ main-branch change.
 
 The direct routed W13 kernel removes the selected-weight gather and is much
 faster than the vendor `F.linear` path. M1-60 recorded a fixed-case relative
-L2 error of `7.302e-6`, but the current quality contract requires broader
-fixed-seed and sequence evidence at `relative L2 <= 1e-5`. Earlier reduction
+L2 error of `7.302e-6` for seed `20260716`. The later private M1-61 branch
+(`exp/M1-61-exact-w2-hybrid-20260727`, gate commit `c039504`) kept the same
+fixture construction and measured direct W13 at `2.452e-5` for seed
+`20260727`. The direct path therefore does not satisfy the current
+`relative L2 <= 1e-5` quality contract across fixed seeds. Earlier reduction
 experiments also showed that changing a fast matvec's accumulation order can
 move FP16 outputs across rounding boundaries.
 
