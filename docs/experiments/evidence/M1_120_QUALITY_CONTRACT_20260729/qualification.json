@@ -1,0 +1,65 @@
+{
+  "schema": "bi100-m1-120-quality-contract-qualification-v1",
+  "version": 1,
+  "diagnostic_source_revision": "c0bac0cefd278fc2b8d4e8842823574762962161",
+  "diagnostic_run": {
+    "instance": "ssh-73ca29ba",
+    "run_root": "/tmp/m1-116-fused-quality-c0bac0c-20260729-v1",
+    "valid_ab": false,
+    "candidate_started": false,
+    "quality_passed": 52,
+    "quality_failed": 1,
+    "agent_passed": 10,
+    "agent_failed": 1,
+    "failed_case_ids": [
+      "max_tokens_1",
+      "stream_forced_terminal"
+    ]
+  },
+  "runtime_fix": {
+    "source_revision": "f39fd69cf6386f6c794e6605775f328b5f40f18c",
+    "category": "named_tool_stream_header_identity",
+    "header_state_independent_of_token_count": true,
+    "request_semantics_changed": false,
+    "model_execution_changed": false
+  },
+  "gate_contract_fix": {
+    "source_revision": "ce5045b4567c6281aece33a41e24d6e10980a7e1",
+    "category": "max_tokens_one_finish_reason",
+    "completion_tokens_required": 1,
+    "accepted_finish_reasons": [
+      "stop",
+      "length"
+    ],
+    "cross_arm_finish_reason_equality_required": true,
+    "cross_arm_completion_usage_equality_required": true,
+    "service_runtime_changed": false
+  },
+  "local_verification": {
+    "focused_tests_passed": 133,
+    "full_tests_passed": 1212,
+    "full_tests_skipped": 26,
+    "python_compile_passed": true,
+    "shell_syntax_scripts_passed": 52,
+    "submission_preflight_passed": 9,
+    "diff_check_passed": true
+  },
+  "remote_verification": {
+    "exact_source_overlay_built": false,
+    "targeted_tp4_cases_passed": false,
+    "full_m1_116_ab_passed": false
+  },
+  "quality": {
+    "performance_authorized": false,
+    "default_policy_change_authorized": false,
+    "production_yaml_change_authorized": false,
+    "production_promotion_authorized": false,
+    "next_required_gate": "immutable-overlay TP4 targeted replay"
+  },
+  "privacy": {
+    "contains_request_content": false,
+    "contains_generated_output": false,
+    "contains_token_ids": false,
+    "contains_credentials": false
+  }
+}
