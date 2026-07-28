@@ -1,0 +1,76 @@
+{
+  "decision": {
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false,
+    "single_gpu_integrated_screen_qualified": false,
+    "tp4_evaluation_authorized": false,
+    "yaml_change_authorized": false
+  },
+  "evidence": {
+    "exact_reduce_sha256": "d26f2fa39c3921a95793786601e90cf6ebadd06f1d752af541bf82c21acbc1c9",
+    "extension_sha256": "54df11c07fd006fc1e4eaf222cc6fafa65791b2622aee7a04bde1c75b5e5d17b",
+    "report_sha256": "f9236ced95466adf50372a62f4b550218d687e519b2e93237e7011cfc074da16"
+  },
+  "limits": {
+    "iterations": 300,
+    "max_routed_regression_ratio": 1.02,
+    "noninferiority_epsilon": 1e-08,
+    "repeats": 9,
+    "seeds": [
+      20260716,
+      20260727
+    ],
+    "sequence_steps_per_seed": 500,
+    "warmup": 30
+  },
+  "observed": {
+    "candidate_vs_direct_ratio": 0.9889846627521554,
+    "candidate_vs_reference_speedup": 5.058397468312462,
+    "fixed": {
+      "20260716": {
+        "candidate_max_abs": 6.103515625e-05,
+        "candidate_mismatch_count": 838,
+        "candidate_relative_l2": 0.0003228268488739771,
+        "direct_max_abs": 6.103515625e-05,
+        "direct_mismatch_count": 838,
+        "direct_relative_l2": 0.0003228268488739771
+      },
+      "20260727": {
+        "candidate_max_abs": 0.0001220703125,
+        "candidate_mismatch_count": 774,
+        "candidate_relative_l2": 0.00033795975537777317,
+        "direct_max_abs": 0.0001220703125,
+        "direct_mismatch_count": 774,
+        "direct_relative_l2": 0.00033795975537777317
+      }
+    },
+    "sequence": {
+      "20260716": {
+        "candidate_max_abs": 0.00018310546875,
+        "candidate_max_step_relative_l2": 0.00042236389609119407,
+        "candidate_mismatch_count": 419992,
+        "candidate_relative_l2": 0.00033387734678067487,
+        "direct_max_abs": 0.0001220703125,
+        "direct_max_step_relative_l2": 0.00042236389609119407,
+        "direct_mismatch_count": 420627,
+        "direct_relative_l2": 0.00033421061749808266
+      },
+      "20260727": {
+        "candidate_max_abs": 0.0001220703125,
+        "candidate_max_step_relative_l2": 0.00040400793429969426,
+        "candidate_mismatch_count": 419150,
+        "candidate_relative_l2": 0.0003322340876936739,
+        "direct_max_abs": 0.0001220703125,
+        "direct_max_step_relative_l2": 0.00040647500514462236,
+        "direct_mismatch_count": 419544,
+        "direct_relative_l2": 0.00033247016815003797
+      }
+    }
+  },
+  "qualified": false,
+  "reasons": [
+    "seed 20260716 routed sequence candidate max_abs is worse than direct control"
+  ],
+  "schema": "bi100-moe-compensated-w13-integration-qualification-v1",
+  "version": 1
+}

@@ -28,8 +28,15 @@ declared decision; a retest creates a new result with a new identity.
 
 M1-96 has now completed the one permitted unchanged-kernel v2 rerun. The
 candidate is closer than vendor to the high-precision reference on both seeds
-and remains about `5.47x` faster on the routed boundary. It proceeds to
-next-token and full-model TP4 integration gates.
+and remains about `5.47x` faster on the W13 routed boundary.
+
+M1-98 then integrated it into the complete production routed-MoE boundary.
+The candidate improved aggregate error and mismatch count, but one seed's
+maximum absolute error increased from `1.22e-4` to `1.83e-4`. More
+importantly, it was only about `1.1%` faster than the current direct control.
+That is below the fixed `5%` continuation threshold even if the isolated
+worst-error rule were relaxed. M1-91/M1-98 is closed without TP4 evaluation
+or a production binary change.
 
 ### P1: M1-47 fused paged prefill
 
@@ -85,9 +92,9 @@ restart the full paged-attention implementation.
 
 ## Execution order
 
-1. integrate M1-91 behind a disabled-by-default switch and run next-token,
-   functional, capability, and TP4 paired performance gates;
-2. while the integration work is isolated, run the corrected M1-47 three-pair
+1. retain the completed M1-91/M1-98 evidence; do not rerun the integrated
+   candidate;
+2. run the corrected M1-47 three-pair
    TP4 A/B;
 3. run one E-PREFIX-08 high-precision oracle;
 4. run M1-28 only if capacity remains and no higher-value candidate has

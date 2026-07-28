@@ -101,3 +101,32 @@ the current direct control, next-token or capability behavior regresses, or
 the paired end-to-end gain is below 5%, close M1-98. Do not alter compensation
 arithmetic, tolerances, launch geometry, YAML, or request semantics to rescue
 it.
+
+## Result
+
+`REJECTED` at the single-GPU integrated screen.
+
+The exact source commit
+`16b7e028feded58f105e7959e1aa13c9e9f5163a` used the production extension
+SHA-256
+`54df11c07fd006fc1e4eaf222cc6fafa65791b2622aee7a04bde1c75b5e5d17b`.
+Both fixed fixtures were candidate/control exact. Across 500 routed steps per
+seed, the candidate improved aggregate relative L2, mismatch count, and either
+matched or improved maximum-step relative L2. For seed `20260716`, however,
+its worst absolute error was `1.8310546875e-4`, versus
+`1.220703125e-4` for the direct control.
+
+The candidate/control complete routed median ratio was `0.988985`: only about
+`1.1%` faster. The candidate remained `5.0584x` faster than the strict
+gather/linear/reference boundary, but the current direct production path
+already captures almost all of that benefit.
+
+The single worst-error non-inferiority rule is conservative because the other
+sequence metrics all improved. Relaxing it would not change the decision:
+`1.1%` at the routed-MoE micro boundary is well below the fixed `5%` targeted
+end-to-end continuation threshold and would be diluted further in the full
+model. M1-98 therefore stops without a TP4 run, binary replacement, YAML
+change, or default change.
+
+Evidence:
+`docs/experiments/evidence/M1_98_COMPENSATED_W13_INTEGRATED_REJECTED_20260728`.
