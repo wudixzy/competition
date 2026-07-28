@@ -106,6 +106,28 @@ class GdnPrefixSchedulerTest(unittest.TestCase):
             (8704, 8192),
         )
 
+    def test_hybrid_fast_forward_preserves_canonical_chunk_boundary(self):
+        plan = _load_plan()["_plan_gdn_prefix_fast_forward"]
+        restore = (192, _digest(192))
+        self.assertEqual(
+            plan(restore, 0, 16000, 8192, 8192, 16, 8192),
+            (8192, 5120),
+        )
+
+    def test_hybrid_fast_forward_reports_exact_short_suffix(self):
+        plan = _load_plan()["_plan_gdn_prefix_fast_forward"]
+        restore = (255, _digest(255))
+        self.assertEqual(
+            plan(restore, 0, 4096, 4096, 8192, 16, 8192),
+            (4096, 16),
+        )
+
+    def test_hybrid_fast_forward_rejects_invalid_alignment(self):
+        plan = _load_plan()["_plan_gdn_prefix_fast_forward"]
+        restore = (192, _digest(192))
+        with self.assertRaises(ValueError):
+            plan(restore, 0, 16000, 8192, 8192, 16, 1000)
+
     def test_direct_fast_forward_does_not_advance_without_gain(self):
         plan = _load_plan()["_plan_gdn_prefix_fast_forward"]
         self.assertEqual(plan(None, 0, 2000, 512, 512, 16), (512, 512))

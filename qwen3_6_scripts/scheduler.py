@@ -50,7 +50,8 @@ ARTIFICIAL_PREEMPTION_MAX_CNT = 500
 def _plan_gdn_prefix_fast_forward(
         restore_key: Optional[GdnPrefixKey], num_computed_tokens: int,
         prompt_len: int, nominal_chunk_size: int,
-        remaining_token_budget: int, block_size: int) -> Tuple[int, int]:
+        remaining_token_budget: int, block_size: int,
+        logical_chunk_alignment: Optional[int] = None) -> Tuple[int, int]:
     """Return logical progress and physical query tokens for a direct hit.
 
     The scheduler normally uses one value for both quantities. A GDN prefix
@@ -64,12 +65,25 @@ def _plan_gdn_prefix_fast_forward(
         return fallback
 
     checkpoint_tokens = restore_key[0] * block_size
-    logical_chunk_size = min(
-        prompt_len, checkpoint_tokens + remaining_token_budget)
+    logical_limit = checkpoint_tokens + remaining_token_budget
+    if logical_chunk_alignment is not None:
+        if (logical_chunk_alignment <= 0
+                or logical_chunk_alignment % block_size != 0):
+            raise ValueError("logical_chunk_alignment must be a positive "
+                             "multiple of block_size")
+        next_boundary = (
+            checkpoint_tokens // logical_chunk_alignment + 1
+        ) * logical_chunk_alignment
+        logical_limit = min(logical_limit, next_boundary)
+
+    logical_chunk_size = min(prompt_len, logical_limit)
     physical_query_tokens = logical_chunk_size - checkpoint_tokens
     if (physical_query_tokens <= 0
-            or physical_query_tokens > remaining_token_budget
-            or logical_chunk_size <= nominal_chunk_size):
+            or physical_query_tokens > remaining_token_budget):
+        return fallback
+    if (logical_chunk_size <= nominal_chunk_size
+            and (logical_chunk_alignment is None
+                 or physical_query_tokens >= nominal_chunk_size)):
         return fallback
     return logical_chunk_size, physical_query_tokens
 
@@ -1091,7 +1105,10 @@ class Scheduler:
                         prompt_seq.data.get_len(),
                         num_new_tokens,
                         budget.remaining_token_budget(),
-                        self.cache_config.block_size))
+                        self.cache_config.block_size,
+                        logical_chunk_alignment=(
+                            self.scheduler_config.max_num_batched_tokens
+                            if self._gdn_restore_mode == "hybrid64" else None)))
                 if budget_token_count != num_new_tokens:
                     logger.info(
                         "[BI100 GDN FAST-FORWARD] request=%s "
