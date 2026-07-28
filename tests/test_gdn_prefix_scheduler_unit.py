@@ -154,6 +154,17 @@ class GdnPrefixSchedulerTest(unittest.TestCase):
         self.assertEqual(manager.cross_freed, ["encoder"])
         self.assertEqual(manager.released, ["decoder", "encoder"])
 
+    def test_all_terminal_group_paths_use_namespace_release_helper(self):
+        source = SCHEDULER.read_text()
+        self.assertEqual(
+            source.count("self._free_seq_group_cross_attn_blocks("), 3)
+        self.assertIn(
+            "for aborted_group in aborted_groups:", source)
+        self.assertIn(
+            "if seq_group.is_finished():", source)
+        self.assertIn(
+            "if self._async_stopped:", source)
+
     def test_request_namespace_release_is_legacy_manager_compatible(self):
         release = _load_namespace_release()
         legacy_manager = SimpleNamespace()
