@@ -12,11 +12,15 @@ constexpr int kRowsPerExpert = 256;
 constexpr int kThreads = 256;
 constexpr int kWarpSize = 32;
 
+__device__ inline float subtract_rn(float left, float right) {
+  return __fadd_rn(left, -right);
+}
+
 __device__ inline void compensated_add(float value, float& sum,
                                         float& correction) {
-  const float adjusted = __fsub_rn(value, correction);
+  const float adjusted = subtract_rn(value, correction);
   const float next = __fadd_rn(sum, adjusted);
-  correction = __fsub_rn(__fsub_rn(next, sum), adjusted);
+  correction = subtract_rn(subtract_rn(next, sum), adjusted);
   sum = next;
 }
 

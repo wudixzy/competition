@@ -198,12 +198,13 @@ class CompensatedW13StaticContractTests(unittest.TestCase):
             "constexpr int kHidden = 2048;",
             "constexpr int kRowsPerExpert = 256;",
             "__fmul_rn",
-            "__fsub_rn",
             "__fadd_rn",
+            "subtract_rn",
             "__float2half_rn",
         ):
             self.assertIn(fragment, source)
         self.assertNotIn("fmaf(", source)
+        self.assertNotIn("__fsub_rn", source)
 
     def test_probe_is_not_wired_into_production_or_yaml(self) -> None:
         candidate_name = "corex_moe_compensated_w13"
