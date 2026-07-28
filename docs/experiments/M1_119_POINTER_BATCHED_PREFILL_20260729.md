@@ -2,9 +2,8 @@
 
 Date: 2026-07-29
 
-Status: source, local static gates, and CoreX compilation passed. Component
-GPU numerical/performance qualification and TP4 service validation are
-pending.
+Status: CoreX compilation and numerical gates passed. The fixed component
+performance gate failed, so this route is closed without a TP4 service run.
 
 ## Motivation
 
@@ -91,3 +90,37 @@ submission preflight passed all nine checks.
 
 Structured evidence:
 `docs/experiments/evidence/M1_119_POINTER_BATCHED_PREFILL_20260729/compile_qualification.json`.
+
+## Component result
+
+The fixed four-GPU component A/B ran on `ssh-73ca29ba` from exact source
+`0cd4aa2d9145bf5b8cbd2a9553a97307071236e8`. Each GPU ran one production
+shape and alternated old/new order by physical GPU parity.
+
+All candidate outputs were finite. Output and LSE relative L2 errors remained
+below `1e-5`, and maximum absolute output error remained below `1e-3`.
+Lifecycle gates also passed: fatal scan, postflight, repeated four-GPU
+preflight, and preflight comparison were all clean.
+
+The performance result did not reach the frozen `1.10x` median gate:
+
+| Shape | M1-108 ms | M1-119 ms | Speedup |
+| --- | ---: | ---: | ---: |
+| dense 8176 | 71.059 | 70.616 | 1.0063x |
+| 65K 8176 | 573.257 | 569.439 | 1.0067x |
+| 128K 8176 | 1011.773 | 1004.033 | 1.0077x |
+| 235K 5616 | 1274.972 | 1241.004 | 1.0274x |
+
+Median speedup was `1.0072x`. All four cases were positive, but the change
+only removes a small amount of cuBLAS submission overhead and does not address
+the dominant QK/PV data path.
+
+Decision:
+
+- component qualification: failed;
+- TP4 service experiment: not authorized;
+- main, YAML, or default change: not authorized;
+- further pointer-batch or tile scanning: stopped.
+
+Structured evidence:
+`docs/experiments/evidence/M1_119_POINTER_BATCHED_PREFILL_20260729/component_qualification.json`.

@@ -1,0 +1,80 @@
+{
+  "schema": "bi100-m1-119-pointer-batched-component-qualification-v1",
+  "version": 1,
+  "source_revision": "0cd4aa2d9145bf5b8cbd2a9553a97307071236e8",
+  "instance": "ssh-73ca29ba",
+  "run_root": "/tmp/m1-119-batched16-component-0cd4aa2-20260729-v1",
+  "control_binary_sha256": "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
+  "candidate_binary_sha256": "b82dc08d2033da967dbcebd812163e9b0363e3e4eaba2a2cb16443f316a1c83c",
+  "qualified": false,
+  "thresholds": {
+    "maximum_relative_l2": 1e-05,
+    "maximum_output_abs": 0.001,
+    "minimum_median_control_over_candidate_speedup": 1.1,
+    "minimum_positive_cases": 3,
+    "maximum_single_case_regression": 0.02
+  },
+  "rows": [
+    {
+      "case": "production_dense_q8176",
+      "control_ms": 71.05912780761719,
+      "candidate_ms": 70.61595916748047,
+      "control_over_candidate_speedup": 1.0062757575675727,
+      "candidate_output_relative_l2": 2.3649414256375535e-06,
+      "candidate_lse_relative_l2": 1.2555024053342753e-08,
+      "candidate_output_max_abs": 6.103515625e-05
+    },
+    {
+      "case": "production_65k_q8176",
+      "control_ms": 573.2569580078125,
+      "candidate_ms": 569.4393310546875,
+      "control_over_candidate_speedup": 1.006704185582078,
+      "candidate_output_relative_l2": 5.069940385240854e-06,
+      "candidate_lse_relative_l2": 1.0966629390661836e-08,
+      "candidate_output_max_abs": 1.52587890625e-05
+    },
+    {
+      "case": "production_128k_q8176",
+      "control_ms": 1011.7734985351562,
+      "candidate_ms": 1004.032958984375,
+      "control_over_candidate_speedup": 1.0077094476645578,
+      "candidate_output_relative_l2": 5.279140261636468e-06,
+      "candidate_lse_relative_l2": 1.1265442373984514e-08,
+      "candidate_output_max_abs": 7.62939453125e-06
+    },
+    {
+      "case": "production_235k_q5616",
+      "control_ms": 1274.972412109375,
+      "candidate_ms": 1241.0035400390625,
+      "control_over_candidate_speedup": 1.0273720992522255,
+      "candidate_output_relative_l2": 5.670362118724032e-06,
+      "candidate_lse_relative_l2": 1.2551143323213172e-08,
+      "candidate_output_max_abs": 7.62939453125e-06
+    }
+  ],
+  "median_control_over_candidate_speedup": 1.007206816623318,
+  "positive_cases": 4,
+  "reasons": [
+    "median control/candidate speedup is below 1.10x"
+  ],
+  "lifecycle": {
+    "fatal_scan_passed": true,
+    "postflight_before_passed": true,
+    "preflight_before_passed": true,
+    "postflight_after_passed": true,
+    "preflight_after_passed": true,
+    "preflight_comparison_passed": true
+  },
+  "decision": {
+    "route_stopped": true,
+    "additional_pointer_batch_scan_authorized": false,
+    "tp4_service_experiment_authorized": false,
+    "main_or_yaml_change_authorized": false
+  },
+  "privacy": {
+    "contains_request_content": false,
+    "contains_generated_output": false,
+    "contains_token_ids": false,
+    "contains_credentials": false
+  }
+}
