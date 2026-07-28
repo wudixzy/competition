@@ -1,0 +1,59 @@
+{
+  "decision": {
+    "main_or_yaml_change_authorized": false,
+    "official_score_claim_authorized": false,
+    "tp4_service_experiment_authorized": true
+  },
+  "median_old_over_new_speedup": 1.9394735142351476,
+  "new_extension_sha256": "ad4ea7707bb2f2bfe04e07a7ad5fd58a647232be70a3056937a0d738c8254bff",
+  "old_extension_sha256": "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
+  "positive_cases": 4,
+  "qualified": true,
+  "reasons": [],
+  "rows": [
+    {
+      "case": "production_dense_q8176",
+      "new_extension_ms": 39.823638916015625,
+      "new_lse_relative_l2": 1.910052362195105e-08,
+      "new_output_max_abs": 0.000244140625,
+      "new_output_relative_l2": 4.723024988143917e-06,
+      "old_extension_ms": 70.80925750732422,
+      "old_over_new_speedup": 1.7780710009111522
+    },
+    {
+      "case": "production_65k_q8176",
+      "new_extension_ms": 293.9936828613281,
+      "new_lse_relative_l2": 1.5329777279468642e-08,
+      "new_output_max_abs": 1.52587890625e-05,
+      "new_output_relative_l2": 6.174115866839858e-06,
+      "old_extension_ms": 572.42041015625,
+      "old_over_new_speedup": 1.9470500338139956
+    },
+    {
+      "case": "production_128k_q8176",
+      "new_extension_ms": 516.2171630859375,
+      "new_lse_relative_l2": 1.508350105065074e-08,
+      "new_output_max_abs": 7.62939453125e-06,
+      "new_output_relative_l2": 6.054228405228515e-06,
+      "old_extension_ms": 1011.7691650390625,
+      "old_over_new_speedup": 1.9599680858937807
+    },
+    {
+      "case": "production_235k_q5616",
+      "new_extension_ms": 658.4605102539062,
+      "new_lse_relative_l2": 1.6631244573011175e-08,
+      "new_output_max_abs": 7.62939453125e-06,
+      "new_output_relative_l2": 6.62467828867105e-06,
+      "old_extension_ms": 1272.077880859375,
+      "old_over_new_speedup": 1.9318969946562996
+    }
+  ],
+  "schema": "bi100-m1-109-fused-softmax-component-ab-v1",
+  "thresholds": {
+    "maximum_output_abs": 0.001,
+    "maximum_relative_l2": 1e-05,
+    "maximum_single_case_regression": 0.02,
+    "minimum_median_old_over_new_speedup": 1.1,
+    "minimum_positive_cases": 3
+  }
+}

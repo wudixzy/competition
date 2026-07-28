@@ -87,7 +87,7 @@ class M199FusedPrefillRetestUnitTest(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(PREBUILT.read_bytes()).hexdigest(),
-            "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
+            "ad4ea7707bb2f2bfe04e07a7ad5fd58a647232be70a3056937a0d738c8254bff",
         )
 
     def test_softmax_normalization_is_one_native_pass(self) -> None:

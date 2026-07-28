@@ -1,0 +1,84 @@
+{
+  "authorization": {
+    "main_or_yaml_change_authorized": false,
+    "official_score_claim_authorized": false,
+    "tp4_service_authorized": false
+  },
+  "case": "production_235k_q5616",
+  "context_len": 229376,
+  "device_name": "Iluvatar BI-V100",
+  "evaluation": {
+    "qualified": false,
+    "reasons": [
+      "production speedup 1.191776 is below 1.5x"
+    ]
+  },
+  "extension": {
+    "path": "/root/m1-109-source-354e383/qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/corex_fused_paged_prefill.so",
+    "sha256": "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
+    "size_bytes": 252208
+  },
+  "instance": "ssh-73ca29ba",
+  "kind": "production",
+  "numerical": {
+    "finite": true,
+    "lse_relative_l2": 1.2551143323213172e-08,
+    "output_max_abs": 7.62939453125e-06,
+    "output_relative_l2": 5.670362118724032e-06
+  },
+  "physical_block_permutation": true,
+  "query_len": 5616,
+  "runtime_identity": "corex-3.2.3-old",
+  "schema": "bi100-m1-55-production-prefill-cell-v1",
+  "seed": 20260725,
+  "source_commit": "354e383efd4199af45e770059bcd415ebf8fcc71",
+  "split4_aux_workspace_bytes": 326417920,
+  "timings": {
+    "candidate": {
+      "baseline_allocated_bytes": 264060928,
+      "cuda_median_ms": 1272.077880859375,
+      "cuda_trials_ms": [
+        1271.7215576171875,
+        1272.077880859375,
+        1272.1204833984375
+      ],
+      "host_median_ms": 1272.2391448915005,
+      "host_trials_ms": [
+        1271.899003535509,
+        1272.344246506691,
+        1272.2391448915005
+      ],
+      "peak_allocated_bytes": 626057216,
+      "peak_incremental_bytes": 361996288,
+      "peak_reserved_bytes": 738197504,
+      "trials": 3,
+      "warmups": 1
+    },
+    "reference": {
+      "baseline_allocated_bytes": 252469248,
+      "cuda_median_ms": 1516.031982421875,
+      "cuda_trials_ms": [
+        1541.1058349609375,
+        1516.031982421875,
+        1513.45947265625
+      ],
+      "host_median_ms": 1516.455065459013,
+      "host_trials_ms": [
+        1541.6001342236996,
+        1516.455065459013,
+        1513.8299353420734
+      ],
+      "peak_allocated_bytes": 430530560,
+      "peak_incremental_bytes": 178061312,
+      "peak_reserved_bytes": 461373440,
+      "trials": 3,
+      "warmups": 1
+    },
+    "speedup": 1.1917760738027239
+  },
+  "torch_version": "2.1.0",
+  "total_kv_len": 234992,
+  "trials": 3,
+  "visible_physical_gpu": 3,
+  "warmups": 1
+}
