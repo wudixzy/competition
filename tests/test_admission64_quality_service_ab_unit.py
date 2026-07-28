@@ -540,9 +540,11 @@ class Admission64QualityRunnerStaticTest(unittest.TestCase):
             self.source,
         )
         self.assertIn(
-            'functional "$policy" direct 0 lru',
+            'functional "$policy" "$restore_mode" "$fused_prefill" lru',
             self.source,
         )
+        self.assertIn("local restore_mode=direct", self.source)
+        self.assertIn("local fused_prefill=0", self.source)
         self.assertIn(
             "BI100_QUALITY_KERNEL_PROFILE=submission", self.source)
         self.assertNotIn("computility-run.yaml", self.source)
@@ -568,7 +570,7 @@ class Admission64QualityRunnerStaticTest(unittest.TestCase):
         self.assertIn("qualify_recorded_session_cleanup.py", self.source)
         self.assertIn("orchestrator_recovery_clean", self.source)
         self.assertIn(
-            '"schema": "bi100-admission64-quality-ab-runner-v2"',
+            '"bi100-admission64-quality-ab-runner-v2"',
             self.source,
         )
         self.assertIn('"control_child_identity",', self.source)
