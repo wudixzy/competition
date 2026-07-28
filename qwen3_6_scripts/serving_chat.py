@@ -107,6 +107,13 @@ def _named_tool_delta_payload(name: str, arguments: str, index: int,
     return payload
 
 
+def _consume_named_tool_header_slot(header_sent: List[bool],
+                                    index: int) -> bool:
+    first_delta = not header_sent[index]
+    header_sent[index] = True
+    return first_delta
+
+
 def _sequential_greedy_fanout_count(
     request: ChatCompletionRequest,
     max_num_seqs: int,
@@ -545,6 +552,7 @@ class OpenAIServingChat(OpenAIServing):
         named_tool_call_ids = (
             [f"chatcmpl-tool-{random_uuid()}" for _ in range(num_choices)]
             if tool_choice_function_name else [])
+        named_tool_header_sent = [False] * num_choices
 
         # Determine whether tools are in use with "auto" tool choice
         tool_choice_auto = (
@@ -760,13 +768,15 @@ class OpenAIServingChat(OpenAIServing):
 
                     # handle streaming deltas for tools with named tool_choice
                     if tool_choice_function_name:
+                        first_named_delta = _consume_named_tool_header_slot(
+                            named_tool_header_sent, i)
                         delta_message = DeltaMessage(tool_calls=[
                             DeltaToolCall(**_named_tool_delta_payload(
                                 tool_choice_function_name,
                                 delta_text,
                                 i,
                                 named_tool_call_ids[i],
-                                previous_num_tokens[i] == 0,
+                                first_named_delta,
                             ))
                         ])
 

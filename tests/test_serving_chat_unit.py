@@ -85,17 +85,21 @@ def _load_serialize_tool_arguments():
     return namespace["_serialize_tool_arguments"]
 
 
-def _load_named_tool_delta_payload():
+def _load_named_tool_stream_helpers():
     tree = ast.parse(SERVING_CHAT.read_text(), filename=str(SERVING_CHAT))
-    function = next(
+    functions = [
         node for node in tree.body
         if isinstance(node, ast.FunctionDef)
-        and node.name == "_named_tool_delta_payload")
-    module = ast.Module(body=[function], type_ignores=[])
+        and node.name in {
+            "_named_tool_delta_payload",
+            "_consume_named_tool_header_slot",
+        }
+    ]
+    module = ast.Module(body=functions, type_ignores=[])
     ast.fix_missing_locations(module)
-    namespace = {"Dict": dict}
+    namespace = {"Dict": dict, "List": list}
     exec(compile(module, str(SERVING_CHAT), "exec"), namespace)
-    return namespace["_named_tool_delta_payload"]
+    return namespace
 
 
 def _load_named_tool_argument_helpers():
@@ -213,7 +217,11 @@ class ServingChatUnitTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.serialize = staticmethod(_load_serialize_tool_arguments())
-        cls.named_delta = staticmethod(_load_named_tool_delta_payload())
+        stream_helpers = _load_named_tool_stream_helpers()
+        cls.named_delta = staticmethod(
+            stream_helpers["_named_tool_delta_payload"])
+        cls.consume_named_header = staticmethod(
+            stream_helpers["_consume_named_tool_header_slot"])
         helpers = _load_named_tool_argument_helpers()
         cls.select_named_arguments = staticmethod(
             helpers["_select_named_tool_arguments"])
@@ -270,7 +278,18 @@ class ServingChatUnitTest(unittest.TestCase):
             "function": {"arguments": '"pwd"}'},
         })
         self.assertIn("named_tool_call_ids = (", SERVING_CHAT_SOURCE)
-        self.assertIn("previous_num_tokens[i] == 0", SERVING_CHAT_SOURCE)
+        self.assertIn(
+            "named_tool_header_sent = [False] * num_choices",
+            SERVING_CHAT_SOURCE,
+        )
+        self.assertNotIn("previous_num_tokens[i] == 0", SERVING_CHAT_SOURCE)
+
+    def test_named_stream_header_is_consumed_even_for_zero_token_delta(self):
+        header_sent = [False, False]
+        self.assertTrue(self.consume_named_header(header_sent, 0))
+        self.assertFalse(self.consume_named_header(header_sent, 0))
+        self.assertTrue(self.consume_named_header(header_sent, 1))
+        self.assertEqual(header_sent, [True, True])
 
     def test_named_nonstream_keeps_valid_raw_json_exactly(self):
         raw = '{ "key" : "TOOLS-731" }'
