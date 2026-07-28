@@ -419,7 +419,7 @@ run_arm() {
     local preflight_after_rc=1
     local comparison_rc=1
     local dispatch_count=0
-    local run_id="m1-99-pair-${pair}-20260728"
+    local run_id="m1-109-pair-${pair}-20260729"
 
     mkdir -p "$arm/runtime-workdir"
     set +e
@@ -467,7 +467,7 @@ run_arm() {
             python3 "$ROOT/tests/bench_fused_prefill_service.py" \
             --base http://127.0.0.1:8000 \
             --model-path "$MODEL_PATH" \
-            --targets 65536,235000 --max-tokens 32 \
+            --targets 32768,65536,131072,235000 --max-tokens 32 \
             --timeout-s 1800 --run-id "$run_id" \
             --mode "$label" --out "$arm/measurement.json" \
             > "$arm/measurement.stdout" \
@@ -488,8 +488,14 @@ run_arm() {
     [[ $health_rc -eq 0 ]] || arm_rc=1
 
     if [[ -f "$arm/server.log" ]]; then
-        dispatch_count=$(grep -Fc 'path=corex_split4' \
-            "$arm/server.log" || true)
+        dispatch_count=$(awk '
+            {
+                count += gsub(/path=corex_split4/, "&")
+            }
+            END {
+                print count + 0
+            }
+        ' "$arm/server.log")
         printf '%s\n' "$dispatch_count" > "$arm/dispatch_count.txt"
         if [[ "$selector" == 1 && "$dispatch_count" -ge 4 ]]; then
             dispatch_rc=0

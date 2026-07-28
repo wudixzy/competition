@@ -216,11 +216,16 @@ def main() -> int:
             if requests[index]["cached_tokens"] < target - 32:
                 reasons.append(
                     f"target {target} warm request {index} cache miss")
-        if requests[1]["output_sha256"] != requests[2]["output_sha256"]:
-            reasons.append(f"target {target} warm outputs differ")
-        if (target <= 131000
-                and requests[0]["output_sha256"] != requests[1]["output_sha256"]):
-            reasons.append(f"target {target} cold/warm outputs differ")
+        for index in (1, 2):
+            for field in (
+                "output_sha256",
+                "first_token_sha256",
+                "completion_tokens",
+                "finish_reason",
+            ):
+                if requests[0][field] != requests[index][field]:
+                    reasons.append(
+                        f"target {target} cold/warm {index} {field} differs")
         cases.append({
             "target_prompt_tokens": target,
             "cold": requests[0],

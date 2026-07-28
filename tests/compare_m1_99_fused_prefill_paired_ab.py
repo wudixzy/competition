@@ -9,15 +9,16 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "bi100-m1-99-fused-prefill-paired-ab-v2"
+SCHEMA = "bi100-m1-99-fused-prefill-paired-ab-v3"
 MEASUREMENT_SCHEMA = "bi100-m1-47-service-measurement-v1"
 PAIR_COUNT = 3
-TARGETS = (65536, 235000)
+TARGETS = (32768, 65536, 131072, 235000)
 LONG_TARGET = 235000
 MIN_LONG_COLD_IMPROVEMENT = 0.05
 MAX_SHORT_COLD_REGRESSION = 0.02
-MAX_MEDIAN_WARM_REGRESSION = 0.02
-MAX_SINGLE_WARM_REGRESSION = 0.05
+MAX_MEDIAN_WARM_SLOWDOWN_S = 0.25
+MAX_SINGLE_WARM_SLOWDOWN_S = 0.50
+MAX_WARM_RESIDUAL_PROMPT_TOKENS = 16
 MAX_MEDIAN_OUTPUT_REGRESSION = 0.02
 MAX_SINGLE_OUTPUT_REGRESSION = 0.05
 
@@ -48,6 +49,32 @@ def sha256(value: Any, field: str) -> str:
     ):
         raise ValueError(f"{field} must be a lowercase SHA-256 digest")
     return value
+
+
+def nonnegative_integer(value: Any, field: str) -> int:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < 0
+    ):
+        raise ValueError(f"{field} must be a non-negative integer")
+    return value
+
+
+def warm_residual_prompt_tokens(request: Any, field: str) -> int:
+    if not isinstance(request, dict):
+        raise ValueError(f"{field} must be an object")
+    prompt_tokens = nonnegative_integer(
+        request.get("prompt_tokens"),
+        f"{field}.prompt_tokens",
+    )
+    cached_tokens = nonnegative_integer(
+        request.get("cached_tokens"),
+        f"{field}.cached_tokens",
+    )
+    if cached_tokens > prompt_tokens:
+        raise ValueError(f"{field}.cached_tokens exceeds prompt_tokens")
+    return prompt_tokens - cached_tokens
 
 
 def index_cases(
@@ -144,7 +171,8 @@ def compare(
     full_output_hashes_exact = True
     long_full_output_mismatches = []
     cold_by_target = {target: [] for target in TARGETS}
-    warm_by_target = {target: [] for target in TARGETS}
+    warm_regression_by_target = {target: [] for target in TARGETS}
+    warm_slowdown_by_target = {target: [] for target in TARGETS}
     output_regressions = []
     for pair_index, (control, candidate) in enumerate(
         zip(controls, candidates),
@@ -198,6 +226,7 @@ def compare(
                     candidate_case.get("warm_ttft_median_s"),
                     f"{field}.candidate.{target}.warm_ttft_median_s",
                 )
+                warm_residuals = []
                 for request_name in ("cold", "warm_1", "warm_2"):
                     control_identity = request_identity(
                         control_case.get(request_name),
@@ -236,21 +265,50 @@ def compare(
                             })
                         else:
                             short_full_output_exact = False
+                        reasons.append(
+                            f"{field} target {target} {request_name} "
+                            "full output differs")
+                    if request_name.startswith("warm_"):
+                        control_residual = warm_residual_prompt_tokens(
+                            control_case.get(request_name),
+                            f"{field}.control.{target}.{request_name}",
+                        )
+                        candidate_residual = warm_residual_prompt_tokens(
+                            candidate_case.get(request_name),
+                            f"{field}.candidate.{target}.{request_name}",
+                        )
+                        warm_residuals.append({
+                            "request": request_name,
+                            "control": control_residual,
+                            "candidate": candidate_residual,
+                        })
+                        if control_residual != candidate_residual:
                             reasons.append(
                                 f"{field} target {target} {request_name} "
-                                "full output differs")
+                                "warm residual differs")
+                        if (
+                            control_residual
+                            > MAX_WARM_RESIDUAL_PROMPT_TOKENS
+                            or candidate_residual
+                            > MAX_WARM_RESIDUAL_PROMPT_TOKENS
+                        ):
+                            reasons.append(
+                                f"{field} target {target} {request_name} "
+                                "warm residual exceeds 16 tokens")
             except (KeyError, TypeError, ValueError) as error:
                 reasons.append(str(error))
                 continue
 
             cold_improvement = 1.0 - candidate_cold / control_cold
             warm_regression = candidate_warm / control_warm - 1.0
+            warm_slowdown_s = candidate_warm - control_warm
             cold_by_target[target].append(cold_improvement)
-            warm_by_target[target].append(warm_regression)
-            if warm_regression > MAX_SINGLE_WARM_REGRESSION:
+            warm_regression_by_target[target].append(warm_regression)
+            warm_slowdown_by_target[target].append(warm_slowdown_s)
+            if warm_slowdown_s > MAX_SINGLE_WARM_SLOWDOWN_S:
                 reasons.append(
-                    f"{field} target {target} warm regression "
-                    f"{warm_regression:.3%} exceeds 5%")
+                    f"{field} target {target} warm slowdown "
+                    f"{warm_slowdown_s:.6f}s exceeds 0.5s")
             pair_rows.append({
                 "target_prompt_tokens": target,
                 "control_cold_ttft_s": control_cold,
@@ -259,6 +317,8 @@ def compare(
                 "control_warm_ttft_median_s": control_warm,
                 "candidate_warm_ttft_median_s": candidate_warm,
                 "warm_regression": warm_regression,
+                "warm_slowdown_s": warm_slowdown_s,
+                "warm_residual_prompt_tokens": warm_residuals,
             })
 
         try:
@@ -296,12 +356,18 @@ def compare(
     target_summary = {}
     for target in TARGETS:
         cold = cold_by_target[target]
-        warm = warm_by_target[target]
-        if len(cold) != PAIR_COUNT or len(warm) != PAIR_COUNT:
+        warm_regressions = warm_regression_by_target[target]
+        warm_slowdowns = warm_slowdown_by_target[target]
+        if (
+            len(cold) != PAIR_COUNT
+            or len(warm_regressions) != PAIR_COUNT
+            or len(warm_slowdowns) != PAIR_COUNT
+        ):
             reasons.append(f"target {target} lacks {PAIR_COUNT} valid pairs")
             continue
         cold_median = statistics.median(cold)
-        warm_median = statistics.median(warm)
+        warm_regression_median = statistics.median(warm_regressions)
+        warm_slowdown_median = statistics.median(warm_slowdowns)
         positive_cold_pairs = sum(value > 0.0 for value in cold)
         if target == LONG_TARGET:
             if cold_median < MIN_LONG_COLD_IMPROVEMENT:
@@ -313,18 +379,21 @@ def compare(
                     "235K candidate must improve at least two pairs")
         elif cold_median < -MAX_SHORT_COLD_REGRESSION:
             reasons.append(
-                f"65K median cold regression {-cold_median:.3%} "
+                f"target {target} median cold regression "
+                f"{-cold_median:.3%} "
                 "exceeds 2%")
-        if warm_median > MAX_MEDIAN_WARM_REGRESSION:
+        if warm_slowdown_median > MAX_MEDIAN_WARM_SLOWDOWN_S:
             reasons.append(
-                f"target {target} median warm regression "
-                f"{warm_median:.3%} exceeds 2%")
+                f"target {target} median warm slowdown "
+                f"{warm_slowdown_median:.6f}s exceeds 0.25s")
         target_summary[str(target)] = {
             "cold_improvements": cold,
             "cold_improvement_median": cold_median,
             "positive_cold_pairs": positive_cold_pairs,
-            "warm_regressions": warm,
-            "warm_regression_median": warm_median,
+            "warm_regressions": warm_regressions,
+            "warm_regression_median": warm_regression_median,
+            "warm_slowdowns_s": warm_slowdowns,
+            "warm_slowdown_median_s": warm_slowdown_median,
         }
 
     output_summary = {}
@@ -370,11 +439,11 @@ def result(
     required_output_gate_passed = bool(
         first_generated_token_exact
         and completion_structure_exact
-        and short_full_output_exact
+        and full_output_hashes_exact
     )
     return {
         "schema": SCHEMA,
-        "version": 1,
+        "version": 3,
         "thresholds": {
             "pair_count": PAIR_COUNT,
             "long_target_prompt_tokens": LONG_TARGET,
@@ -382,10 +451,12 @@ def result(
                 MIN_LONG_COLD_IMPROVEMENT,
             "maximum_short_cold_regression":
                 MAX_SHORT_COLD_REGRESSION,
-            "maximum_median_warm_regression":
-                MAX_MEDIAN_WARM_REGRESSION,
-            "maximum_single_warm_regression":
-                MAX_SINGLE_WARM_REGRESSION,
+            "maximum_median_warm_slowdown_s":
+                MAX_MEDIAN_WARM_SLOWDOWN_S,
+            "maximum_single_warm_slowdown_s":
+                MAX_SINGLE_WARM_SLOWDOWN_S,
+            "maximum_warm_residual_prompt_tokens":
+                MAX_WARM_RESIDUAL_PROMPT_TOKENS,
             "maximum_median_output_regression":
                 MAX_MEDIAN_OUTPUT_REGRESSION,
             "maximum_single_output_regression":
@@ -401,7 +472,7 @@ def result(
             "short_full_output_exact": short_full_output_exact,
             "all_full_output_hashes_exact": full_output_hashes_exact,
             "long_full_output_mismatches": long_full_output_mismatches,
-            "long_full_output_exact_required": False,
+            "long_full_output_exact_required": True,
         },
         "qualified": qualified,
         "reasons": reasons,

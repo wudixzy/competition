@@ -16,8 +16,18 @@ class FusedPrefillServiceBenchmarkUnitTest(unittest.TestCase):
         self.assertIn("for _ in range(3)", source)
         self.assertIn('requests[0]["cached_tokens"] != 0', source)
         self.assertIn("target - 32", source)
-        self.assertIn("warm outputs differ", source)
-        self.assertIn("cold/warm outputs differ", source)
+        self.assertIn(
+            'f"target {target} cold/warm {index} {field} differs"',
+            source,
+        )
+        self.assertNotIn("target <= 131000", source)
+        for field in (
+            "output_sha256",
+            "first_token_sha256",
+            "completion_tokens",
+            "finish_reason",
+        ):
+            self.assertIn(f'"{field}"', source)
         self.assertIn('"first_token_sha256"', source)
         self.assertIn("token_id", source)
         self.assertIn('"output_tps_p10"', source)

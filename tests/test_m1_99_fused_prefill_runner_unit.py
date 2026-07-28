@@ -46,10 +46,11 @@ class M199FusedPrefillRunnerUnitTest(unittest.TestCase):
             '"2 control 0"',
             '"3 control 0"',
             '"3 candidate 1"',
-            "--targets 65536,235000 --max-tokens 32",
-            "m1-99-pair-${pair}-20260728",
+            "--targets 32768,65536,131072,235000 --max-tokens 32",
+            "m1-109-pair-${pair}-20260729",
             "compare_m1_99_fused_prefill_paired_ab.py",
             "path=corex_split4",
+            "count += gsub(/path=corex_split4/, \"&\")",
         ):
             self.assertIn(marker, self.source)
 
