@@ -83,12 +83,28 @@ class M199FusedPrefillRetestUnitTest(unittest.TestCase):
     def test_frozen_source_and_binary_identity(self) -> None:
         self.assertEqual(
             hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
-            "8cf3dee28f8cb69d5a9ddb5afcecd4d4c4a786d020b2e7711e9bfc8363a60c4a",
+            "11c387e6012834fe634ffa8d038f7a4bf4ec19fa13ec23779ee1f414037e564b",
         )
         self.assertEqual(
             hashlib.sha256(PREBUILT.read_bytes()).hexdigest(),
             "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
         )
+
+    def test_softmax_normalization_is_one_native_pass(self) -> None:
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn("normalize_split_scores_kernel", source)
+        self.assertIn(
+            "scores.data_ptr<float>(), corrections.data_ptr<float>()",
+            source,
+        )
+        for removed in (
+            "scan_split_max_kernel",
+            "merge_split_sums_kernel",
+            "at::max(active_scores",
+            "active_scores.sub_",
+            "at::sum(active_scores",
+        ):
+            self.assertNotIn(removed, source)
 
     def test_candidate_defaults_off_and_is_absent_from_yaml(self) -> None:
         module = _load_paged_attn()

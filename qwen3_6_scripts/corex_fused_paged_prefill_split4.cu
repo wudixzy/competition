@@ -131,40 +131,86 @@ __global__ void mask_group_scores_kernel(
   }
 }
 
-__global__ void scan_split_max_kernel(
-    const float* block_max, float* new_maxes, float* corrections,
-    float* running_max, int active_splits, int rows) {
-  for (int row = blockIdx.x * blockDim.x + threadIdx.x;
-       row < rows; row += blockDim.x * gridDim.x) {
-    float current_max = running_max[row];
-    for (int split = 0; split < active_splits; ++split) {
-      const int64_t index = static_cast<int64_t>(split) * rows + row;
-      const float next_max = fmaxf(current_max, block_max[index]);
-      const float correction =
-          (current_max == -std::numeric_limits<float>::infinity()
+__global__ void normalize_split_scores_kernel(
+    float* scores, float* corrections, float* running_max,
+    float* running_sum, int active_splits, int rows) {
+  const int row = blockIdx.x;
+  if (row >= rows) {
+    return;
+  }
+
+  __shared__ float reduction[kThreads];
+  __shared__ float state_max;
+  __shared__ float state_sum;
+  __shared__ float next_max;
+  __shared__ float correction;
+
+  if (threadIdx.x == 0) {
+    state_max = running_max[row];
+    state_sum = running_sum[row];
+  }
+  __syncthreads();
+
+  for (int split = 0; split < active_splits; ++split) {
+    float* row_scores =
+        scores + (static_cast<int64_t>(split) * rows + row) * kTileTokens;
+    float local_max = -std::numeric_limits<float>::infinity();
+    for (int column = threadIdx.x; column < kTileTokens;
+         column += blockDim.x) {
+      local_max = fmaxf(local_max, row_scores[column]);
+    }
+    reduction[threadIdx.x] = local_max;
+    __syncthreads();
+    for (int stride = kThreads / 2; stride > 0; stride /= 2) {
+      if (threadIdx.x < stride) {
+        reduction[threadIdx.x] = fmaxf(
+            reduction[threadIdx.x], reduction[threadIdx.x + stride]);
+      }
+      __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+      next_max = fmaxf(state_max, reduction[0]);
+      correction =
+          (state_max == -std::numeric_limits<float>::infinity()
            && next_max == -std::numeric_limits<float>::infinity())
               ? 1.0f
-              : expf(current_max - next_max);
-      new_maxes[index] = next_max;
-      corrections[index] = correction;
-      current_max = next_max;
+              : expf(state_max - next_max);
+      corrections[static_cast<int64_t>(split) * rows + row] = correction;
     }
-    running_max[row] = current_max;
-  }
-}
+    __syncthreads();
 
-__global__ void merge_split_sums_kernel(
-    float* running_sum, const float* split_sums,
-    const float* corrections, int active_splits, int rows) {
-  for (int row = blockIdx.x * blockDim.x + threadIdx.x;
-       row < rows; row += blockDim.x * gridDim.x) {
-    float value = running_sum[row];
-    for (int split = 0; split < active_splits; ++split) {
-      const int64_t index = static_cast<int64_t>(split) * rows + row;
-      value = __fadd_rn(
-          __fmul_rn(value, corrections[index]), split_sums[index]);
+    float local_sum = 0.0f;
+    for (int column = threadIdx.x; column < kTileTokens;
+         column += blockDim.x) {
+      const float score = row_scores[column];
+      const float probability =
+          (score == -std::numeric_limits<float>::infinity()
+           && next_max == -std::numeric_limits<float>::infinity())
+              ? 0.0f
+              : expf(score - next_max);
+      row_scores[column] = probability;
+      local_sum = __fadd_rn(local_sum, probability);
     }
-    running_sum[row] = value;
+    reduction[threadIdx.x] = local_sum;
+    __syncthreads();
+    for (int stride = kThreads / 2; stride > 0; stride /= 2) {
+      if (threadIdx.x < stride) {
+        reduction[threadIdx.x] = __fadd_rn(
+            reduction[threadIdx.x], reduction[threadIdx.x + stride]);
+      }
+      __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+      state_sum = __fadd_rn(
+          __fmul_rn(state_sum, correction), reduction[0]);
+      state_max = next_max;
+    }
+    __syncthreads();
+  }
+
+  if (threadIdx.x == 0) {
+    running_max[row] = state_max;
+    running_sum[row] = state_sum;
   }
 }
 
@@ -346,6 +392,8 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
       {kNumQueryHeads, query_len}, float_options);
   auto running_output = torch::zeros(
       {kNumQueryHeads, query_len, kHeadDim}, float_options);
+  auto corrections = torch::empty(
+      {kSplitCount, kNumQueryHeads, query_len}, float_options);
 
   auto stream = at::cuda::getCurrentCUDAStream();
   convert_query_kernel<<<launch_blocks(output_elements), kThreads, 0, stream>>>(
@@ -399,19 +447,11 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
       C10_CUDA_KERNEL_LAUNCH_CHECK();
     }
 
-    auto active_scores = scores.narrow(0, 0, active_splits);
-    auto block_max = std::get<0>(at::max(active_scores, -1, false));
-    auto new_maxes = torch::empty_like(block_max);
-    auto corrections = torch::empty_like(block_max);
-    scan_split_max_kernel<<<
-        launch_blocks(rows), kThreads, 0, stream>>>(
-        block_max.data_ptr<float>(), new_maxes.data_ptr<float>(),
-        corrections.data_ptr<float>(), running_max.data_ptr<float>(),
+    normalize_split_scores_kernel<<<rows, kThreads, 0, stream>>>(
+        scores.data_ptr<float>(), corrections.data_ptr<float>(),
+        running_max.data_ptr<float>(), running_sum.data_ptr<float>(),
         active_splits, rows);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
-
-    active_scores.sub_(new_maxes.unsqueeze(-1)).exp_();
-    auto split_sums = at::sum(active_scores, {-1}, false);
 
     for (int split = 0; split < active_splits; ++split) {
       check_cublas(pv_batched(
@@ -422,11 +462,6 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
           query_len), "split4 paged prefill PV");
     }
 
-    merge_split_sums_kernel<<<
-        launch_blocks(rows), kThreads, 0, stream>>>(
-        running_sum.data_ptr<float>(), split_sums.data_ptr<float>(),
-        corrections.data_ptr<float>(), active_splits, rows);
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
     merge_split_output_kernel<<<
         launch_blocks(output_elements), kThreads, 0, stream>>>(
         running_output.data_ptr<float>(), split_output.data_ptr<float>(),
