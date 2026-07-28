@@ -337,6 +337,15 @@ if path.is_file():
     except (json.JSONDecodeError, OSError):
         qualification = None
 
+artifact_identity_bound = None
+path = root / "artifact_binding.json"
+if path.is_file():
+    try:
+        artifact_identity_bound = json.loads(path.read_text(
+            encoding="utf-8")).get("identity_bound")
+    except (json.JSONDecodeError, OSError):
+        artifact_identity_bound = None
+
 gates = {
     "postflight_before": read_rc("postflight_before.rc"),
     "preflight_before": read_rc("preflight_before.rc"),
@@ -355,9 +364,14 @@ gates = {
     "preflight_comparison": read_rc("preflight_comparison.rc"),
 }
 all_gates_passed = all(value == 0 for value in gates.values())
+evidence_gates_passed = all(
+    value == 0
+    for name, value in gates.items()
+    if name != "qualification"
+)
 report = {
-    "schema": "bi100-m1-91-compensated-w13-runner-v1",
-    "version": 1,
+    "schema": "bi100-m1-91-compensated-w13-runner-v2",
+    "version": 2,
     "returncode": int(sys.argv[2]),
     "last_stage": sys.argv[3],
     "source_revision": sys.argv[4],
@@ -365,6 +379,13 @@ report = {
     "instance": sys.argv[6],
     "physical_gpu": int(sys.argv[7]),
     "candidate_qualified": qualification,
+    "artifact_identity_bound": artifact_identity_bound,
+    "evidence_valid": (
+        qualification in (True, False)
+        and artifact_identity_bound is True
+        and gates["qualification"] in (0, 1)
+        and evidence_gates_passed
+    ),
     "experiment_valid": (
         int(sys.argv[2]) == 0
         and qualification is True
@@ -384,11 +405,15 @@ report = {
         "preflight_comparison": sha("preflight_comparison.json"),
     },
     "limits": {
-        "relative_l2": 1.0e-5,
+        "numerical_oracle":
+            "cpu_float64_dot_rounded_to_fp16_noninferiority",
+        "noninferiority_epsilon": 1.0e-8,
         "fixed_speedup": 1.5,
         "routed_speedup": 1.25,
         "seeds": [20260716, 20260727],
         "sequence_steps_per_seed": 500,
+        "exact_sequence_indices":
+            [0, 1, 2, 3, 7, 15, 31, 63, 127, 255, 383, 499],
         "warmup": 30,
         "iterations": 300,
         "repeats": 9,
@@ -632,7 +657,7 @@ python3 "$ROOT/tests/qualify_moe_compensated_w13.py" \
 rc=$?
 set -e
 printf '%s\n' "$rc" > "$RUN_ROOT/qualification.rc"
-[[ $rc -eq 0 ]]
+qualification_rc=$rc
 
 CURRENT_STAGE=artifact_binding
 set +e
@@ -674,18 +699,20 @@ expected = {
             "direct_extension_sha256"),
 }
 benchmark_extensions = benchmark.get("extensions", {})
-qualified = (
-    qualification.get("qualified") is True
-    and observed == expected
+candidate_qualified = qualification.get("qualified") is True
+identity_bound = (
+    observed == expected
     and observed["candidate_extension_sha256"]
         == benchmark_extensions.get("candidate_sha256")
     and observed["direct_extension_sha256"]
         == benchmark_extensions.get("direct_sha256")
 )
 report = {
-    "schema": "bi100-m1-91-artifact-binding-v1",
-    "version": 1,
-    "qualified": qualified,
+    "schema": "bi100-m1-91-artifact-binding-v2",
+    "version": 2,
+    "qualified": identity_bound,
+    "identity_bound": identity_bound,
+    "candidate_qualified": candidate_qualified,
     "observed": observed,
     "expected": expected,
 }
@@ -704,12 +731,17 @@ try:
     os.replace(temporary, output_path)
 finally:
     temporary.unlink(missing_ok=True)
-raise SystemExit(0 if qualified else 1)
+raise SystemExit(0 if identity_bound else 1)
 PY
 rc=$?
 set -e
 printf '%s\n' "$rc" > "$RUN_ROOT/artifact_binding.rc"
 [[ $rc -eq 0 ]]
+
+if [[ $qualification_rc -ne 0 ]]; then
+    CURRENT_STAGE=candidate_rejected
+    exit "$qualification_rc"
+fi
 
 CURRENT_STAGE=completed
 exit 0

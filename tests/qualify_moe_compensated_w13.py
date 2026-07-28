@@ -12,13 +12,27 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "bi100-moe-compensated-w13-v1"
-QUALIFICATION_SCHEMA = "bi100-moe-compensated-w13-qualification-v1"
-RELATIVE_L2_LIMIT = 1.0e-5
+SCHEMA = "bi100-moe-compensated-w13-v2"
+QUALIFICATION_SCHEMA = "bi100-moe-compensated-w13-qualification-v2"
+NONINFERIORITY_EPS = 1.0e-8
 FIXED_SPEEDUP_MIN = 1.5
 ROUTED_SPEEDUP_MIN = 1.25
 REQUIRED_SEEDS = (20260716, 20260727)
 REQUIRED_SEQUENCE_STEPS = 500
+REQUIRED_EXACT_SEQUENCE_INDICES = (
+    0,
+    1,
+    2,
+    3,
+    7,
+    15,
+    31,
+    63,
+    127,
+    255,
+    383,
+    499,
+)
 REQUIRED_WARMUP = 30
 REQUIRED_ITERATIONS = 300
 REQUIRED_REPEATS = 9
@@ -174,6 +188,8 @@ def require_comparison(
 def require_sequence_metrics(
     value: Any,
     field: str,
+    *,
+    expected_steps: int = REQUIRED_SEQUENCE_STEPS,
 ) -> dict[str, Any]:
     result = require_mapping(value, field)
     require_exact_keys(
@@ -192,10 +208,10 @@ def require_sequence_metrics(
         field,
     )
     steps = require_int(result["steps"], f"{field}.steps", minimum=0)
-    if steps != REQUIRED_SEQUENCE_STEPS:
+    if steps != expected_steps:
         raise ValueError(f"{field}.steps differs from the fixed gate")
     rows = require_int(result["rows"], f"{field}.rows", minimum=0)
-    if rows != REQUIRED_SEQUENCE_STEPS * ROWS_PER_STEP:
+    if rows != expected_steps * ROWS_PER_STEP:
         raise ValueError(f"{field}.rows differs from the fixed gate")
     finite_steps = require_int(
         result["finite_steps"],
@@ -285,6 +301,36 @@ def require_timing(value: Any, field: str) -> dict[str, Any]:
     return result
 
 
+def check_exact_reference_noninferiority(
+    candidate: dict[str, Any],
+    vendor: dict[str, Any],
+    field: str,
+    reasons: list[str],
+) -> None:
+    if (
+        float(candidate["relative_l2"])
+        > float(vendor["relative_l2"]) + NONINFERIORITY_EPS
+    ):
+        reasons.append(
+            f"{field} candidate relative L2 is worse than vendor")
+    if (
+        float(candidate["max_abs"])
+        > float(vendor["max_abs"]) + NONINFERIORITY_EPS
+    ):
+        reasons.append(
+            f"{field} candidate max absolute error is worse than vendor")
+    if int(candidate["mismatch_count"]) > int(vendor["mismatch_count"]):
+        reasons.append(
+            f"{field} candidate mismatch count is worse than vendor")
+    if (
+        "max_step_relative_l2" in candidate
+        and float(candidate["max_step_relative_l2"])
+        > float(vendor["max_step_relative_l2"]) + NONINFERIORITY_EPS
+    ):
+        reasons.append(
+            f"{field} candidate max-step relative L2 is worse than vendor")
+
+
 def _qualify(
     report: dict[str, Any],
     *,
@@ -305,13 +351,14 @@ def _qualify(
             "extensions",
             "fixed",
             "sequence",
+            "exact_sequence",
             "timings",
         },
         "report",
     )
     if report["schema"] != SCHEMA:
         reasons.append("benchmark schema is invalid")
-    if report["version"] != 1:
+    if report["version"] != 2:
         reasons.append("benchmark version is invalid")
     if not isinstance(report["device"], str) or not report["device"]:
         reasons.append("device identity is missing")
@@ -337,6 +384,8 @@ def _qualify(
         "repeats": REQUIRED_REPEATS,
         "cpu_threads": 8,
         "weight_scale": 0.02,
+        "exact_sequence_indices": list(
+            REQUIRED_EXACT_SEQUENCE_INDICES),
     }
     config = require_mapping(report["config"], "config")
     if config != expected_config:
@@ -344,9 +393,10 @@ def _qualify(
 
     expected_method = {
         "algorithm": "per_lane_kahan_fp32_then_rn_warp_tree",
-        "quality_reference": "torch_nn_functional_linear_fp16",
+        "quality_reference":
+            "cpu_float64_dot_rounded_to_fp16_noninferiority",
         "exact_diagnostic":
-            "cpu_float64_dot_rounded_to_fp16_fixed_fixture_only",
+            "fixed_fixture_and_stratified_sequence_samples",
         "fixture_generation": "hidden_then_router_then_w13_then_sequence",
         "production_runtime_changed": False,
     }
@@ -401,10 +451,19 @@ def _qualify(
     require_exact_keys(fixed, expected_seed_keys, "fixed")
     sequence = require_mapping(report["sequence"], "sequence")
     require_exact_keys(sequence, expected_seed_keys, "sequence")
+    exact_sequence = require_mapping(
+        report["exact_sequence"],
+        "exact_sequence",
+    )
+    require_exact_keys(
+        exact_sequence,
+        expected_seed_keys,
+        "exact_sequence",
+    )
 
     fixed_observed: dict[str, Any] = {}
     sequence_observed: dict[str, Any] = {}
-    direct_gap_reproduced = False
+    exact_sequence_observed: dict[str, Any] = {}
     for seed in REQUIRED_SEEDS:
         key = str(seed)
         fixed_row = require_mapping(fixed[key], f"fixed.{key}")
@@ -412,6 +471,7 @@ def _qualify(
             fixed_row,
             {
                 "vendor_vs_exact",
+                "direct_vs_exact",
                 "direct_vs_vendor",
                 "compensated_vs_vendor",
                 "compensated_vs_exact",
@@ -426,23 +486,19 @@ def _qualify(
             )
             for name in fixed_row
         }
-        candidate_fixed_l2 = float(
-            fixed_comparisons["compensated_vs_vendor"]["relative_l2"])
-        direct_fixed_l2 = float(
-            fixed_comparisons["direct_vs_vendor"]["relative_l2"])
-        if candidate_fixed_l2 > RELATIVE_L2_LIMIT:
-            reasons.append(
-                f"seed {seed} compensated fixed relative L2 exceeds "
-                f"{RELATIVE_L2_LIMIT:g}")
-        direct_gap_reproduced |= direct_fixed_l2 > RELATIVE_L2_LIMIT
+        check_exact_reference_noninferiority(
+            fixed_comparisons["compensated_vs_exact"],
+            fixed_comparisons["vendor_vs_exact"],
+            f"seed {seed} fixed exact-reference",
+            reasons,
+        )
         fixed_observed[key] = {
-            "compensated_vs_vendor_relative_l2": candidate_fixed_l2,
-            "direct_vs_vendor_relative_l2": direct_fixed_l2,
-            "compensated_vs_exact_relative_l2": float(
-                fixed_comparisons[
-                    "compensated_vs_exact"]["relative_l2"]),
-            "vendor_vs_exact_relative_l2": float(
-                fixed_comparisons["vendor_vs_exact"]["relative_l2"]),
+            name: {
+                "mismatch_count": int(value["mismatch_count"]),
+                "max_abs": float(value["max_abs"]),
+                "relative_l2": float(value["relative_l2"]),
+            }
+            for name, value in fixed_comparisons.items()
         }
 
         sequence_row = require_mapping(sequence[key], f"sequence.{key}")
@@ -465,27 +521,60 @@ def _qualify(
         direct_sequence_l2 = float(direct_sequence["relative_l2"])
         direct_max_step_l2 = float(
             direct_sequence["max_step_relative_l2"])
-        if candidate_sequence_l2 > RELATIVE_L2_LIMIT:
-            reasons.append(
-                f"seed {seed} compensated sequence relative L2 exceeds "
-                f"{RELATIVE_L2_LIMIT:g}")
-        if candidate_max_step_l2 > RELATIVE_L2_LIMIT:
-            reasons.append(
-                f"seed {seed} compensated max-step relative L2 exceeds "
-                f"{RELATIVE_L2_LIMIT:g}")
-        direct_gap_reproduced |= (
-            direct_sequence_l2 > RELATIVE_L2_LIMIT
-            or direct_max_step_l2 > RELATIVE_L2_LIMIT
-        )
         sequence_observed[key] = {
             "compensated_relative_l2": candidate_sequence_l2,
             "compensated_max_step_relative_l2": candidate_max_step_l2,
             "direct_relative_l2": direct_sequence_l2,
             "direct_max_step_relative_l2": direct_max_step_l2,
         }
-    if not direct_gap_reproduced:
-        reasons.append(
-            "fixture did not reproduce the production direct W13 gap")
+
+        exact_row = require_mapping(
+            exact_sequence[key],
+            f"exact_sequence.{key}",
+        )
+        require_exact_keys(
+            exact_row,
+            {"sample_indices", "comparisons"},
+            f"exact_sequence.{key}",
+        )
+        sample_indices = exact_row["sample_indices"]
+        if sample_indices != list(REQUIRED_EXACT_SEQUENCE_INDICES):
+            raise ValueError(
+                f"exact_sequence.{key}.sample_indices differs "
+                "from the fixed gate")
+        exact_comparisons_raw = require_mapping(
+            exact_row["comparisons"],
+            f"exact_sequence.{key}.comparisons",
+        )
+        require_exact_keys(
+            exact_comparisons_raw,
+            {"vendor", "direct", "compensated"},
+            f"exact_sequence.{key}.comparisons",
+        )
+        exact_comparisons = {
+            name: require_sequence_metrics(
+                value,
+                f"exact_sequence.{key}.comparisons.{name}",
+                expected_steps=len(REQUIRED_EXACT_SEQUENCE_INDICES),
+            )
+            for name, value in exact_comparisons_raw.items()
+        }
+        check_exact_reference_noninferiority(
+            exact_comparisons["compensated"],
+            exact_comparisons["vendor"],
+            f"seed {seed} stratified exact-reference sequence",
+            reasons,
+        )
+        exact_sequence_observed[key] = {
+            name: {
+                "mismatch_count": int(value["mismatch_count"]),
+                "max_abs": float(value["max_abs"]),
+                "relative_l2": float(value["relative_l2"]),
+                "max_step_relative_l2": float(
+                    value["max_step_relative_l2"]),
+            }
+            for name, value in exact_comparisons.items()
+        }
 
     timings = require_mapping(report["timings"], "timings")
     require_exact_keys(timings, {"cases", "speedups"}, "timings")
@@ -561,15 +650,19 @@ def _qualify(
     qualified = not reasons
     return {
         "schema": QUALIFICATION_SCHEMA,
-        "version": 1,
+        "version": 2,
         "qualified": qualified,
         "reasons": reasons,
         "limits": {
-            "relative_l2": RELATIVE_L2_LIMIT,
+            "numerical_oracle":
+                "cpu_float64_dot_rounded_to_fp16_noninferiority",
+            "noninferiority_epsilon": NONINFERIORITY_EPS,
             "fixed_speedup": FIXED_SPEEDUP_MIN,
             "routed_speedup": ROUTED_SPEEDUP_MIN,
             "seeds": list(REQUIRED_SEEDS),
             "sequence_steps_per_seed": REQUIRED_SEQUENCE_STEPS,
+            "exact_sequence_indices": list(
+                REQUIRED_EXACT_SEQUENCE_INDICES),
             "warmup": REQUIRED_WARMUP,
             "iterations": REQUIRED_ITERATIONS,
             "repeats": REQUIRED_REPEATS,
@@ -582,12 +675,12 @@ def _qualify(
         "observed": {
             "fixed": fixed_observed,
             "sequence": sequence_observed,
-            "direct_gap_reproduced": direct_gap_reproduced,
+            "exact_sequence": exact_sequence_observed,
             "fixed_speedup": fixed_speedup,
             "routed_speedup": routed_speedup,
         },
         "decision": {
-            "single_gpu_probe_qualified": qualified,
+            "single_gpu_numerical_screen_qualified": qualified,
             "production_promotion_authorized": False,
             "yaml_change_authorized": False,
             "main_merge_authorized": False,
@@ -613,15 +706,19 @@ def qualify(
     except (KeyError, TypeError, ValueError) as error:
         return {
             "schema": QUALIFICATION_SCHEMA,
-            "version": 1,
+            "version": 2,
             "qualified": False,
             "reasons": [f"invalid benchmark evidence: {error}"],
             "limits": {
-                "relative_l2": RELATIVE_L2_LIMIT,
+                "numerical_oracle":
+                    "cpu_float64_dot_rounded_to_fp16_noninferiority",
+                "noninferiority_epsilon": NONINFERIORITY_EPS,
                 "fixed_speedup": FIXED_SPEEDUP_MIN,
                 "routed_speedup": ROUTED_SPEEDUP_MIN,
                 "seeds": list(REQUIRED_SEEDS),
                 "sequence_steps_per_seed": REQUIRED_SEQUENCE_STEPS,
+                "exact_sequence_indices": list(
+                    REQUIRED_EXACT_SEQUENCE_INDICES),
                 "warmup": REQUIRED_WARMUP,
                 "iterations": REQUIRED_ITERATIONS,
                 "repeats": REQUIRED_REPEATS,
@@ -634,7 +731,7 @@ def qualify(
             },
             "observed": {},
             "decision": {
-                "single_gpu_probe_qualified": False,
+                "single_gpu_numerical_screen_qualified": False,
                 "production_promotion_authorized": False,
                 "yaml_change_authorized": False,
                 "main_merge_authorized": False,

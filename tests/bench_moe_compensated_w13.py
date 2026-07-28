@@ -17,13 +17,27 @@ import torch
 import torch.nn.functional as F
 
 
-SCHEMA = "bi100-moe-compensated-w13-v1"
+SCHEMA = "bi100-moe-compensated-w13-v2"
 EXPERTS = 256
 TOP_K = 8
 HIDDEN = 2048
 INTERMEDIATE = 128
 W13_ROWS = 2 * INTERMEDIATE
 DEFAULT_SEEDS = (20260716, 20260727)
+EXACT_SEQUENCE_INDICES = (
+    0,
+    1,
+    2,
+    3,
+    7,
+    15,
+    31,
+    63,
+    127,
+    255,
+    383,
+    499,
+)
 
 
 def load_extension(name: str, path: Path) -> Any:
@@ -233,7 +247,12 @@ def fixture(
     device: torch.device,
     direct: Any,
     compensated: Any,
-) -> tuple[dict[str, Any], dict[str, Any], tuple[torch.Tensor, ...]]:
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    tuple[torch.Tensor, ...],
+]:
     generator = torch.Generator(device=device).manual_seed(seed)
     dtype = torch.float16
     hidden_states = torch.randn(
@@ -257,6 +276,10 @@ def fixture(
     exact_half = exact_half_dot(selected_w13, hidden_states)
     fixed = {
         "vendor_vs_exact": comparison(vendor.cpu(), exact_half),
+        "direct_vs_exact": comparison(
+            direct_output.detach().cpu(),
+            exact_half,
+        ),
         "direct_vs_vendor": comparison(
             direct_output.detach().cpu(),
             vendor.detach().cpu(),
@@ -275,7 +298,17 @@ def fixture(
         "direct": SequenceAccumulator(),
         "compensated": SequenceAccumulator(),
     }
-    for _ in range(sequence_steps):
+    exact_accumulators = {
+        "vendor": SequenceAccumulator(),
+        "direct": SequenceAccumulator(),
+        "compensated": SequenceAccumulator(),
+    }
+    exact_indices = tuple(
+        index for index in EXACT_SEQUENCE_INDICES
+        if index < sequence_steps
+    )
+    exact_index_set = set(exact_indices)
+    for step_index in range(sequence_steps):
         step_hidden = torch.randn(
             (1, HIDDEN), device=device, dtype=dtype, generator=generator)
         step_logits = torch.randn(
@@ -286,18 +319,39 @@ def fixture(
             step_hidden,
             step_selected.reshape(-1, HIDDEN),
         ).reshape(TOP_K, W13_ROWS)
-        accumulators["direct"].add(
-            direct.w13(step_hidden, w13, step_ids),
-            expected,
+        direct_step = direct.w13(step_hidden, w13, step_ids)
+        compensated_step = compensated.w13(
+            step_hidden,
+            w13,
+            step_ids,
         )
-        accumulators["compensated"].add(
-            compensated.w13(step_hidden, w13, step_ids),
-            expected,
-        )
+        accumulators["direct"].add(direct_step, expected)
+        accumulators["compensated"].add(compensated_step, expected)
+        if step_index in exact_index_set:
+            exact_step = exact_half_dot(step_selected, step_hidden)
+            exact_accumulators["vendor"].add(
+                expected.detach().cpu(),
+                exact_step,
+            )
+            exact_accumulators["direct"].add(
+                direct_step.detach().cpu(),
+                exact_step,
+            )
+            exact_accumulators["compensated"].add(
+                compensated_step.detach().cpu(),
+                exact_step,
+            )
     torch.cuda.synchronize()
     sequence = {
         name: accumulator.report()
         for name, accumulator in accumulators.items()
+    }
+    exact_sequence = {
+        "sample_indices": list(exact_indices),
+        "comparisons": {
+            name: accumulator.report()
+            for name, accumulator in exact_accumulators.items()
+        },
     }
     timing_state = (
         hidden_states,
@@ -306,7 +360,7 @@ def fixture(
         expert_ids,
         selected_w13,
     )
-    return fixed, sequence, timing_state
+    return fixed, sequence, exact_sequence, timing_state
 
 
 def main() -> int:
@@ -362,9 +416,10 @@ def main() -> int:
 
     fixed: dict[str, Any] = {}
     sequence: dict[str, Any] = {}
+    exact_sequence: dict[str, Any] = {}
     timing_state: tuple[torch.Tensor, ...] | None = None
     for seed in seeds:
-        fixed_row, sequence_row, timing_state = fixture(
+        fixed_row, sequence_row, exact_row, timing_state = fixture(
             seed=seed,
             sequence_steps=args.sequence_steps,
             device=device,
@@ -373,6 +428,7 @@ def main() -> int:
         )
         fixed[str(seed)] = fixed_row
         sequence[str(seed)] = sequence_row
+        exact_sequence[str(seed)] = exact_row
     if timing_state is None:
         raise RuntimeError("no timing fixture was generated")
     hidden_states, router_logits, w13, expert_ids, selected_w13 = timing_state
@@ -441,7 +497,7 @@ def main() -> int:
 
     report = {
         "schema": SCHEMA,
-        "version": 1,
+        "version": 2,
         "device": torch.cuda.get_device_name(device),
         "shape": {
             "experts": EXPERTS,
@@ -460,12 +516,14 @@ def main() -> int:
             "repeats": args.repeats,
             "cpu_threads": args.cpu_threads,
             "weight_scale": 0.02,
+            "exact_sequence_indices": list(EXACT_SEQUENCE_INDICES),
         },
         "method": {
             "algorithm": "per_lane_kahan_fp32_then_rn_warp_tree",
-            "quality_reference": "torch_nn_functional_linear_fp16",
+            "quality_reference":
+                "cpu_float64_dot_rounded_to_fp16_noninferiority",
             "exact_diagnostic":
-                "cpu_float64_dot_rounded_to_fp16_fixed_fixture_only",
+                "fixed_fixture_and_stratified_sequence_samples",
             "fixture_generation":
                 "hidden_then_router_then_w13_then_sequence",
             "production_runtime_changed": False,
@@ -478,6 +536,7 @@ def main() -> int:
         },
         "fixed": fixed,
         "sequence": sequence,
+        "exact_sequence": exact_sequence,
         "timings": {
             "cases": timing_cases,
             "speedups": speedups,

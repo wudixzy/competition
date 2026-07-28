@@ -55,14 +55,16 @@ class M191CompensatedW13RunnerUnitTest(unittest.TestCase):
             "--warmup 30",
             "--iterations 300",
             "--repeats 9",
-            '"relative_l2": 1.0e-5',
+            '"noninferiority_epsilon": 1.0e-8',
+            '"cpu_float64_dot_rounded_to_fp16_noninferiority"',
+            '"exact_sequence_indices":',
             '"fixed_speedup": 1.5',
             '"routed_speedup": 1.25',
             '"sequence_steps_per_seed": 500',
             '"term_grace_s": 60',
             '"kill_grace_s": 20',
             '"complete_token_scan_required": True',
-            '"schema": "bi100-m1-91-compensated-w13-runner-v1"',
+            '"schema": "bi100-m1-91-compensated-w13-runner-v2"',
         ):
             self.assertIn(marker, self.source)
 
@@ -74,6 +76,10 @@ class M191CompensatedW13RunnerUnitTest(unittest.TestCase):
             "report_sha256",
             "benchmark_extensions.get(\"candidate_sha256\")",
             "benchmark_extensions.get(\"direct_sha256\")",
+            '"identity_bound": identity_bound',
+            '"candidate_qualified": candidate_qualified',
+            "qualification_rc=$rc",
+            "CURRENT_STAGE=candidate_rejected",
         ):
             self.assertIn(marker, self.source)
 
