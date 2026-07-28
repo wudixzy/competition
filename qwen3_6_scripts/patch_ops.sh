@@ -220,6 +220,11 @@ cp ./cli_args.py "${VLLM_ROOT}/entrypoints/openai/cli_args.py"
 cp ./serving_chat.py "${VLLM_ROOT}/entrypoints/openai/serving_chat.py"
 cp ./api_server.py "${VLLM_ROOT}/entrypoints/openai/api_server.py"
 cp ./chat_utils.py "${VLLM_ROOT}/entrypoints/chat_utils.py"
+if ! cmp -s ./api_server.py \
+        "${VLLM_ROOT}/entrypoints/openai/api_server.py"; then
+    printf 'runtime api_server overlay identity mismatch\n' >&2
+    exit 2
+fi
 
 build_stage "compiling submission Python sources"
 find . -path './wheels' -prune -o -name '*.py' -print0 | xargs -0 python3 -m py_compile
