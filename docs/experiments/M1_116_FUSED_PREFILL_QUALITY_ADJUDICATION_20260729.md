@@ -24,9 +24,11 @@ request contract per arm:
 1. cold and warm `max_tokens=32` requests reproduce the M1-109 pair-1 prompt;
 2. two warm requests at each `max_tokens=1,2,4,8,16,32` locate the first stable
    output-length divergence;
-3. each arm must remain internally exact, finite, HTTP 200, and fully cached
+3. a second cold/warm `235000`-token request reproduces pair 2, where the
+   complete output also diverged while the first token remained exact;
+4. each arm must remain internally exact, finite, HTTP 200, and fully cached
    after the cold request;
-4. the A/B runtime contracts may differ only in
+5. the A/B runtime contracts may differ only in
    `BI100_ATTN_COREX_FUSED_PREFILL`.
 
 The report contains no prompt, model output, token ID, credential, or raw

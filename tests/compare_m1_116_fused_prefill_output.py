@@ -12,8 +12,8 @@ import diagnose_m1_116_fused_prefill_output as diagnostic
 import quality_runtime_contract as runtime_contract
 
 
-SCHEMA = "bi100-m1-116-fused-prefill-output-comparison-v1"
-VERSION = 1
+SCHEMA = "bi100-m1-116-fused-prefill-output-comparison-v2"
+VERSION = 2
 Json = dict[str, Any]
 REPORT_FIELDS = {
     "schema",
@@ -34,6 +34,7 @@ REPORT_FIELDS = {
     "run_id_sha256",
     "runtime_contract",
     "reproduction",
+    "secondary_reproduction",
     "ladder",
     "privacy",
 }
@@ -134,6 +135,28 @@ def _validate_report(report: Any, mode: str) -> list[str]:
         reasons.extend(f"{mode} {reason}" for reason in observation_reasons)
         if reproduction["cold_warm_exact"] is not True:
             reasons.append(f"{mode} cold/warm reproduction differs")
+    secondary = report.get("secondary_reproduction")
+    if (not isinstance(secondary, dict)
+            or set(secondary) != {
+                "target_prompt_tokens", "max_tokens", "run_id_sha256",
+                "cold", "warm", "cold_warm_exact"}):
+        reasons.append(f"{mode} secondary reproduction fields are invalid")
+    else:
+        if (secondary["target_prompt_tokens"]
+                != diagnostic.SECONDARY_TARGET_PROMPT_TOKENS
+                or secondary["max_tokens"]
+                != diagnostic.REPRODUCTION_MAX_TOKENS
+                or not runtime_contract.is_sha256(
+                    secondary["run_id_sha256"])):
+            reasons.append(
+                f"{mode} secondary reproduction contract is invalid")
+        secondary_reasons = diagnostic._validate_secondary_reproduction(
+            secondary["cold"], secondary["warm"])
+        reasons.extend(
+            f"{mode} {reason}" for reason in secondary_reasons)
+        if secondary["cold_warm_exact"] is not True:
+            reasons.append(
+                f"{mode} secondary cold/warm reproduction differs")
     return reasons
 
 
@@ -160,6 +183,12 @@ def _runtime_ab_reasons(control: Json, candidate: Json) -> list[str]:
     if changed != {"BI100_ATTN_COREX_FUSED_PREFILL"}:
         reasons.append(
             "A/B runtime environment did not change only fused prefill")
+    for field in (
+            "target_prompt_tokens", "max_tokens", "run_id_sha256"):
+        if (control["secondary_reproduction"].get(field)
+                != candidate["secondary_reproduction"].get(field)):
+            reasons.append(
+                f"A/B secondary reproduction differs in {field}")
     return reasons
 
 
@@ -220,6 +249,7 @@ def compare(control: Any, candidate: Any) -> Json:
             all_outputs_exact &= output_exact
             rows.append({
                 "phase": f"reproduction_{phase}",
+                "target_prompt_tokens": diagnostic.TARGET_PROMPT_TOKENS,
                 "max_tokens": diagnostic.REPRODUCTION_MAX_TOKENS,
                 "first_token_exact": first_exact,
                 "output_exact": output_exact,
@@ -254,9 +284,37 @@ def compare(control: Any, candidate: Any) -> Json:
                     f"max_tokens={budget} output differs")
             rows.append({
                 "phase": "ladder",
+                "target_prompt_tokens": diagnostic.TARGET_PROMPT_TOKENS,
                 "max_tokens": budget,
                 "first_token_exact": budget_first_exact,
                 "output_exact": budget_output_exact,
+            })
+        control_secondary = control["secondary_reproduction"]
+        candidate_secondary = candidate["secondary_reproduction"]
+        for phase in ("cold", "warm"):
+            row_reasons, first_exact, output_exact = _request_ab_reasons(
+                control_secondary[phase],
+                candidate_secondary[phase],
+                f"secondary reproduction {phase}",
+            )
+            comparison_contract_reasons.extend(
+                reason for reason in row_reasons
+                if not reason.endswith("first token differs"))
+            quality_reasons.extend(
+                reason for reason in row_reasons
+                if reason.endswith("first token differs"))
+            if not output_exact:
+                quality_reasons.append(
+                    f"secondary reproduction {phase} output differs")
+            all_first_tokens_exact &= first_exact
+            all_outputs_exact &= output_exact
+            rows.append({
+                "phase": f"secondary_reproduction_{phase}",
+                "target_prompt_tokens":
+                    diagnostic.SECONDARY_TARGET_PROMPT_TOKENS,
+                "max_tokens": diagnostic.REPRODUCTION_MAX_TOKENS,
+                "first_token_exact": first_exact,
+                "output_exact": output_exact,
             })
 
     diagnostic_valid = (

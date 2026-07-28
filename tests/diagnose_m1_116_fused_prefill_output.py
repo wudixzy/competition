@@ -18,13 +18,14 @@ from long_context_api import build_exact_prompt
 import quality_runtime_contract as runtime_contract
 
 
-SCHEMA = "bi100-m1-116-fused-prefill-output-diagnostic-v1"
-VERSION = 1
+SCHEMA = "bi100-m1-116-fused-prefill-output-diagnostic-v2"
+VERSION = 2
 TARGET_PROMPT_TOKENS = 65536
+SECONDARY_TARGET_PROMPT_TOKENS = 235000
+SECONDARY_RUN_ID = "m1-109-pair-2-20260729"
 MAX_TOKENS_LADDER = (1, 2, 4, 8, 16, 32)
 REPRODUCTION_MAX_TOKENS = 32
 SEED = 20260721
-MINIMUM_WARM_CACHED_TOKENS = TARGET_PROMPT_TOKENS - 32
 Json = dict[str, Any]
 REQUEST_FIELDS = {
     "status",
@@ -103,6 +104,7 @@ def _same_output(left: Json, right: Json) -> bool:
 def _validate_request(
     request: Json,
     *,
+    target_prompt_tokens: int,
     max_tokens: int,
     expected_cached: bool,
     label: str,
@@ -112,7 +114,7 @@ def _validate_request(
         return [f"{label} fields are invalid"]
     if request.get("status") != 200:
         reasons.append(f"{label} status differs")
-    if request.get("prompt_tokens") != TARGET_PROMPT_TOKENS:
+    if request.get("prompt_tokens") != target_prompt_tokens:
         reasons.append(f"{label} prompt_tokens differs")
     if request.get("completion_tokens") != max_tokens:
         reasons.append(f"{label} completion_tokens differs")
@@ -136,7 +138,7 @@ def _validate_request(
     if not isinstance(cached_tokens, int) or isinstance(cached_tokens, bool):
         reasons.append(f"{label} cached_tokens is invalid")
     elif expected_cached:
-        if cached_tokens < MINIMUM_WARM_CACHED_TOKENS:
+        if cached_tokens < target_prompt_tokens - 32:
             reasons.append(f"{label} effective cache restore is too short")
     elif cached_tokens != 0:
         reasons.append(f"{label} cold request was not cold")
@@ -151,12 +153,14 @@ def _validate_observations(
     reasons = []
     reasons.extend(_validate_request(
         cold,
+        target_prompt_tokens=TARGET_PROMPT_TOKENS,
         max_tokens=REPRODUCTION_MAX_TOKENS,
         expected_cached=False,
         label="reproduction cold",
     ))
     reasons.extend(_validate_request(
         cold_repeat,
+        target_prompt_tokens=TARGET_PROMPT_TOKENS,
         max_tokens=REPRODUCTION_MAX_TOKENS,
         expected_cached=True,
         label="reproduction warm",
@@ -176,12 +180,37 @@ def _validate_observations(
         for repeat in ("warm_1", "warm_2"):
             reasons.extend(_validate_request(
                 row[repeat],
+                target_prompt_tokens=TARGET_PROMPT_TOKENS,
                 max_tokens=expected_budget,
                 expected_cached=True,
                 label=f"{label} {repeat}",
             ))
         if not _same_output(row["warm_1"], row["warm_2"]):
             reasons.append(f"{label} repeated warm output differs")
+    return reasons
+
+
+def _validate_secondary_reproduction(
+    cold: Json,
+    warm: Json,
+) -> list[str]:
+    reasons = []
+    reasons.extend(_validate_request(
+        cold,
+        target_prompt_tokens=SECONDARY_TARGET_PROMPT_TOKENS,
+        max_tokens=REPRODUCTION_MAX_TOKENS,
+        expected_cached=False,
+        label="secondary reproduction cold",
+    ))
+    reasons.extend(_validate_request(
+        warm,
+        target_prompt_tokens=SECONDARY_TARGET_PROMPT_TOKENS,
+        max_tokens=REPRODUCTION_MAX_TOKENS,
+        expected_cached=True,
+        label="secondary reproduction warm",
+    ))
+    if not _same_output(cold, warm):
+        reasons.append("secondary reproduction cold/warm output differs")
     return reasons
 
 
@@ -267,6 +296,11 @@ def main() -> int:
         args.model_path, trust_remote_code=True, local_files_only=True)
     content = build_exact_prompt(
         tokenizer, TARGET_PROMPT_TOKENS, args.run_id)
+    secondary_content = build_exact_prompt(
+        tokenizer,
+        SECONDARY_TARGET_PROMPT_TOKENS,
+        SECONDARY_RUN_ID,
+    )
 
     cold = _post(
         args.base, content, REPRODUCTION_MAX_TOKENS,
@@ -285,8 +319,16 @@ def main() -> int:
                 args.base, content, max_tokens, args.timeout_s, tokenizer,
                 identity_key),
         })
+    secondary_cold = _post(
+        args.base, secondary_content, REPRODUCTION_MAX_TOKENS,
+        args.timeout_s, tokenizer, identity_key)
+    secondary_warm = _post(
+        args.base, secondary_content, REPRODUCTION_MAX_TOKENS,
+        args.timeout_s, tokenizer, identity_key)
 
     reasons = _validate_observations(cold, cold_repeat, ladder)
+    reasons.extend(_validate_secondary_reproduction(
+        secondary_cold, secondary_warm))
     report = {
         "schema": SCHEMA,
         "version": VERSION,
@@ -313,6 +355,16 @@ def main() -> int:
             "cold": cold,
             "warm": cold_repeat,
             "cold_warm_exact": _same_output(cold, cold_repeat),
+        },
+        "secondary_reproduction": {
+            "target_prompt_tokens": SECONDARY_TARGET_PROMPT_TOKENS,
+            "max_tokens": REPRODUCTION_MAX_TOKENS,
+            "run_id_sha256": hashlib.sha256(
+                SECONDARY_RUN_ID.encode("utf-8")).hexdigest(),
+            "cold": secondary_cold,
+            "warm": secondary_warm,
+            "cold_warm_exact": _same_output(
+                secondary_cold, secondary_warm),
         },
         "ladder": ladder,
         "privacy": {
