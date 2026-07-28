@@ -328,6 +328,7 @@ run_arm() {
             LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \
             python3 "$ROOT/tests/bench_m1_104_admission64_policy_matrix.py" \
             --base http://127.0.0.1:8000 --model-path "$MODEL_PATH" --policy "$policy" \
+            --ab-pair "$pair" \
             --salt-namespace "$SALT_NAMESPACE" --out "$arm/measurement.json" \
             > "$arm/measurement.stdout" 2> "$arm/measurement.stderr"
         measurement_rc=$?; set -e

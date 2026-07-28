@@ -20,8 +20,8 @@ except ImportError:
 
 
 Json = dict[str, Any]
-SCHEMA = "bi100-m1-104-admission64-paired-ab-v1"
-VERSION = 1
+SCHEMA = "bi100-m1-104-admission64-paired-ab-v2"
+VERSION = 2
 PAIR_COUNT = 3
 MIN_HIT = 0.50
 MIN_POSITIVE_PAIRS = 2
@@ -112,7 +112,7 @@ def _output_identity(value: Json, field: str) -> tuple[Any, ...]:
         or not 0 < completion <= measurement.MAX_TOKENS
     ):
         raise ValueError(f"{field}.completion_tokens is invalid")
-    if not isinstance(finish, str) or not finish:
+    if finish not in {"stop", "length"}:
         raise ValueError(f"{field}.finish_reason is invalid")
     return (
         _digest(value.get("first_token_sha256"),
@@ -133,6 +133,7 @@ def _validate_report(
     *,
     mode: str,
     policy: str,
+    ab_pair: int,
     field: str,
 ) -> tuple[list[Json], Json]:
     if (
@@ -140,6 +141,7 @@ def _validate_report(
         or value.get("version") != measurement.VERSION
         or value.get("mode") != mode
         or value.get("policy") != policy
+        or value.get("ab_pair") != ab_pair
         or value.get("request_count") != measurement.REQUEST_COUNT
         or value.get("qualified_measurement") is not True
         or value.get("reasons") != []
@@ -301,12 +303,14 @@ def compare(
                 control,
                 mode="control",
                 policy="fine32",
+                ab_pair=pair_index,
                 field=f"{label}.control",
             )
             candidate_requests, candidate_meta = _validate_report(
                 candidate,
                 mode="candidate",
                 policy="admission64",
+                ab_pair=pair_index,
                 field=f"{label}.candidate",
             )
         except ValueError as error:
@@ -521,15 +525,24 @@ def _atomic_write(path: Path, value: Json) -> None:
             pass
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--control", action="append", type=Path, required=True)
     parser.add_argument(
         "--candidate", action="append", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     bindings = []
     try:
+        paths = [*args.control, *args.candidate]
+        if len(paths) != PAIR_COUNT * 2:
+            raise ValueError("exactly six report paths are required")
+        resolved_paths = [path.resolve(strict=True) for path in paths]
+        if len(set(resolved_paths)) != len(resolved_paths):
+            raise ValueError("all six report paths must be unique")
+        digests = [_sha256(path) for path in resolved_paths]
+        if len(set(digests)) != len(digests):
+            raise ValueError("all six report payloads must be unique")
         controls = [_load(path) for path in args.control]
         candidates = [_load(path) for path in args.candidate]
         for mode, paths in (
@@ -539,7 +552,7 @@ def main() -> int:
             bindings.extend({
                 "mode": mode,
                 "pair": pair,
-                "path_name": path.name,
+                "path_name": path.resolve().name,
                 "sha256": _sha256(path),
             } for pair, path in enumerate(paths, 1))
         report = compare(
@@ -550,7 +563,7 @@ def main() -> int:
     except (OSError, ValueError, json.JSONDecodeError) as error:
         report = compare([], [], input_bindings=bindings)
         report["reasons"].append(
-            f"input loading failed: {type(error).__name__}")
+            f"input loading failed: {type(error).__name__}: {error}")
         report["qualified"] = False
     _atomic_write(args.out, report)
     print(json.dumps(report, ensure_ascii=True, indent=2, sort_keys=True))

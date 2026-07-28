@@ -47,6 +47,7 @@ class M1104Admission64RunnerUnitTest(unittest.TestCase):
             "'3 control fine32'",
             "'3 candidate admission64'",
             "--policy \"$policy\"",
+            "--ab-pair \"$pair\"",
             "--salt-namespace",
             "compare_m1_104_admission64_paired_ab.py",
         ):

@@ -28,9 +28,11 @@ def action(identity: Path, pid: int) -> dict:
         "term_sent": False,
         "kill_sent": False,
         "initial_live_count": 0,
+        "initial_zombie_count": 0,
         "initial_escaped_count": 0,
         "token_scan_error_count": 0,
         "final_live_count": 0,
+        "final_zombie_count": 0,
         "outcome": "already_quiescent",
     }
 
@@ -108,6 +110,14 @@ class RecordedSessionCleanupQualificationUnitTest(unittest.TestCase):
         report = MODULE.qualify(value, self.identities)
         self.assertFalse(report["qualified"])
         self.assertIn("action 2 required recovery", report["reasons"])
+
+    def test_zombie_group_member_fails_closed(self) -> None:
+        value = recovery(self.identities)
+        value["actions"][0]["initial_zombie_count"] = 1
+        value["actions"][0]["final_zombie_count"] = 1
+        report = MODULE.qualify(value, self.identities)
+        self.assertFalse(report["qualified"])
+        self.assertIn("action 1 required recovery", report["reasons"])
 
     def test_malformed_identity_path_fails_without_raising(self) -> None:
         value = recovery(self.identities)

@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import copy
+from contextlib import redirect_stdout
 import hashlib
+import io
+import json
+from pathlib import Path
+import tempfile
 import unittest
 
 from tests import bench_m1_104_admission64_policy_matrix as measurement
@@ -15,12 +20,14 @@ def digest(value: str) -> str:
 def report(
     mode: str,
     *,
+    ab_pair: int = 1,
     cold_fraction: float,
     warm_fraction: float,
     output_tps: float = 21.0,
     ttft: float = 4.0,
 ) -> dict:
     policy = "fine32" if mode == "control" else "admission64"
+    decode_window = 64.0 / output_tps
     requests = []
     contracts = []
     for target in measurement.SHAPES:
@@ -44,21 +51,26 @@ def report(
                     "ok": True,
                     "http_status": 200,
                     "done_seen": True,
+                    "terminal_choice_seen": True,
+                    "usage_seen": True,
+                    "data_event_count": 4,
+                    "malformed_sse_count": 0,
                     "health_after": True,
                     "prompt_tokens": target,
                     "cached_tokens": cached,
                     "completion_tokens": 64,
                     "finish_reason": "length",
                     "ttft_s": ttft,
-                    "latency_s": ttft + 3.0,
-                    "decode_window_s": 3.0,
+                    "latency_s": ttft + decode_window,
+                    "decode_window_s": decode_window,
                     "output_tps": output_tps,
                     "first_token_sha256": digest(f"first:{output_id}"),
                     "output_sha256": digest(f"output:{output_id}"),
                     "content_sha256": digest(f"content:{output_id}"),
                     "reasoning_sha256": digest(
                         f"reasoning:{output_id}"),
-                    "tool_calls_sha256": digest(f"tools:{output_id}"),
+                    "tool_calls_sha256": measurement._sha256_json([]),
+                    "tool_call_delta_count": 0,
                 }
                 requests.append(row)
                 contracts.append(measurement.request_contract(row))
@@ -67,6 +79,7 @@ def report(
         "version": measurement.VERSION,
         "mode": mode,
         "policy": policy,
+        "ab_pair": ab_pair,
         "request_count": measurement.REQUEST_COUNT,
         "request_manifest_sha256": measurement._sha256_json(contracts),
         "target_order": [row["request_id"] for row in requests],
@@ -109,20 +122,22 @@ def pairs(
     controls = [
         report(
             "control",
+            ab_pair=ab_pair,
             cold_fraction=control_cold,
             warm_fraction=control_warm,
         )
-        for _ in range(3)
+        for ab_pair in range(1, 4)
     ]
     candidates = [
         report(
             "candidate",
+            ab_pair=ab_pair,
             cold_fraction=candidate_cold,
             warm_fraction=candidate_warm,
             output_tps=candidate_output,
             ttft=candidate_ttft,
         )
-        for _ in range(3)
+        for ab_pair in range(1, 4)
     ]
     return controls, candidates
 
@@ -182,9 +197,11 @@ class M1104Admission64PairedAbUnitTest(unittest.TestCase):
             control_warm=0.80,
         )
         candidates[1] = report(
-            "candidate", cold_fraction=0.25, warm_fraction=0.80)
+            "candidate", ab_pair=2,
+            cold_fraction=0.25, warm_fraction=0.80)
         candidates[2] = report(
-            "candidate", cold_fraction=0.25, warm_fraction=0.80)
+            "candidate", ab_pair=3,
+            cold_fraction=0.25, warm_fraction=0.80)
         result = module.compare(controls, candidates)
         self.assertFalse(result["qualified"])
         self.assertIn(
@@ -239,6 +256,41 @@ class M1104Admission64PairedAbUnitTest(unittest.TestCase):
             "exactly three control/candidate pairs are required",
             result["reasons"],
         )
+
+    def test_outer_ab_pair_identity_is_bound(self):
+        controls, candidates = pairs()
+        candidates[1]["ab_pair"] = 1
+        result = module.compare(controls, candidates)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any("measurement contract differs" in reason
+                            for reason in result["reasons"]))
+
+    def test_cli_rejects_reused_report_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "report.json"
+            output = root / "comparison.json"
+            source.write_text(
+                json.dumps(report(
+                    "control",
+                    ab_pair=1,
+                    cold_fraction=0.1,
+                    warm_fraction=0.8,
+                )) + "\n",
+                encoding="utf-8",
+            )
+            args = []
+            for mode in ("control", "candidate"):
+                for _ in range(3):
+                    args.extend((f"--{mode}", str(source)))
+            args.extend(("--out", str(output)))
+            with redirect_stdout(io.StringIO()):
+                rc = module.main(args)
+            self.assertEqual(rc, 1)
+            value = json.loads(output.read_text(encoding="utf-8"))
+            self.assertFalse(value["qualified"])
+            self.assertTrue(any("paths must be unique" in reason
+                                for reason in value["reasons"]))
 
 
 if __name__ == "__main__":

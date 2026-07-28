@@ -15,8 +15,8 @@ import urllib.error
 import urllib.request
 
 
-SCHEMA = "bi100-m1-104-admission64-policy-matrix-v1"
-VERSION = 1
+SCHEMA = "bi100-m1-104-admission64-policy-matrix-v2"
+VERSION = 2
 SHAPES = (4096, 7800, 16000)
 PAIRS = (1, 2, 3)
 PHASES = ("cold", "warm")
@@ -196,8 +196,11 @@ def stream_request(
     tool_deltas: list[Any] = []
     first_identity = None
     ttft_s = None
-    last_output_s = None
     done_seen = False
+    terminal_choice_seen = False
+    usage_seen = False
+    data_event_count = 0
+    malformed_sse_count = 0
     try:
         with urllib.request.urlopen(request, timeout=timeout_s) as response:
             status = response.status
@@ -209,19 +212,37 @@ def stream_request(
                 }
             for raw in response:
                 line = raw.decode("utf-8", "replace").strip()
+                if not line or line.startswith(":"):
+                    continue
+                if done_seen:
+                    malformed_sse_count += 1
+                    continue
                 if not line.startswith("data:"):
+                    malformed_sse_count += 1
                     continue
                 value = line[5:].strip()
                 if value == "[DONE]":
                     done_seen = True
-                    break
+                    continue
                 event = json.loads(value)
+                if not isinstance(event, dict):
+                    raise ValueError("SSE data event is not an object")
+                data_event_count += 1
                 if event.get("usage"):
+                    if not isinstance(event["usage"], dict):
+                        raise ValueError("SSE usage is not an object")
                     usage = event["usage"]
+                    usage_seen = True
                 choices = event.get("choices") or []
+                if not isinstance(choices, list):
+                    raise ValueError("SSE choices is not a list")
                 if not choices:
                     continue
                 choice = choices[0]
+                if not isinstance(choice, dict):
+                    raise ValueError("SSE choice is not an object")
+                if choice.get("finish_reason") is not None:
+                    terminal_choice_seen = True
                 finish_reason = (
                     choice.get("finish_reason")
                     if choice.get("finish_reason") is not None
@@ -244,7 +265,6 @@ def stream_request(
                             delta.get("reasoning_content") or "",
                         "tool_calls": delta.get("tool_calls") or [],
                     }
-                last_output_s = elapsed
                 if delta.get("content"):
                     content.append(delta["content"])
                 if delta.get("reasoning_content"):
@@ -260,14 +280,18 @@ def stream_request(
             "tool_call_deltas": tool_deltas,
         }
         decode_window_s = (
-            max(last_output_s - ttft_s, 0.0)
-            if last_output_s is not None and ttft_s is not None
+            max(elapsed_s - ttft_s, 0.0)
+            if ttft_s is not None
             else 0.0
         )
         return {
             "ok": True,
             "http_status": status,
             "done_seen": done_seen,
+            "terminal_choice_seen": terminal_choice_seen,
+            "usage_seen": usage_seen,
+            "data_event_count": data_event_count,
+            "malformed_sse_count": malformed_sse_count,
             "prompt_tokens": int(usage.get("prompt_tokens") or 0),
             "cached_tokens": int(
                 prompt_details.get("cached_tokens") or 0),
@@ -290,6 +314,7 @@ def stream_request(
             "reasoning_sha256": _sha256_bytes(
                 normalized["reasoning_content"].encode("utf-8")),
             "tool_calls_sha256": _sha256_json(tool_deltas),
+            "tool_call_delta_count": len(tool_deltas),
         }
     except urllib.error.HTTPError as error:
         return {
@@ -344,6 +369,11 @@ def validate_requests(records: list[dict[str, Any]]) -> list[str]:
             record.get("ok") is not True
             or record.get("http_status") != 200
             or record.get("done_seen") is not True
+            or record.get("terminal_choice_seen") is not True
+            or record.get("usage_seen") is not True
+            or record.get("malformed_sse_count") != 0
+            or not isinstance(record.get("data_event_count"), int)
+            or record["data_event_count"] <= 0
             or record.get("health_after") is not True
         ):
             reasons.append(f"{label} request or health failed")
@@ -362,8 +392,9 @@ def validate_requests(records: list[dict[str, Any]]) -> list[str]:
         if (
             not isinstance(record.get("completion_tokens"), int)
             or not 0 < record["completion_tokens"] <= MAX_TOKENS
-            or not isinstance(record.get("finish_reason"), str)
-            or not record["finish_reason"]
+            or record.get("finish_reason") not in {"stop", "length"}
+            or record.get("tool_call_delta_count") != 0
+            or record.get("tool_calls_sha256") != _sha256_json([])
         ):
             reasons.append(f"{label} completion contract differs")
         for field in ("ttft_s", "latency_s", "decode_window_s", "output_tps"):
@@ -375,6 +406,36 @@ def validate_requests(records: list[dict[str, Any]]) -> list[str]:
                 or float(value) <= 0
             ):
                 reasons.append(f"{label} {field} is not finite and positive")
+        ttft_s = record.get("ttft_s")
+        latency_s = record.get("latency_s")
+        completion_tokens = record.get("completion_tokens")
+        if all(
+            isinstance(value, (int, float)) and not isinstance(value, bool)
+            for value in (ttft_s, latency_s, completion_tokens)
+        ):
+            expected_window = float(latency_s) - float(ttft_s)
+            observed_window = record.get("decode_window_s")
+            observed_tps = record.get("output_tps")
+            if (
+                expected_window <= 0
+                or not isinstance(observed_window, (int, float))
+                or isinstance(observed_window, bool)
+                or not math.isclose(
+                    float(observed_window),
+                    expected_window,
+                    rel_tol=1e-12,
+                    abs_tol=1e-12,
+                )
+                or not isinstance(observed_tps, (int, float))
+                or isinstance(observed_tps, bool)
+                or not math.isclose(
+                    float(observed_tps),
+                    int(completion_tokens) / expected_window,
+                    rel_tol=1e-12,
+                    abs_tol=1e-12,
+                )
+            ):
+                reasons.append(f"{label} decode timing formula differs")
         for field in (
             "salt_sha256",
             "first_token_sha256",
@@ -480,6 +541,12 @@ def main() -> int:
         choices=("fine32", "admission64"),
         required=True,
     )
+    parser.add_argument(
+        "--ab-pair",
+        type=int,
+        choices=PAIRS,
+        required=True,
+    )
     parser.add_argument("--salt-namespace", required=True)
     parser.add_argument("--corpus", type=Path, nargs="+")
     parser.add_argument("--timeout-s", type=float, default=900.0)
@@ -541,6 +608,7 @@ def main() -> int:
         "mode": (
             "control" if args.policy == "fine32" else "candidate"),
         "policy": args.policy,
+        "ab_pair": args.ab_pair,
         "request_count": len(records),
         "request_manifest_sha256": _sha256_json(contract),
         "target_order": [

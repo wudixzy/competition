@@ -58,6 +58,12 @@ The first request of every fresh service must report zero cached tokens. Later
 prefix; their corresponding warm row must never report fewer cached tokens.
 Cold/warm output, first-output, finish-reason, and completion-token identities
 must match, and the same identities must match between control and candidate.
+The v2 measurement contract computes Output TPS from completion tokens divided
+by full response latency minus TTFT, matching the historical benchmark
+definition. It also requires a terminal choice, usage event, `[DONE]`, legal
+`stop` or `length` finish reason, no tool-call delta under `tool_choice=none`,
+and no malformed SSE line. The comparator binds outer A/B pair identity and
+rejects reused paths or duplicate payloads across its six inputs.
 
 The paired continuation screen requires:
 
@@ -81,6 +87,8 @@ restricted to the attested PID/PGID/SID/starttime/token session. It sends
 SIGTERM and waits 60 seconds, sends SIGKILL only to verified survivors, then
 waits/reaps. The finalizer also performs recorded-session recovery and a
 machine-wide postflight/preflight check. No broad `pkill` or `killall` is used.
+Recorded-session qualification rejects both live and zombie members remaining
+in any experiment process group.
 
 Every arm measurement is an evidence-validity gate and must return zero.
 Algorithmic rejection occurs only after all six complete measurements reach
@@ -111,8 +119,9 @@ throughput, output quality, or an official score.
 
 Before the GPU run:
 
-- 36 focused policy, measurement, comparator, and runner tests passed;
-- full discovery passed 1,141 tests with 25 expected skips;
+- 40 focused policy, measurement, comparator, lifecycle, and runner tests
+  passed;
+- full discovery passed 1,146 tests with 25 expected skips;
 - submission preflight passed all nine checks;
 - shell syntax, Python syntax, diff whitespace, and sensitive-artifact checks
   passed.

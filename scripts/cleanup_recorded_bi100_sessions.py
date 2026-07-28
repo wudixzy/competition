@@ -171,9 +171,11 @@ def recover(
             "term_sent": False,
             "kill_sent": False,
             "initial_live_count": 0,
+            "initial_zombie_count": 0,
             "initial_escaped_count": 0,
             "token_scan_error_count": 0,
             "final_live_count": 0,
+            "final_zombie_count": 0,
         }
         actions.append(action)
         if pgid in seen_pgids:
@@ -185,7 +187,9 @@ def recover(
             continue
 
         try:
-            group_live = _live_members(proc_root, pgid)
+            group_members = _group_members(proc_root, pgid)
+            group_live = [
+                row for row in group_members if row["state"] != "Z"]
         except OSError as exc:
             reasons.append(
                 f"{identity_path}: process scan failed: {type(exc).__name__}")
@@ -203,6 +207,8 @@ def recover(
                 f"{type(exc).__name__}")
             continue
         action["token_scan_error_count"] = token_scan_errors
+        action["initial_zombie_count"] = sum(
+            row["state"] == "Z" for row in group_members)
         if require_complete_token_scan and token_scan_errors:
             reasons.append(
                 f"{identity_path}: token process scan was incomplete")
@@ -318,6 +324,16 @@ def recover(
                     f"{identity_path}: token process rescan was incomplete")
                 continue
         action["final_live_count"] = len(live)
+        try:
+            action["final_zombie_count"] = sum(
+                row["state"] == "Z"
+                for row in _group_members(proc_root, pgid)
+            )
+        except OSError as exc:
+            reasons.append(
+                f"{identity_path}: final process scan failed: "
+                f"{type(exc).__name__}")
+            continue
         action["outcome"] = "quiescent" if not live else "survived"
         if live:
             reasons.append(f"{identity_path}: live process group survived")

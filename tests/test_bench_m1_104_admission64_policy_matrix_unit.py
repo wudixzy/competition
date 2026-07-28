@@ -29,6 +29,10 @@ def record(
         "ok": True,
         "http_status": 200,
         "done_seen": True,
+        "terminal_choice_seen": True,
+        "usage_seen": True,
+        "data_event_count": 4,
+        "malformed_sse_count": 0,
         "health_after": True,
         "prompt_tokens": target,
         "cached_tokens": cached,
@@ -42,7 +46,8 @@ def record(
         "output_sha256": digest(output),
         "content_sha256": digest("content"),
         "reasoning_sha256": digest("reasoning"),
-        "tool_calls_sha256": digest("tools"),
+        "tool_calls_sha256": module._sha256_json([]),
+        "tool_call_delta_count": 0,
     }
 
 
@@ -126,6 +131,25 @@ class M1104Admission64PolicyMatrixUnitTest(unittest.TestCase):
         self.assertTrue(any("prompt token contract" in reason
                             for reason in reasons))
         self.assertTrue(any("output_tps" in reason for reason in reasons))
+
+    def test_decode_timing_formula_is_bound_to_full_latency(self):
+        rows = complete_records()
+        rows[0]["latency_s"] += 1.0
+        reasons = module.validate_requests(rows)
+        self.assertTrue(any("decode timing formula differs" in reason
+                            for reason in reasons))
+
+    def test_terminal_sse_and_tool_choice_none_are_enforced(self):
+        rows = complete_records()
+        rows[0]["terminal_choice_seen"] = False
+        rows[0]["malformed_sse_count"] = 1
+        rows[1]["finish_reason"] = "tool_calls"
+        rows[1]["tool_call_delta_count"] = 1
+        reasons = module.validate_requests(rows)
+        self.assertTrue(any("request or health failed" in reason
+                            for reason in reasons))
+        self.assertTrue(any("completion contract differs" in reason
+                            for reason in reasons))
 
     def test_request_failure_and_bad_hash_are_rejected(self):
         rows = complete_records()

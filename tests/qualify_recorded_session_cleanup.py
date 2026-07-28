@@ -81,9 +81,11 @@ def qualify(recovery: Json, expected_identities: list[Path]) -> Json:
                 or action.get("term_sent") is not False
                 or action.get("kill_sent") is not False
                 or action.get("initial_live_count") != 0
+                or action.get("initial_zombie_count") != 0
                 or action.get("initial_escaped_count") != 0
                 or action.get("token_scan_error_count") != 0
                 or action.get("final_live_count") != 0
+                or action.get("final_zombie_count") != 0
                 or action.get("outcome") != "already_quiescent"
             ):
                 reasons.append(f"{label} required recovery")
