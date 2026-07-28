@@ -37,6 +37,12 @@ policy, the historical M1-35 aggregate clears both benefit paths. Historical
 evidence authorizes a current-source rerun only; it does not qualify the
 current runtime.
 
+Separate historical M1-49 evidence already passed TP4 131K/235K/262K
+long-context checks, same-image reuse, different-image isolation, and a frozen
+13-turn supplemental replay for the `full_attention/admission64/direct` stack.
+Those results justify retaining the candidate, but their older source identity
+does not replace the current-source M1-85 quality A/B.
+
 ## Comparator correction
 
 `scripts/compare_dataset_shaped_policies.py` now reports the two benefit paths

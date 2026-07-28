@@ -40,6 +40,28 @@ def summary(output: float, hit: float, score: float, ttft: float = 4.0):
 
 class DatasetPolicyCompareTest(unittest.TestCase):
 
+    def test_historical_m1_35_clears_both_v2_benefit_paths(self):
+        report = MODULE.compare(
+            summary(21.6563, 0.499301, 6699.4888, ttft=20.8748),
+            summary(21.7783, 0.610671, 6976.7204, ttft=18.0882),
+        )
+        self.assertTrue(report["stage_qualified"])
+        self.assertTrue(report["benefit_paths"][
+            "effective_hit_gain_at_least_2pp"])
+        self.assertTrue(report["benefit_paths"][
+            "weighted_score_gain_at_least_3pct_without_hit_reduction"])
+        self.assertAlmostEqual(
+            report["delta"]["effective_hit_percentage_points"],
+            11.137,
+        )
+        self.assertAlmostEqual(
+            report["delta"]["weighted_score_fraction"],
+            0.041381,
+            places=5,
+        )
+        self.assertIsNone(report["quality_nonregression_qualified"])
+        self.assertIsNone(report["final_qualified"])
+
     def test_candidate_passes_stage_gates_at_boundaries(self):
         report = MODULE.compare(
             summary(21.0, 0.50, 6000.0),
