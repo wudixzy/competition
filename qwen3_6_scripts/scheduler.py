@@ -543,10 +543,16 @@ class Scheduler:
     ) -> None:
         """
         Free a sequence group from a cross-attention block table.
-        Has no effect on decoder-only models.
+        Also release any request-local multimodal cache namespace.
         """
-        if seq_group.is_encoder_decoder():
-            self.block_manager.free_cross(seq_group)
+        try:
+            if seq_group.is_encoder_decoder():
+                self.block_manager.free_cross(seq_group)
+        finally:
+            release_namespace = getattr(
+                self.block_manager, "release_request_cache_namespace", None)
+            if release_namespace is not None:
+                release_namespace(seq_group.request_id)
 
     def has_unfinished_seqs(self) -> bool:
         return len(self.waiting) != 0 or len(self.running) != 0 or len(

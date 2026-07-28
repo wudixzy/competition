@@ -2,6 +2,7 @@ import ast
 from dataclasses import dataclass, field
 import hashlib
 import pathlib
+from types import SimpleNamespace
 import typing
 import unittest
 
@@ -50,6 +51,22 @@ def _load_scheduling_budget():
     }
     exec(compile(module, str(SCHEDULER), "exec"), namespace)
     return namespace["SchedulingBudget"]
+
+
+def _load_namespace_release():
+    tree = ast.parse(SCHEDULER.read_text(), filename=str(SCHEDULER))
+    scheduler_class = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "Scheduler")
+    function = next(
+        node for node in scheduler_class.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_free_seq_group_cross_attn_blocks")
+    module = ast.Module(body=[function], type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {"SequenceGroup": typing.Any}
+    exec(compile(module, str(SCHEDULER), "exec"), namespace)
+    return namespace["_free_seq_group_cross_attn_blocks"]
 
 
 class GdnPrefixSchedulerTest(unittest.TestCase):
@@ -109,6 +126,63 @@ class GdnPrefixSchedulerTest(unittest.TestCase):
         self.assertEqual((num_new_tokens, num_physical_tokens), (1152, 128))
         self.assertIsInstance(restore[0], int)
         self.assertEqual(len(restore[1]), 32)
+
+    def test_request_namespace_release_covers_all_group_types(self):
+        release = _load_namespace_release()
+
+        class BlockManager:
+
+            def __init__(self):
+                self.cross_freed = []
+                self.released = []
+
+            def free_cross(self, seq_group):
+                self.cross_freed.append(seq_group.request_id)
+
+            def release_request_cache_namespace(self, request_id):
+                self.released.append(request_id)
+
+        manager = BlockManager()
+        scheduler = SimpleNamespace(block_manager=manager)
+        decoder = SimpleNamespace(
+            request_id="decoder", is_encoder_decoder=lambda: False)
+        encoder = SimpleNamespace(
+            request_id="encoder", is_encoder_decoder=lambda: True)
+
+        release(scheduler, decoder)
+        release(scheduler, encoder)
+        self.assertEqual(manager.cross_freed, ["encoder"])
+        self.assertEqual(manager.released, ["decoder", "encoder"])
+
+    def test_request_namespace_release_is_legacy_manager_compatible(self):
+        release = _load_namespace_release()
+        legacy_manager = SimpleNamespace()
+        scheduler = SimpleNamespace(block_manager=legacy_manager)
+        decoder = SimpleNamespace(
+            request_id="decoder", is_encoder_decoder=lambda: False)
+        release(scheduler, decoder)
+
+    def test_request_namespace_releases_when_cross_free_raises(self):
+        release = _load_namespace_release()
+
+        class BlockManager:
+
+            def __init__(self):
+                self.released = []
+
+            def free_cross(self, seq_group):
+                raise RuntimeError("cross free failed")
+
+            def release_request_cache_namespace(self, request_id):
+                self.released.append(request_id)
+
+        manager = BlockManager()
+        scheduler = SimpleNamespace(block_manager=manager)
+        encoder = SimpleNamespace(
+            request_id="encoder", is_encoder_decoder=lambda: True)
+        with self.assertRaisesRegex(RuntimeError, "cross free failed"):
+            release(scheduler, encoder)
+        self.assertEqual(manager.released, ["encoder"])
 
 
 if __name__ == "__main__":

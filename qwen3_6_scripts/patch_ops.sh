@@ -183,9 +183,9 @@ python3 ./patch_vllm_qwen3_5.py
 cp ./sequence.py "${VLLM_ROOT}/sequence.py"
 
 # --- scheduler.py: record num_cached_tokens in RequestMetrics ----------------
-# Sets seq_group.metrics.num_cached_tokens = prefix_cache_len on first prefill
-# when --enable-prefix-caching is active, so serving_chat.py can report it in
-# usage.prompt_tokens_details.cached_tokens (OpenAI-compatible API response).
+# Reports only the longest prefix backed by both live KV blocks and an exact
+# GDN restore state. Raw KV-only hits must not inflate cached_tokens.
+# serving_chat.py exposes the value in the OpenAI-compatible usage details.
 cp ./scheduler.py "${VLLM_ROOT}/core/scheduler.py"
 
 build_stage "installing diagnostic initial allocation trace"

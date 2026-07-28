@@ -7,7 +7,7 @@ import unittest
 from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any, List, Optional
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 try:
     from PIL import Image
@@ -48,6 +48,7 @@ def _class_with_methods(path: pathlib.Path, source_class: str,
         "Sequence": Any,
         "SequenceGroup": Any,
         "hashlib": hashlib,
+        "logger": Mock(),
         "os": os,
         "struct": struct,
         "torch": None,
@@ -63,7 +64,33 @@ NamespaceHash = _class_with_methods(
         "_adapter_cache_namespace", "_build_runtime_cache_namespace",
         "_get_cache_namespace", "_sort_map_keys", "_hash_multi_modal_obj",
         "_hash_multi_modal_namespace", "_request_local_fallback_cache_namespace",
+        "release_request_cache_namespace",
     }, "NamespaceHash")
+
+
+class _FakeImage:
+
+    def __init__(self, *, pixels: bytes, palette: list[int],
+                 transparency: int, fail_read: bool = False):
+        self.mode = "P"
+        self.width = 2
+        self.height = 2
+        self._pixels = pixels
+        self._palette = palette
+        self._fail_read = fail_read
+        self.palette = SimpleNamespace(mode="RGB")
+        self.info = {"transparency": transparency}
+
+    def tobytes(self):
+        if self._fail_read:
+            raise OSError("decode failure")
+        return self._pixels
+
+    def getpalette(self):
+        return list(self._palette)
+
+
+_FAKE_IMAGE_MODULE = SimpleNamespace(Image=_FakeImage)
 
 
 def _all_fake_blocks(last_block):
@@ -208,6 +235,37 @@ class PrefixContentHashTest(unittest.TestCase):
             hasher._hash_multi_modal_namespace({"image": same_a}),
             hasher._hash_multi_modal_namespace({"image": different}))
 
+    def test_palette_and_transparency_are_part_of_image_namespace(self):
+        hasher = NamespaceHash()
+
+        def palette_image(red: int, transparency: int):
+            palette = [0] * 768
+            palette[0:3] = [red, 20, 30]
+            palette[3:6] = [40, 50, 60]
+            return _FakeImage(
+                pixels=b"\x00\x01\x00\x01",
+                palette=palette,
+                transparency=transparency)
+
+        same_a = palette_image(10, 0)
+        same_b = palette_image(10, 0)
+        different_palette = palette_image(200, 0)
+        different_transparency = palette_image(10, 1)
+        image_globals = (
+            NamespaceHash._hash_multi_modal_obj.__func__.__globals__)
+        with patch.dict(image_globals, {"Image": _FAKE_IMAGE_MODULE}):
+            self.assertEqual(
+                hasher._hash_multi_modal_namespace({"image": same_a}),
+                hasher._hash_multi_modal_namespace({"image": same_b}))
+            self.assertNotEqual(
+                hasher._hash_multi_modal_namespace({"image": same_a}),
+                hasher._hash_multi_modal_namespace(
+                    {"image": different_palette}))
+            self.assertNotEqual(
+                hasher._hash_multi_modal_namespace({"image": same_a}),
+                hasher._hash_multi_modal_namespace(
+                    {"image": different_transparency}))
+
     def test_unsupported_multimodal_value_fails_closed(self):
         instance = NamespaceHash()
         with self.assertRaises(TypeError):
@@ -221,6 +279,64 @@ class PrefixContentHashTest(unittest.TestCase):
         self.assertNotEqual(
             first,
             instance._request_local_fallback_cache_namespace("request-b"))
+
+    def test_multimodal_hash_failure_uses_request_local_isolation(self):
+        instance = NamespaceHash()
+        instance._runtime_cache_namespace = b"r" * 32
+        instance._request_local_namespace = {}
+        instance._warned_mm_namespace_requests = set()
+        sequence = SimpleNamespace(
+            multi_modal_data={"image": _FakeImage(
+                pixels=b"", palette=[0] * 768, transparency=0,
+                fail_read=True)})
+        seq_group = SimpleNamespace(
+            lora_request=None, prompt_adapter_request=None)
+
+        image_globals = (
+            NamespaceHash._hash_multi_modal_obj.__func__.__globals__)
+        with patch.dict(image_globals, {"Image": _FAKE_IMAGE_MODULE}):
+            first = instance._get_cache_namespace(
+                sequence, "request-a", seq_group)
+            second = instance._get_cache_namespace(
+                sequence, "request-a", seq_group)
+        self.assertEqual(first, second)
+        self.assertIn("request-a", instance._request_local_namespace)
+
+    def test_multimodal_presence_does_not_evaluate_object_truthiness(self):
+        class AmbiguousMultimodal:
+
+            def __bool__(self):
+                raise AssertionError("truthiness must not be evaluated")
+
+        instance = NamespaceHash()
+        instance._runtime_cache_namespace = b"r" * 32
+        instance._request_local_namespace = {}
+        instance._warned_mm_namespace_requests = set()
+        sequence = SimpleNamespace(multi_modal_data=AmbiguousMultimodal())
+        seq_group = SimpleNamespace(
+            lora_request=None, prompt_adapter_request=None)
+        namespace = instance._get_cache_namespace(
+            sequence, "request-a", seq_group)
+        self.assertEqual(len(namespace), 32)
+        self.assertIn("request-a", instance._request_local_namespace)
+
+    def test_request_local_namespace_is_fresh_after_release(self):
+        instance = NamespaceHash()
+        instance._runtime_cache_namespace = b"r" * 32
+        instance._request_local_namespace = {}
+        instance._warned_mm_namespace_requests = {"request-a"}
+        with patch.object(os, "urandom",
+                          side_effect=[b"a" * 32, b"b" * 32]):
+            first = instance._request_local_fallback_cache_namespace(
+                "request-a")
+            self.assertEqual(
+                first,
+                instance._request_local_fallback_cache_namespace("request-a"))
+            instance.release_request_cache_namespace("request-a")
+            second = instance._request_local_fallback_cache_namespace(
+                "request-a")
+        self.assertNotEqual(first, second)
+        self.assertNotIn("request-a", instance._warned_mm_namespace_requests)
 
     def test_runtime_namespace_covers_fixed_model_identity(self):
         instance = NamespaceHash()
@@ -286,6 +402,17 @@ class PrefixContentHashTest(unittest.TestCase):
                          [namespace, namespace])
         self.assertEqual([block.content_hash for block in forked],
                          [first.content_hash, second.content_hash])
+
+    def test_physical_block_reuse_cannot_alias_logical_content(self):
+        first = _FakeForkBlock(None, [1, 2], 7, b"namespace")
+        same_content_new_physical = _FakeForkBlock(
+            None, [1, 2], 99, b"namespace")
+        reused_physical_new_content = _FakeForkBlock(
+            None, [3, 4], 7, b"namespace")
+        self.assertEqual(first.content_hash,
+                         same_content_new_physical.content_hash)
+        self.assertNotEqual(first.content_hash,
+                            reused_physical_new_content.content_hash)
 
 
 if __name__ == "__main__":

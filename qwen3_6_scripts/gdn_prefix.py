@@ -206,7 +206,8 @@ class GdnPrefixStatePolicy:
         A live KV hit proves that the content occurred in an earlier request;
         the current request is therefore the second or later occurrence.
         """
-        if self.policy != "admission64" or max_blocks <= 0:
+        if (self.policy != "admission64" or max_blocks <= 0
+                or not live_prefix_keys):
             return None
         candidate = live_prefix_keys[min(len(live_prefix_keys), max_blocks) - 1]
         if candidate in self._resident:

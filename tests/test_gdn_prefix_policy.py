@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import random
 import unittest
+from collections import OrderedDict
 from unittest.mock import patch
 
 from qwen3_6_scripts.gdn_prefix import (
@@ -102,6 +104,7 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         self.assertEqual(policy.repeated_branch_candidate(keys, 2), keys[1])
         policy.admit([keys[1]])
         self.assertIsNone(policy.repeated_branch_candidate(keys, 2))
+        self.assertIsNone(policy.repeated_branch_candidate([], 1))
 
     def test_admission64_retains_canonical_final_state(self):
         key = make_prefix_key(2, digest(2))
@@ -153,6 +156,59 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         }, clear=False):
             self.assertEqual(gdn_cache_policy_from_env(), "off")
             self.assertEqual(gdn_restore_mode_from_env(), "direct")
+
+    def test_fixed_seed_policy_state_machine_matches_reference_lru(self):
+        keys = [make_prefix_key(i + 1, digest(i % 251))
+                for i in range(96)]
+        rng = random.Random(20260728)
+        for policy_name, capacity in (
+                ("fine32", 32), ("admission64", 64), ("off", 0)):
+            with self.subTest(policy=policy_name):
+                policy = GdnPrefixStatePolicy(policy_name)
+                reference = OrderedDict()
+                for _ in range(1000):
+                    operation = rng.choice(
+                        ("admit", "restore", "forget", "capture"))
+                    sample = rng.sample(keys, rng.randint(0, 4))
+                    if operation == "admit":
+                        expected_evictions = []
+                        if capacity:
+                            for key in sample:
+                                if key in reference:
+                                    reference.move_to_end(key)
+                                else:
+                                    reference[key] = None
+                                while len(reference) > capacity:
+                                    evicted, _ = reference.popitem(last=False)
+                                    expected_evictions.append(evicted)
+                        self.assertEqual(
+                            policy.admit(sample), tuple(expected_evictions))
+                    elif operation == "restore":
+                        max_blocks = rng.randint(0, len(sample))
+                        expected = None
+                        if capacity and max_blocks:
+                            for key in sample[:max_blocks]:
+                                if key in reference:
+                                    expected = key
+                            if expected is not None:
+                                reference.move_to_end(expected)
+                        self.assertEqual(
+                            policy.select_restore(sample, max_blocks), expected)
+                    elif operation == "forget":
+                        policy.forget(sample)
+                        for key in sample:
+                            reference.pop(key, None)
+                    else:
+                        key = rng.choice(keys)
+                        expected = (
+                            False if policy_name == "off"
+                            else key not in reference
+                            if policy_name == "admission64" else True)
+                        self.assertEqual(
+                            policy.should_capture_final(key), expected)
+                    self.assertEqual(
+                        policy.resident_keys(), tuple(reference))
+                    self.assertLessEqual(len(policy), capacity)
 
 
 if __name__ == "__main__":

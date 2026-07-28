@@ -242,15 +242,17 @@ class BlockSpaceManagerV2(BlockSpaceManager):
         digest.update(self._runtime_cache_namespace)
         digest.update(self._adapter_cache_namespace(seq_group))
 
-        if seq.multi_modal_data:
+        if seq.multi_modal_data is not None:
             try:
                 mm_namespace = self._hash_multi_modal_namespace(
                     seq.multi_modal_data)
-            except TypeError:
+            except (TypeError, ValueError, RuntimeError, OSError,
+                    OverflowError, AttributeError, LookupError, struct.error):
                 if request_id not in self._warned_mm_namespace_requests:
                     logger.warning(
-                        "Request %s has unsupported multimodal input for "
-                        "cache namespace hashing. Falling back to "
+                        "Request %s has multimodal input that cannot be "
+                        "normalized for cache namespace hashing. Falling "
+                        "back to "
                         "request-local namespace isolation.",
                         request_id,
                     )
@@ -467,6 +469,11 @@ class BlockSpaceManagerV2(BlockSpaceManager):
             self._request_local_namespace[request_id] = namespace
         return namespace
 
+    def release_request_cache_namespace(self, request_id: str) -> None:
+        """Release request-local isolation state after request completion."""
+        self._request_local_namespace.pop(request_id, None)
+        self._warned_mm_namespace_requests.discard(request_id)
+
     def _hash_multi_modal_namespace(self, mm_data: Any) -> bytes:
         digest = hashlib.sha256()
         self._hash_multi_modal_obj(digest, mm_data)
@@ -548,6 +555,15 @@ class BlockSpaceManagerV2(BlockSpaceManager):
             image_bytes = value.tobytes()
             digest.update(struct.pack("!Q", len(image_bytes)))
             digest.update(image_bytes)
+            palette = value.getpalette()
+            digest.update(b"palette-mode|")
+            cls._hash_multi_modal_obj(
+                digest, getattr(getattr(value, "palette", None), "mode", None))
+            digest.update(b"palette|")
+            cls._hash_multi_modal_obj(digest, palette)
+            digest.update(b"transparency|")
+            cls._hash_multi_modal_obj(
+                digest, value.info.get("transparency"))
             return
 
         raise TypeError(f"Unsupported multimodal namespace value type {type(value)}")
