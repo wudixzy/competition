@@ -15,10 +15,12 @@ multi-image output and cache isolation. Running any result alone does not prove
 that all three used the same source and runtime overlay, or that the service
 stages used the same diagnostic checkpoint and physical GPU.
 
-M1-87 v2 runs those three gates sequentially and produces one fail-closed
-identity and lifecycle decision. The v2 integration is commit `9ecbf30` on
-the private `fix/M1-89-multimodal-cache-namespace-20260728` branch. It changes
-test infrastructure only. It does not
+M1-87 v3 runs those three gates sequentially and produces one fail-closed
+identity and lifecycle decision. The installed-runtime integration is commit
+`9ecbf30`; commit `d5f9b85` upgrades M1-86 to the palette/transparency
+service-level v2 contract and binds that evidence into M1-87 v3. Both are on
+the private `fix/M1-89-multimodal-cache-namespace-20260728` branch. They change
+test infrastructure only. They do not
 change model code, weights, dtype, tokenizer, chat template, request semantics,
 cache policy, `computility-run.yaml`, Dockerfile, or a production default.
 
@@ -35,7 +37,7 @@ immutable overlay installed from the exact current HEAD:
 5. run the fixed M1-86 control/candidate multi-image A/B at TP1;
 6. recover only process groups recorded by this run, then require final service
    postflight, GPU preflight, recursive fatal scan, and timeout scan;
-7. bind all three stages into the v2 `queue_status.json`.
+7. bind all three stages into the v3 `queue_status.json`.
 
 The diagnostic and multi-image services use different fixed loopback ports.
 Those two service stages use the same four-layer structural real-weight
@@ -92,7 +94,9 @@ The aggregate binds:
 
 - the M1-89 overlay identity and nine-check installed-runtime report;
 - the full M1-84 status artifact manifest;
-- the M1-86 runner manifest and every input consumed by its comparison;
+- the M1-86 v2 runner manifest and every input consumed by its comparison,
+  including 7/11 control/candidate v4 trace records for palette and
+  transparency cold/warm isolation;
 - both queue-child session identities;
 - interstage and final process/GPU postflights;
 - the recorded-service recovery report.
@@ -105,19 +109,20 @@ the aggregate.
 ## Current status
 
 Implementation and CPU-only validation are complete on the current private
-M1-89 branch. Focused queue/runtime tests passed 25 of 25; complete tests-root
-discovery passed 1030 tests with 25 dependency skips. Submission preflight
+M1-89 branch. Focused M1-86/M1-87 tests passed 53 of 53; complete tests-root
+discovery passed 1039 tests with 25 dependency skips. Submission preflight
 passed 9 of 9, and the fixed quality-data and 53-case metric manifests passed.
 No BI100 result has been claimed. The latest bounded SSH probe still failed in
 the TLS ProxyCommand layer before authentication, and the local host has no
-usable CoreX GPU.
+usable CoreX GPU or Pillow installation.
 
 The four-layer checkpoint is suitable for parser, compatibility, cache
 isolation, capacity, and lifecycle diagnostics. It does not establish
 full-model semantic quality, TP4 correctness, the complete official functional
 matrix, the 881-request performance result, or any competition threshold.
-The M1-89 installed-runtime gate proves real Pillow namespace behavior but does
-not replace a palette/transparency service-level cold/warm test.
+The M1-89 installed-runtime gate covers real Pillow namespace behavior.
+M1-86 v2 now supplies the missing service-level palette/transparency cold/warm
+contract, but it remains unexecuted until a BI100 host recovers.
 
 ## Invocation after GPU recovery
 

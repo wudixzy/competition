@@ -11,6 +11,8 @@ makes the gate a prerequisite of the M1-87 v2 single-GPU queue. All are on the
 private branch
 `fix/M1-89-multimodal-cache-namespace-20260728`. They do not authorize a
 `main`, submission YAML, runtime-default, or repository-visibility change.
+Commit `d5f9b85` adds the M1-86 v2 palette/transparency service gate and binds
+it into the M1-87 v3 queue; remote execution is still pending.
 
 ## Problem
 
@@ -78,8 +80,8 @@ tool/reasoning/multimodal capability, context limit, or formal command changed.
   on a traceback.
 - Related cache, scheduler, gate, and runtime-identity tests: 50 passed,
   2 dependency skips.
-- Full tests-root discovery after queue integration: 1030 passed,
-  25 dependency skips.
+- Focused M1-86/M1-87 v2/v3 contract tests: 53 passed.
+- Full tests-root discovery: 1039 passed, 25 dependency skips.
 - Submission preflight: all 9 checks passed.
 - Quality data and 53-case metric manifests passed.
 - Python/shell syntax and `git diff --check` passed.
@@ -104,7 +106,7 @@ identified from an attested run.
 
 ## Required remote gate
 
-Three earlier bounded attempts and one later 12-second lightweight probe of
+Three earlier bounded attempts and two later 12-second lightweight probes of
 the declared `ssh-73ca29ba` endpoint all failed in the TLS ProxyCommand layer
 with `Connection closed by UNKNOWN port 65535`; no remote command or GPU
 operation ran.
@@ -128,7 +130,7 @@ python3 /path/to/source/tests/qwen36_cache_namespace_runtime_gate.py \
 ```
 
 The current `scripts/run_m1_87_single_gpu_queue.sh` performs both checks before
-starting M1-84 or M1-86 and binds their reports into its v2 aggregate.
+starting M1-84 or M1-86 and binds their reports into its v3 aggregate.
 
 Only after runtime identity and all nine installed-overlay checks pass may the
 fixed single-GPU service A/B run. It must check:

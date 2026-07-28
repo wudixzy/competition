@@ -30,10 +30,12 @@ structural diagnostic checkpoint, model source, environment, port, and
 reference kernels. They keep `max_model_len=262144`, block size 16, prefix
 caching, `fine32/direct`, and full-attention KV accounting.
 
-The fixed seven-case streaming HTTP matrix checks the model capacity contract,
+The fixed 13-case streaming HTTP matrix checks the model capacity contract,
 one-image cold inference, two-image initial and warm inference, reversed image
-order with its own warm replay, and post-request health. Requests use
-`temperature=0`, seed `20260728`, streaming usage, and thinking disabled.
+order with its own warm replay, three indexed-PNG cold/warm pairs, and
+post-request health. The indexed variants use identical dimensions and pixel
+indices while changing either palette bytes or transparency metadata. Requests
+use `temperature=0`, seed `20260728`, streaming usage, and thinking disabled.
 
 ## Qualification contract
 
@@ -42,20 +44,29 @@ The control must reject only the second image with one fully attributed
 no 4xx response. One-image output summaries must be exact across arms.
 Candidate two-image initial and warm summaries must be exact, as must the
 reversed-image initial and warm summaries. Both warm requests must report
-effective cached tokens.
+effective cached tokens. In both arms, every indexed-PNG cold request must
+report zero effective cached tokens, its warm replay must report a positive
+effective hit, and all deterministic generation fields must be exact within
+the pair and across arms.
 
-`cached_tokens == 0` is not used as the isolation criterion because blocks
-before the first multimodal difference may be reused legitimately. Instead,
-the runner parses the privacy-safe `BI100_CACHE_TRACE` v4 records. Normal and
-reversed prompts must have different SHA-256 block chains; each request's
-initial raw KV hit, effective GDN hit, and observed cached-token count must stay
-within the longest content-identical block prefix available from earlier
-requests. The actual GDN restore digest must equal the chain digest at that
-exact boundary. The initial raw-hit field is frozen before later chunked
-prefill steps, so a request's own newly computed chunks cannot be mistaken for
-cross-request reuse. HTTP and trace accounting must agree exactly. This rejects
-recovery across an image-content boundary while allowing valid common-prefix
-reuse.
+For the normal/reversed two-image pair, `cached_tokens == 0` is not used as the
+sole isolation criterion because blocks before the first multimodal difference
+may be reused legitimately. Instead, the runner parses privacy-safe
+`BI100_CACHE_TRACE` v4 records. Normal and reversed prompts must have different
+SHA-256 block chains; each request's initial raw KV hit, effective GDN hit, and
+observed cached-token count must stay within the longest content-identical
+block prefix available from earlier requests.
+
+The indexed variants exercise the stronger M1-89 invariant: multimodal content
+is part of the first block namespace. Their three cold chains must therefore be
+distinct, have zero common leading blocks with all prior requests, and restore
+zero KV/GDN blocks. Each warm chain must exactly match its cold chain and
+restore at least one GDN-backed block. The actual GDN restore digest must equal
+the chain digest at that exact boundary. The initial raw-hit field is frozen
+before later chunked prefill steps, so a request's own newly computed chunks
+cannot be mistaken for cross-request reuse. HTTP and trace accounting must
+agree exactly. The v2 trace contract expects 7 records from control and 11 from
+candidate and stores no raw image, token, prompt, or output.
 
 Each arm must pass the exact lifecycle gate set: preflight, port availability,
 service contract, startup, capacity, probe, scoped cleanup, v4 cache-trace
@@ -86,10 +97,12 @@ prompts, image data URLs, generated text, or raw user content.
 
 ## Current status
 
-Implementation and CPU-only unit validation are available on the private
-M1-86 branch. No GPU result has been recorded: the current SSH proxy closed
-before authentication during the latest bounded probe, and the local host has
-no usable CoreX GPU runtime.
+The v2 HTTP/trace/A-B contract is implemented in private commit `d5f9b85`.
+Focused CPU-only tests passed 53 of 53. No GPU result has been recorded: the
+current SSH proxy closed before authentication during the latest bounded
+probe, and the local host has no usable CoreX GPU runtime or Pillow package.
+The PNG generator itself is validated for chunk CRCs, identical indexed pixel
+bytes, distinct palette metadata, and distinct transparency metadata.
 
 The four-layer checkpoint establishes parser, cache-isolation, capacity, and
 lifecycle behavior only. It cannot establish full-model semantic quality,

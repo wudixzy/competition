@@ -1,6 +1,6 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
-## 2026-07-28 M1-89 多模态缓存命名空间修复
+## 2026-07-28 M1-89 多模态缓存命名空间与服务门禁
 
 - 最新私有分支为
   `fix/M1-89-multimodal-cache-namespace-20260728`。初始实现提交为
@@ -23,22 +23,25 @@
 - 本机没有 CoreX GPU，且没有 Pillow；新增 fake-image 测试已强制执行核心哈希
   语义。installed-overlay 门禁已升级到 v2，直接调用远端实际
   `Sequence.multi_modal_data` 获取纯文本 `{}`，并同时绑定 sequence 与 block
-  manager 模块 SHA。相关测试 50 项通过、2 项依赖 skip；完整 tests-root 为
-  1030 项通过、25 项依赖 skip；preflight 9/9、质量数据与 53 项指标 manifest
-  均通过。当前仍不能声明真实服务多模态、cold/warm 输出一致性或性能通过。健康实例
-  恢复后需先验证绑定当前 HEAD 的 immutable overlay，再跑 installed-overlay
-  门禁以及多图同图/异图、palette、transparency、异常回退和完成/中止释放的
-  服务级门禁。
+  manager 模块 SHA。`d5f9b85` 又将 M1-86 升级为 v2：control/candidate 固定
+  13 个 HTTP case，并分别产生 7/11 条 v4 trace；相同索引像素下的不同 palette
+  和 transparency 必须 cold 零命中、warm 有效命中且生成摘要完全一致，三条
+  cold 内容链必须从首块隔离。M1-87 因此升级为 v3 并 fail-closed 绑定该证据。
+  聚焦测试 53 项、完整 tests-root 1039 项通过（25 项依赖 skip）、preflight
+  9/9、质量数据与 53 项指标 manifest 均通过。当前仍不能声明真实服务多模态、
+  cold/warm 输出一致性或性能通过；健康实例恢复后需使用绑定当前 HEAD 的
+  immutable overlay 实跑整条队列。
 - 仓库内没有满足 v4 合同且 ordinal 完整为 `1..881` 的私有 cache trace；
   platform `main` 只有聚合指标，不能做逐请求 residual-prefill 投影或解锁
   `admission64`。API usage 的 `cached_tokens` 是 live KV 与精确 GDN 可恢复状态
   的交集，allocator hit-rate 则是 raw KV 命中，两者不得混用。
-- `9ecbf30` 将 M1-87 单卡队列升级到 v2：先验证当前源码绑定的 immutable
+- `9ecbf30` 将 M1-87 单卡队列升级到 v2，`d5f9b85` 进一步升级到 v3：先验证
+  当前源码绑定的 immutable
   overlay，再从 `/tmp` 执行 M1-89 九项 installed-runtime 门禁，之后才允许启动
-  M1-84/M1-86。三阶段必须绑定同一 runtime path/tree；外层中断清理的 TERM
+  M1-84/M1-86 v2。三阶段必须绑定同一 runtime path/tree；外层中断清理的 TERM
   宽限从 900 秒收敛为 60 秒，仍仅操作本轮 PID/PGID/starttime/session-token
   匹配的进程组并 wait/reap。完整 tests-root 为 1030 项通过、25 项依赖 skip。
-- 轻量 subagent 早先做了 3 次、最新又做了 1 次 12 秒只读连接尝试，均
+- 轻量 subagent 早先做了 3 次、之后又做了 2 次 12 秒只读连接尝试，均
   在 TLS/ProxyCommand 层返回 `Connection closed by UNKNOWN port 65535`；
   远端命令、GPU 探针和进程操作均未发生，当前不能判断单卡或 TP4 状态。
 - 本轮未修改 `main`、正式 `computility-run.yaml`、Dockerfile、默认开关或仓库
