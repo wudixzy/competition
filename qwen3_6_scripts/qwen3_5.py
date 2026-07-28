@@ -2236,8 +2236,8 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
                     f"invalid GDN segment offset: {offset!r} "
                     f"for query_len={query_len}")
             segment_offsets.add(offset)
-        if len(segment_offsets) > 1:
-            raise RuntimeError("at most one GDN segment offset is supported")
+        if len(segment_offsets) > 128:
+            raise RuntimeError("at most 128 GDN segment offsets are supported")
         interior_segment_offsets = tuple(sorted(segment_offsets))
 
         inputs_embeds = None

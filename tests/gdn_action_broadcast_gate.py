@@ -23,7 +23,7 @@ CAPTURE_POINTS = [
     (32, (66, hashlib.sha256(b"capture-2").digest())),
 ]
 EVICT_KEYS = [(32, hashlib.sha256(b"evict").digest())]
-SEGMENT_OFFSETS = [48]
+SEGMENT_OFFSETS = [48, 64, 8176, 8192]
 ACTION_FIELDS = (
     "gdn_restore_key", "gdn_capture_points", "gdn_evict_keys",
     "gdn_segment_offsets",

@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from qwen3_6_scripts.gdn_prefix import (
     GdnPrefixStatePolicy,
+    canonical_direct_segment_offsets,
     capture_points_for_step,
     final_capture_key,
     gdn_cache_policy_from_env,
@@ -118,6 +119,28 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         self.assertEqual(
             capture_points_for_step(targets, 8000, 8712, 16),
             ((192, targets[0]), (704, targets[1])))
+
+    def test_canonical_segments_reproduce_crossed_scheduler_steps(self):
+        hashes = [digest(i % 255) for i in range(1000)]
+        self.assertEqual(
+            canonical_direct_segment_offsets(
+                hashes, 3072, 16000, 16, 8192),
+            (5104, 5120, 12912))
+        self.assertEqual(
+            canonical_direct_segment_offsets(
+                hashes, 3072, 7799, 16, 8192),
+            (4720,))
+        self.assertEqual(
+            canonical_direct_segment_offsets(
+                hashes, 4080, 4096, 16, 8192), ())
+
+    def test_canonical_segments_cover_262k_without_exceeding_wire_cap(self):
+        hashes = [digest(i % 255) for i in range(16384)]
+        offsets = canonical_direct_segment_offsets(
+            hashes, 3072, 262144, 16, 8192)
+        self.assertLessEqual(len(offsets), 128)
+        self.assertEqual(offsets[:2], (5104, 5120))
+        self.assertEqual(offsets[-2:], (250880, 259056))
 
     def test_admission64_admits_a_repeated_raw_kv_branch(self):
         policy = GdnPrefixStatePolicy("admission64")

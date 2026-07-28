@@ -158,6 +158,35 @@ def capture_points_for_step(
     return points
 
 
+def canonical_direct_segment_offsets(
+        block_hashes: Sequence[bytes], physical_context_tokens: int,
+        logical_end_tokens: int, block_size: int,
+        scheduler_chunk_tokens: int) -> Tuple[int, ...]:
+    """Reproduce cold fine32/direct segment boundaries after fast-forward."""
+    if physical_context_tokens < 0 or logical_end_tokens < 0:
+        raise ValueError("token positions must be non-negative")
+    if block_size <= 0 or scheduler_chunk_tokens <= 0:
+        raise ValueError("block and scheduler chunk sizes must be positive")
+    if scheduler_chunk_tokens % block_size != 0:
+        raise ValueError("scheduler chunk size must be divisible by block size")
+    if logical_end_tokens <= physical_context_tokens:
+        return ()
+
+    boundaries = set()
+    step_ends = list(range(scheduler_chunk_tokens, logical_end_tokens,
+                           scheduler_chunk_tokens))
+    for step_end in (*step_ends, logical_end_tokens):
+        key = final_capture_key(block_hashes, step_end, block_size,
+                                "direct", block_size)
+        if key is not None:
+            boundaries.add(key[0] * block_size)
+    boundaries.update(step_ends)
+    return tuple(
+        boundary - physical_context_tokens
+        for boundary in sorted(boundaries)
+        if physical_context_tokens < boundary < logical_end_tokens)
+
+
 @dataclass(frozen=True)
 class GdnCachePlan:
     restore_key: Optional[GdnPrefixKey] = None

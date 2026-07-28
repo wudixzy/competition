@@ -19,6 +19,7 @@ from vllm.utils import Device, PyObjectCache
 
 try:
     from vllm.gdn_prefix import (GdnPrefixKey, GdnPrefixStatePolicy,
+                                 canonical_direct_segment_offsets,
                                  capture_points_for_step,
                                  final_capture_key,
                                  gdn_cache_policy_from_env,
@@ -29,7 +30,8 @@ try:
                                  strict_prefix_block_count)
 except ImportError:  # Local source-tree tests.
     from qwen3_6_scripts.gdn_prefix import (
-        GdnPrefixKey, GdnPrefixStatePolicy, capture_points_for_step,
+        GdnPrefixKey, GdnPrefixStatePolicy,
+        canonical_direct_segment_offsets, capture_points_for_step,
         final_capture_key, gdn_cache_policy_from_env,
         gdn_restore_alignment, gdn_restore_mode_from_env,
         keys_from_block_hashes, restore_key_is_eligible,
@@ -1508,19 +1510,14 @@ class Scheduler:
                         if (self._gdn_restore_mode == "hybrid64"
                                 and self._gdn_prefix_policy.policy
                                 == "admission64"):
-                            step_key = final_capture_key(
-                                self.block_manager.get_content_hashes(seqs[0]),
-                                logical_end_tokens,
-                                self.cache_config.block_size, "direct",
-                                self.cache_config.block_size)
-                            if step_key is not None:
-                                gdn_segment_offsets = [
-                                    offset for offset, _ in
-                                    capture_points_for_step(
-                                        (step_key,), physical_context_tokens,
-                                        logical_end_tokens,
-                                        self.cache_config.block_size)
-                                ]
+                            gdn_segment_offsets = list(
+                                canonical_direct_segment_offsets(
+                                    self.block_manager.get_content_hashes(
+                                        seqs[0]),
+                                    physical_context_tokens,
+                                    logical_end_tokens,
+                                    self.cache_config.block_size,
+                                    self.scheduler_config.max_num_batched_tokens))
                         gdn_capture_points = list(capture_points_for_step(
                             capture_targets, physical_context_tokens,
                             logical_end_tokens, self.cache_config.block_size))
