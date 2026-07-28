@@ -638,6 +638,7 @@ class XFormersImpl(AttentionImpl[XFormersMetadata]):
                         self.sliding_window,
                         k_scale,
                         v_scale,
+                        is_causal_decoder=(attn_type == AttentionType.DECODER),
                     )
                 assert output[:num_prefill_tokens].shape == out.shape
                 output[:num_prefill_tokens] = out

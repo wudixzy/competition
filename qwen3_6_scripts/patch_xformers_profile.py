@@ -53,6 +53,7 @@ PAGED_OLD = """\
                     self.sliding_window,
                     k_scale,
                     v_scale,
+                    is_causal_decoder=(attn_type == AttentionType.DECODER),
                 )"""
 PAGED_NEW = """\
                 with bi100_timer("xformers.paged_prefill"):
@@ -72,6 +73,7 @@ PAGED_NEW = """\
                         self.sliding_window,
                         k_scale,
                         v_scale,
+                        is_causal_decoder=(attn_type == AttentionType.DECODER),
                     )"""
 
 

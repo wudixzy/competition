@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,28 @@ from qwen3_6_scripts.patch_xformers_profile import (
 
 
 class PatchXFormersProfileTest(unittest.TestCase):
+    def test_profile_patch_consumes_the_sdpa_patch_intermediate(self):
+        patch_path = (
+            Path(__file__).resolve().parents[1]
+            / "qwen3_6_scripts"
+            / "patch_xformers_sdpa_seq.py"
+        )
+        tree = ast.parse(patch_path.read_text(encoding="utf-8"))
+        intermediate = None
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name)
+                    and target.id == "_PREFIX_CALL_NEW_BLOCK"
+                    for target in node.targets
+                )
+            ):
+                intermediate = ast.literal_eval(node.value)
+                break
+        self.assertIsNotNone(intermediate)
+        self.assertEqual(PAGED_OLD, intermediate)
+
     def test_patch_is_exact_and_idempotent(self):
         with tempfile.TemporaryDirectory() as directory_text:
             path = Path(directory_text) / "xformers.py"
