@@ -15,7 +15,7 @@ _VALID_POLICIES = {"fine32", "admission64", "off"}
 GDN_KERNEL_CHUNK_TOKENS = 64
 GDN_DIRECT_MIN_REPLAY_TOKENS = 2
 
-_VALID_RESTORE_MODES = {"direct", "chunk64", "aligned"}
+_VALID_RESTORE_MODES = {"direct", "hybrid64", "chunk64", "aligned"}
 
 
 def _env_choice(name: str, default: str, choices: set[str]) -> str:
@@ -42,7 +42,7 @@ def gdn_restore_alignment(restore_mode: str, block_size: int,
         raise ValueError("block_size must be positive")
     if restore_mode == "direct":
         return block_size
-    if restore_mode == "chunk64":
+    if restore_mode in {"hybrid64", "chunk64"}:
         alignment = GDN_KERNEL_CHUNK_TOKENS
     elif restore_mode == "aligned":
         alignment = scheduler_chunk_tokens
@@ -88,7 +88,7 @@ def key_at_strict_boundary(block_hashes: Sequence[bytes], token_count: int,
 def final_capture_key(
         block_hashes: Sequence[bytes], prompt_tokens: int, block_size: int,
         restore_mode: str, replay_alignment: int) -> Optional[GdnPrefixKey]:
-    if restore_mode == "direct":
+    if restore_mode in {"direct", "hybrid64"}:
         block_count = min(
             len(block_hashes), strict_prefix_block_count(
                 prompt_tokens, block_size))
@@ -114,7 +114,8 @@ def final_capture_key(
 
 def restore_key_is_eligible(
         key: GdnPrefixKey, prompt_tokens: int, block_size: int,
-        restore_mode: str, replay_alignment: int) -> bool:
+        restore_mode: str, replay_alignment: int,
+        direct_final_key: Optional[GdnPrefixKey] = None) -> bool:
     """Return whether restoring ``key`` preserves the execution contract."""
     make_prefix_key(*key)
     if block_size <= 0:
@@ -125,6 +126,13 @@ def restore_key_is_eligible(
         return False
     if restore_mode == "direct":
         return remaining_tokens >= GDN_DIRECT_MIN_REPLAY_TOKENS
+    if restore_mode == "hybrid64":
+        if direct_final_key is not None:
+            make_prefix_key(*direct_final_key)
+        return (remaining_tokens >= GDN_DIRECT_MIN_REPLAY_TOKENS
+                and replay_alignment > 0
+                and (boundary_tokens % replay_alignment == 0
+                     or key == direct_final_key))
     if restore_mode not in {"chunk64", "aligned"}:
         raise ValueError(f"unknown GDN restore mode: {restore_mode}")
     return (replay_alignment > 0

@@ -946,6 +946,7 @@ class SequenceGroupMetadataDelta(
     gdn_restore_key: Optional[Tuple[int, bytes]] = None
     gdn_capture_points: Optional[List[Tuple[int, Tuple[int, bytes]]]] = None
     gdn_evict_keys: Optional[List[Tuple[int, bytes]]] = None
+    gdn_segment_offsets: Optional[List[int]] = None
 
 
 class SequenceGroupMetadata(
@@ -1016,6 +1017,7 @@ class SequenceGroupMetadata(
     gdn_restore_key: Optional[Tuple[int, bytes]] = None
     gdn_capture_points: Optional[List[Tuple[int, Tuple[int, bytes]]]] = None
     gdn_evict_keys: Optional[List[Tuple[int, bytes]]] = None
+    gdn_segment_offsets: Optional[List[int]] = None
 
     def __post_init__(self):
         if self.seq_data is not None and self.token_chunk_size is None:
@@ -1068,6 +1070,8 @@ class SequenceGroupMetadata(
         self.gdn_capture_points = (
             sequence_group_metadata_delta.gdn_capture_points)
         self.gdn_evict_keys = sequence_group_metadata_delta.gdn_evict_keys
+        self.gdn_segment_offsets = (
+            sequence_group_metadata_delta.gdn_segment_offsets)
 
     def finish_step(self) -> None:
         assert self.state is not None

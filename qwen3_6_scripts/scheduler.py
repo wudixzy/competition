@@ -1045,13 +1045,20 @@ class Scheduler:
                         self.cache_config.block_size))
                 live_keys = keys_from_block_hashes(
                     block_hashes[:max_live_blocks])
+                direct_final_key = final_capture_key(
+                    block_hashes, prompt_seq.data.get_len(),
+                    self.cache_config.block_size, "direct",
+                    self.cache_config.block_size)
                 live_keys = [
                     key for key in live_keys
                     if restore_key_is_eligible(
                         key, prompt_seq.data.get_len(),
                         self.cache_config.block_size,
                         self._gdn_restore_mode,
-                        self._gdn_replay_alignment)
+                        self._gdn_replay_alignment,
+                        direct_final_key=(
+                            direct_final_key
+                            if self._gdn_restore_mode == "hybrid64" else None))
                 ]
                 restore_key = self._gdn_prefix_policy.select_restore(
                     live_keys, len(live_keys))
@@ -1443,9 +1450,11 @@ class Scheduler:
             gdn_restore_key = None
             gdn_capture_points = None
             gdn_evict_keys = None
+            gdn_segment_offsets = None
             if is_prompt:
                 gdn_capture_points = []
                 gdn_evict_keys = []
+                gdn_segment_offsets = []
                 seqs = seq_group.get_seqs()
                 # Prefill has only 1 sequence.
                 assert len(seqs) == 1
@@ -1496,6 +1505,22 @@ class Scheduler:
                         physical_context_tokens = (
                             restore_tokens if is_first_prefill
                             else num_computed_tokens)
+                        if (self._gdn_restore_mode == "hybrid64"
+                                and self._gdn_prefix_policy.policy
+                                == "admission64"):
+                            step_key = final_capture_key(
+                                self.block_manager.get_content_hashes(seqs[0]),
+                                logical_end_tokens,
+                                self.cache_config.block_size, "direct",
+                                self.cache_config.block_size)
+                            if step_key is not None:
+                                gdn_segment_offsets = [
+                                    offset for offset, _ in
+                                    capture_points_for_step(
+                                        (step_key,), physical_context_tokens,
+                                        logical_end_tokens,
+                                        self.cache_config.block_size)
+                                ]
                         gdn_capture_points = list(capture_points_for_step(
                             capture_targets, physical_context_tokens,
                             logical_end_tokens, self.cache_config.block_size))
@@ -1562,6 +1587,7 @@ class Scheduler:
                     gdn_restore_key=gdn_restore_key,
                     gdn_capture_points=gdn_capture_points,
                     gdn_evict_keys=gdn_evict_keys,
+                    gdn_segment_offsets=gdn_segment_offsets,
                 )
             else:
                 # When SPMD mode is enabled, we only send delta data except for
@@ -1580,6 +1606,7 @@ class Scheduler:
                     gdn_restore_key=gdn_restore_key,
                     gdn_capture_points=gdn_capture_points,
                     gdn_evict_keys=gdn_evict_keys,
+                    gdn_segment_offsets=gdn_segment_offsets,
                 )
             seq_group_metadata_list.append(seq_group_metadata)
 

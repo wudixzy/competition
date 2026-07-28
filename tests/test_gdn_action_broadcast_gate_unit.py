@@ -17,16 +17,18 @@ SPEC.loader.exec_module(MODULE)
 class _Input:
 
     def __init__(self, gdn_restore_key=None, gdn_capture_points=None,
-                 gdn_evict_keys=None, **kwargs):
+                 gdn_evict_keys=None, gdn_segment_offsets=None, **kwargs):
         self.gdn_restore_key = gdn_restore_key
         self.gdn_capture_points = gdn_capture_points
         self.gdn_evict_keys = gdn_evict_keys
+        self.gdn_segment_offsets = gdn_segment_offsets
 
     def as_broadcastable_tensor_dict(self):
         return {
             "gdn_restore_key": self.gdn_restore_key,
             "gdn_capture_points": self.gdn_capture_points,
             "gdn_evict_keys": self.gdn_evict_keys,
+            "gdn_segment_offsets": self.gdn_segment_offsets,
         }
 
     @classmethod

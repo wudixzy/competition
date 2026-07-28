@@ -42,10 +42,13 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         self.assertEqual(policy.select_restore(keys, 4), keys[2])
         self.assertEqual(policy.select_restore(keys, 2), keys[0])
 
-    def test_direct_chunk64_and_aligned_final_capture_keys(self):
+    def test_direct_hybrid_chunk64_and_aligned_final_capture_keys(self):
         hashes = [digest(i % 255) for i in range(14687)]
         self.assertEqual(
             final_capture_key(hashes, 235000, 16, "direct", 8192)[0],
+            14687)
+        self.assertEqual(
+            final_capture_key(hashes, 235000, 16, "hybrid64", 64)[0],
             14687)
         self.assertEqual(
             final_capture_key(hashes, 235000, 16, "chunk64", 64)[0],
@@ -87,10 +90,28 @@ class GdnPrefixPolicyTest(unittest.TestCase):
 
     def test_restore_alignment_matches_execution_granularity(self):
         self.assertEqual(gdn_restore_alignment("direct", 16, 8192), 16)
+        self.assertEqual(gdn_restore_alignment("hybrid64", 16, 8192), 64)
         self.assertEqual(gdn_restore_alignment("chunk64", 16, 8192), 64)
         self.assertEqual(gdn_restore_alignment("aligned", 16, 8192), 8192)
         with self.assertRaises(ValueError):
             gdn_restore_alignment("chunk64", 24, 8192)
+
+    def test_hybrid_restore_accepts_aligned_branch_or_exact_final_only(self):
+        aligned = (192, digest(1))  # 3072 tokens
+        unaligned_branch = (194, digest(2))  # 3104 tokens
+        exact_final = (255, digest(3))  # 4080 tokens
+        self.assertTrue(restore_key_is_eligible(
+            aligned, 4096, 16, "hybrid64", 64,
+            direct_final_key=exact_final))
+        self.assertFalse(restore_key_is_eligible(
+            unaligned_branch, 4096, 16, "hybrid64", 64,
+            direct_final_key=exact_final))
+        self.assertTrue(restore_key_is_eligible(
+            exact_final, 4096, 16, "hybrid64", 64,
+            direct_final_key=exact_final))
+        self.assertFalse(restore_key_is_eligible(
+            exact_final, 8192, 16, "hybrid64", 64,
+            direct_final_key=(511, digest(4))))
 
     def test_capture_points_are_relative_to_physical_context(self):
         targets = [(512, digest(1)), (544, digest(2))]
@@ -136,6 +157,10 @@ class GdnPrefixPolicyTest(unittest.TestCase):
                 "BI100_GDN_RESTORE_MODE": "chunk64",
         }, clear=False):
             self.assertEqual(gdn_restore_mode_from_env(), "chunk64")
+        with patch.dict(os.environ, {
+                "BI100_GDN_RESTORE_MODE": "hybrid64",
+        }, clear=False):
+            self.assertEqual(gdn_restore_mode_from_env(), "hybrid64")
         with patch.dict(os.environ, {"BI100_GDN_CACHE_POLICY": "typo"},
                         clear=False):
             with self.assertRaises(RuntimeError):

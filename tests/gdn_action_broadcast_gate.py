@@ -23,8 +23,10 @@ CAPTURE_POINTS = [
     (32, (66, hashlib.sha256(b"capture-2").digest())),
 ]
 EVICT_KEYS = [(32, hashlib.sha256(b"evict").digest())]
+SEGMENT_OFFSETS = [48]
 ACTION_FIELDS = (
     "gdn_restore_key", "gdn_capture_points", "gdn_evict_keys",
+    "gdn_segment_offsets",
 )
 
 
@@ -55,6 +57,7 @@ def evaluate_class(name: str, model_input_cls: type) -> dict[str, Any]:
         gdn_restore_key=RESTORE_KEY,
         gdn_capture_points=copy.deepcopy(CAPTURE_POINTS),
         gdn_evict_keys=copy.deepcopy(EVICT_KEYS),
+        gdn_segment_offsets=copy.deepcopy(SEGMENT_OFFSETS),
     )
     payload = source.as_broadcastable_tensor_dict()
     fields_present = all(payload.get(field) == getattr(source, field)
@@ -71,6 +74,9 @@ def evaluate_class(name: str, model_input_cls: type) -> dict[str, Any]:
     evict_containers_independent = len({
         id(rank_input.gdn_evict_keys) for rank_input in reconstructed
     }) == RANK_COUNT
+    segment_containers_independent = len({
+        id(rank_input.gdn_segment_offsets) for rank_input in reconstructed
+    }) == RANK_COUNT
     return {
         "class": name,
         "fields_present": fields_present,
@@ -78,10 +84,12 @@ def evaluate_class(name: str, model_input_cls: type) -> dict[str, Any]:
         "actions_match": actions_match,
         "capture_containers_independent": capture_containers_independent,
         "evict_containers_independent": evict_containers_independent,
+        "segment_containers_independent": segment_containers_independent,
         "restore_blocks": RESTORE_KEY[0],
         "restore_digest_sha256": RESTORE_KEY[1].hex(),
         "capture_count": len(CAPTURE_POINTS),
         "eviction_count": len(EVICT_KEYS),
+        "segment_count": len(SEGMENT_OFFSETS),
     }
 
 
@@ -98,7 +106,8 @@ def build_report(base_cls: type, sampling_cls: type,
             for field in (
                     "fields_present", "actions_match",
                     "capture_containers_independent",
-                    "evict_containers_independent"):
+                    "evict_containers_independent",
+                    "segment_containers_independent"):
                 if case[field] is not True:
                     reasons.append(f"{name}: {field} is not true")
             if case["rank_reconstruction_count"] != RANK_COUNT:

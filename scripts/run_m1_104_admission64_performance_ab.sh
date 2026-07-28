@@ -202,14 +202,15 @@ PY
 }
 
 start_service() {
-    local arm=$1 policy=$2 identity=$arm/service_identity.json observed=""
+    local arm=$1 policy=$2 identity=$arm/service_identity.json observed="" restore_mode=direct
+    [[ "$policy" == admission64 ]] && restore_mode=hybrid64
     (
         exec env BI100_RUNTIME_SITE_PACKAGES="$BI100_RUNTIME_SITE_PACKAGES" \
             BI100_RUNTIME_INSTALL_REPORT="$RUNTIME_INSTALL" BI100_RUNTIME_WORKDIR="$arm/runtime-workdir" \
             MODEL_PATH="$MODEL_PATH" HOST=0.0.0.0 PORT=8000 ENABLE_CUSTOM_IPC=1 \
             VLLM_ENGINE_ITERATION_TIMEOUT_S=3600 \
             BI100_MOE_COREX_DIRECT_ROUTED=1 BI100_GDN_COREX_PACKED_DECODE=1 BI100_GDN_COMBINED_QK_NORM=0 \
-            BI100_GDN_CACHE_POLICY="$policy" BI100_GDN_RESTORE_MODE=direct \
+            BI100_GDN_CACHE_POLICY="$policy" BI100_GDN_RESTORE_MODE="$restore_mode" \
             BI100_HYBRID_KV_ACCOUNTING=full_attention BI100_CPU_KV_OFFLOAD=0 BI100_BLOCK_MAJOR_CPU_KV=0 \
             BI100_CACHE_TRACE=1 BI100_ATTN_COREX_FUSED_PREFILL=0 \
             BI100_KV_EVICTION_POLICY=lru \
@@ -299,6 +300,8 @@ PY
 
 run_arm() {
     local pair=$1 label=$2 policy=$3 arm="$RUN_ROOT/pair${pair}_${label}" rc=0 arm_rc=0
+    local restore_mode=direct
+    [[ "$policy" == admission64 ]] && restore_mode=hybrid64
     local startup_rc=1 contract_rc=1 measurement_rc=1 health_rc=1 cleanup_rc=1 port_rc=1 fatal_rc=1 postflight_rc=1 after_rc=1 compare_rc=1
     mkdir -p "$arm/runtime-workdir"
     set +e; run_preflight "$arm/preflight_before"; rc=$?; set -e
@@ -311,7 +314,7 @@ run_arm() {
         grep -Fq '[BI100] fixed evaluator contract;' "$arm/server.log" || contract_rc=1
         grep -Fq '[BI100] M1-49 runtime contract;' "$arm/server.log" || contract_rc=1
         grep -Fq '[BI100] fixed kernels; moe_direct=1 gdn_packed=1 gdn_combined_qk=0' "$arm/server.log" || contract_rc=1
-        grep -Fq "[BI100] GDN cache; policy=$policy restore=direct" "$arm/server.log" || contract_rc=1
+        grep -Fq "[BI100] GDN cache; policy=$policy restore=$restore_mode" "$arm/server.log" || contract_rc=1
         grep -Fq 'accounting=full_attention' "$arm/server.log" || contract_rc=1
         grep -Fq 'cpu_kv_offload=0' "$arm/server.log" || contract_rc=1
         grep -Fq 'cache_trace=1' "$arm/server.log" || contract_rc=1
@@ -409,7 +412,8 @@ PY
 }
 
 finish() {
-    local primary=$? final=$primary cleanup=0 recovery=0 recovery_clean=0 fatal=0 timeouts=0 source=0 post=0 after=0 comparison=0 cleanup_clean=0
+    local primary=$?
+    local final=$primary cleanup=0 recovery=0 recovery_clean=0 fatal=0 timeouts=0 source=0 post=0 after=0 comparison=0 cleanup_clean=0
     local identity identity_args=() expected_args=() current_revision current_status file value
     trap - EXIT; trap '' INT TERM; set +e
     stop_watchdog
@@ -477,7 +481,7 @@ timeout --signal=TERM --kill-after=70s 240s env PYTHONPATH="$ROOT/tests:$BI100_R
 printf '%s\n' "$rc" > "$RUN_ROOT/runtime_identity.rc"; [[ $rc -eq 0 ]]
 RUN_DEADLINE=$((SECONDS + TOTAL_TIMEOUT_S))
 
-for specification in '1 control fine32' '1 candidate admission64' '2 candidate admission64' '2 control fine32' '3 control fine32' '3 candidate admission64'; do
+for specification in '1 candidate admission64' '1 control fine32' '2 control fine32' '2 candidate admission64' '3 candidate admission64' '3 control fine32'; do
     read -r pair label policy <<< "$specification"; CURRENT_STAGE="pair${pair}_${label}"; write_stage
     if (( SECONDS >= RUN_DEADLINE )); then
         echo "M1-104 fixed total timeout reached before $CURRENT_STAGE" >&2

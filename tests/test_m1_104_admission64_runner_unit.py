@@ -32,7 +32,8 @@ class M1104Admission64RunnerUnitTest(unittest.TestCase):
             "--gpus 0,1,2,3",
             "--expected-gpus 0,1,2,3",
             "BI100_GDN_CACHE_POLICY=\"$policy\"",
-            "BI100_GDN_RESTORE_MODE=direct",
+            "BI100_GDN_RESTORE_MODE=\"$restore_mode\"",
+            "[[ \"$policy\" == admission64 ]] && restore_mode=hybrid64",
             "BI100_HYBRID_KV_ACCOUNTING=full_attention",
             "BI100_CPU_KV_OFFLOAD=0",
             "BI100_ATTN_COREX_FUSED_PREFILL=0",
@@ -54,6 +55,7 @@ class M1104Admission64RunnerUnitTest(unittest.TestCase):
             self.assertIn(marker, self.source)
 
     def test_attested_scoped_cleanup_and_postflight(self) -> None:
+        self.assertIn("local primary=$?\n    local final=$primary", self.source)
         for marker in (
             "exec_bi100_session.py",
             "ACTIVE_SESSION_TOKEN",

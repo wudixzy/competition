@@ -292,6 +292,7 @@ class P0StaticCoverageTest(unittest.TestCase):
         self.assertIn("gdn_restore_key=gdn_restore_key", scheduler_src)
         self.assertIn("gdn_capture_points=gdn_capture_points", scheduler_src)
         self.assertIn("gdn_evict_keys=gdn_evict_keys", scheduler_src)
+        self.assertIn("gdn_segment_offsets=gdn_segment_offsets", scheduler_src)
         self.assertIn("Tuple[int, bytes]", model_src)
         smoke_src = read("tests/smoke_api.py")
         self.assertIn("_message(cached) == _message(uncached)", smoke_src)

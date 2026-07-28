@@ -148,6 +148,7 @@ MODEL_INPUT_FIELDS_REPLACEMENT = """\
     gdn_restore_key: Optional[Tuple[int, bytes]] = None
     gdn_capture_points: Optional[List[Tuple[int, Tuple[int, bytes]]]] = None
     gdn_evict_keys: Optional[List[Tuple[int, bytes]]] = None
+    gdn_segment_offsets: Optional[List[int]] = None
     request_ids_to_seq_ids: Optional[Dict[str, List[int]]] = None"""
 
 BASE_BROADCAST_ANCHOR = """\
@@ -168,6 +169,7 @@ BASE_BROADCAST_REPLACEMENT = """\
             \"gdn_restore_key\": self.gdn_restore_key,
             \"gdn_capture_points\": self.gdn_capture_points,
             \"gdn_evict_keys\": self.gdn_evict_keys,
+            \"gdn_segment_offsets\": self.gdn_segment_offsets,
             \"prompt_adapter_mapping\": self.prompt_adapter_mapping,
             \"prompt_adapter_requests\": self.prompt_adapter_requests,
             \"virtual_engine\": self.virtual_engine,
@@ -196,6 +198,7 @@ SAMPLING_BROADCAST_REPLACEMENT = """\
             \"gdn_restore_key\": self.gdn_restore_key,
             \"gdn_capture_points\": self.gdn_capture_points,
             \"gdn_evict_keys\": self.gdn_evict_keys,
+            \"gdn_segment_offsets\": self.gdn_segment_offsets,
             \"prompt_adapter_mapping\": self.prompt_adapter_mapping,
             \"prompt_adapter_requests\": self.prompt_adapter_requests,
             \"virtual_engine\": self.virtual_engine,
@@ -218,6 +221,7 @@ BUILDER_INIT_REPLACEMENT = """\
         self.gdn_restore_key = None
         self.gdn_capture_points = None
         self.gdn_evict_keys = None
+        self.gdn_segment_offsets = None
 
         # Intermediate data"""
 
@@ -233,17 +237,18 @@ ADD_SEQ_GROUP_REPLACEMENT = """\
             seq_group_metadata.gdn_restore_key,
             seq_group_metadata.gdn_capture_points,
             seq_group_metadata.gdn_evict_keys,
+            seq_group_metadata.gdn_segment_offsets,
         )
         if any(value is not None for value in gdn_actions):
             if not seq_group_metadata.is_prompt:
                 raise RuntimeError(\"GDN prefix-cache actions require prefill\")
             if any(value is not None for value in (
                     self.gdn_restore_key, self.gdn_capture_points,
-                    self.gdn_evict_keys)):
+                    self.gdn_evict_keys, self.gdn_segment_offsets)):
                 raise RuntimeError(
                     \"only one GDN prefix-cache action group is supported\")
             (self.gdn_restore_key, self.gdn_capture_points,
-             self.gdn_evict_keys) = gdn_actions
+             self.gdn_evict_keys, self.gdn_segment_offsets) = gdn_actions
         seq_ids = seq_group_metadata.seq_data.keys()"""
 
 BUILD_RESULT_ANCHOR = """\
@@ -259,6 +264,7 @@ BUILD_RESULT_REPLACEMENT = """\
             gdn_restore_key=self.gdn_restore_key,
             gdn_capture_points=self.gdn_capture_points,
             gdn_evict_keys=self.gdn_evict_keys,
+            gdn_segment_offsets=self.gdn_segment_offsets,
             request_ids_to_seq_ids=request_ids_to_seq_ids,"""
 
 EXECUTE_KWARGS_ANCHOR = """\
@@ -281,6 +287,9 @@ EXECUTE_KWARGS_REPLACEMENT = """\
                 model_input.gdn_capture_points)
         if model_input.gdn_evict_keys is not None:
             gdn_prefix_kwargs[\"gdn_evict_keys\"] = model_input.gdn_evict_keys
+        if model_input.gdn_segment_offsets is not None:
+            gdn_prefix_kwargs[\"gdn_segment_offsets\"] = (
+                model_input.gdn_segment_offsets)
         if (self.observability_config is not None"""
 
 MODEL_CALL_ANCHOR = """\

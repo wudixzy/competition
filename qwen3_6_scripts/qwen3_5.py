@@ -996,6 +996,7 @@ class GatedDeltaNet(nn.Module):
         conv_state: torch.Tensor,          # (batch, local_conv_dim, kernel-1)  in-place
         temporal_state: torch.Tensor,      # (batch, local_v_heads, k_dim, v_dim)  in-place
         capture_offsets: Optional[Iterable[int]] = None,
+        segment_offsets: Optional[Iterable[int]] = None,
     ) -> torch.Tensor:
         tp_size = get_tensor_model_parallel_world_size()
         local_key_dim = self.key_dim // tp_size
@@ -1047,6 +1048,8 @@ class GatedDeltaNet(nn.Module):
                 padded = torch.cat([prev_conv, mixed_qkv], dim=2)
                 seq_capture_offsets = (set(capture_offsets or ())
                                        if si == 0 else set())
+                seq_segment_offsets = (set(segment_offsets or ())
+                                       if si == 0 else set())
                 for capture_offset in seq_capture_offsets:
                     if 0 < capture_offset < seq_len:
                         self.captured_conv_states[capture_offset] = padded[
@@ -1083,7 +1086,8 @@ class GatedDeltaNet(nn.Module):
                 cur_state = temporal_state[si:si + 1].clone()
                 core_out_parts = []
                 segment_ends = _gdn_segment_ends(
-                    seq_len, _DNN_CHUNK_SIZE, seq_capture_offsets)
+                    seq_len, _DNN_CHUNK_SIZE,
+                    seq_capture_offsets | seq_segment_offsets)
                 sc_start = 0
                 with bi100_timer(f"L{self.layer_idx}.gdn.prefill"):
                     for sc_end in segment_ends:
@@ -1792,6 +1796,7 @@ class Qwen3_5DecoderLayer(nn.Module):
         conv_state: Optional[torch.Tensor] = None,
         temporal_state: Optional[torch.Tensor] = None,
         gdn_capture_offsets: Optional[Iterable[int]] = None,
+        gdn_segment_offsets: Optional[Iterable[int]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         with bi100_timer("layer.input_norm"):
             if residual is None:
@@ -1805,7 +1810,8 @@ class Qwen3_5DecoderLayer(nn.Module):
             with bi100_timer("layer.gdn"):
                 hidden_states = self.linear_attn(
                     hidden_states, attn_metadata, conv_state, temporal_state,
-                    capture_offsets=gdn_capture_offsets)
+                    capture_offsets=gdn_capture_offsets,
+                    segment_offsets=gdn_segment_offsets)
         else:
             with bi100_timer("layer.full_attn"):
                 hidden_states = self.self_attn(
@@ -1886,6 +1892,7 @@ class Qwen3_5Model(nn.Module):
         temporal_states: torch.Tensor, # (num_linear_layers, batch, ...)
         inputs_embeds: Optional[torch.Tensor] = None,
         gdn_capture_offsets: Optional[Iterable[int]] = None,
+        gdn_segment_offsets: Optional[Iterable[int]] = None,
     ) -> torch.Tensor:
         _validate_qwen_kv_cache_count(self.kv_cache_count, kv_caches)
         with bi100_timer("model.embed"):
@@ -1912,6 +1919,7 @@ class Qwen3_5Model(nn.Module):
                     conv_state=conv_states[linear_idx],
                     temporal_state=temporal_states[linear_idx],
                     gdn_capture_offsets=capture_offsets,
+                    gdn_segment_offsets=gdn_segment_offsets,
                 )
                 for offset in capture_offsets:
                     captured_conv_states[offset].append(
@@ -2158,6 +2166,7 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
         gdn_restore_key = kwargs.pop("gdn_restore_key", None)
         gdn_capture_points = kwargs.pop("gdn_capture_points", None) or []
         gdn_evict_keys = kwargs.pop("gdn_evict_keys", None) or []
+        gdn_segment_offsets = kwargs.pop("gdn_segment_offsets", None) or []
 
         mamba_tensors = self.mamba_cache.current_run_tensors(
             input_ids, attn_metadata, **kwargs)
@@ -2173,7 +2182,8 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
         )
         has_gdn_actions = (gdn_restore_key is not None
                            or bool(gdn_capture_points)
-                           or bool(gdn_evict_keys))
+                           or bool(gdn_evict_keys)
+                           or bool(gdn_segment_offsets))
         if has_gdn_actions and not _is_single_seq_prefill:
             raise RuntimeError(
                 "GDN prefix-cache actions require a single-sequence prefill")
@@ -2218,6 +2228,17 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
             raise RuntimeError("at most two GDN capture points are supported")
         interior_capture_offsets = tuple(
             offset for offset in capture_keys if offset < query_len)
+        segment_offsets = set()
+        for offset in gdn_segment_offsets:
+            if (not isinstance(offset, int) or offset <= 0
+                    or offset >= query_len):
+                raise RuntimeError(
+                    f"invalid GDN segment offset: {offset!r} "
+                    f"for query_len={query_len}")
+            segment_offsets.add(offset)
+        if len(segment_offsets) > 1:
+            raise RuntimeError("at most one GDN segment offset is supported")
+        interior_segment_offsets = tuple(sorted(segment_offsets))
 
         inputs_embeds = None
         image_input = self._parse_and_validate_image_input(**kwargs)
@@ -2244,7 +2265,8 @@ class Qwen3_5ForCausalLM(nn.Module, HasInnerState, SupportsLoRA,
                 input_ids, positions, kv_caches, attn_metadata,
                 conv_states, temporal_states,
                 inputs_embeds=inputs_embeds,
-                gdn_capture_offsets=interior_capture_offsets)
+                gdn_capture_offsets=interior_capture_offsets,
+                gdn_segment_offsets=interior_segment_offsets)
 
         for offset, capture_key in capture_keys.items():
             if offset == query_len:
