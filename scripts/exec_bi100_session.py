@@ -15,6 +15,8 @@ import time
 
 
 PR_SET_CHILD_SUBREAPER = 36
+REEXEC_MARKER = "BI100_EXEC_SESSION_REEXEC_V1"
+SESSION_TOKEN_ENV = "BI100_PROCESS_SESSION_TOKEN"
 
 
 def _starttime_ticks(pid: int) -> int:
@@ -31,6 +33,24 @@ def _enable_child_subreaper() -> None:
     if libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
         error = ctypes.get_errno()
         raise OSError(error, os.strerror(error))
+
+
+def _valid_session_token(value: str | None) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 32
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _reexec_as_session_leader(args: list[str]) -> None:
+    os.setsid()
+    environment = os.environ.copy()
+    environment[SESSION_TOKEN_ENV] = secrets.token_hex(16)
+    environment[REEXEC_MARKER] = "1"
+    executable = sys.executable
+    script = str(Path(__file__).resolve())
+    os.execve(executable, [executable, script, *args], environment)
 
 
 def _returncode(value: int) -> int:
@@ -101,7 +121,29 @@ def main(argv: list[str] | None = None) -> int:
         print(f"identity path already exists: {identity}", file=sys.stderr)
         return 2
 
-    os.setsid()
+    if os.environ.get(REEXEC_MARKER) != "1":
+        try:
+            _reexec_as_session_leader(args)
+        except OSError as error:
+            print(
+                f"cannot create session environment: {error.strerror}",
+                file=sys.stderr,
+            )
+            return 2
+
+    pid = os.getpid()
+    session_token = os.environ.get(SESSION_TOKEN_ENV)
+    if (
+        os.getpgrp() != pid
+        or os.getsid(0) != pid
+        or not _valid_session_token(session_token)
+    ):
+        print("re-executed session identity differs", file=sys.stderr)
+        return 2
+
+    # Child commands, including nested session helpers, must take their own
+    # re-exec path rather than inheriting this helper's internal marker.
+    os.environ.pop(REEXEC_MARKER, None)
     try:
         _enable_child_subreaper()
     except OSError as error:
@@ -110,9 +152,6 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    pid = os.getpid()
-    session_token = secrets.token_hex(16)
-    os.environ["BI100_PROCESS_SESSION_TOKEN"] = session_token
     report = {
         "schema": "bi100-process-session-v1",
         "version": 1,
