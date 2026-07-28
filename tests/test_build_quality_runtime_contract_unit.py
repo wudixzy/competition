@@ -113,6 +113,39 @@ class QualityRuntimeContractBuilderTest(unittest.TestCase):
         self.assertEqual(environment["BI100_GDN_COREX_PACKED_DECODE"], "0")
         self.assertEqual(environment["BI100_GDN_COMBINED_QK_NORM"], "1")
 
+    def test_current_admission64_hybrid64_candidate_is_attested(self):
+        contract = MODULE.build_contract(
+            source_revision="a" * 40,
+            runtime_overlay_sha256="b" * 64,
+            runtime_site_packages="/runtime/site-packages",
+            model_path="/model",
+            instance="private-tp4",
+            optimization_label="m1-112-fused-prefill",
+            gdn_cache_policy="admission64",
+            gdn_restore_mode="hybrid64",
+            fused_prefill="1",
+            kv_eviction_policy="lru",
+        )
+        environment = contract["environment"]
+        self.assertEqual(environment["BI100_GDN_CACHE_POLICY"], "admission64")
+        self.assertEqual(environment["BI100_GDN_RESTORE_MODE"], "hybrid64")
+        self.assertEqual(environment["BI100_ATTN_COREX_FUSED_PREFILL"], "1")
+        MODULE.runtime_contract.validate_runtime_contract(
+            contract,
+            {
+                "source_revision": "a" * 40,
+                "runtime_identity": "bare-host-overlay-v1:" + "b" * 20,
+                "instance": "private-tp4",
+                "gpu_count": 4,
+                "tensor_parallel_size": 4,
+                "max_model_len": 262144,
+                "model_path": "/model",
+                "tokenizer_path": "/model",
+                "served_model_name": "llm",
+            },
+            require_cache_trace=True,
+        )
+
     def test_documented_example_matches_canonical_command_and_environment(self):
         example = json.loads((
             ROOT / "quality/runtime_contract.example.json"

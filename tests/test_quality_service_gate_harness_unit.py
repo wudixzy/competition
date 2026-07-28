@@ -36,6 +36,28 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertIn('tests/agent_workload_matrix.py', self.source)
         self.assertIn('agent_workload.rc', self.source)
 
+    def test_current_hybrid64_candidate_is_an_explicit_quality_mode(self):
+        self.assertIn("direct|hybrid64|aligned)", self.source)
+        self.assertIn(
+            '[[ "$RESTORE_MODE" == hybrid64 '
+            '&& "$POLICY" != admission64 ]]',
+            self.source,
+        )
+        builder = (
+            ROOT / "tests/build_quality_runtime_contract.py"
+        ).read_text(encoding="utf-8")
+        startup = (
+            ROOT / "tests/hybrid_kv_startup_gate.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'choices=("direct", "hybrid64", "aligned")',
+            builder,
+        )
+        self.assertIn(
+            'choices=("direct", "hybrid64", "aligned")',
+            startup,
+        )
+
     def test_harness_preserves_model_capability_contract(self):
         self.assertIn('export BI100_HYBRID_KV_ACCOUNTING=full_attention',
                       self.source)

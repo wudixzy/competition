@@ -76,7 +76,7 @@ KERNEL_PROFILES = {
 VARIABLE_SERVICE_ENVIRONMENT = {
     "BI100_ATTN_COREX_FUSED_PREFILL": {"0", "1"},
     "BI100_GDN_CACHE_POLICY": {"fine32", "admission64"},
-    "BI100_GDN_RESTORE_MODE": {"direct", "aligned"},
+    "BI100_GDN_RESTORE_MODE": {"direct", "hybrid64", "aligned"},
     "BI100_KV_EVICTION_POLICY": {"lru", "frequency"},
 }
 RUNTIME_PATH_ENVIRONMENT = {"BI100_RUNTIME_SITE_PACKAGES"}
@@ -233,6 +233,11 @@ def validate_runtime_contract(
     for name, choices in VARIABLE_SERVICE_ENVIRONMENT.items():
         _require(environment.get(name) in choices,
                  f"runtime contract environment {name} is invalid")
+    if environment.get("BI100_GDN_RESTORE_MODE") == "hybrid64":
+        _require(
+            environment.get("BI100_GDN_CACHE_POLICY") == "admission64",
+            "runtime contract hybrid64 requires admission64",
+        )
     kernel_values = {
         name: environment.get(name)
         for name in next(iter(KERNEL_PROFILES.values()))

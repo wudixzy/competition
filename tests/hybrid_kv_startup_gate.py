@@ -540,7 +540,9 @@ def main(argv: list[str] | None = None) -> int:
         choices=("fine32", "admission64"), default="admission64")
     parser.add_argument(
         "--expected-gdn-restore-mode",
-        choices=("direct", "aligned"), default="direct")
+        choices=("direct", "hybrid64", "aligned"),
+        default="direct",
+    )
     parser.add_argument(
         "--expected-fused-prefill", choices=("0", "1"), default="0")
     parser.add_argument(

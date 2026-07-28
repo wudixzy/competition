@@ -36,9 +36,16 @@ case "$POLICY" in
     *) echo "POLICY must be fine32 or admission64" >&2; exit 2 ;;
 esac
 case "$RESTORE_MODE" in
-    direct|aligned) ;;
-    *) echo "RESTORE_MODE must be direct or aligned" >&2; exit 2 ;;
+    direct|hybrid64|aligned) ;;
+    *)
+        echo "RESTORE_MODE must be direct, hybrid64, or aligned" >&2
+        exit 2
+        ;;
 esac
+if [[ "$RESTORE_MODE" == hybrid64 && "$POLICY" != admission64 ]]; then
+    echo "hybrid64 quality runs require admission64" >&2
+    exit 2
+fi
 case "$FUSED_PREFILL" in
     0|1) ;;
     *) echo "FUSED_PREFILL must be 0 or 1" >&2; exit 2 ;;

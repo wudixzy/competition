@@ -151,6 +151,31 @@ class QualityRuntimeContractTest(unittest.TestCase):
             MODULE.validate_runtime_contract(
                 value, expected(value), require_cache_trace=True)
 
+    def test_hybrid64_is_bound_to_admission64(self):
+        value = contract()
+        value["environment"] = MODULE.service_environment(
+            "/runtime/site-packages",
+            gdn_cache_policy="admission64",
+            gdn_restore_mode="hybrid64",
+            fused_prefill="1",
+            kv_eviction_policy="lru",
+        )
+        MODULE.validate_runtime_contract(
+            value, expected(value), require_cache_trace=True)
+
+        value["environment"] = MODULE.service_environment(
+            "/runtime/site-packages",
+            gdn_cache_policy="fine32",
+            gdn_restore_mode="hybrid64",
+            fused_prefill="0",
+            kv_eviction_policy="lru",
+        )
+        with self.assertRaisesRegex(
+                MODULE.RuntimeContractError,
+                "hybrid64 requires admission64"):
+            MODULE.validate_runtime_contract(
+                value, expected(value), require_cache_trace=True)
+
 
 if __name__ == "__main__":
     unittest.main()
