@@ -1,0 +1,17 @@
+{
+  "candidate_qualified": true,
+  "expected": {
+    "benchmark_sha256": "023abce2bc6a953a12e9e6f1c0c71abb70144cc42be99204de31a542f77fe078",
+    "candidate_extension_sha256": "d84ea22e7de2f623e16a8d619b84126a5939dca0397ccdfe54c7731b156016fe",
+    "direct_extension_sha256": "0eb120e89608bb5b64ca4356a5d3d362121806d081ccc1ccf346dac472a819ec"
+  },
+  "identity_bound": true,
+  "observed": {
+    "benchmark_sha256": "023abce2bc6a953a12e9e6f1c0c71abb70144cc42be99204de31a542f77fe078",
+    "candidate_extension_sha256": "d84ea22e7de2f623e16a8d619b84126a5939dca0397ccdfe54c7731b156016fe",
+    "direct_extension_sha256": "0eb120e89608bb5b64ca4356a5d3d362121806d081ccc1ccf346dac472a819ec"
+  },
+  "qualified": true,
+  "schema": "bi100-m1-91-artifact-binding-v2",
+  "version": 2
+}

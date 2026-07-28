@@ -1,0 +1,161 @@
+{
+  "decision": {
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false,
+    "single_gpu_numerical_screen_qualified": true,
+    "yaml_change_authorized": false
+  },
+  "evidence": {
+    "candidate_extension_sha256": "d84ea22e7de2f623e16a8d619b84126a5939dca0397ccdfe54c7731b156016fe",
+    "direct_extension_sha256": "0eb120e89608bb5b64ca4356a5d3d362121806d081ccc1ccf346dac472a819ec",
+    "report_sha256": "023abce2bc6a953a12e9e6f1c0c71abb70144cc42be99204de31a542f77fe078"
+  },
+  "limits": {
+    "exact_sequence_indices": [
+      0,
+      1,
+      2,
+      3,
+      7,
+      15,
+      31,
+      63,
+      127,
+      255,
+      383,
+      499
+    ],
+    "fixed_speedup": 1.5,
+    "iterations": 300,
+    "noninferiority_epsilon": 1e-08,
+    "numerical_oracle": "cpu_float64_dot_rounded_to_fp16_noninferiority",
+    "repeats": 9,
+    "routed_speedup": 1.25,
+    "seeds": [
+      20260716,
+      20260727
+    ],
+    "sequence_steps_per_seed": 500,
+    "warmup": 30
+  },
+  "observed": {
+    "exact_sequence": {
+      "20260716": {
+        "compensated": {
+          "max_abs": 0.000244140625,
+          "max_step_relative_l2": 8.084920031427151e-06,
+          "mismatch_count": 15,
+          "relative_l2": 2.5023447971529127e-06
+        },
+        "direct": {
+          "max_abs": 0.0009765625,
+          "max_step_relative_l2": 2.302941993654774e-05,
+          "mismatch_count": 32,
+          "relative_l2": 8.890609265692801e-06
+        },
+        "vendor": {
+          "max_abs": 0.0009765625,
+          "max_step_relative_l2": 3.806460813987753e-05,
+          "mismatch_count": 46,
+          "relative_l2": 1.508897834766127e-05
+        }
+      },
+      "20260727": {
+        "compensated": {
+          "max_abs": 0.00048828125,
+          "max_step_relative_l2": 1.184911137896657e-05,
+          "mismatch_count": 13,
+          "relative_l2": 5.266440499263431e-06
+        },
+        "direct": {
+          "max_abs": 0.0009765625,
+          "max_step_relative_l2": 2.3657933445661292e-05,
+          "mismatch_count": 39,
+          "relative_l2": 9.20910873616855e-06
+        },
+        "vendor": {
+          "max_abs": 0.0009765625,
+          "max_step_relative_l2": 2.8744153574390765e-05,
+          "mismatch_count": 48,
+          "relative_l2": 1.3302422616696681e-05
+        }
+      }
+    },
+    "fixed": {
+      "20260716": {
+        "compensated_vs_exact": {
+          "max_abs": 0.0,
+          "mismatch_count": 0,
+          "relative_l2": 0.0
+        },
+        "compensated_vs_vendor": {
+          "max_abs": 0.000244140625,
+          "mismatch_count": 5,
+          "relative_l2": 7.302349143937655e-06
+        },
+        "direct_vs_exact": {
+          "max_abs": 0.000244140625,
+          "mismatch_count": 3,
+          "relative_l2": 8.3776924816084e-06
+        },
+        "direct_vs_vendor": {
+          "max_abs": 0.000244140625,
+          "mismatch_count": 6,
+          "relative_l2": 7.302385808114692e-06
+        },
+        "vendor_vs_exact": {
+          "max_abs": 0.000244140625,
+          "mismatch_count": 5,
+          "relative_l2": 7.302348881529046e-06
+        }
+      },
+      "20260727": {
+        "compensated_vs_exact": {
+          "max_abs": 0.0,
+          "mismatch_count": 0,
+          "relative_l2": 0.0
+        },
+        "compensated_vs_vendor": {
+          "max_abs": 0.000244140625,
+          "mismatch_count": 2,
+          "relative_l2": 5.947812232937041e-06
+        },
+        "direct_vs_exact": {
+          "max_abs": 0.0009765625,
+          "mismatch_count": 2,
+          "relative_l2": 2.3791239310902515e-05
+        },
+        "direct_vs_vendor": {
+          "max_abs": 0.0009765625,
+          "mismatch_count": 3,
+          "relative_l2": 2.452344775978081e-05
+        },
+        "vendor_vs_exact": {
+          "max_abs": 0.000244140625,
+          "mismatch_count": 2,
+          "relative_l2": 5.947812663861688e-06
+        }
+      }
+    },
+    "fixed_speedup": 6.193124532567554,
+    "routed_speedup": 5.472705702036682,
+    "sequence": {
+      "20260716": {
+        "compensated_max_step_relative_l2": 5.4037999810691816e-05,
+        "compensated_relative_l2": 1.44513093591124e-05,
+        "direct_max_step_relative_l2": 5.4038989206574346e-05,
+        "direct_relative_l2": 1.4894871747490792e-05
+      },
+      "20260727": {
+        "compensated_max_step_relative_l2": 6.547153823078314e-05,
+        "compensated_relative_l2": 1.4216238947020857e-05,
+        "direct_max_step_relative_l2": 6.54076946873386e-05,
+        "direct_relative_l2": 1.4495944555888816e-05
+      }
+    }
+  },
+  "qualified": true,
+  "reasons": [],
+  "schema": "bi100-moe-compensated-w13-qualification-v2",
+  "version": 2
+}

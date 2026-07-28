@@ -1,0 +1,18 @@
+{
+  "emergency_recovery_used": false,
+  "expected_identity_count": 2,
+  "input_sha256": "1457dc9848963112aa8e9ad1d743067b95c365ca50b7d691895eaa1b76a3efc6",
+  "kill_grace_s": 20.0,
+  "observed_identity_count": 2,
+  "privacy": {
+    "contains_command_line": false,
+    "contains_environment": false,
+    "contains_session_token": false
+  },
+  "production_promotion_authorized": false,
+  "qualified": true,
+  "reasons": [],
+  "schema": "bi100-recorded-session-cleanup-qualification-v1",
+  "term_grace_s": 60.0,
+  "version": 1
+}
