@@ -1,5 +1,35 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-28 M1-91 补偿累加 W13 单卡门禁
+
+- 私有实验分支为 `exp/M1-91-compensated-w13-20260728`，实现提交
+  `8819941`，基于 M1-88 恢复证据加固提交 `24c20a6`。该分支只增加单卡
+  probe、固定 benchmark、qualifier 和证明式 runner；生产模型、runtime、
+  正式 YAML、Dockerfile、默认开关、`main` 和可见性均未改变。
+- 生产 direct W13 在固定 seed `20260727` 的历史 relative L2 为
+  `2.452e-5`，超过 `1e-5` 硬门槛；M1-63 的四路 pairwise 方案也已因
+  500-step 数值误差被拒绝。M1-91 只验证一个不同算法：每 lane 使用显式
+  round-to-nearest 的 Kahan FP32 补偿累加，再做 FP32 warp tree，不扫描
+  tile、阈值、归约顺序或容差。
+- 固定形状为 `E=256, top_k=8, H=2048, I=128, FP16`。两 seed 各 500 步，
+  候选对 vendor 的 fixed、sequence aggregate 和 max-step relative L2 都必须
+  `<=1e-5`；同时必须复现 direct 数值缺口，fixed/routed 相对 vendor 速度分别
+  至少 `1.5x/1.25x`。任一项失败即关闭该方向。
+- benchmark 和 qualifier 双重绑定候选/direct `.so` SHA 与 benchmark 字节
+  SHA；报告不含原始 tensor、权重、token、prompt 或输出。即使通过也只说明
+  单卡组件合格，不授权生产接入、YAML、`main` 或模型能力结论。
+- runner 的 build/benchmark 均使用 PID/PGID/SID、starttime、session token
+  证明的独立会话；只清理本轮进程组，TERM 等待 60 秒后才 KILL survivor，
+  随后 wait/reap。记录式恢复、前后单卡 compute preflight、GPU/process
+  postflight、源码不变、fatal/Gloo/NCCL/worker-loss 和所有 timeout/RC 扫描
+  均为硬门禁。
+- 聚焦测试 `15/15`，完整 tests-root `1066` 项通过、25 项依赖 skip，语法和
+  diff 检查、submission preflight `9/9`、质量数据与 53 项指标 manifest
+  通过。当前本机没有 CoreX 编译器或 BI100；`ssh-73ca29ba` 的最新有界探测仍在
+  TLS ProxyCommand 层断开，所以尚无 CUDA 编译、数值、速度、模型质量或 TP4
+  结论。恢复后只运行固定 M1-91，不做参数扫描。详情见
+  `docs/experiments/M1_91_COMPENSATED_W13_20260728.md`。
+
 ## 2026-07-28 M1-90 admission64 runner 生命周期
 
 - 私有分支
