@@ -1,75 +1,142 @@
+from __future__ import annotations
+
 import hashlib
-import json
-import pathlib
-import sys
 import unittest
-from unittest.mock import patch
-from urllib.error import URLError
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tests"))
-import bench_m1_104_admission64_policy_matrix as m104
+from tests import bench_m1_104_admission64_policy_matrix as module
 
 
-def record(target, pair, phase, cached=0, prompt=None, output="same"):
-    return {"target_tokens": target, "pair": pair, "phase": phase,
-            "cached_tokens": cached, "prompt_tokens": prompt or target,
-            "ok": True, "output_sha256": output}
+def digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-class M1_104UnitTest(unittest.TestCase):
+def record(
+    target: int,
+    pair: int,
+    phase: str,
+    *,
+    cached: int = 0,
+    output: str = "same",
+) -> dict:
+    return {
+        "request_id": f"{target}_pair{pair}_{phase}",
+        "target_prompt_tokens": target,
+        "pair": pair,
+        "phase": phase,
+        "salt_sha256": digest(f"{target}:{pair}"),
+        "rendered_tokens_local": target,
+        "seed": module.SEED,
+        "ok": True,
+        "http_status": 200,
+        "done_seen": True,
+        "health_after": True,
+        "prompt_tokens": target,
+        "cached_tokens": cached,
+        "completion_tokens": 64,
+        "finish_reason": "length",
+        "ttft_s": 2.0,
+        "latency_s": 5.0,
+        "decode_window_s": 3.0,
+        "output_tps": 64.0 / 3.0,
+        "first_token_sha256": digest("first"),
+        "output_sha256": digest(output),
+        "content_sha256": digest("content"),
+        "reasoning_sha256": digest("reasoning"),
+        "tool_calls_sha256": digest("tools"),
+    }
+
+
+def complete_records() -> list[dict]:
+    rows = []
+    for target in module.SHAPES:
+        for pair in module.PAIRS:
+            cold_cached = 0 if not rows else target // 4
+            rows.extend((
+                record(target, pair, "cold", cached=cold_cached),
+                record(
+                    target,
+                    pair,
+                    "warm",
+                    cached=target - module.TOKEN_ERROR_LIMIT,
+                ),
+            ))
+    return rows
+
+
+class M1104Admission64PolicyMatrixUnitTest(unittest.TestCase):
+
+    def test_fixed_contract_matches_historical_matrix(self):
+        self.assertEqual(module.SHAPES, (4096, 7800, 16000))
+        self.assertEqual(module.PAIRS, (1, 2, 3))
+        self.assertEqual(module.REQUEST_COUNT, 18)
+        self.assertEqual(module.TOOL_COUNT, 29)
+        self.assertEqual(module.MAX_TOKENS, 64)
+
     def test_tools_are_fixed_and_complete(self):
-        tools = m104.make_tools()
+        tools = module.make_tools()
         self.assertEqual(len(tools), 29)
         self.assertEqual(tools[0]["function"]["name"], "read_file_0")
-        self.assertFalse(tools[-1]["function"]["parameters"]["additionalProperties"])
+        self.assertFalse(
+            tools[-1]["function"]["parameters"]["additionalProperties"])
 
-    def test_normalized_output_is_stable_and_separated(self):
-        body = {"choices": [{"message": {"content": "a", "reasoning_content": "b",
-                                           "tool_calls": [{"id": "x", "function": {"name": "f"}}]}}]}
-        result = m104.normalized_output(body)
-        self.assertEqual(result["content_sha256"], hashlib.sha256(b"a").hexdigest())
-        self.assertEqual(result["reasoning_sha256"], hashlib.sha256(b"b").hexdigest())
-        self.assertEqual(len(result["sha256"]), 64)
-        self.assertEqual(result, m104.normalized_output(json.loads(json.dumps(body))))
+    def test_complete_matrix_is_valid_and_aggregates(self):
+        rows = complete_records()
+        self.assertEqual(module.validate_requests(rows), [])
+        aggregate = module.aggregate(rows)
+        self.assertEqual(aggregate["success_rate"], 1.0)
+        self.assertGreater(aggregate["cold_cached_tokens"], 0)
+        self.assertEqual(aggregate["first_request_cached_tokens"], 0)
+        self.assertGreater(aggregate["effective_hit_rate"], 0.0)
+        self.assertGreater(aggregate["weighted"], 0.0)
 
-    def test_validate_accepts_complete_cold_warm_matrix(self):
-        rows = []
-        for target in m104.SHAPES:
-            for pair in range(m104.PAIR_COUNT):
-                rows += [record(target, pair, "cold"), record(target, pair, "warm", cached=target - 1)]
-        m104.validate_report({"requests": rows, "service_healthy": True})
+    def test_missing_request_is_rejected(self):
+        reasons = module.validate_requests(complete_records()[:-1])
+        self.assertIn(
+            "the fixed 18-request matrix is incomplete", reasons)
 
-    def test_validate_rejects_missing_request(self):
-        rows = [record(target, pair, phase) for target in m104.SHAPES for pair in range(m104.PAIR_COUNT)
-                for phase in ("cold", "warm")]
-        with self.assertRaisesRegex(ValueError, "expected 18"):
-            m104.validate_report({"requests": rows[:-1], "service_healthy": True})
+    def test_first_request_must_be_cold(self):
+        rows = complete_records()
+        rows[0]["cached_tokens"] = 16
+        reasons = module.validate_requests(rows)
+        self.assertTrue(any("first request" in reason
+                            for reason in reasons))
 
-    def test_validate_rejects_nonzero_cold_cache(self):
-        rows = [record(target, pair, phase, cached=1 if phase == "cold" else 2)
-                for target in m104.SHAPES for pair in range(m104.PAIR_COUNT)
-                for phase in ("cold", "warm")]
-        with self.assertRaisesRegex(ValueError, "cold cache"):
-            m104.validate_report({"requests": rows, "service_healthy": True})
+    def test_warm_cache_cannot_fall_below_cold(self):
+        rows = complete_records()
+        rows[3]["cached_tokens"] = rows[2]["cached_tokens"] - 1
+        reasons = module.validate_requests(rows)
+        self.assertTrue(any("cache progression differs" in reason
+                            for reason in reasons))
 
-    def test_validate_rejects_hash_or_token_mismatch(self):
-        rows = [record(target, pair, phase, output=("cold" if phase == "cold" else "warm"))
-                for target in m104.SHAPES for pair in range(m104.PAIR_COUNT)
-                for phase in ("cold", "warm")]
-        with self.assertRaisesRegex(ValueError, "output mismatch"):
-            m104.validate_report({"requests": rows, "service_healthy": True})
-        rows[0]["output_sha256"] = rows[1]["output_sha256"] = "same"
-        rows[0]["prompt_tokens"] = m104.SHAPES[0] + m104.TOKEN_ERROR_LIMIT
-        with self.assertRaisesRegex(ValueError, "target mismatch"):
-            m104.validate_report({"requests": rows, "service_healthy": True})
+    def test_cold_warm_output_or_finish_change_is_rejected(self):
+        rows = complete_records()
+        rows[1]["output_sha256"] = digest("different")
+        rows[1]["finish_reason"] = "stop"
+        reasons = module.validate_requests(rows)
+        self.assertTrue(any("output_sha256 differs" in reason
+                            for reason in reasons))
+        self.assertTrue(any("finish_reason differs" in reason
+                            for reason in reasons))
 
-    def test_validate_rejects_unhealthy_service(self):
-        rows = [record(target, pair, phase) for target in m104.SHAPES for pair in range(m104.PAIR_COUNT)
-                for phase in ("cold", "warm")]
-        with self.assertRaisesRegex(ValueError, "health"):
-            m104.validate_report({"requests": rows, "service_healthy": False})
+    def test_bad_prompt_or_timing_is_rejected(self):
+        rows = complete_records()
+        rows[0]["prompt_tokens"] += module.TOKEN_ERROR_LIMIT
+        rows[0]["output_tps"] = float("nan")
+        reasons = module.validate_requests(rows)
+        self.assertTrue(any("prompt token contract" in reason
+                            for reason in reasons))
+        self.assertTrue(any("output_tps" in reason for reason in reasons))
 
-    def test_health_check_handles_unreachable_service(self):
-        with patch("urllib.request.urlopen", side_effect=URLError("offline")):
-            self.assertFalse(m104.service_health("http://unit.test", 1))
+    def test_request_failure_and_bad_hash_are_rejected(self):
+        rows = complete_records()
+        rows[0]["ok"] = False
+        rows[1]["first_token_sha256"] = "not-a-digest"
+        reasons = module.validate_requests(rows)
+        self.assertTrue(any("request or health failed" in reason
+                            for reason in reasons))
+        self.assertTrue(any("first_token_sha256" in reason
+                            for reason in reasons))
+
+
+if __name__ == "__main__":
+    unittest.main()

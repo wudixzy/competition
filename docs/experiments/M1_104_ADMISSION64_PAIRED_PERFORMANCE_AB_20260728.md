@@ -40,10 +40,34 @@ The order is fixed and alternating:
 All arms use direct GDN restore, `full_attention` accounting, fused prefill
 disabled, CPU KV offload disabled, submission kernels, TP4, max model length
 262144, and the fixed service launch contract. The benchmark is delegated to
-`tests/bench_m1_104_admission64_policy_matrix.py` with a unique salt namespace
-per arm. After all six arms, the runner calls
-`tests/compare_m1_104_admission64_paired_ab.py --root RUN_ROOT --out
-RUN_ROOT/comparison.json`.
+`tests/bench_m1_104_admission64_policy_matrix.py` with the same fixed salt
+namespace in every arm. Restarting the service makes every first request cold;
+keeping the workload identity identical permits exact paired comparison. After
+all six arms, the runner passes the three control and three candidate reports
+explicitly to `tests/compare_m1_104_admission64_paired_ab.py`.
+
+Each arm sends the historical fixed matrix: three 4,096-token, three
+7,800-token, and three 16,000-token prefixes, each followed immediately by its
+warm repeat, for 18 requests total. Requests retain 29 tools, 64 maximum output
+tokens, greedy decoding, disabled thinking, fixed seed, and the same corpus,
+order, and salts across arms. Reports retain only timing, token counts,
+finish reason, and output SHA-256 identities.
+
+The first request of every fresh service must report zero cached tokens. Later
+`cold` rows may reuse a logically shared partial tools/schema or corpus
+prefix; their corresponding warm row must never report fewer cached tokens.
+Cold/warm output, first-output, finish-reason, and completion-token identities
+must match, and the same identities must match between control and candidate.
+
+The paired continuation screen requires:
+
+- candidate effective hit at least 50% in every pair;
+- at least two of three pairs and the median to satisfy either a two-point hit
+  gain or a 3% weighted gain without hit reduction;
+- candidate Output TPS P10 at least 20 in every pair;
+- median Output TPS and TTFT regressions no greater than 2%, with no individual
+  regression greater than 5%;
+- 100% request success and complete, bound request/aggregate evidence.
 
 No parameter scan, YAML tuning, request-semantic change, quantization, model
 change, or context truncation is allowed.
@@ -58,11 +82,13 @@ SIGTERM and waits 60 seconds, sends SIGKILL only to verified survivors, then
 waits/reaps. The finalizer also performs recorded-session recovery and a
 machine-wide postflight/preflight check. No broad `pkill` or `killall` is used.
 
-A candidate benchmark return code of 1 is retained as a valid negative
-measurement when its report is present. The runner still emits arm status,
-cleanup evidence, and final runner status. The final shell result follows the
-comparison qualification and infrastructure gates; a control infrastructure
-failure or incomplete evidence fails the run.
+Every arm measurement is an evidence-validity gate and must return zero.
+Algorithmic rejection occurs only after all six complete measurements reach
+the paired comparator; its return code of one is retained as a complete
+negative result. The runner still emits arm status, cleanup evidence, and
+final runner status. Any arm infrastructure, request-correctness, fatal, or
+postflight failure stops the sequence instead of being mislabeled as a weak
+candidate.
 
 ## Promotion boundary
 

@@ -1,84 +1,244 @@
 from __future__ import annotations
 
 import copy
-import importlib.util
-import pathlib
+import hashlib
 import unittest
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "tests" / "compare_m1_104_admission64_paired_ab.py"
-SPEC = importlib.util.spec_from_file_location("m1_104", SCRIPT)
-MODULE = importlib.util.module_from_spec(SPEC)
-assert SPEC.loader is not None
-SPEC.loader.exec_module(MODULE)
+from tests import bench_m1_104_admission64_policy_matrix as measurement
+from tests import compare_m1_104_admission64_paired_ab as module
 
 
-def h(value: int) -> str:
-    return f"{value:064x}"
+def digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def measurement(mode: str, hit: float, weighted: float, output: float = 21.0, ttft: float = 4.0, run: str = "r") -> dict:
+def report(
+    mode: str,
+    *,
+    cold_fraction: float,
+    warm_fraction: float,
+    output_tps: float = 21.0,
+    ttft: float = 4.0,
+) -> dict:
+    policy = "fine32" if mode == "control" else "admission64"
     requests = []
-    for i in range(18):
-        base = {"request_id": f"q{i:02d}", "target_prompt_tokens": 4096 + i, "salt_sha256": h(1000 + i), "output_sha256": h(2000 + i), "first_token_sha256": h(3000 + i), "finish_reason": "stop", "completion_tokens": 8}
-        requests.append({**base, "cold": {**base, "ttft_s": 2.0, "output_sha256": h(4000 + i)}, "warm": {**base, "ttft_s": 1.0, "output_sha256": h(4000 + i)}})
-    return {"schema": MODULE.MEASUREMENT_SCHEMA, "mode": mode, "run_id": run, "request_count": 18, "request_manifest_sha256": h(777), "target_order": [f"q{i:02d}" for i in range(18)], "qualified_measurement": True, "reasons": [], "aggregate": {"effective_hit_rate": hit, "success_rate": 100.0, "cold_cached_tokens": 0, "output_tps_p10": output, "ttft_p90_s": ttft, "weighted": weighted}, "requests": requests}
+    contracts = []
+    for target in measurement.SHAPES:
+        for pair in measurement.PAIRS:
+            for phase in measurement.PHASES:
+                request_id = f"{target}_pair{pair}_{phase}"
+                output_id = f"{target}_pair{pair}"
+                if phase == "cold":
+                    cached = (
+                        0 if not requests else int(target * cold_fraction))
+                else:
+                    cached = int(target * warm_fraction)
+                row = {
+                    "request_id": request_id,
+                    "target_prompt_tokens": target,
+                    "pair": pair,
+                    "phase": phase,
+                    "salt_sha256": digest(f"{target}:{pair}"),
+                    "rendered_tokens_local": target,
+                    "seed": measurement.SEED,
+                    "ok": True,
+                    "http_status": 200,
+                    "done_seen": True,
+                    "health_after": True,
+                    "prompt_tokens": target,
+                    "cached_tokens": cached,
+                    "completion_tokens": 64,
+                    "finish_reason": "length",
+                    "ttft_s": ttft,
+                    "latency_s": ttft + 3.0,
+                    "decode_window_s": 3.0,
+                    "output_tps": output_tps,
+                    "first_token_sha256": digest(f"first:{output_id}"),
+                    "output_sha256": digest(f"output:{output_id}"),
+                    "content_sha256": digest(f"content:{output_id}"),
+                    "reasoning_sha256": digest(
+                        f"reasoning:{output_id}"),
+                    "tool_calls_sha256": digest(f"tools:{output_id}"),
+                }
+                requests.append(row)
+                contracts.append(measurement.request_contract(row))
+    return {
+        "schema": measurement.SCHEMA,
+        "version": measurement.VERSION,
+        "mode": mode,
+        "policy": policy,
+        "request_count": measurement.REQUEST_COUNT,
+        "request_manifest_sha256": measurement._sha256_json(contracts),
+        "target_order": [row["request_id"] for row in requests],
+        "fixed": {
+            "shapes": list(measurement.SHAPES),
+            "pairs": list(measurement.PAIRS),
+            "phases": list(measurement.PHASES),
+            "seed": measurement.SEED,
+            "tool_count": measurement.TOOL_COUNT,
+            "max_tokens": measurement.MAX_TOKENS,
+            "temperature": 0,
+            "thinking": False,
+            "tool_choice": "none",
+            "stream_usage": True,
+            "salt_namespace_sha256": digest("m1-104-fixed"),
+            "corpus": [{"name": "fixed.txt", "sha256": digest("corpus")}],
+        },
+        "aggregate": measurement.aggregate(requests),
+        "qualified_measurement": True,
+        "reasons": [],
+        "requests": requests,
+        "privacy": {
+            "contains_raw_prompt": False,
+            "contains_raw_output": False,
+            "contains_tools": False,
+            "contains_credentials": False,
+        },
+    }
 
 
-def pairs(candidate_hit=54.0, candidate_weighted=104.0, output=21.0, ttft=4.0):
-    controls = [measurement("control", 50.0, 100.0, run=f"r{i}") for i in range(3)]
-    candidates = [measurement("candidate", candidate_hit, candidate_weighted, output, ttft, run=f"r{i}") for i in range(3)]
+def pairs(
+    *,
+    control_cold: float = 0.10,
+    control_warm: float = 0.80,
+    candidate_cold: float = 0.40,
+    candidate_warm: float = 0.95,
+    candidate_output: float = 21.0,
+    candidate_ttft: float = 4.0,
+) -> tuple[list[dict], list[dict]]:
+    controls = [
+        report(
+            "control",
+            cold_fraction=control_cold,
+            warm_fraction=control_warm,
+        )
+        for _ in range(3)
+    ]
+    candidates = [
+        report(
+            "candidate",
+            cold_fraction=candidate_cold,
+            warm_fraction=candidate_warm,
+            output_tps=candidate_output,
+            ttft=candidate_ttft,
+        )
+        for _ in range(3)
+    ]
     return controls, candidates
 
 
-class ComparatorTest(unittest.TestCase):
-    def test_valid_three_pair_policy_v2(self):
+class M1104Admission64PairedAbUnitTest(unittest.TestCase):
+
+    def test_valid_three_pair_policy_v2_qualifies(self):
         controls, candidates = pairs()
-        result = MODULE.compare(controls, candidates)
+        result = module.compare(controls, candidates)
         self.assertTrue(result["qualified"], result["reasons"])
-        self.assertTrue(result["decision"]["m1_85_full_quality_authorized"])
-        self.assertFalse(result["decision"]["default_or_main_authorized"])
+        self.assertTrue(
+            result["decision"]["m1_85_full_quality_authorized"])
+        self.assertFalse(
+            result["decision"]["default_policy_change_authorized"])
 
-    def test_old_overstrict_case_is_requalified_by_or_rule(self):
-        controls, candidates = pairs(candidate_hit=52.5, candidate_weighted=104.0)
-        result = MODULE.compare(controls, candidates)
+    def test_weighted_or_path_qualifies_without_hit_reduction(self):
+        controls, candidates = pairs(
+            control_cold=0.25,
+            control_warm=0.95,
+            candidate_cold=0.25,
+            candidate_warm=0.95,
+            candidate_ttft=3.8,
+        )
+        result = module.compare(controls, candidates)
         self.assertTrue(result["qualified"], result["reasons"])
+        self.assertTrue(result["summary"]["median_benefit_paths"][
+            "weighted_gain_at_least_3pct_without_hit_reduction"])
 
-    def test_absolute_hit_gate_rejects_low_candidate(self):
-        controls, candidates = pairs(candidate_hit=49.9)
-        result = MODULE.compare(controls, candidates)
+    def test_absolute_hit_and_output_floors_are_hard(self):
+        controls, candidates = pairs(
+            candidate_cold=0.0,
+            candidate_warm=0.90,
+            candidate_output=19.99,
+        )
+        result = module.compare(controls, candidates)
         self.assertFalse(result["qualified"])
-        self.assertTrue(any("effective hit" in x for x in result["reasons"]))
+        self.assertTrue(any("below 50%" in reason
+                            for reason in result["reasons"]))
+        self.assertTrue(any("below 20" in reason
+                            for reason in result["reasons"]))
 
-    def test_quality_and_single_outlier_reject(self):
-        controls, candidates = pairs()
-        candidates[0]["aggregate"]["output_tps_p10"] = 19.0
-        result = MODULE.compare(controls, candidates)
+    def test_single_and_median_regressions_reject(self):
+        controls, candidates = pairs(
+            candidate_output=19.9,
+            candidate_ttft=4.21,
+        )
+        result = module.compare(controls, candidates)
         self.assertFalse(result["qualified"])
-        self.assertTrue(any("Output TPS" in x for x in result["reasons"]))
+        self.assertTrue(any("Output TPS regression" in reason
+                            for reason in result["reasons"]))
+        self.assertTrue(any("TTFT P90 regression" in reason
+                            for reason in result["reasons"]))
 
-    def test_order_salt_and_hash_must_match(self):
-        controls, candidates = pairs()
-        candidates[0]["requests"][1]["salt_sha256"] = h(9999)
-        result = MODULE.compare(controls, candidates)
+    def test_two_of_three_pairs_must_pass_benefit_path(self):
+        controls, candidates = pairs(
+            control_cold=0.25,
+            control_warm=0.80,
+        )
+        candidates[1] = report(
+            "candidate", cold_fraction=0.25, warm_fraction=0.80)
+        candidates[2] = report(
+            "candidate", cold_fraction=0.25, warm_fraction=0.80)
+        result = module.compare(controls, candidates)
         self.assertFalse(result["qualified"])
-        self.assertTrue(any("identity" in x or "salt" in x for x in result["reasons"]))
+        self.assertIn(
+            "fewer than two pairs pass a policy-v2 benefit path",
+            result["reasons"],
+        )
 
-    def test_failure_is_complete_and_does_not_mutate_inputs(self):
+    def test_request_salt_or_output_change_rejects(self):
         controls, candidates = pairs()
-        candidates[1]["aggregate"]["success_rate"] = 99.0
+        for index in (0, 1):
+            candidates[0]["requests"][index]["salt_sha256"] = digest(
+                "different")
+        candidates[0]["request_manifest_sha256"] = measurement._sha256_json([
+            measurement.request_contract(row)
+            for row in candidates[0]["requests"]
+        ])
+        for index in (0, 1):
+            candidates[1]["requests"][index]["output_sha256"] = digest(
+                "different")
+        result = module.compare(controls, candidates)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "manifest" in reason or "workload" in reason
+            for reason in result["reasons"]))
+        self.assertTrue(any("output differs" in reason
+                            for reason in result["reasons"]))
+
+    def test_unbound_aggregate_is_rejected(self):
+        controls, candidates = pairs()
+        candidates[0]["aggregate"]["weighted"] += 1.0
+        result = module.compare(controls, candidates)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any("aggregate.weighted is not bound" in reason
+                            for reason in result["reasons"]))
+
+    def test_invalid_measurement_is_complete_negative_evidence(self):
+        controls, candidates = pairs()
+        candidates[0]["qualified_measurement"] = False
+        candidates[0]["reasons"] = ["failed"]
         original = copy.deepcopy((controls, candidates))
-        result = MODULE.compare(controls, candidates)
+        result = module.compare(controls, candidates)
         self.assertFalse(result["qualified"])
+        self.assertEqual((controls, candidates), original)
         self.assertIn("pairs", result)
         self.assertIn("decision", result)
-        self.assertEqual((controls, candidates), original)
 
     def test_exactly_three_pairs_required(self):
         controls, candidates = pairs()
-        result = MODULE.compare(controls[:2], candidates[:2])
+        result = module.compare(controls[:2], candidates[:2])
         self.assertFalse(result["qualified"])
-        self.assertIn("exactly three", result["reasons"][0])
+        self.assertIn(
+            "exactly three control/candidate pairs are required",
+            result["reasons"],
+        )
 
 
 if __name__ == "__main__":

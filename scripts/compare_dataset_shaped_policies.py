@@ -13,6 +13,40 @@ MAX_OUTPUT_TPS_REGRESSION = 0.02
 MAX_TTFT_P90_REGRESSION = 0.02
 
 
+def first_matrix_request_uncached(summary: dict[str, Any]) -> bool:
+    matches = [
+        item for item in summary.get("requests", [])
+        if item.get("target") == 4096
+        and item.get("pair") == 1
+        and item.get("phase") == "cold"
+    ]
+    return len(matches) == 1 and matches[0].get("cached_tokens") == 0
+
+
+def pair_cache_is_monotonic(summary: dict[str, Any]) -> bool:
+    requests = summary.get("requests", [])
+    for target in (4096, 7800, 16000):
+        for pair in (1, 2, 3):
+            rows = {
+                item.get("phase"): item
+                for item in requests
+                if item.get("target") == target
+                and item.get("pair") == pair
+            }
+            if set(rows) != {"cold", "warm"}:
+                return False
+            cold = rows["cold"].get("cached_tokens")
+            warm = rows["warm"].get("cached_tokens")
+            if (
+                not isinstance(cold, int)
+                or not isinstance(warm, int)
+                or cold < 0
+                or warm < cold
+            ):
+                return False
+    return True
+
+
 def load_summary(path: Path) -> dict[str, Any]:
     report = json.loads(path.read_text(encoding="utf-8"))
     if not report.get("validation", {}).get("complete_matrix"):
@@ -72,6 +106,10 @@ def compare(baseline: dict[str, Any],
             baseline["validation"]["target_within_one_block"]),
         "baseline_cold_warm_pair_salts_match": bool(
             baseline["validation"]["cold_warm_pair_salts_match"]),
+        "baseline_first_request_uncached": bool(
+            first_matrix_request_uncached(baseline)),
+        "baseline_pair_cache_monotonic": bool(
+            pair_cache_is_monotonic(baseline)),
         "baseline_success_rate_at_least_99pct": float(
             baseline["validation"]["success_rate"]) >= 0.99,
         "complete_matrix": bool(
@@ -82,6 +120,10 @@ def compare(baseline: dict[str, Any],
             candidate["validation"]["target_within_one_block"]),
         "cold_warm_pair_salts_match": bool(
             candidate["validation"]["cold_warm_pair_salts_match"]),
+        "first_request_uncached": bool(
+            first_matrix_request_uncached(candidate)),
+        "pair_cache_monotonic": bool(
+            pair_cache_is_monotonic(candidate)),
         "request_contract_identical": bool(
             baseline_contract
             and baseline_contract == candidate_contract),

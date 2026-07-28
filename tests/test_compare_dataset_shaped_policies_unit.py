@@ -11,6 +11,23 @@ SPEC.loader.exec_module(MODULE)
 
 
 def summary(output: float, hit: float, score: float, ttft: float = 4.0):
+    requests = []
+    for target in (4096, 7800, 16000):
+        for pair in (1, 2, 3):
+            for phase in ("cold", "warm"):
+                requests.append({
+                    "path": f"{target}_pair{pair}_{phase}.json",
+                    "target": target,
+                    "pair": pair,
+                    "phase": phase,
+                    "prompt_salt": f"fixed_{target}_{pair}",
+                    "rendered_tokens_local": target,
+                    "cached_tokens": (
+                        0 if target == 4096 and pair == 1
+                        and phase == "cold"
+                        else target // (2 if phase == "warm" else 4)
+                    ),
+                })
     return {
         "validation": {
             "complete_matrix": True,
@@ -27,14 +44,7 @@ def summary(output: float, hit: float, score: float, ttft: float = 4.0):
             "cache_hit_rate": hit,
             "weighted_score": score,
         },
-        "requests": [{
-            "path": "4096_pair1_cold.json",
-            "target": 4096,
-            "pair": 1,
-            "phase": "cold",
-            "prompt_salt": "fixed_4096_1",
-            "rendered_tokens_local": 4096,
-        }],
+        "requests": requests,
     }
 
 
@@ -159,6 +169,25 @@ class DatasetPolicyCompareTest(unittest.TestCase):
         self.assertFalse(report["stage_qualified"])
         self.assertFalse(report["stage_gates"][
             "baseline_success_rate_at_least_99pct"])
+
+    def test_first_request_must_be_uncached(self):
+        baseline = summary(21.0, 0.50, 6000.0)
+        candidate = summary(21.0, 0.53, 6200.0)
+        baseline["requests"][0]["cached_tokens"] = 16
+        candidate["requests"][0]["cached_tokens"] = 16
+        report = MODULE.compare(baseline, candidate)
+        self.assertFalse(report["stage_qualified"])
+        self.assertFalse(
+            report["stage_gates"]["baseline_first_request_uncached"])
+        self.assertFalse(report["stage_gates"]["first_request_uncached"])
+
+    def test_warm_cache_must_not_fall_below_cold(self):
+        baseline = summary(21.0, 0.50, 6000.0)
+        candidate = summary(21.0, 0.53, 6200.0)
+        candidate["requests"][3]["cached_tokens"] = 0
+        report = MODULE.compare(baseline, candidate)
+        self.assertFalse(report["stage_qualified"])
+        self.assertFalse(report["stage_gates"]["pair_cache_monotonic"])
 
 
 if __name__ == "__main__":

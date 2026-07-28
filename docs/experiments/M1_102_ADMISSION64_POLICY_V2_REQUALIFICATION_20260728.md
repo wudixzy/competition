@@ -52,6 +52,9 @@ fail-closed on:
 - complete, identical 18-request contracts;
 - client/server token agreement and one-block target tolerance;
 - matching cold/warm salts;
+- a zero cached-token count on the first request of each fresh service;
+- nondecreasing cached tokens from each first exact-prefix occurrence to its
+  immediate warm repeat;
 - success at least 99%;
 - candidate effective hit at least 50%;
 - Output TPS P10 at least 20 and relative regression at most 2%;
@@ -62,6 +65,13 @@ The comparator explicitly leaves `quality_nonregression_qualified`,
 pass cannot substitute for M1-85 full functional/Agent A/B, deterministic
 cold/warm cache correctness, long-context capacity, or an official-style
 performance run.
+
+Here `cold` means the first occurrence of one complete session prefix, not a
+ban on all partial-prefix reuse. Later cold rows may legitimately reuse the
+shared tools/schema or corpus prefix from earlier sessions. Requiring every
+cold row to report zero cached tokens would cap this paired matrix near 50%
+and erase the inter-session reuse the candidate is intended to measure. Only
+the first request after a fresh service start must be fully uncached.
 
 ## Execution order
 

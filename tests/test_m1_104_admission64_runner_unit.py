@@ -36,6 +36,8 @@ class M1104Admission64RunnerUnitTest(unittest.TestCase):
             "BI100_HYBRID_KV_ACCOUNTING=full_attention",
             "BI100_CPU_KV_OFFLOAD=0",
             "BI100_ATTN_COREX_FUSED_PREFILL=0",
+            "BI100_CACHE_TRACE=1",
+            "BI100_KV_EVICTION_POLICY=lru",
             "BI100_MOE_COREX_DIRECT_ROUTED=1",
             "BI100_GDN_COREX_PACKED_DECODE=1",
             "'1 control fine32'",
@@ -71,10 +73,12 @@ class M1104Admission64RunnerUnitTest(unittest.TestCase):
         ):
             self.assertIn(marker, self.source)
 
-    def test_candidate_negative_result_does_not_skip_evidence(self) -> None:
-        self.assertIn("if [[ $measurement_rc -eq 1 ]]; then", self.source)
+    def test_only_complete_measurements_reach_comparison(self) -> None:
+        self.assertNotIn("if [[ $measurement_rc -eq 1 ]]; then", self.source)
         self.assertIn("measurement.json", self.source)
-        self.assertIn('[[ $rc -eq 0 || "$label" == candidate ]]', self.source)
+        self.assertIn('[[ $rc -eq 0 ]] || exit 1', self.source)
+        self.assertIn('--control "$RUN_ROOT/pair1_control/measurement.json"', self.source)
+        self.assertIn('--candidate "$RUN_ROOT/pair3_candidate/measurement.json"', self.source)
         self.assertIn("write_arm_status", self.source)
         self.assertIn("runner_status.json", self.source)
 

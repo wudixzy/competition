@@ -32,9 +32,9 @@ fi
 MODEL_PATH=${MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
 BI100_RUNTIME_SITE_PACKAGES=${BI100_RUNTIME_SITE_PACKAGES:-}
 RUNTIME_INSTALL=${BI100_RUNTIME_INSTALL_REPORT:-${RUNTIME_INSTALL_REPORT:-}}
-SALT_NAMESPACE=${M1_104_SALT_NAMESPACE:-m1-104-admission64-policy-ab-v1}
-TOTAL_TIMEOUT_S=${M1_104_TOTAL_TIMEOUT_S:-43200}
-ARM_TIMEOUT_S=${M1_104_ARM_TIMEOUT_S:-10800}
+SALT_NAMESPACE=m1-104-admission64-policy-ab-v1
+TOTAL_TIMEOUT_S=43200
+ARM_TIMEOUT_S=10800
 RUN_DEADLINE=0
 WATCHDOG_PID=""
 CURRENT_STAGE=argument_validation
@@ -73,6 +73,11 @@ RUNTIME_ROOT=$(dirname "$BI100_RUNTIME_SITE_PACKAGES")
 pgrep -f 'vllm\.entrypoints\.openai\.api_server' >/dev/null 2>&1 && {
     echo "an API server process is already running" >&2; exit 3;
 }
+if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all -- \
+        . ':(exclude)bench_runs/**')" ]]; then
+    echo "M1-104 refuses a dirty source tree" >&2
+    exit 3
+fi
 
 mkdir -p "$RUN_ROOT"
 SOURCE_REVISION=$(git -C "$ROOT" rev-parse HEAD)
@@ -206,7 +211,8 @@ start_service() {
             BI100_MOE_COREX_DIRECT_ROUTED=1 BI100_GDN_COREX_PACKED_DECODE=1 BI100_GDN_COMBINED_QK_NORM=0 \
             BI100_GDN_CACHE_POLICY="$policy" BI100_GDN_RESTORE_MODE=direct \
             BI100_HYBRID_KV_ACCOUNTING=full_attention BI100_CPU_KV_OFFLOAD=0 BI100_BLOCK_MAJOR_CPU_KV=0 \
-            BI100_CACHE_TRACE=0 BI100_ATTN_COREX_FUSED_PREFILL=0 \
+            BI100_CACHE_TRACE=1 BI100_ATTN_COREX_FUSED_PREFILL=0 \
+            BI100_KV_EVICTION_POLICY=lru \
             BI100_ATTN_COREX_FUSED_PREFILL_DIAGNOSTICS=0 BI100_PROFILE=0 BI100_PROFILE_INCLUDE_STARTUP=0 \
             BI100_PAGED_ATTN_DIAGNOSTICS=0 BI100_GDN_ALLOW_NAN_ZERO=0 BI100_GDN_FINITE_CHECK=0 \
             PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH" \
@@ -251,6 +257,11 @@ scan_timeouts() {
     : > "$out"
     while IFS= read -r -d '' file; do
         value=$(tr -d '[:space:]' < "$file")
+        if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+            printf '%s=malformed:%s\n' "$file" "$value" >> "$out"
+            found=1
+            continue
+        fi
         case "$value" in 124|137|143) printf '%s=%s\n' "$file" "$value" >> "$out"; found=1;; esac
     done < <(find "$RUN_ROOT" -type f -name '*.rc' -print0)
     return "$found"
@@ -288,7 +299,7 @@ PY
 
 run_arm() {
     local pair=$1 label=$2 policy=$3 arm="$RUN_ROOT/pair${pair}_${label}" rc=0 arm_rc=0
-    local startup_rc=1 contract_rc=1 measurement_rc=1 health_rc=1 cleanup_rc=1 fatal_rc=1 postflight_rc=1 after_rc=1 compare_rc=1
+    local startup_rc=1 contract_rc=1 measurement_rc=1 health_rc=1 cleanup_rc=1 port_rc=1 fatal_rc=1 postflight_rc=1 after_rc=1 compare_rc=1
     mkdir -p "$arm/runtime-workdir"
     set +e; run_preflight "$arm/preflight_before"; rc=$?; set -e
     printf '%s\n' "$rc" > "$arm/preflight_before.rc"
@@ -296,34 +307,42 @@ run_arm() {
     set +e; wait_port_free && start_service "$arm" "$policy"; startup_rc=$?; set -e
     printf '%s\n' "$startup_rc" > "$arm/startup.rc"
     if [[ $startup_rc -eq 0 ]]; then
-        grep -Fq '[BI100] M1-49 runtime contract;' "$arm/server.log" || startup_rc=1
-        grep -Fq '[BI100] fixed kernels; moe_direct=1 gdn_packed=1 gdn_combined_qk=0' "$arm/server.log" || startup_rc=1
-        grep -Fq "[BI100] GDN cache; policy=$policy restore=direct" "$arm/server.log" || startup_rc=1
-        grep -Fq 'accounting=full_attention' "$arm/server.log" || startup_rc=1
-        grep -Fq 'cpu_kv_offload=0' "$arm/server.log" || startup_rc=1
-        grep -Fq 'fused_prefill=0' "$arm/server.log" || startup_rc=1
+        contract_rc=0
+        grep -Fq '[BI100] fixed evaluator contract;' "$arm/server.log" || contract_rc=1
+        grep -Fq '[BI100] M1-49 runtime contract;' "$arm/server.log" || contract_rc=1
+        grep -Fq '[BI100] fixed kernels; moe_direct=1 gdn_packed=1 gdn_combined_qk=0' "$arm/server.log" || contract_rc=1
+        grep -Fq "[BI100] GDN cache; policy=$policy restore=direct" "$arm/server.log" || contract_rc=1
+        grep -Fq 'accounting=full_attention' "$arm/server.log" || contract_rc=1
+        grep -Fq 'cpu_kv_offload=0' "$arm/server.log" || contract_rc=1
+        grep -Fq 'cache_trace=1' "$arm/server.log" || contract_rc=1
+        grep -Fq 'fused_prefill=0' "$arm/server.log" || contract_rc=1
+        grep -Fq 'kv_eviction_policy=lru' "$arm/server.log" || contract_rc=1
+    else
+        contract_rc=1
     fi
-    printf '%s\n' "$startup_rc" > "$arm/startup_contract.rc"; [[ $startup_rc -eq 0 ]] || arm_rc=1
-    if [[ $startup_rc -eq 0 ]]; then
+    printf '%s\n' "$contract_rc" > "$arm/startup_contract.rc"; [[ $contract_rc -eq 0 ]] || arm_rc=1
+    if [[ $contract_rc -eq 0 ]]; then
         set +e
         timeout --signal=TERM --kill-after=60s "$ARM_TIMEOUT_S" \
             env PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH" \
             LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \
             python3 "$ROOT/tests/bench_m1_104_admission64_policy_matrix.py" \
             --base http://127.0.0.1:8000 --model-path "$MODEL_PATH" --policy "$policy" \
-            --salt-namespace "${SALT_NAMESPACE}-pair${pair}-${label}" --out "$arm/measurement.json" \
+            --salt-namespace "$SALT_NAMESPACE" --out "$arm/measurement.json" \
             > "$arm/measurement.stdout" 2> "$arm/measurement.stderr"
         measurement_rc=$?; set -e
     fi
     printf '%s\n' "$measurement_rc" > "$arm/measurement.rc"
     [[ $measurement_rc -eq 0 ]] || arm_rc=1
-    if [[ $measurement_rc -eq 1 ]]; then
-        # A comparator-visible negative benchmark result is valid evidence.
-        [[ -s "$arm/measurement.json" ]] || arm_rc=1
-    fi
     if [[ $startup_rc -eq 0 ]]; then set +e; health; health_rc=$?; set -e; fi
     printf '%s\n' "$health_rc" > "$arm/health_after.rc"; [[ $health_rc -eq 0 ]] || arm_rc=1
-    set +e; stop_active; cleanup_rc=$?; wait_port_free; [[ $cleanup_rc -eq 0 ]] || cleanup_rc=1; set -e
+    set +e
+    stop_active
+    cleanup_rc=$?
+    wait_port_free
+    port_rc=$?
+    [[ $port_rc -eq 0 ]] || cleanup_rc=1
+    set -e
     printf '%s\n' "$cleanup_rc" > "$arm/cleanup.rc"; [[ $cleanup_rc -eq 0 ]] || arm_rc=1
     set +e; scan_fatal "$arm/fatal_scan.txt"; fatal_rc=$?; set -e
     printf '%s\n' "$fatal_rc" > "$arm/fatal_scan.rc"; [[ $fatal_rc -eq 0 ]] || arm_rc=1
@@ -465,11 +484,18 @@ for specification in '1 control fine32' '1 candidate admission64' '2 candidate a
     fi
     set +e; run_arm "$pair" "$label" "$policy"; rc=$?; set -e
     printf '%s\n' "$rc" > "$RUN_ROOT/pair${pair}_${label}.rc"
-    [[ $rc -eq 0 || "$label" == candidate ]] || exit 1
+    [[ $rc -eq 0 ]] || exit 1
 done
 
 CURRENT_STAGE=comparison; write_stage; set +e
-python3 "$ROOT/tests/compare_m1_104_admission64_paired_ab.py" --root "$RUN_ROOT" --out "$RUN_ROOT/comparison.json" \
+python3 "$ROOT/tests/compare_m1_104_admission64_paired_ab.py" \
+    --control "$RUN_ROOT/pair1_control/measurement.json" \
+    --control "$RUN_ROOT/pair2_control/measurement.json" \
+    --control "$RUN_ROOT/pair3_control/measurement.json" \
+    --candidate "$RUN_ROOT/pair1_candidate/measurement.json" \
+    --candidate "$RUN_ROOT/pair2_candidate/measurement.json" \
+    --candidate "$RUN_ROOT/pair3_candidate/measurement.json" \
+    --out "$RUN_ROOT/comparison.json" \
     > "$RUN_ROOT/comparison.stdout" 2> "$RUN_ROOT/comparison.stderr"; rc=$?; set -e
 printf '%s\n' "$rc" > "$RUN_ROOT/comparison.rc"; [[ $rc -eq 0 ]]
 CURRENT_STAGE=complete; write_stage; exit 0
