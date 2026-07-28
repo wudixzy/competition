@@ -108,3 +108,11 @@ fixed arm order, immutable launch settings, attested scoped cleanup, negative
 candidate-result handling, and the promotion boundary. These are static and
 pure-CPU checks. They do not establish GPU performance, cache benefit, TTFT,
 throughput, output quality, or an official score.
+
+Before the GPU run:
+
+- 36 focused policy, measurement, comparator, and runner tests passed;
+- full discovery passed 1,141 tests with 25 expected skips;
+- submission preflight passed all nine checks;
+- shell syntax, Python syntax, diff whitespace, and sensitive-artifact checks
+  passed.
