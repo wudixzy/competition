@@ -180,7 +180,7 @@ PY
 }
 
 port_is_free() {
-    python3 - <<'PY'
+    python3 - <<'PY' >/dev/null 2>&1
 import socket
 
 with socket.socket() as sock:

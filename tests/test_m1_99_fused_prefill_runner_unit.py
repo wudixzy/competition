@@ -92,6 +92,12 @@ class M199FusedPrefillRunnerUnitTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, self.source)
 
+    def test_busy_port_probe_is_quiet(self) -> None:
+        self.assertIn(
+            "python3 - <<'PY' >/dev/null 2>&1\nimport socket",
+            self.source,
+        )
+
     def test_invalid_invocation_fails_before_runtime_access(self) -> None:
         result = subprocess.run(
             ["bash", str(RUNNER)],
