@@ -3,26 +3,36 @@
 ## 2026-07-28 M1-89 多模态缓存命名空间修复
 
 - 最新私有分支为
-  `fix/M1-89-multimodal-cache-namespace-20260728`，实现提交 `0553769`。
+  `fix/M1-89-multimodal-cache-namespace-20260728`。初始实现提交为
+  `0553769`，空多模态容器修正提交为 `369ff5d`。
   审计确认旧路径会对 `multi_modal_data` 求真值、只对 `TypeError` 做请求级
   隔离、遗漏 PIL 调色板/透明度，并永久保留请求级随机盐和告警集合。
-- 修复后使用 `is not None`，受支持对象规范化失败时按有界异常集合回退到稳定的
-  请求级隔离；PIL 哈希纳入 palette mode、palette 和 transparency。相同请求内
-  仍可稳定使用同一盐，不可规范化内容不会跨请求复用，也不应阻断多模态推理。
+- 进一步确认真实 `Sequence.multi_modal_data` 会对纯文本返回 `{}`，所以单纯
+  `is not None` 会误把全部文本请求放入空多模态命名空间。当前 block manager
+  仅读取一次该属性，不做真值求值；`None` 和空 `Mapping` 使用文本命名空间，
+  非空或未知对象继续按内容规范化或请求级隔离。PIL 哈希纳入 palette mode、
+  palette 和 transparency。
 - block manager 新增请求命名空间释放接口；生产 scheduler 在 finished、abort 和
   async-stop 共用路径上对 decoder-only 与 encoder-decoder 都执行释放，旧 manager
   没有该接口时仍兼容。`admission64` 空 live-prefix 的防御性越界也已修复。
 - 新测试覆盖不同 palette/透明度隔离、哈希读取 `OSError` 回退、禁止对象真值求值、
   request ID 释放后重新加盐、物理块号复用，以及固定种子 1000 步 GDN LRU
   状态机对照。实现提交 `0553769` 后又在 `8a39916` 增加真实 installed-overlay
-  门禁：加载远端实际 vLLM/Pillow，固定执行 9 项检查，输出仅含布尔值、异常类型和
-  身份 SHA。聚焦测试 46 项通过，完整 tests-root 为 1026 项通过、25 项依赖
-  skip；preflight 9/9、质量数据和 53 项指标 manifest、语法和 diff 门禁均通过。
+  门禁；`369ff5d` 将其升级到 v2，固定执行 9 项检查，输出仅含布尔值、异常类型和
+  身份 SHA。
 - 本机没有 CoreX GPU，且没有 Pillow；新增 fake-image 测试已强制执行核心哈希
-  语义，但还不能声明真实服务多模态、cold/warm 输出一致性或性能通过。健康实例
+  语义。installed-overlay 门禁已升级到 v2，直接调用远端实际
+  `Sequence.multi_modal_data` 获取纯文本 `{}`，并同时绑定 sequence 与 block
+  manager 模块 SHA。相关测试 50 项通过、2 项依赖 skip；完整 tests-root 为
+  1028 项通过、25 项依赖 skip；preflight 9/9、质量数据与 53 项指标 manifest
+  均通过。当前仍不能声明真实服务多模态、cold/warm 输出一致性或性能通过。健康实例
   恢复后需先验证绑定当前 HEAD 的 immutable overlay，再跑 installed-overlay
   门禁以及多图同图/异图、palette、transparency、异常回退和完成/中止释放的
   服务级门禁。
+- 仓库内没有满足 v4 合同且 ordinal 完整为 `1..881` 的私有 cache trace；
+  platform `main` 只有聚合指标，不能做逐请求 residual-prefill 投影或解锁
+  `admission64`。API usage 的 `cached_tokens` 是 live KV 与精确 GDN 可恢复状态
+  的交集，allocator hit-rate 则是 raw KV 命中，两者不得混用。
 - 最新轻量 subagent 对 `ssh-73ca29ba` 做了 3 次、每次 12 秒的只读连接尝试，均
   在 TLS/ProxyCommand 层返回 `Connection closed by UNKNOWN port 65535`；
   远端命令、GPU 探针和进程操作均未发生，当前不能判断单卡或 TP4 状态。

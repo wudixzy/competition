@@ -4,15 +4,17 @@
 
 `LOCAL CORRECTNESS GATES PASSED; COREX SERVICE EVIDENCE PENDING`.
 
-The runtime implementation is commit `0553769`; the installed-overlay gate is
-commit `8a39916`. Both are on the private branch
+The initial runtime implementation is commit `0553769`; the installed-overlay
+gate was added in commit `8a39916`. Commit `369ff5d` corrects the empty
+multimodal-container boundary and upgrades the gate to v2. All are on the
+private branch
 `fix/M1-89-multimodal-cache-namespace-20260728`. They do not authorize a
 `main`, submission YAML, runtime-default, or repository-visibility change.
 
 ## Problem
 
 The content-addressed prefix cache already separates text tokens by a runtime,
-adapter, and multimodal namespace. The local audit found four correctness
+adapter, and multimodal namespace. The local audit found five correctness
 gaps in the multimodal namespace:
 
 1. `if seq.multi_modal_data` could invoke unsafe or ambiguous truth-value
@@ -25,14 +27,20 @@ gaps in the multimodal namespace:
    could therefore share a cache namespace.
 4. Request-local fallback salts and warning state were retained indefinitely.
    Reusing a request ID could reuse an old isolation namespace.
+5. The real `Sequence.multi_modal_data` property returns `{}` for a text-only
+   request. The initial `is not None` correction therefore placed every text
+   request in an empty multimodal namespace, while the first runtime gate used
+   a synthetic `None` value and asserted the opposite behavior.
 
 These are cache correctness and availability defects. They do not justify
 claiming a performance gain.
 
 ## Implementation
 
-- Multimodal presence is checked with `is not None`; object truthiness is
-  never evaluated.
+- The block manager reads multimodal data once and never evaluates its truth
+  value. `None` and an empty `Mapping` are treated as no multimodal payload;
+  non-empty mappings and unknown objects continue through content
+  normalization or request-local isolation.
 - Normalization failures in the bounded expected exception set fall back to a
   stable per-request random namespace. The request continues without
   cross-request prefix reuse.
@@ -59,13 +67,17 @@ tool/reasoning/multimodal capability, context limit, or formal command changed.
   truthiness, request-ID reuse after release, and physical block reuse.
 - A fixed-seed 1000-step state machine compares `fine32`, `admission64`, and
   `off` policy state against an independent `OrderedDict` LRU oracle.
-- `tests/qwen36_cache_namespace_runtime_gate.py` loads the actual installed
-  overlay and real Pillow implementation. It repeats nine fixed checks and
-  writes only booleans, bounded exception types, source/runtime identity, and
-  module SHA-256. Import or initialization failure produces a redacted
-  structured failure report instead of relying on a traceback.
-- Related cache/static/runtime-identity tests: 89 passed, 1 dependency skip.
-- Full tests-root discovery after adding the overlay gate: 1026 passed,
+- `tests/qwen36_cache_namespace_runtime_gate.py` v2 loads the actual installed
+  block manager, `Sequence` implementation, and real Pillow implementation.
+  Its empty-container check obtains `{}` from the installed
+  `Sequence.multi_modal_data` property instead of synthesizing it. It repeats
+  nine fixed checks and writes only booleans, bounded exception types,
+  source/runtime identity, and module SHA-256. Import or initialization
+  failure produces a redacted structured failure report instead of relying
+  on a traceback.
+- Related cache, scheduler, gate, and runtime-identity tests: 50 passed,
+  2 dependency skips.
+- Full tests-root discovery after the v2 correction: 1028 passed,
   25 dependency skips.
 - Submission preflight: all 9 checks passed.
 - Quality data and 53-case metric manifests passed.
@@ -74,6 +86,20 @@ tool/reasoning/multimodal capability, context limit, or formal command changed.
 The local environment has no CoreX GPU and no Pillow installation. These
 results prove source-level behavior only; they do not prove service-level
 multimodal inference, cold/warm output identity, latency, or throughput.
+
+## Offline evidence boundary
+
+A bounded audit of repository results and structured evidence found no private
+cache trace with complete request ordinals `1..881` under the v4 trace
+contract. The platform `main` result contains aggregate counters only. It
+cannot support per-request residual-prefill projection or an honest
+`fine32`/`admission64` comparison, so `admission64` remains unqualified.
+
+The OpenAI usage `cached_tokens` path is the live-KV/exact-GDN-restore
+intersection selected by the scheduler. The allocator's prefix-cache hit-rate
+counter still measures raw KV allocator hits. These are different metrics;
+neither should be relabeled or changed until the evaluator's metric source is
+identified from an attested run.
 
 ## Required remote gate
 
@@ -103,6 +129,7 @@ python3 /path/to/source/tests/qwen36_cache_namespace_runtime_gate.py \
 Only after runtime identity and all nine installed-overlay checks pass may the
 fixed single-GPU service A/B run. It must check:
 
+- pure text and the runtime's empty multimodal mapping use the same namespace;
 - the same image and prompt produce identical cold/warm token output;
 - equal palette images reuse the same namespace;
 - equal pixel indices with different palettes or transparency do not reuse;
