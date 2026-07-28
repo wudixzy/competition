@@ -21,7 +21,6 @@ python3 "$ROOT/tests/quality_gate_api.py" \
     --base "$BASE" \
     --model llm \
     --endpoint-mode direct \
-    --allow-bare-engine-n2-skip \
     --tier extended \
     --max-model-len 262144 \
     --truncation-tokens 32768 \

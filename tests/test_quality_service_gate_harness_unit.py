@@ -47,7 +47,7 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
 
         functional = (ROOT / "scripts/run_quality_functional_gate.sh").read_text(
             encoding="utf-8")
-        self.assertIn("--allow-bare-engine-n2-skip", functional)
+        self.assertNotIn("--allow-bare-engine-n2-skip", functional)
 
     def test_strict_reference_profile_disables_rejected_pair_only(self):
         self.assertIn(
