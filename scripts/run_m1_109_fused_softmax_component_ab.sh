@@ -4,6 +4,15 @@ umask 077
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/scripts/lib/process_group.sh"
+COMPONENT_AB_VARIANT=${BI100_COMPONENT_AB_VARIANT:-m1-109-fused-softmax}
+case "$COMPONENT_AB_VARIANT" in
+    m1-109-fused-softmax|m1-113-group2048) ;;
+    *)
+        echo "BI100_COMPONENT_AB_VARIANT is invalid" >&2
+        exit 2
+        ;;
+esac
+export BI100_COMPONENT_AB_VARIANT="$COMPONENT_AB_VARIANT"
 
 SYSTEM_PYTHONPATH=/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages
 COREX_LD_LIBRARY_PATH=/usr/local/corex/lib:/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib
@@ -224,7 +233,8 @@ if [[ $rc -ne 0 ]]; then
     exit "$rc"
 fi
 
-python3 - "$RUN_ROOT" "$OLD_SHA" "$NEW_SHA" "${CASES[@]}" <<'PY'
+python3 - "$RUN_ROOT" "$OLD_SHA" "$NEW_SHA" \
+        "$COMPONENT_AB_VARIANT" "${CASES[@]}" <<'PY'
 import json
 import math
 import statistics
@@ -233,7 +243,8 @@ import sys
 
 root = Path(sys.argv[1])
 old_sha, new_sha = sys.argv[2:4]
-cases = sys.argv[4:]
+variant = sys.argv[4]
+cases = sys.argv[5:]
 rows = []
 reasons = []
 speedups = []
@@ -306,7 +317,11 @@ else:
         reasons.append("a production case regressed by more than 2%")
 
 report = {
-    "schema": "bi100-m1-109-fused-softmax-component-ab-v1",
+    "schema": (
+        "bi100-m1-113-group2048-component-ab-v1"
+        if variant == "m1-113-group2048"
+        else "bi100-m1-109-fused-softmax-component-ab-v1"
+    ),
     "qualified": not reasons,
     "thresholds": {
         "maximum_relative_l2": 1e-5,
