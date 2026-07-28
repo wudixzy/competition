@@ -19,6 +19,7 @@ from vllm.utils import Device, PyObjectCache
 
 try:
     from vllm.gdn_prefix import (GdnPrefixKey, GdnPrefixStatePolicy,
+                                 cap_prefill_end_at_capture_boundary,
                                  canonical_direct_segment_offsets,
                                  capture_points_for_step,
                                  final_capture_key,
@@ -31,6 +32,7 @@ try:
 except ImportError:  # Local source-tree tests.
     from qwen3_6_scripts.gdn_prefix import (
         GdnPrefixKey, GdnPrefixStatePolicy,
+        cap_prefill_end_at_capture_boundary,
         canonical_direct_segment_offsets, capture_points_for_step,
         final_capture_key, gdn_cache_policy_from_env,
         gdn_restore_alignment, gdn_restore_mode_from_env,
@@ -513,6 +515,46 @@ class Scheduler:
         # Only for testing purposes.
         self.swapped.append(seq_group)
 
+    def _cap_gdn_capture_boundary(
+            self, seq_group: SequenceGroup, token_chunk_size: int,
+            physical_query_tokens: int) -> Tuple[int, int]:
+        """Align admission64 capture state with a physical model forward."""
+        targets = self._gdn_request_capture_targets.get(
+            seq_group.request_id, ())
+        if (self._gdn_prefix_policy.policy != "admission64"
+                or not targets):
+            return token_chunk_size, physical_query_tokens
+        if token_chunk_size <= 0 or physical_query_tokens <= 0:
+            raise RuntimeError("GDN prefill token counts must be positive")
+
+        seqs = seq_group.get_seqs()
+        if len(seqs) != 1 or not seq_group.is_prefill():
+            raise RuntimeError(
+                "GDN capture boundary requires one prefill sequence")
+        num_computed_tokens = seqs[0].data.get_num_computed_tokens()
+        logical_end_tokens = num_computed_tokens + token_chunk_size
+        logical_start_tokens = logical_end_tokens - physical_query_tokens
+        if logical_start_tokens < num_computed_tokens:
+            raise RuntimeError(
+                "GDN physical query starts before scheduler progress")
+
+        capped_end_tokens = cap_prefill_end_at_capture_boundary(
+            logical_start_tokens, logical_end_tokens, targets,
+            self.cache_config.block_size)
+        if capped_end_tokens == logical_end_tokens:
+            return token_chunk_size, physical_query_tokens
+
+        capped_chunk_size = capped_end_tokens - num_computed_tokens
+        capped_query_tokens = capped_end_tokens - logical_start_tokens
+        if capped_chunk_size <= 0 or capped_query_tokens <= 0:
+            raise RuntimeError("GDN capture boundary produced an empty step")
+        logger.info(
+            "[BI100 GDN CAPTURE BOUNDARY] request=%s logical_start=%d "
+            "logical_end=%d capped_end=%d physical_query_tokens=%d",
+            seq_group.request_id, logical_start_tokens, logical_end_tokens,
+            capped_end_tokens, capped_query_tokens)
+        return capped_chunk_size, capped_query_tokens
+
     def abort_seq_group(self, request_id: Union[str, Iterable[str]]) -> None:
         """Aborts a sequence group with the given ID.
 
@@ -644,6 +686,9 @@ class Scheduler:
             if num_running_tokens == 0:
                 # No budget => Stop
                 break
+            if enable_chunking and seq_group.is_prefill():
+                num_running_tokens, _ = self._cap_gdn_capture_boundary(
+                    seq_group, num_running_tokens, num_running_tokens)
 
             running_queue.popleft()
 
@@ -1118,6 +1163,9 @@ class Scheduler:
                         num_new_tokens - budget_token_count,
                         num_new_tokens,
                         budget_token_count)
+                num_new_tokens, budget_token_count = (
+                    self._cap_gdn_capture_boundary(
+                        seq_group, num_new_tokens, budget_token_count))
 
             if enable_chunking and self.scheduler_config.is_multi_step:
                 blocks_to_copy: List[Tuple[int, int]] = []

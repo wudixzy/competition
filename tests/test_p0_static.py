@@ -289,6 +289,9 @@ class P0StaticCoverageTest(unittest.TestCase):
         model_src = read("qwen3_6_scripts/qwen3_5.py")
         self.assertIn("_gdn_request_restore_keys", scheduler_src)
         self.assertIn("_gdn_request_capture_targets", scheduler_src)
+        self.assertIn("def _cap_gdn_capture_boundary(", scheduler_src)
+        self.assertEqual(
+            scheduler_src.count("self._cap_gdn_capture_boundary("), 2)
         self.assertIn("gdn_restore_key=gdn_restore_key", scheduler_src)
         self.assertIn("gdn_capture_points=gdn_capture_points", scheduler_src)
         self.assertIn("gdn_evict_keys=gdn_evict_keys", scheduler_src)

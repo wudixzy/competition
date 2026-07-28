@@ -158,6 +158,26 @@ def capture_points_for_step(
     return points
 
 
+def cap_prefill_end_at_capture_boundary(
+        logical_start_tokens: int, logical_end_tokens: int,
+        targets: Iterable[GdnPrefixKey], block_size: int) -> int:
+    """Stop a physical prefill step at its earliest pending capture boundary."""
+    if logical_start_tokens < 0 or logical_end_tokens < 0:
+        raise ValueError("token positions must be non-negative")
+    if logical_end_tokens < logical_start_tokens:
+        raise ValueError("logical end must not precede logical start")
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
+
+    capped_end = logical_end_tokens
+    for key in targets:
+        make_prefix_key(*key)
+        boundary_tokens = key[0] * block_size
+        if logical_start_tokens < boundary_tokens < capped_end:
+            capped_end = boundary_tokens
+    return capped_end
+
+
 def canonical_direct_segment_offsets(
         block_hashes: Sequence[bytes], physical_context_tokens: int,
         logical_end_tokens: int, block_size: int,

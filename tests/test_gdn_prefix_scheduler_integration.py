@@ -11,6 +11,53 @@ from types import SimpleNamespace
                  "runtime vLLM dependencies are unavailable")
 class GdnPrefixSchedulerIntegrationTest(unittest.TestCase):
 
+    def test_admission64_caps_cold_and_fast_forward_at_same_boundary(self):
+        from qwen3_6_scripts.gdn_prefix import GdnPrefixStatePolicy
+        from qwen3_6_scripts.scheduler import Scheduler
+
+        target = (14687, hashlib.sha256(b"final").digest())
+
+        class Data:
+            def __init__(self, computed_tokens):
+                self.computed_tokens = computed_tokens
+
+            def get_num_computed_tokens(self):
+                return self.computed_tokens
+
+        class Group:
+            request_id = "m1-114"
+
+            def __init__(self, computed_tokens):
+                self.seqs = [SimpleNamespace(data=Data(computed_tokens))]
+
+            def get_seqs(self, status=None):
+                return self.seqs
+
+            @staticmethod
+            def is_prefill():
+                return True
+
+        scheduler = Scheduler.__new__(Scheduler)
+        scheduler.cache_config = SimpleNamespace(block_size=16)
+        scheduler._gdn_prefix_policy = GdnPrefixStatePolicy("admission64")
+        scheduler._gdn_request_capture_targets = {"m1-114": (target,)}
+
+        cold = Group(229376)
+        self.assertEqual(
+            scheduler._cap_gdn_capture_boundary(cold, 5624, 5624),
+            (5616, 5616))
+
+        fast_forward = Group(0)
+        self.assertEqual(
+            scheduler._cap_gdn_capture_boundary(
+                fast_forward, 235000, 5624),
+            (234992, 5616))
+
+        suffix = Group(234992)
+        self.assertEqual(
+            scheduler._cap_gdn_capture_boundary(suffix, 8, 8),
+            (8, 8))
+
     def test_prefill_separates_logical_progress_from_physical_budget(self):
         from qwen3_6_scripts.gdn_prefix import (
             GdnPrefixStatePolicy,

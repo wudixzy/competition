@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from qwen3_6_scripts.gdn_prefix import (
     GdnPrefixStatePolicy,
+    cap_prefill_end_at_capture_boundary,
     canonical_direct_segment_offsets,
     capture_points_for_step,
     final_capture_key,
@@ -119,6 +120,33 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         self.assertEqual(
             capture_points_for_step(targets, 8000, 8712, 16),
             ((192, targets[0]), (704, targets[1])))
+
+    def test_prefill_step_stops_at_earliest_pending_capture_boundary(self):
+        targets = [(14687, digest(1)), (14684, digest(2))]
+        self.assertEqual(
+            cap_prefill_end_at_capture_boundary(
+                229376, 235000, targets, 16),
+            234944)
+        self.assertEqual(
+            cap_prefill_end_at_capture_boundary(
+                229376, 235000, (targets[0],), 16),
+            234992)
+        self.assertEqual(
+            cap_prefill_end_at_capture_boundary(
+                234992, 235000, (targets[0],), 16),
+            235000)
+        self.assertEqual(
+            cap_prefill_end_at_capture_boundary(
+                0, 8192, (targets[0],), 16),
+            8192)
+
+    def test_prefill_capture_boundary_validation_fails_closed(self):
+        with self.assertRaises(ValueError):
+            cap_prefill_end_at_capture_boundary(2, 1, (), 16)
+        with self.assertRaises(ValueError):
+            cap_prefill_end_at_capture_boundary(0, 1, ((1, b"bad"),), 16)
+        with self.assertRaises(ValueError):
+            cap_prefill_end_at_capture_boundary(0, 1, (), 0)
 
     def test_canonical_segments_reproduce_crossed_scheduler_steps(self):
         hashes = [digest(i % 255) for i in range(1000)]
