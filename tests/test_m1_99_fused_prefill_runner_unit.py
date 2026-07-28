@@ -61,12 +61,17 @@ class M199FusedPrefillRunnerUnitTest(unittest.TestCase):
         for marker in (
             "BI100_GDN_CACHE_POLICY=admission64",
             "BI100_GDN_RESTORE_MODE=hybrid64",
+            "GDN cache; policy=admission64 restore=hybrid64",
             "BI100_HYBRID_KV_ACCOUNTING=full_attention",
             "BI100_CPU_KV_OFFLOAD=0",
             "BI100_MOE_COREX_DIRECT_ROUTED=1",
             "BI100_GDN_COREX_PACKED_DECODE=1",
         ):
             self.assertIn(marker, self.source)
+        self.assertNotIn(
+            "GDN cache; policy=admission64 restore=direct",
+            self.source,
+        )
 
     def test_runner_keeps_promotion_boundary(self) -> None:
         for marker in (

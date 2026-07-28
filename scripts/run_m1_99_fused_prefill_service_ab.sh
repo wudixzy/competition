@@ -449,7 +449,7 @@ run_arm() {
             "$arm/server.log" || contract_rc=1
         grep -Fq '[BI100] fixed kernels; moe_direct=1 gdn_packed=1' \
             "$arm/server.log" || contract_rc=1
-        grep -Fq '[BI100] GDN cache; policy=admission64 restore=direct' \
+        grep -Fq '[BI100] GDN cache; policy=admission64 restore=hybrid64' \
             "$arm/server.log" || contract_rc=1
         grep -Fq 'accounting=full_attention' \
             "$arm/server.log" || contract_rc=1
