@@ -82,6 +82,8 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
             ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
         ).read_text(encoding="utf-8")
         for marker in (
+            "umask 077",
+            'if [[ "$RUN_ROOT" != /tmp/* ]]',
             "--max-model-len 262144",
             "verify_qwen36_diagnostic_checkpoint.py",
             "verify_bare_host_runtime_identity.py",
@@ -108,7 +110,9 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
             '"streaming_contract_qualified": (',
             '"streaming_equivalence_qualified": (',
             "bi100_stop_process_group",
-            '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
+            '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20 \\\n'
+            '            "$ACTIVE_STARTTIME" "$ACTIVE_SESSION_TOKEN"',
+            "ACTIVE_SESSION_TOKEN",
             "--kill-after=90s 240s",
             "service_postflight_gate.py",
             "compare_bi100_preflights.py",
@@ -118,14 +122,24 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
             '"preflight_comparison": read_rc(',
             "service_contract.json",
             "qwen36-diagnostic-service-contract-v1",
+            "exec_bi100_session.py",
+            "process_group_identity.json",
+            '"process_group": read_rc("process_group.rc")',
+            "wait_http_health.py",
+            '--starttime-ticks "$ACTIVE_STARTTIME"',
+            '--out "$RUN_ROOT/startup.json"',
+            "active_pid_is_same",
             "scan_timeout_rcs",
             "perform_postflight",
             "qwen36-diagnostic-cleanup-v1",
             "cleanup_status.json",
             "trap 'exit 143' TERM",
+            "trap '' TERM INT",
             "production_promotion_authorized",
             "unset CUDA_VISIBLE_DEVICES",
             "all(value == 0 for value in gates.values())",
+            '"full_model_evaluated": False',
+            '"performance_evaluated": False',
         ):
             self.assertIn(marker, harness)
         self.assertNotIn("computility-run.yaml", harness)
@@ -180,6 +194,21 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
         self.assertEqual(unsafe.returncode, 2)
         self.assertIn("short non-sensitive label", unsafe.stderr)
 
+    def test_harness_rejects_non_tmp_run_root_before_model_access(self) -> None:
+        script = ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
+        result = subprocess.run(
+            [
+                "bash", str(script), "/missing-model", "1", "0",
+                "single-card", "/var/tmp/unused-diagnostic-run",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("private /tmp path", result.stderr)
+
     def test_postflight_orders_cleanup_before_gpu_comparison(self) -> None:
         harness = (
             ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
@@ -196,6 +225,21 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
         self.assertLess(process_scan, gpu_probe)
         self.assertLess(gpu_probe, comparison)
         self.assertLess(comparison, fatal_scan)
+
+    def test_log_and_timeout_scans_are_recursive(self) -> None:
+        harness = (
+            ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'find "$RUN_ROOT" -type f \\\n'
+            '        \\( -name \'*.log\' -o -name \'*.stdout\' '
+            '-o -name \'*.stderr\' \\)',
+            harness,
+        )
+        self.assertIn(
+            'find "$RUN_ROOT" -type f -name \'*.rc\' -print0',
+            harness,
+        )
 
     def test_layer_trace_is_opt_in_and_post_moe(self) -> None:
         model = (

@@ -26,6 +26,7 @@ STATUS_ARTIFACT_NAMES = frozenset({
     "cache_trace",
     "service_contract",
     "process_group_identity",
+    "startup",
     "service_postflight",
     "preflight_comparison",
 })
@@ -164,6 +165,26 @@ def _normalize_command(
     return normalized
 
 
+def _preflight_stages_match(stages: Any, expected_gpu: int) -> bool:
+    if not isinstance(stages, list) or len(stages) != 2:
+        return False
+    for stage, expected_label in zip(stages, ("before", "after")):
+        if not isinstance(stage, dict):
+            return False
+        results = stage.get("results")
+        if (
+            stage.get("label") != expected_label
+            or stage.get("qualified") is not True
+            or not isinstance(results, list)
+            or len(results) != 1
+            or not isinstance(results[0], dict)
+            or results[0].get("gpu") != expected_gpu
+            or results[0].get("ok") is not True
+        ):
+            return False
+    return True
+
+
 def compare(
     control_report: Json,
     candidate_report: Json,
@@ -177,11 +198,24 @@ def compare(
     candidate_capacity: Json,
     control_trace: Json,
     candidate_trace: Json,
+    control_startup: Json,
+    candidate_startup: Json,
     control_process_group: Json,
     candidate_process_group: Json,
+    control_postflight: Json,
+    candidate_postflight: Json,
+    control_preflight_comparison: Json,
+    candidate_preflight_comparison: Json,
     artifact_sha256: dict[str, str],
+    expected_gpu: int,
 ) -> Json:
     reasons: list[str] = []
+    if (
+        not isinstance(expected_gpu, int)
+        or isinstance(expected_gpu, bool)
+        or expected_gpu < 0
+    ):
+        reasons.append("expected GPU must be a non-negative integer")
     required_artifact_inputs = frozenset({
         "control_report",
         "candidate_report",
@@ -195,8 +229,14 @@ def compare(
         "candidate_capacity",
         "control_trace",
         "candidate_trace",
+        "control_startup",
+        "candidate_startup",
         "control_process_group",
         "candidate_process_group",
+        "control_postflight",
+        "candidate_postflight",
+        "control_preflight_comparison",
+        "candidate_preflight_comparison",
     })
     if (
         set(artifact_sha256) != required_artifact_inputs
@@ -209,6 +249,9 @@ def compare(
         ("control", control_report, 400),
         ("candidate", candidate_report, 200),
     ):
+        config = report.get("config")
+        if not isinstance(config, dict):
+            config = {}
         if (
             report.get("schema") != GATE_SCHEMA
             or report.get("version") != 1
@@ -217,16 +260,15 @@ def compare(
         ):
             reasons.append(f"{label} HTTP gate is not qualified")
         if (
-            report.get("config", {}).get("expected_two_image_status")
-            != expected_status
+            config.get("expected_two_image_status") != expected_status
         ):
             reasons.append(f"{label} expected image status differs")
         if (
-            report.get("config", {}).get("stream") is not True
-            or report.get("config", {}).get("temperature") != 0
-            or report.get("config", {}).get("seed") != 20260728
-            or report.get("config", {}).get("max_tokens") != 8
-            or report.get("config", {}).get("thinking") is not False
+            config.get("stream") is not True
+            or config.get("temperature") != 0
+            or config.get("seed") != 20260728
+            or config.get("max_tokens") != 8
+            or config.get("thinking") is not False
         ):
             reasons.append(f"{label} deterministic streaming contract differs")
         privacy = report.get("privacy")
@@ -331,6 +373,8 @@ def compare(
         ("candidate", candidate_process_group),
     ):
         pid = identity.get("pid")
+        starttime = identity.get("starttime_ticks")
+        token = identity.get("session_token")
         if (
             identity.get("schema") != "bi100-process-session-v1"
             or identity.get("version") != 1
@@ -339,6 +383,13 @@ def compare(
             or pid <= 0
             or identity.get("pgid") != pid
             or identity.get("sid") != pid
+            or not isinstance(starttime, int)
+            or isinstance(starttime, bool)
+            or starttime <= 0
+            or not isinstance(token, str)
+            or len(token) != 32
+            or any(character not in "0123456789abcdef"
+                   for character in token)
         ):
             reasons.append(f"{label} process session identity differs")
         else:
@@ -373,7 +424,8 @@ def compare(
     else:
         shape = shapes[0]
         if (
-            shape.get("count") != 1
+            not isinstance(shape, dict)
+            or shape.get("count") != 1
             or shape.get("images") != 2
             or shape.get("image_data") != 2
             or shape.get("image_remote") != 0
@@ -413,12 +465,31 @@ def compare(
             "service_contract": artifact_sha256.get(f"{label}_contract"),
             "process_group_identity":
                 artifact_sha256.get(f"{label}_process_group"),
+            "startup": artifact_sha256.get(f"{label}_startup"),
+            "service_postflight":
+                artifact_sha256.get(f"{label}_postflight"),
+            "preflight_comparison":
+                artifact_sha256.get(f"{label}_preflight_comparison"),
         }
         if any(
             status_artifacts.get(name) != digest
             for name, digest in expected_status_artifacts.items()
         ):
             reasons.append(f"{label} arm artifact binding differs")
+
+    for label, startup in (
+        ("control", control_startup),
+        ("candidate", candidate_startup),
+    ):
+        if (
+            startup.get("schema") != "bi100-http-health-wait-v1"
+            or startup.get("version") != 1
+            or startup.get("qualified") is not True
+            or startup.get("reason") != "healthy"
+            or not isinstance(startup.get("attempts"), int)
+            or startup.get("attempts", 0) < 1
+        ):
+            reasons.append(f"{label} absolute startup deadline did not qualify")
 
     for label, contract, image_limit in (
         ("control", control_contract, 1),
@@ -440,6 +511,7 @@ def compare(
             not isinstance(environment, dict)
             or any(environment.get(name) != expected
                    for name, expected in REFERENCE_ENVIRONMENT.items())
+            or environment.get("CUDA_VISIBLE_DEVICES") != str(expected_gpu)
         ):
             reasons.append(f"{label} reference environment differs")
     control_command = _normalize_command(
@@ -461,6 +533,41 @@ def compare(
     ):
         if control_contract.get(field) != candidate_contract.get(field):
             reasons.append(f"service contracts differ at {field}")
+
+    for label, postflight, preflight in (
+        (
+            "control",
+            control_postflight,
+            control_preflight_comparison,
+        ),
+        (
+            "candidate",
+            candidate_postflight,
+            candidate_preflight_comparison,
+        ),
+    ):
+        if (
+            postflight.get("schema") != "bi100-service-postflight-v1"
+            or postflight.get("version") != 1
+            or postflight.get("qualified") is not True
+            or postflight.get("gpu_indices") != [expected_gpu]
+            or postflight.get("api_server_pids") != []
+            or postflight.get("worker_pids") != []
+            or postflight.get("gpu_processes") != []
+            or postflight.get("scan_errors") != []
+        ):
+            reasons.append(f"{label} service postflight differs")
+        stages = preflight.get("stages")
+        if (
+            preflight.get("schema")
+            != "bi100-gpu-preflight-comparison-v1"
+            or preflight.get("version") != 1
+            or preflight.get("qualified") is not True
+            or preflight.get("expected_gpus") != [expected_gpu]
+            or preflight.get("max_free_memory_drop_bytes") != 1073741824
+            or not _preflight_stages_match(stages, expected_gpu)
+        ):
+            reasons.append(f"{label} GPU preflight comparison differs")
 
     for label, capacity in (
         ("control", control_capacity),
@@ -491,6 +598,7 @@ def compare(
         "qualified": not reasons,
         "reasons": reasons,
         "observed": {
+            "physical_gpu": expected_gpu,
             "control_gpu_blocks": control_blocks,
             "candidate_gpu_blocks": candidate_blocks,
             "candidate_control_gpu_block_ratio": block_ratio,
@@ -558,21 +666,50 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate-capacity", type=Path, required=True)
     parser.add_argument("--control-trace", type=Path, required=True)
     parser.add_argument("--candidate-trace", type=Path, required=True)
+    parser.add_argument("--control-startup", type=Path, required=True)
+    parser.add_argument("--candidate-startup", type=Path, required=True)
     parser.add_argument("--control-process-group", type=Path, required=True)
     parser.add_argument("--candidate-process-group", type=Path, required=True)
+    parser.add_argument("--control-postflight", type=Path, required=True)
+    parser.add_argument("--candidate-postflight", type=Path, required=True)
+    parser.add_argument(
+        "--control-preflight-comparison", type=Path, required=True)
+    parser.add_argument(
+        "--candidate-preflight-comparison", type=Path, required=True)
+    parser.add_argument("--expected-gpu", type=int, required=True)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
 
     paths = {
         name: value
         for name, value in vars(args).items()
-        if name != "out"
+        if name not in {"out", "expected_gpu"}
     }
-    values = {name: _load(path) for name, path in paths.items()}
-    artifact_sha256 = {
-        name: _sha256(path) for name, path in paths.items()
-    }
-    report = compare(**values, artifact_sha256=artifact_sha256)
+    values: dict[str, Json] = {}
+    artifact_sha256: dict[str, str] = {}
+    input_reasons: list[str] = []
+    for name, path in paths.items():
+        try:
+            artifact_sha256[name] = _sha256(path)
+        except OSError as exc:
+            artifact_sha256[name] = "0" * 64
+            input_reasons.append(
+                f"{name} artifact is unavailable: {type(exc).__name__}")
+        try:
+            values[name] = _load(path)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            values[name] = {}
+            input_reasons.append(
+                f"{name} artifact is invalid: {type(exc).__name__}")
+    report = compare(
+        **values,
+        artifact_sha256=artifact_sha256,
+        expected_gpu=args.expected_gpu,
+    )
+    if input_reasons:
+        report["reasons"] = input_reasons + report["reasons"]
+        report["qualified"] = False
+        report["decision"]["single_gpu_diagnostic_phase_passed"] = False
     report["artifact_sha256"] = artifact_sha256
     _atomic_write(args.out, report)
     print(json.dumps(report, ensure_ascii=True, indent=2, sort_keys=True))

@@ -17,6 +17,11 @@ ACTIVE_HARNESSES = (
 
 class ProcessGroupCleanupTest(unittest.TestCase):
 
+    @staticmethod
+    def process_starttime(pid):
+        value = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+        return int(value[value.rfind(")") + 2:].split()[19])
+
     def run_with_fake_ps(self, table, command):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -143,6 +148,58 @@ class ProcessGroupCleanupTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             process.wait(timeout=3)
             self.assertEqual(process.returncode, -9)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=3)
+
+    def test_attested_cleanup_rejects_token_or_starttime_mismatch(self):
+        token = "a" * 32
+        env = os.environ.copy()
+        env["BI100_PROCESS_SESSION_TOKEN"] = token
+        process = subprocess.Popen(
+            ["sleep", "60"],
+            start_new_session=True,
+            env=env,
+        )
+        try:
+            pgid = os.getpgid(process.pid)
+            starttime = self.process_starttime(process.pid)
+            for bad_starttime, bad_token in (
+                (starttime + 1, token),
+                (starttime, "b" * 32),
+            ):
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        f"source {LIBRARY!s}; "
+                        f"bi100_stop_process_group {pgid} {process.pid} "
+                        f"1 1 {bad_starttime} {bad_token}",
+                    ],
+                    text=True,
+                    capture_output=True,
+                    timeout=5,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIsNone(process.poll())
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    f"source {LIBRARY!s}; "
+                    f"bi100_stop_process_group {pgid} {process.pid} "
+                    f"3 3 {starttime} {token}",
+                ],
+                text=True,
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            process.wait(timeout=3)
         finally:
             if process.poll() is None:
                 process.kill()

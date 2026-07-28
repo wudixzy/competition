@@ -18,6 +18,7 @@ class ExecBi100SessionUnitTest(unittest.TestCase):
     def test_identity_is_private_and_matches_new_session(self):
         with tempfile.TemporaryDirectory() as temporary:
             identity = Path(temporary) / "identity.json"
+            inherited = Path(temporary) / "inherited.txt"
             completed = subprocess.run(
                 [
                     sys.executable,
@@ -26,7 +27,9 @@ class ExecBi100SessionUnitTest(unittest.TestCase):
                     "--",
                     "/bin/sh",
                     "-c",
-                    "exit 0",
+                    'printf "%s" "$BI100_PROCESS_SESSION_TOKEN" > "$1"',
+                    "sh",
+                    str(inherited),
                 ],
                 check=False,
                 stdout=subprocess.PIPE,
@@ -39,6 +42,13 @@ class ExecBi100SessionUnitTest(unittest.TestCase):
             self.assertEqual(value["version"], 1)
             self.assertEqual(value["pid"], value["pgid"])
             self.assertEqual(value["pid"], value["sid"])
+            self.assertIsInstance(value["starttime_ticks"], int)
+            self.assertGreater(value["starttime_ticks"], 0)
+            self.assertRegex(value["session_token"], r"^[0-9a-f]{32}$")
+            self.assertEqual(
+                inherited.read_text(encoding="ascii"),
+                value["session_token"],
+            )
             mode = stat.S_IMODE(identity.stat().st_mode)
             self.assertEqual(mode, 0o600)
 

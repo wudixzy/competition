@@ -1,5 +1,6 @@
 #!/bin/bash
 set -uo pipefail
+umask 077
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/scripts/lib/process_group.sh"
@@ -31,8 +32,10 @@ PORT=${PORT:-8000}
 STARTUP_TIMEOUT_S=${STARTUP_TIMEOUT_S:-900}
 ACTIVE_PID=""
 ACTIVE_PGID=""
+ACTIVE_STARTTIME=""
+ACTIVE_SESSION_TOKEN=""
 POSTFLIGHT_COMPLETE=0
-FATAL_PATTERN='CUDA error|SIGSEGV|Fatal Python error|out of memory|device-side assert|worker process.*died|worker.*(lost|exited unexpectedly)|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|Connection reset by peer|TimeoutError|engine iteration timed out|watchdog.*tim(e|ed) out|scheduler requested a missing GDN prefix state|non-finite GatedDeltaNet'
+FATAL_PATTERN='CUDA error|SIGSEGV|Fatal Python error|out of memory|device-side assert|worker process.*died|worker.*(lost|exited unexpectedly)|Gloo.*(failed|reset|error)|NCCL.*(failed|abort|error)|Connection reset by peer|Timeout(Error|Expired)|engine iteration timed out|watchdog.*tim(e|ed) out|scheduler requested a missing GDN prefix state|non-finite GatedDeltaNet'
 
 case "$TP_SIZE" in
     1|2) ;;
@@ -68,18 +71,6 @@ if [[ ! "$STARTUP_TIMEOUT_S" =~ ^[1-9][0-9]*$ ]]; then
     exit 2
 fi
 
-MODEL_PATH=$(python3 - "$MODEL_PATH" <<'PY'
-from pathlib import Path
-import sys
-print(Path(sys.argv[1]).resolve(strict=True))
-PY
-) || exit 3
-SOURCE_MODEL_PATH=$(python3 - "$SOURCE_MODEL_PATH" <<'PY'
-from pathlib import Path
-import sys
-print(Path(sys.argv[1]).resolve(strict=True))
-PY
-) || exit 3
 RUN_ROOT=$(python3 - "$RUN_ROOT" <<'PY'
 from pathlib import Path
 import sys
@@ -93,10 +84,26 @@ case "$RUN_ROOT/" in
         exit 3
         ;;
 esac
+if [[ "$RUN_ROOT" != /tmp/* ]]; then
+    echo "RUN_ROOT must use a private /tmp path" >&2
+    exit 3
+fi
 if [[ -e "$RUN_ROOT" ]]; then
     echo "RUN_ROOT already exists: $RUN_ROOT" >&2
     exit 3
 fi
+MODEL_PATH=$(python3 - "$MODEL_PATH" <<'PY'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).resolve(strict=True))
+PY
+) || exit 3
+SOURCE_MODEL_PATH=$(python3 - "$SOURCE_MODEL_PATH" <<'PY'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).resolve(strict=True))
+PY
+) || exit 3
 if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all -- \
         . ':(exclude)bench_runs/**')" ]]; then
     echo "diagnostic gate refuses a dirty source tree" >&2
@@ -135,17 +142,57 @@ export PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH"
 export LD_LIBRARY_PATH=/usr/local/corex/lib:/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib
 export PATH=/usr/local/corex/bin:/usr/local/corex-3.2.3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/openmpi/bin
 
+read_process_starttime() {
+    python3 - "$1" <<'PY'
+from pathlib import Path
+import sys
+
+value = (Path("/proc") / sys.argv[1] / "stat").read_text(encoding="ascii")
+fields = value[value.rfind(")") + 2:].split()
+print(fields[19])
+PY
+}
+
+active_pid_is_same() {
+    local observed
+    [[ -n "$ACTIVE_PID" && -n "$ACTIVE_STARTTIME" ]] || return 1
+    observed=$(read_process_starttime "$ACTIVE_PID" 2>/dev/null) || return 1
+    [[ "$observed" == "$ACTIVE_STARTTIME" ]]
+}
+
 stop_service() {
     local rc=0
     if [[ -n "$ACTIVE_PGID" ]]; then
         bi100_stop_process_group \
-            "$ACTIVE_PGID" "$ACTIVE_PID" 60 20 || rc=$?
+            "$ACTIVE_PGID" "$ACTIVE_PID" 60 20 \
+            "$ACTIVE_STARTTIME" "$ACTIVE_SESSION_TOKEN" || rc=$?
     elif [[ -n "$ACTIVE_PID" ]]; then
-        echo "service PID lacks a verified process group" >&2
-        rc=2
+        if active_pid_is_same; then
+            kill -TERM "$ACTIVE_PID" 2>/dev/null || true
+            for _ in $(seq 1 60); do
+                active_pid_is_same || break
+                sleep 1
+            done
+        fi
+        if active_pid_is_same; then
+            kill -KILL "$ACTIVE_PID" 2>/dev/null || true
+            for _ in $(seq 1 20); do
+                active_pid_is_same || break
+                sleep 1
+            done
+        fi
+        wait "$ACTIVE_PID" 2>/dev/null || true
+        if active_pid_is_same; then
+            echo "unisolated service leader survived cleanup" >&2
+            rc=1
+        fi
     fi
-    ACTIVE_PID=""
-    ACTIVE_PGID=""
+    if [[ $rc -eq 0 ]]; then
+        ACTIVE_PID=""
+        ACTIVE_PGID=""
+        ACTIVE_STARTTIME=""
+        ACTIVE_SESSION_TOKEN=""
+    fi
     return "$rc"
 }
 
@@ -185,13 +232,20 @@ run_preflight_comparison() {
 }
 
 scan_fatal_logs() {
-    if [[ -f "$RUN_ROOT/server.log" ]] \
-            && grep -Eiq "$FATAL_PATTERN" "$RUN_ROOT/server.log"; then
-        grep -Ein "$FATAL_PATTERN" "$RUN_ROOT/server.log" \
-            > "$RUN_ROOT/fatal_scan.txt" || true
-        return 1
-    fi
+    local file
+    local found=0
     : > "$RUN_ROOT/fatal_scan.txt"
+    while IFS= read -r -d '' file; do
+        if grep -Eiq "$FATAL_PATTERN" "$file" 2>/dev/null; then
+            printf 'file=%s\n' "$file" >> "$RUN_ROOT/fatal_scan.txt"
+            grep -Ein "$FATAL_PATTERN" "$file" \
+                >> "$RUN_ROOT/fatal_scan.txt" 2>/dev/null || true
+            found=1
+        fi
+    done < <(find "$RUN_ROOT" -type f \
+        \( -name '*.log' -o -name '*.stdout' -o -name '*.stderr' \) \
+        -print0)
+    return "$found"
 }
 
 scan_timeout_rcs() {
@@ -201,14 +255,20 @@ scan_timeout_rcs() {
     : > "$RUN_ROOT/timeout_scan.txt"
     while IFS= read -r -d '' file; do
         value=$(tr -d '[:space:]' < "$file")
+        if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+            printf '%s=malformed:%s\n' "$file" "$value" \
+                >> "$RUN_ROOT/timeout_scan.txt"
+            found=1
+            continue
+        fi
         case "$value" in
-            124|137)
+            124|137|143)
                 printf '%s=%s\n' "$file" "$value" \
                     >> "$RUN_ROOT/timeout_scan.txt"
                 found=1
                 ;;
         esac
-    done < <(find "$RUN_ROOT" -maxdepth 1 -type f -name '*.rc' -print0)
+    done < <(find "$RUN_ROOT" -type f -name '*.rc' -print0)
     return "$found"
 }
 
@@ -295,7 +355,8 @@ PY
 cleanup() {
     local rc=$?
     local postflight_rc=0
-    trap - EXIT TERM INT
+    trap - EXIT
+    trap '' TERM INT
     set +e
     perform_postflight
     postflight_rc=$?
@@ -368,6 +429,24 @@ if [[ "$TP_SIZE" == 2 ]]; then
     fi
 else
     printf '%s\n' 0 > "$RUN_ROOT/nccl_before.rc"
+fi
+
+if python3 - "$PORT" <<'PY' \
+        > "$RUN_ROOT/port_preflight.stdout" \
+        2> "$RUN_ROOT/port_preflight.stderr"
+import socket
+import sys
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("", int(sys.argv[1])))
+PY
+then
+    printf '%s\n' 0 > "$RUN_ROOT/port_preflight.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/port_preflight.rc"
+    echo "diagnostic service port is unavailable" >&2
+    exit 4
 fi
 
 if python3 "$ROOT/tests/gdn_action_broadcast_gate.py" \
@@ -552,44 +631,84 @@ fi
 
 (
     cd "$RUNTIME_WORKDIR" || exit 1
-    exec setsid "${COMMAND[@]}"
+    exec python3 "$ROOT/scripts/exec_bi100_session.py" \
+        "$RUN_ROOT/process_group_identity.json" -- "${COMMAND[@]}"
 ) > "$RUN_ROOT/server.log" 2>&1 &
 ACTIVE_PID=$!
-sleep 1
-ACTIVE_PGID=$(ps -o pgid= -p "$ACTIVE_PID" | tr -d ' ')
-if [[ -z "$ACTIVE_PGID" || "$ACTIVE_PGID" != "$ACTIVE_PID" ]]; then
+ACTIVE_STARTTIME=$(read_process_starttime "$ACTIVE_PID" 2>/dev/null || true)
+process_group_ok=0
+observed_pgid=""
+observed_token=""
+observed_identity=""
+for _ in $(seq 1 20); do
+    if [[ -s "$RUN_ROOT/process_group_identity.json" ]]; then
+        if observed_identity=$(python3 - \
+                "$RUN_ROOT/process_group_identity.json" \
+                "$ACTIVE_PID" "$ACTIVE_STARTTIME" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected = int(sys.argv[2])
+expected_starttime = int(sys.argv[3])
+stat = Path(f"/proc/{expected}/stat").read_text(encoding="ascii")
+fields = stat[stat.rfind(")") + 2:].split()
+observed_starttime = int(fields[19])
+if (
+    value.get("schema") != "bi100-process-session-v1"
+    or value.get("version") != 1
+    or value.get("pid") != expected
+    or value.get("pgid") != expected
+    or value.get("sid") != expected
+    or observed_starttime != expected_starttime
+    or value.get("starttime_ticks") != observed_starttime
+    or not isinstance(value.get("session_token"), str)
+    or len(value.get("session_token")) != 32
+    or any(character not in "0123456789abcdef"
+           for character in value.get("session_token"))
+):
+    raise SystemExit(1)
+print(value["pgid"], value["session_token"])
+PY
+        ); then
+            read -r observed_pgid observed_token <<< "$observed_identity"
+            if [[ "$observed_pgid" == "$ACTIVE_PID" \
+                    && "$observed_token" =~ ^[0-9a-f]{32}$ ]]; then
+                process_group_ok=1
+                break
+            fi
+        fi
+    fi
+    active_pid_is_same || break
+    sleep 1
+done
+if [[ "$process_group_ok" != 1 \
+        || "$observed_pgid" != "$ACTIVE_PID" ]]; then
+    printf '%s\n' 1 > "$RUN_ROOT/process_group.rc"
     echo "service did not start as a dedicated process-group leader" >&2
     exit 5
 fi
+ACTIVE_PGID=$observed_pgid
+ACTIVE_SESSION_TOKEN=$observed_token
+printf '%s\n' 0 > "$RUN_ROOT/process_group.rc"
 printf '%s\n' "$ACTIVE_PID" > "$RUN_ROOT/service.pid"
 printf '%s\n' "$ACTIVE_PGID" > "$RUN_ROOT/service.pgid"
 
-health() {
-    python3 - "$PORT" <<'PY' >/dev/null 2>&1
-import sys
-import urllib.request
-urllib.request.urlopen(
-    f"http://127.0.0.1:{sys.argv[1]}/health", timeout=5).read()
-PY
-}
-
-startup_ok=0
-for _ in $(seq 1 "$STARTUP_TIMEOUT_S"); do
-    if health; then
-        startup_ok=1
-        break
-    fi
-    if ! kill -0 "$ACTIVE_PID" 2>/dev/null; then
-        break
-    fi
-    sleep 1
-done
-if [[ "$startup_ok" != 1 ]]; then
-    printf '%s\n' 1 > "$RUN_ROOT/startup.rc"
+if python3 "$ROOT/scripts/wait_http_health.py" \
+        --port "$PORT" --pid "$ACTIVE_PID" \
+        --starttime-ticks "$ACTIVE_STARTTIME" \
+        --timeout-s "$STARTUP_TIMEOUT_S" \
+        --out "$RUN_ROOT/startup.json" \
+        > "$RUN_ROOT/startup.stdout" 2> "$RUN_ROOT/startup.stderr"
+then
+    printf '%s\n' 0 > "$RUN_ROOT/startup.rc"
+else
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/startup.rc"
     echo "diagnostic service failed to become healthy" >&2
     exit 5
 fi
-printf '%s\n' 0 > "$RUN_ROOT/startup.rc"
 
 overall_rc=0
 if timeout --signal=TERM --kill-after=70s 1800s \
@@ -736,8 +855,10 @@ gates = {
     "runtime_identity": read_rc("runtime_identity.rc"),
     "preflight_before": read_rc("preflight_before.rc"),
     "nccl_before": read_rc("nccl_before.rc"),
+    "port_preflight": read_rc("port_preflight.rc"),
     "gdn_action_broadcast": read_rc("gdn_action_broadcast.rc"),
     "service_contract": read_rc("service_contract.rc"),
+    "process_group": read_rc("process_group.rc"),
     "startup": read_rc("startup.rc"),
     "api": read_rc("api_gate.rc"),
     "quality_contract": read_rc("quality_contract_gate.rc"),
@@ -826,6 +947,8 @@ report = {
             "nccl_before.json",
             "gdn_action_broadcast.json",
             "service_contract.json",
+            "process_group_identity.json",
+            "startup.json",
             "api_gate.json",
             "quality_contract_gate.json",
             "compat_http_gate.json",
@@ -838,7 +961,9 @@ report = {
             "preflight_comparison.json",
         )
     },
+    "full_model_evaluated": False,
     "semantic_quality_evaluated": False,
+    "performance_evaluated": False,
     "production_promotion_authorized": False,
 }
 (root / "status.json").write_text(

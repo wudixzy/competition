@@ -165,8 +165,14 @@ def digests() -> dict[str, str]:
         "candidate_capacity",
         "control_trace",
         "candidate_trace",
+        "control_startup",
+        "candidate_startup",
         "control_process_group",
         "candidate_process_group",
+        "control_postflight",
+        "candidate_postflight",
+        "control_preflight_comparison",
+        "candidate_preflight_comparison",
     )
     return {
         name: hashlib.sha256(name.encode("ascii")).hexdigest()
@@ -206,8 +212,11 @@ def status(candidate: bool, artifact_digests: dict[str, str]) -> dict:
             "service_contract": artifact_digests[f"{label}_contract"],
             "process_group_identity":
                 artifact_digests[f"{label}_process_group"],
-            "service_postflight": "a" * 64,
-            "preflight_comparison": "b" * 64,
+            "startup": artifact_digests[f"{label}_startup"],
+            "service_postflight":
+                artifact_digests[f"{label}_postflight"],
+            "preflight_comparison":
+                artifact_digests[f"{label}_preflight_comparison"],
         },
     }
 
@@ -245,6 +254,7 @@ def contract(candidate: bool) -> dict:
             "BI100_PREFIX_MODEL_FINGERPRINT":
                 "Qwen3.6-35B-A3B-diagnostic-4L-real",
             "BI100_PREFIX_TP_SIZE": "1",
+            "CUDA_VISIBLE_DEVICES": "3",
         },
         "command": command,
         "tensor_parallel_size": 1,
@@ -301,6 +311,52 @@ def process_group(candidate: bool) -> dict:
         "pid": pid,
         "pgid": pid,
         "sid": pid,
+        "starttime_ticks": pid * 10,
+        "session_token": ("b" if candidate else "a") * 32,
+    }
+
+
+def startup() -> dict:
+    return {
+        "schema": "bi100-http-health-wait-v1",
+        "version": 1,
+        "qualified": True,
+        "attempts": 2,
+        "elapsed_s": 1.0,
+        "timeout_s": 900,
+        "reason": "healthy",
+        "last_error": None,
+    }
+
+
+def postflight() -> dict:
+    return {
+        "schema": "bi100-service-postflight-v1",
+        "version": 1,
+        "qualified": True,
+        "gpu_indices": [3],
+        "api_server_pids": [],
+        "worker_pids": [],
+        "gpu_processes": [],
+        "scan_errors": [],
+    }
+
+
+def preflight_comparison() -> dict:
+    return {
+        "schema": "bi100-gpu-preflight-comparison-v1",
+        "version": 1,
+        "qualified": True,
+        "expected_gpus": [3],
+        "max_free_memory_drop_bytes": 1073741824,
+        "stages": [
+            {
+                "label": label,
+                "qualified": True,
+                "results": [{"gpu": 3, "ok": True}],
+            }
+            for label in ("before", "after")
+        ],
     }
 
 
@@ -319,9 +375,16 @@ def compare(**overrides) -> dict:
         "candidate_capacity": capacity(19800),
         "control_trace": trace(False),
         "candidate_trace": trace(True),
+        "control_startup": startup(),
+        "candidate_startup": startup(),
         "control_process_group": process_group(False),
         "candidate_process_group": process_group(True),
+        "control_postflight": postflight(),
+        "candidate_postflight": postflight(),
+        "control_preflight_comparison": preflight_comparison(),
+        "candidate_preflight_comparison": preflight_comparison(),
         "artifact_sha256": artifact_digests,
+        "expected_gpu": 3,
     }
     values.update(overrides)
     return MODULE.compare(**values)
@@ -454,6 +517,67 @@ class CompareM186MultiImageAbUnitTest(unittest.TestCase):
             "candidate process session identity differs",
             value["reasons"],
         )
+
+        candidate = process_group(True)
+        candidate.pop("session_token")
+        value = compare(candidate_process_group=candidate)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "candidate process session identity differs",
+            value["reasons"],
+        )
+
+    def test_startup_deadline_report_is_mandatory(self):
+        candidate = startup()
+        candidate["qualified"] = False
+        candidate["reason"] = "deadline_expired"
+        value = compare(candidate_startup=candidate)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "candidate absolute startup deadline did not qualify",
+            value["reasons"],
+        )
+
+    def test_service_gpu_identity_is_bound(self):
+        candidate_contract = contract(True)
+        candidate_contract["environment"]["CUDA_VISIBLE_DEVICES"] = "2"
+        value = compare(candidate_contract=candidate_contract)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "candidate reference environment differs", value["reasons"])
+
+        candidate_preflight = preflight_comparison()
+        candidate_preflight["expected_gpus"] = [2]
+        value = compare(
+            candidate_preflight_comparison=candidate_preflight)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "candidate GPU preflight comparison differs", value["reasons"])
+
+    def test_malformed_nested_objects_fail_without_raising(self):
+        candidate_report = report(True)
+        candidate_report["config"] = None
+        value = compare(candidate_report=candidate_report)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "candidate deterministic streaming contract differs",
+            value["reasons"],
+        )
+
+        candidate_preflight = preflight_comparison()
+        candidate_preflight["stages"][0]["results"] = [None]
+        value = compare(
+            candidate_preflight_comparison=candidate_preflight)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "candidate GPU preflight comparison differs", value["reasons"])
+
+        control_attribution = attribution(False)
+        control_attribution["request_shapes"] = [None]
+        value = compare(control_attribution=control_attribution)
+        self.assertFalse(value["qualified"])
+        self.assertIn(
+            "control image-limit request shape differs", value["reasons"])
 
 
 if __name__ == "__main__":

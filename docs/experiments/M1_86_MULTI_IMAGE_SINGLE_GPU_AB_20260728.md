@@ -62,18 +62,24 @@ service contract, startup, capacity, probe, scoped cleanup, v4 cache-trace
 qualification, privacy-safe 4xx attribution, fatal scan, service postflight,
 post-run preflight, and preflight comparison. Missing or extra lifecycle
 fields fail closed. Status SHA-256 values bind the exact probe, trace,
-attribution, capacity, and service-contract inputs consumed by the aggregate
-decision. The candidate may lose no more than two percent of GPU blocks and
-both arms must retain at least the 16,384 blocks required by the 262,144-token
-capacity contract.
+attribution, capacity, service-contract, startup, process identity, service
+postflight, and GPU preflight-comparison inputs consumed by the aggregate
+decision. The contract's `CUDA_VISIBLE_DEVICES`, each preflight comparison, and
+each service postflight must all identify the runner's declared physical GPU.
+The candidate may lose no more than two percent of GPU blocks and both arms
+must retain at least the 16,384 blocks required by the 262,144-token capacity
+contract.
 
 Before the API server is executed, a small launcher creates a new session and
-atomically records its PID, PGID, and SID. All three must equal the background
-leader and are bound into the aggregate evidence. Service startup has an
-absolute deadline. Cleanup sends SIGTERM to only that recorded process group,
-waits 60 seconds, escalates only verified survivors, and waits/reaps. The outer
-trap repeats process and GPU postflight checks and scans fatal, Gloo, NCCL,
-worker-loss, and timeout evidence.
+atomically records its PID, PGID, SID, `/proc` starttime, and a private session
+token. The process identity must match the background leader and is bound into
+the aggregate evidence. Service startup uses one monotonic absolute deadline
+and verifies the same starttime. Cleanup sends SIGTERM to only that recorded
+process group, waits 60 seconds, escalates only verified survivors, and
+waits/reaps. Both TERM and KILL paths revalidate the recorded starttime and
+private token before signalling. Repeated TERM/INT is ignored while cleanup is
+active. The outer trap repeats process and GPU postflight checks and scans
+fatal, Gloo, NCCL, worker-loss, and timeout evidence.
 
 Reports contain response summaries and SHA-256 digests only. They do not store
 prompts, image data URLs, generated text, or raw user content.

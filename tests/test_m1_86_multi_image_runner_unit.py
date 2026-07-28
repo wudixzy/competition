@@ -55,9 +55,11 @@ class M186MultiImageRunnerUnitTest(unittest.TestCase):
 
     def test_cleanup_is_scoped_graceful_and_fail_closed(self):
         self.assertIn(
-            'bi100_stop_process_group "$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
+            '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20 \\\n'
+            '            "$ACTIVE_STARTTIME" "$ACTIVE_SESSION_TOKEN"',
             self.source,
         )
+        self.assertIn("ACTIVE_SESSION_TOKEN", self.source)
         self.assertNotIn("pkill", self.source)
         self.assertIn("exec_bi100_session.py", self.source)
         self.assertIn(
@@ -69,31 +71,37 @@ class M186MultiImageRunnerUnitTest(unittest.TestCase):
         self.assertIn("trap 'exit 143' TERM", self.source)
         self.assertIn("trap 'exit 130' INT", self.source)
         self.assertIn("trap finish EXIT", self.source)
+        self.assertIn("trap '' TERM INT", self.source)
         self.assertIn("service_postflight_gate.py", self.source)
         self.assertIn(
             "--settle-timeout-s 90 --clean-samples 3", self.source)
         self.assertIn("compare_bi100_preflights.py", self.source)
         self.assertIn("Gloo.*(failed|reset|error)", self.source)
         self.assertIn("NCCL.*(failed|abort|error)", self.source)
-        self.assertIn("124|137", self.source)
+        self.assertIn("124|137|143", self.source)
         self.assertIn("-name '*.rc' -print0", self.source)
-        self.assertIn("-name '*.stdout' -o -name '*.stderr'", self.source)
+        self.assertIn(
+            "-name '*.log' -o -name '*.stdout' -o -name '*.stderr'",
+            self.source,
+        )
 
     def test_startup_and_contract_gates_are_bounded_and_mandatory(self):
-        self.assertIn(
-            "startup_deadline=$((SECONDS + STARTUP_TIMEOUT_S))",
-            self.source,
-        )
-        self.assertIn(
-            "while ((SECONDS < startup_deadline))",
-            self.source,
-        )
+        self.assertIn("wait_http_health.py", self.source)
+        self.assertIn('--starttime-ticks "$ACTIVE_STARTTIME"', self.source)
+        self.assertIn('--timeout-s "$STARTUP_TIMEOUT_S"', self.source)
+        self.assertIn('--out "$arm/startup.json"', self.source)
+        self.assertNotIn("startup_deadline=$((SECONDS", self.source)
         self.assertIn(
             '"service_contract": rc("service_contract.rc")',
             self.source,
         )
         self.assertIn(
             '"cache_trace": rc("cache_trace.rc")',
+            self.source,
+        )
+        self.assertIn('--expected-gpu "$GPU_INDEX"', self.source)
+        self.assertIn(
+            '--control-postflight "$RUN_ROOT/control/service_postflight.json"',
             self.source,
         )
 

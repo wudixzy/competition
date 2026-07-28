@@ -6,7 +6,17 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import secrets
 import sys
+
+
+def _starttime_ticks(pid: int) -> int:
+    value = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+    closing = value.rfind(")")
+    if closing < 0:
+        raise RuntimeError("malformed process stat")
+    fields_after_command = value[closing + 2:].split()
+    return int(fields_after_command[19])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -29,12 +39,16 @@ def main(argv: list[str] | None = None) -> int:
 
     os.setsid()
     pid = os.getpid()
+    session_token = secrets.token_hex(16)
+    os.environ["BI100_PROCESS_SESSION_TOKEN"] = session_token
     report = {
         "schema": "bi100-process-session-v1",
         "version": 1,
         "pid": pid,
         "pgid": os.getpgrp(),
         "sid": os.getsid(0),
+        "starttime_ticks": _starttime_ticks(pid),
+        "session_token": session_token,
     }
     temporary = identity.with_name(f".{identity.name}.{pid}.tmp")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
