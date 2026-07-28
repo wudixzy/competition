@@ -50,6 +50,30 @@ class M1110PrefillStageProfileUnitTest(unittest.TestCase):
         for value in (True, -1.0, float("inf"), float("nan")):
             self.assertFalse(self.profile.finite_nonnegative(value))
 
+    def test_profile_closure_is_checked_per_trial_not_across_medians(self):
+        rows = [
+            [1.0, 100.0, 101.0],
+            [2.0, 10.0, 12.0],
+            [3.0, 20.0, 23.0],
+        ]
+        self.assertEqual(
+            self.profile.profile_row_closure_residuals(rows, 2),
+            [0.0, 0.0, 0.0],
+        )
+        medians = self.profile.median_rows(rows)
+        self.assertEqual(sum(medians[:2]) - medians[2], -1.0)
+
+        for stage_count, invalid_rows in (
+            (0, rows),
+            (2, []),
+            (2, [[1.0, 2.0]]),
+        ):
+            with self.subTest(
+                    stage_count=stage_count, rows=invalid_rows):
+                with self.assertRaises(ValueError):
+                    self.profile.profile_row_closure_residuals(
+                        invalid_rows, stage_count)
+
     def test_profile_source_records_fixed_pipeline_boundaries(self) -> None:
         for marker in (
             "constexpr int kProfileStageCount = 8;",
@@ -70,6 +94,14 @@ class M1110PrefillStageProfileUnitTest(unittest.TestCase):
             self.profile_source,
         )
         self.assertIn("MAX_RELATIVE_L2 = 1e-5", self.profile_source)
+        self.assertIn(
+            "MAX_PROFILE_ROW_CLOSURE_ABS_MS = 1e-6",
+            self.profile_source,
+        )
+        self.assertIn(
+            "profile_row_closure_residuals(",
+            self.profile_source,
+        )
         self.assertIn(
             '"main_or_yaml_change_authorized": False',
             self.profile_source,

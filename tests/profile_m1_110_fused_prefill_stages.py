@@ -36,6 +36,7 @@ PROFILE_TRIALS = 3
 MAX_RELATIVE_L2 = 1e-5
 MAX_PROFILE_EVENT_PERTURBATION = 0.15
 MAX_REPRESENTATIVE_RUNTIME_DELTA = 0.05
+MAX_PROFILE_ROW_CLOSURE_ABS_MS = 1e-6
 
 
 def sha256_file(path: Path) -> str:
@@ -93,6 +94,21 @@ def finite_nonnegative(value: Any) -> bool:
     )
 
 
+def profile_row_closure_residuals(
+    rows: list[list[float]],
+    stage_count: int,
+) -> list[float]:
+    if stage_count <= 0:
+        raise ValueError("stage_count must be positive")
+    if not rows or any(len(row) <= stage_count for row in rows):
+        raise ValueError(
+            "profile rows must include every stage and an event total")
+    return [
+        sum(row[:stage_count]) - row[stage_count]
+        for row in rows
+    ]
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     import torch
 
@@ -147,8 +163,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if any(len(row) != row_width for row in profile_rows):
         reasons.append("profile timing row width is invalid")
         medians = [math.nan] * row_width
+        row_closure_residuals = [math.nan] * len(profile_rows)
     else:
         medians = median_rows(profile_rows)
+        row_closure_residuals = profile_row_closure_residuals(
+            profile_rows, len(STAGE_NAMES))
 
     stage_ms = dict(zip(STAGE_NAMES, medians[:len(STAGE_NAMES)]))
     event_total_ms = medians[len(STAGE_NAMES)]
@@ -165,14 +184,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if (
         not finite_nonnegative(event_total_ms)
         or event_total_ms <= 0.0
-        or not math.isclose(
-            sum(stage_ms.values()),
-            event_total_ms,
-            rel_tol=2e-5,
-            abs_tol=0.02,
+    ):
+        reasons.append("event total timing is invalid")
+    if (
+        not all(math.isfinite(value) for value in row_closure_residuals)
+        or any(
+            abs(value) > MAX_PROFILE_ROW_CLOSURE_ABS_MS
+            for value in row_closure_residuals
         )
     ):
-        reasons.append("stage timings do not sum to the event total")
+        reasons.append("a profile trial does not close to its event total")
     if not finite_nonnegative(validation_host_ms):
         reasons.append("validation host timing is invalid")
 
@@ -222,10 +243,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if abs(event_perturbation) > MAX_PROFILE_EVENT_PERTURBATION:
         reasons.append("event instrumentation perturbation exceeds 15%")
 
+    stage_median_sum_ms = sum(stage_ms.values())
+    median_closure_residual_ms = stage_median_sum_ms - event_total_ms
     stage_share = {
-        name: value / event_total_ms
+        name: value / stage_median_sum_ms
         for name, value in stage_ms.items()
-    } if event_total_ms > 0 else {}
+    } if stage_median_sum_ms > 0 else {}
     ranked_stages = sorted(
         stage_ms,
         key=lambda name: stage_ms[name],
@@ -251,10 +274,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "profile_host_trials_ms": profile_host_ms,
         "profile_host_median_ms": profile_host_median_ms,
         "profile_rows_ms": profile_rows,
+        "profile_row_closure_residuals_ms": row_closure_residuals,
         "stage_median_ms": stage_ms,
+        "stage_median_sum_ms": stage_median_sum_ms,
         "stage_share": stage_share,
         "ranked_stages": ranked_stages,
         "event_total_median_ms": event_total_ms,
+        "median_closure_residual_ms": median_closure_residual_ms,
         "validation_host_median_ms": validation_host_ms,
         "interval_count_median": interval_count,
         "representative_runtime_delta": representative_delta,
@@ -273,6 +299,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 MAX_PROFILE_EVENT_PERTURBATION,
             "maximum_representative_runtime_delta":
                 MAX_REPRESENTATIVE_RUNTIME_DELTA,
+            "maximum_profile_row_closure_abs_ms":
+                MAX_PROFILE_ROW_CLOSURE_ABS_MS,
         },
         "qualified": not reasons,
         "reasons": reasons,
