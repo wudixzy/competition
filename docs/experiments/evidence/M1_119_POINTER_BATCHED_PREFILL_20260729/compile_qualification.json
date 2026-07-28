@@ -1,0 +1,35 @@
+{
+  "candidate_binary": {
+    "corex_version": "3.2.3",
+    "gpu_arch": "ivcore10",
+    "runtime_linkage_complete": true,
+    "sha256": "b82dc08d2033da967dbcebd812163e9b0363e3e4eaba2a2cb16443f316a1c83c",
+    "symbols": {
+      "imports_cublasSgemmBatched": true,
+      "module_entry": "PyInit_corex_fused_paged_prefill"
+    }
+  },
+  "candidate_source_sha256": "5c2c79a120d6982db96f436b149d1afe93a1faa02e97253c370d3e61088c5107",
+  "component_gpu_qualified": false,
+  "control_binary_sha256": "f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009",
+  "decision": {
+    "component_gpu_experiment_authorized": true,
+    "main_or_yaml_change_authorized": false,
+    "tp4_service_experiment_authorized": false
+  },
+  "frozen_production_source_sha256": "11c387e6012834fe634ffa8d038f7a4bf4ec19fa13ec23779ee1f414037e564b",
+  "instance": "ssh-73ca29ba",
+  "local_validation": {
+    "complete_unit_tests_passed": 1215,
+    "complete_unit_tests_skipped": 26,
+    "focused_tests_passed": 10,
+    "submission_preflight_checks_passed": 9
+  },
+  "remote_validation": {
+    "focused_tests_passed": 10,
+    "git_worktree_clean": true,
+    "gpu_kernel_executed": false
+  },
+  "schema": "bi100-m1-119-pointer-batched-compile-v1",
+  "source_commit": "0cd4aa2d9145bf5b8cbd2a9553a97307071236e8"
+}

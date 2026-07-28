@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import subprocess
 import unittest
 
@@ -17,6 +18,14 @@ DEFAULT_BUILD = (
 PATCH_OPS = ROOT / "qwen3_6_scripts" / "patch_ops.sh"
 WRAPPER = ROOT / "scripts" / "run_m1_119_pointer_batched_component_ab.sh"
 RUNNER = ROOT / "scripts" / "run_m1_109_fused_softmax_component_ab.sh"
+EVIDENCE = (
+    ROOT
+    / "docs"
+    / "experiments"
+    / "evidence"
+    / "M1_119_POINTER_BATCHED_PREFILL_20260729"
+    / "compile_qualification.json"
+)
 
 
 class M1119PointerBatchedPrefillUnitTest(unittest.TestCase):
@@ -30,6 +39,7 @@ class M1119PointerBatchedPrefillUnitTest(unittest.TestCase):
         cls.patch_ops = PATCH_OPS.read_text(encoding="utf-8")
         cls.wrapper = WRAPPER.read_text(encoding="utf-8")
         cls.runner = RUNNER.read_text(encoding="utf-8")
+        cls.evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
 
     def test_candidate_is_compile_time_only(self) -> None:
         marker = "BI100_PREFILL_BATCHED16_EXPERIMENT"
@@ -94,6 +104,21 @@ class M1119PointerBatchedPrefillUnitTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("BI100_COMPONENT_AB_VARIANT is invalid", result.stderr)
+
+    def test_compile_evidence_keeps_gpu_and_promotion_gates_closed(self) -> None:
+        self.assertEqual(
+            self.evidence["schema"],
+            "bi100-m1-119-pointer-batched-compile-v1",
+        )
+        self.assertTrue(
+            self.evidence["candidate_binary"]["runtime_linkage_complete"])
+        self.assertFalse(self.evidence["component_gpu_qualified"])
+        self.assertFalse(
+            self.evidence["remote_validation"]["gpu_kernel_executed"])
+        self.assertFalse(
+            self.evidence["decision"]["tp4_service_experiment_authorized"])
+        self.assertFalse(
+            self.evidence["decision"]["main_or_yaml_change_authorized"])
 
 
 if __name__ == "__main__":

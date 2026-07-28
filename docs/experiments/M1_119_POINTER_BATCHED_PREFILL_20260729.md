@@ -2,8 +2,8 @@
 
 Date: 2026-07-29
 
-Status: source and local static gates in progress. CoreX compilation,
-component numerical/performance qualification, and TP4 service validation are
+Status: source, local static gates, and CoreX compilation passed. Component
+GPU numerical/performance qualification and TP4 service validation are
 pending.
 
 ## Motivation
@@ -64,3 +64,30 @@ scripts/run_m1_119_pointer_batched_component_ab.sh \
 If the pointer-batched call fails compilation, numerical gates, or the fixed
 component speed gate, record the evidence and stop this call-coalescing
 variant. Do not scan batch sizes or modify YAML thresholds.
+
+## Compile qualification
+
+The private branch source commit
+`0cd4aa2d9145bf5b8cbd2a9553a97307071236e8` was cloned exactly on the
+BI100 host and remained clean after validation. CoreX 3.2.3 compiled the
+candidate for `ivcore10` without accessing a GPU.
+
+```text
+frozen M1-109 source:
+  11c387e6012834fe634ffa8d038f7a4bf4ec19fa13ec23779ee1f414037e564b
+frozen M1-108 control binary:
+  f654eee2c0677812394ff419d316e7e8c98ed1bcc84853a7f8d2ed5755503009
+M1-119 candidate source:
+  5c2c79a120d6982db96f436b149d1afe93a1faa02e97253c370d3e61088c5107
+M1-119 candidate binary:
+  b82dc08d2033da967dbcebd812163e9b0363e3e4eaba2a2cb16443f316a1c83c
+```
+
+The binary exports `PyInit_corex_fused_paged_prefill`, imports
+`cublasSgemmBatched`, and has complete linkage under the production CoreX
+`LD_LIBRARY_PATH`. Ten focused tests passed both locally and on the remote
+exact clone. The complete local suite passed 1,215 tests with 26 skipped, and
+submission preflight passed all nine checks.
+
+Structured evidence:
+`docs/experiments/evidence/M1_119_POINTER_BATCHED_PREFILL_20260729/compile_qualification.json`.
