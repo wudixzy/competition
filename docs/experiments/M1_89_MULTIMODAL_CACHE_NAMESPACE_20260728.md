@@ -13,6 +13,8 @@ private branch
 `main`, submission YAML, runtime-default, or repository-visibility change.
 Commit `d5f9b85` adds the M1-86 v2 palette/transparency service gate and binds
 it into the M1-87 v3 queue; remote execution is still pending.
+M1-93 fixes namespace loss during request-level swap-in, upgrades the
+installed-overlay gate to v3, and binds it into the M1-87 v5 queue.
 
 ## Problem
 
@@ -70,11 +72,13 @@ tool/reasoning/multimodal capability, context limit, or formal command changed.
   truthiness, request-ID reuse after release, and physical block reuse.
 - A fixed-seed 1000-step state machine compares `fine32`, `admission64`, and
   `off` policy state against an independent `OrderedDict` LRU oracle.
-- `tests/qwen36_cache_namespace_runtime_gate.py` v2 loads the actual installed
-  block manager, `Sequence` implementation, and real Pillow implementation.
+- `tests/qwen36_cache_namespace_runtime_gate.py` v3 loads the actual installed
+  block manager, prefix allocator, `Sequence` implementation, and real Pillow
+  implementation.
   Its empty-container check obtains `{}` from the installed
   `Sequence.multi_modal_data` property instead of synthesizing it. It repeats
-  nine fixed checks and writes only booleans, bounded exception types,
+  ten fixed checks, including a namespaced request-swap round trip, and writes
+  only booleans, bounded exception types,
   source/runtime identity, and module SHA-256. Import or initialization
   failure produces a redacted structured failure report instead of relying
   on a traceback.
@@ -130,9 +134,9 @@ python3 /path/to/source/tests/qwen36_cache_namespace_runtime_gate.py \
 ```
 
 The current `scripts/run_m1_87_single_gpu_queue.sh` performs both checks before
-starting M1-84 or M1-86 and binds their reports into its v3 aggregate.
+starting M1-84 or M1-86 and binds their reports into its v5 aggregate.
 
-Only after runtime identity and all nine installed-overlay checks pass may the
+Only after runtime identity and all ten installed-overlay checks pass may the
 fixed single-GPU service A/B run. It must check:
 
 - pure text and the runtime's empty multimodal mapping use the same namespace;

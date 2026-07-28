@@ -136,6 +136,21 @@ def _load_allocator_init_block():
     return namespace["_init_block"]
 
 
+def _load_allocator_swap_in():
+    tree = ast.parse(PREFIX_BLOCK.read_text(), filename=str(PREFIX_BLOCK))
+    source = next(node for node in tree.body
+                  if isinstance(node, ast.ClassDef)
+                  and node.name == "PrefixCachingBlockAllocator")
+    function = next(node for node in source.body
+                    if isinstance(node, ast.FunctionDef)
+                    and node.name == "swap_in")
+    namespace = {"Block": Any, "List": List}
+    module = ast.fix_missing_locations(ast.Module(
+        body=[function], type_ignores=[]))
+    exec(compile(module, str(PREFIX_BLOCK), "exec"), namespace)
+    return namespace["swap_in"]
+
+
 class _FakeRefCounter:
 
     def incr(self, block_id):
@@ -185,6 +200,47 @@ class _FakeForkAllocator:
         self._block_pool = _NamespaceResettingBlockPool()
 
 
+class _FakeSwapTemporary:
+
+    def __init__(self, block_id):
+        self.block_id = block_id
+        self.appended_token_ids = None
+
+    def append_token_ids(self, token_ids):
+        self.appended_token_ids = list(token_ids)
+
+
+class _FakeSwapBlockPool:
+
+    def __init__(self):
+        self.freed = []
+
+    def free_block(self, block):
+        self.freed.append(block)
+
+
+class _FakeSwapAllocator:
+    swap_in = _load_allocator_swap_in()
+
+    def __init__(self):
+        self._block_pool = _FakeSwapBlockPool()
+        self.immutable_calls = []
+        self.mutable_calls = []
+        self.mutable_temporary = None
+
+    def allocate_immutable_block_with_cache_namespace(
+            self, prev_block, token_ids, cache_namespace):
+        self.immutable_calls.append(
+            (prev_block, list(token_ids), cache_namespace))
+        return _FakeSwapTemporary(101)
+
+    def allocate_mutable_block_with_cache_namespace(
+            self, prev_block, cache_namespace):
+        self.mutable_calls.append((prev_block, cache_namespace))
+        self.mutable_temporary = _FakeSwapTemporary(202)
+        return self.mutable_temporary
+
+
 class PrefixContentHashTest(unittest.TestCase):
 
     def test_sha256_chain_is_stable_and_parent_sensitive(self):
@@ -210,6 +266,39 @@ class PrefixContentHashTest(unittest.TestCase):
         self.assertNotEqual(
             PrefixHash.hash_block_tokens(False, first_a, [3, 4]),
             PrefixHash.hash_block_tokens(False, first_b, [3, 4]))
+
+    def test_swap_in_preserves_full_and_partial_block_namespaces(self):
+        allocator = _FakeSwapAllocator()
+        parent = SimpleNamespace(content_hash=b"parent")
+        full = SimpleNamespace(
+            is_full=True,
+            prev_block=None,
+            token_ids=[1, 2, 3, 4],
+            cache_namespace=b"full-namespace",
+            block_id=None,
+        )
+        partial = SimpleNamespace(
+            is_full=False,
+            prev_block=parent,
+            token_ids=[5, 6],
+            cache_namespace=b"partial-namespace",
+            block_id=None,
+        )
+
+        allocator.swap_in([full, partial])
+
+        self.assertEqual(
+            allocator.immutable_calls,
+            [(None, [1, 2, 3, 4], b"full-namespace")],
+        )
+        self.assertEqual(
+            allocator.mutable_calls,
+            [(parent, b"partial-namespace")],
+        )
+        self.assertEqual(
+            allocator.mutable_temporary.appended_token_ids, [5, 6])
+        self.assertEqual((full.block_id, partial.block_id), (101, 202))
+        self.assertEqual(len(allocator._block_pool.freed), 2)
 
     def test_nested_multimodal_namespace_is_canonical(self):
         hasher = NamespaceHash()

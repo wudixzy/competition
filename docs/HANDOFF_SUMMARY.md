@@ -1,5 +1,28 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-28 M1-93 request swap 缓存命名空间修复
+
+- 私有分支为 `fix/M1-93-prefix-swap-namespace-20260728`。审计确认
+  request-level swap-in 重建第一个完整块时走无 namespace 接口，导致逻辑块
+  保留多模态/adapter 内容哈希，而目标 allocator 用空 namespace 哈希登记同一
+  物理块；后续释放、再次 swap 或复用可能 lookup miss/断言失败。
+- `PrefixCachingBlockAllocator.swap_in()` 现在对完整块和部分块分别调用
+  namespace-aware immutable/mutable 分配接口，并显式传入原
+  `cache_namespace`。不改 token、模型计算、缓存策略、请求语义、正式 YAML、
+  默认开关、`main` 或仓库可见性。
+- source 行为测试覆盖完整/部分块 namespace、token append、物理 ID 交接与
+  临时块释放。installed-overlay 门禁升级为 v3，新增独立 allocator 间双向
+  namespaced swap round trip，并绑定 prefix allocator 模块 SHA；M1-87 聚合
+  因此升级为 v5。
+- 同轮审计还确认 GDN scheduler 在 worker capture 前更新 resident index。
+  当前同步 engine 的 execute 异常会直接退出 step，不能带着漂移状态继续调度，
+  重启也会清空两侧状态；因此没有伪造无 ACK 的提交协议。未来若支持模型错误后
+  继续服务，必须先增加全 rank capture ACK，再提交 admission/eviction。
+- 当前远端 SSH 有界复测仍在 TLS/SSH 层断开，没有启动远端进程或占用 GPU。
+  修复目前只有本地 source/契约证据；恢复后先执行固定 M1-91，再执行 M1-87 v5，
+  最终仍需 TP4 完整能力、长上下文、cold/warm、稳定性与性能 A/B。详情见
+  `docs/experiments/M1_93_PREFIX_SWAP_NAMESPACE_20260728.md`。
+
 ## 2026-07-28 M1-92 工具选择单卡门禁
 
 - 私有实验分支为 `exp/M1-92-tool-choice-gate-20260728`。历史未绑定平台结果
@@ -14,7 +37,8 @@
   原始 SSE。当前 CoreX 基线不支持 `tool_choice=required` 与 `strict=true`；
   它们明确标记为兼容缺口和未评估能力，不能伪造成成功响应，也不能作为规范
   负测抵销成功率。
-- M1-84 服务 runner 已绑定该报告，M1-87 聚合升级为 v4 并 fail-closed 校验
+- M1-84 服务 runner 已绑定该报告，M1-87 聚合在 M1-92 时升级为 v4，并在
+  M1-93 后升级为 v5；它 fail-closed 校验
   gate 集合、artifact SHA 与工具选择摘要。原有本轮进程组证明、TERM 60 秒、
   survivor-only KILL、wait/reap、postflight、重复 GPU preflight、fatal/timeout
   扫描保持不变。
@@ -22,7 +46,7 @@
   skip，submission preflight `9/9`，质量数据与 53 项指标 manifest 均通过；
   尚未运行真实 BI100。`ssh-73ca29ba` 最新有界探测仍在 TLS ProxyCommand 层
   断开，没有执行远端命令或占用 GPU。恢复后先跑固定 M1-91 数值/性能门禁，
-  再跑 M1-87 v4 单卡服务队列；通过后仍必须做完整 TP4 模型能力、长上下文、
+  再跑 M1-87 v5 单卡服务队列；通过后仍必须做完整 TP4 模型能力、长上下文、
   cold/warm、稳定性与性能 A/B。详情见
   `docs/experiments/M1_92_TOOL_CHOICE_SINGLE_GPU_GATE_20260728.md`。
 
@@ -126,7 +150,7 @@
   的交集，allocator hit-rate 则是 raw KV 命中，两者不得混用。
 - `9ecbf30` 将 M1-87 单卡队列升级到 v2，`d5f9b85` 进一步升级到 v3：先验证
   当前源码绑定的 immutable
-  overlay，再从 `/tmp` 执行 M1-89 九项 installed-runtime 门禁，之后才允许启动
+  overlay，再从 `/tmp` 执行 M1-89 十项 installed-runtime 门禁，之后才允许启动
   M1-84/M1-86 v2。三阶段必须绑定同一 runtime path/tree；外层中断清理的 TERM
   宽限从 900 秒收敛为 60 秒，仍仅操作本轮 PID/PGID/starttime/session-token
   匹配的进程组并 wait/reap。完整 tests-root 为 1030 项通过、25 项依赖 skip。

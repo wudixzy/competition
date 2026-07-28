@@ -805,11 +805,16 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             # and the block_id is assigned to "block" to allow reusing the
             # existing "block" object
             if block.is_full:
-                tmp_block = self.allocate_immutable_block(
-                    prev_block=block.prev_block, token_ids=block.token_ids)
+                tmp_block = (
+                    self.allocate_immutable_block_with_cache_namespace(
+                        prev_block=block.prev_block,
+                        token_ids=block.token_ids,
+                        cache_namespace=block.cache_namespace))
             else:
-                tmp_block = self.allocate_mutable_block(
-                    prev_block=block.prev_block)
+                tmp_block = (
+                    self.allocate_mutable_block_with_cache_namespace(
+                        prev_block=block.prev_block,
+                        cache_namespace=block.cache_namespace))
                 tmp_block.append_token_ids(block.token_ids)
 
             block_id = tmp_block.block_id

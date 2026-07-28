@@ -68,13 +68,14 @@ class M187QueueQualifierUnitTest(unittest.TestCase):
             self.root / "m1_89_cache_namespace_runtime_gate.json",
             {
                 "schema": qualifier.CACHE_NAMESPACE_SCHEMA,
-                "version": 2,
+                "version": 3,
                 "qualified": True,
                 "reasons": [],
                 "source_revision": REVISION,
                 "runtime_site_packages": RUNTIME,
                 "block_manager_module_sha256": "4" * 64,
-                "sequence_module_sha256": "5" * 64,
+                "prefix_allocator_module_sha256": "5" * 64,
+                "sequence_module_sha256": "6" * 64,
                 "pillow_version": "11.3.0",
                 "checks": {
                     name: True
@@ -316,7 +317,7 @@ class M187QueueQualifierUnitTest(unittest.TestCase):
         report = self._qualify()
         self.assertTrue(report["qualified"], report["reasons"])
         self.assertEqual(report["schema"], qualifier.SCHEMA)
-        self.assertEqual(report["version"], 2)
+        self.assertEqual(report["version"], 3)
         self.assertEqual(report["identity"]["runtime_tree_sha256"], TREE)
         self.assertEqual(
             report["identity"]["diagnostic_manifest_sha256"], MANIFEST)

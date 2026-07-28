@@ -18,12 +18,14 @@ SPEC.loader.exec_module(MODULE)
 
 class CacheNamespaceRuntimeGateUnitTest(unittest.TestCase):
 
-    def test_v2_contract_matches_runtime_empty_mapping_semantics(self):
+    def test_v3_contract_covers_empty_mapping_and_request_swap(self):
         self.assertEqual(
-            MODULE.SCHEMA, "qwen36-cache-namespace-runtime-gate-v2")
-        self.assertEqual(MODULE.VERSION, 2)
+            MODULE.SCHEMA, "qwen36-cache-namespace-runtime-gate-v3")
+        self.assertEqual(MODULE.VERSION, 3)
         self.assertIn(
             "empty_multimodal_matches_text", MODULE.REQUIRED_CHECKS)
+        self.assertIn(
+            "request_swap_preserves_namespace", MODULE.REQUIRED_CHECKS)
         self.assertNotIn(
             "empty_multimodal_separated_from_text",
             MODULE.REQUIRED_CHECKS,
@@ -43,7 +45,7 @@ class CacheNamespaceRuntimeGateUnitTest(unittest.TestCase):
         self.assertIn(
             "runtime check order or identity differs", reasons)
         self.assertIn(
-            "runtime check failed: request_id_reuse_gets_fresh_namespace",
+            "runtime check failed: request_swap_preserves_namespace",
             reasons,
         )
 

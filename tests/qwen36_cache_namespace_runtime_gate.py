@@ -16,8 +16,8 @@ from typing import Any, Callable
 from unittest.mock import patch
 
 
-SCHEMA = "qwen36-cache-namespace-runtime-gate-v2"
-VERSION = 2
+SCHEMA = "qwen36-cache-namespace-runtime-gate-v3"
+VERSION = 3
 REQUIRED_CHECKS = (
     "module_bound_to_overlay",
     "same_palette_stable",
@@ -28,6 +28,7 @@ REQUIRED_CHECKS = (
     "normalization_error_is_request_local",
     "release_clears_request_state",
     "request_id_reuse_gets_fresh_namespace",
+    "request_swap_preserves_namespace",
 )
 
 
@@ -102,10 +103,14 @@ def run_gate(
 
     block_manager_module = importlib.import_module(
         "vllm.core.block_manager_v2")
+    prefix_allocator_module = importlib.import_module(
+        "vllm.core.block.prefix_caching_block")
     sequence_module = importlib.import_module("vllm.sequence")
     image_module = importlib.import_module("PIL.Image")
     manager_class = block_manager_module.BlockSpaceManagerV2
     module_path = Path(block_manager_module.__file__).resolve(strict=True)
+    prefix_allocator_module_path = Path(
+        prefix_allocator_module.__file__).resolve(strict=True)
     sequence_module_path = Path(
         sequence_module.__file__).resolve(strict=True)
     group = SimpleNamespace(
@@ -117,6 +122,8 @@ def run_gate(
         "module_bound_to_overlay",
         lambda: (
             module_path.is_relative_to(runtime_site_packages)
+            and prefix_allocator_module_path.is_relative_to(
+                runtime_site_packages)
             and sequence_module_path.is_relative_to(runtime_site_packages)
         ),
     )
@@ -248,6 +255,45 @@ def run_gate(
         request_id_reuse_gets_fresh_namespace,
     )
 
+    def request_swap_preserves_namespace() -> bool:
+        allocator_class = prefix_allocator_module.PrefixCachingBlockAllocator
+        source = allocator_class(num_blocks=8, block_size=4)
+        destination = allocator_class(num_blocks=8, block_size=4)
+        namespace = b"m1-93-request-swap-namespace"
+        blocks = source.allocate_immutable_blocks_with_cache_namespace(
+            prev_block=None,
+            block_token_ids=[
+                [1, 2, 3, 4],
+                [5, 6, 7, 8],
+            ],
+            cache_namespace=namespace,
+        )
+        expected_hashes = [block.content_hash for block in blocks]
+
+        source.swap_out(blocks)
+        destination.swap_in(blocks)
+        destination_registered = all(
+            destination._cached_blocks.get(content_hash) == block.block_id
+            for content_hash, block in zip(expected_hashes, blocks)
+        )
+        destination.swap_out(blocks)
+        source.swap_in(blocks)
+        source_registered = all(
+            source._cached_blocks.get(content_hash) == block.block_id
+            for content_hash, block in zip(expected_hashes, blocks)
+        )
+        return (
+            destination_registered
+            and source_registered
+            and [block.content_hash for block in blocks] == expected_hashes
+            and all(block.cache_namespace == namespace for block in blocks)
+        )
+
+    check(
+        "request_swap_preserves_namespace",
+        request_swap_preserves_namespace,
+    )
+
     qualified, reasons = qualify_checks(checks, errors)
     return {
         "schema": SCHEMA,
@@ -257,6 +303,8 @@ def run_gate(
         "source_revision": source_revision,
         "runtime_site_packages": str(runtime_site_packages),
         "block_manager_module_sha256": _sha256(module_path),
+        "prefix_allocator_module_sha256": _sha256(
+            prefix_allocator_module_path),
         "sequence_module_sha256": _sha256(sequence_module_path),
         "pillow_version": importlib.metadata.version("Pillow"),
         "checks": checks,

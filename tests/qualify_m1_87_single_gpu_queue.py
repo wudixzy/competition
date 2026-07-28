@@ -13,8 +13,8 @@ from typing import Any
 
 
 Json = dict[str, Any]
-SCHEMA = "bi100-m1-87-single-gpu-queue-v4"
-CACHE_NAMESPACE_SCHEMA = "qwen36-cache-namespace-runtime-gate-v2"
+SCHEMA = "bi100-m1-87-single-gpu-queue-v5"
+CACHE_NAMESPACE_SCHEMA = "qwen36-cache-namespace-runtime-gate-v3"
 DIAGNOSTIC_SCHEMA = "qwen36-diagnostic-service-gate-v1"
 IMAGE_RUNNER_SCHEMA = "bi100-m1-86-multi-image-ab-runner-v1"
 IMAGE_COMPARISON_SCHEMA = "bi100-m1-86-multi-image-ab-v2"
@@ -32,6 +32,7 @@ CACHE_NAMESPACE_CHECKS = frozenset({
     "normalization_error_is_request_local",
     "release_clears_request_state",
     "request_id_reuse_gets_fresh_namespace",
+    "request_swap_preserves_namespace",
 })
 DIAGNOSTIC_GATE_NAMES = frozenset({
     "checkpoint_verify",
@@ -338,11 +339,12 @@ def qualify(
     cache_privacy = cache_gate.get("privacy")
     cache_module_digests = (
         cache_gate.get("block_manager_module_sha256"),
+        cache_gate.get("prefix_allocator_module_sha256"),
         cache_gate.get("sequence_module_sha256"),
     )
     if (
         cache_gate.get("schema") != CACHE_NAMESPACE_SCHEMA
-        or cache_gate.get("version") != 2
+        or cache_gate.get("version") != 3
         or cache_gate.get("qualified") is not True
         or cache_gate.get("reasons") != []
         or cache_gate.get("source_revision") != expected_source_revision
@@ -639,7 +641,7 @@ def qualify(
 
     return {
         "schema": SCHEMA,
-        "version": 2,
+        "version": 3,
         "qualified": not reasons,
         "reasons": reasons,
         "source_revision": expected_source_revision,

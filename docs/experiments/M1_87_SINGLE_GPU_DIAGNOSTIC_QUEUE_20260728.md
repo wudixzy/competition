@@ -15,12 +15,14 @@ multi-image output and cache isolation. Running any result alone does not prove
 that all three used the same source and runtime overlay, or that the service
 stages used the same diagnostic checkpoint and physical GPU.
 
-M1-87 v4 runs those gates sequentially and produces one fail-closed
+M1-87 v5 runs those gates sequentially and produces one fail-closed
 identity and lifecycle decision. The installed-runtime integration is commit
 `9ecbf30`; commit `d5f9b85` upgrades M1-86 to the palette/transparency
 service-level v2 contract and binds that evidence into M1-87 v3. M1-92 adds
 the valid tool-choice gate and upgrades the aggregate to v4 on the private
-`exp/M1-92-tool-choice-gate-20260728` branch. These changes affect test
+`exp/M1-92-tool-choice-gate-20260728` branch. M1-93 adds a namespaced
+request-swap round trip to the installed-runtime gate and upgrades the
+aggregate to v5. These changes affect cache correctness and test
 infrastructure only. They do not
 change model code, weights, dtype, tokenizer, chat template, request semantics,
 cache policy, `computility-run.yaml`, Dockerfile, or a production default.
@@ -31,7 +33,7 @@ cache policy, `computility-run.yaml`, Dockerfile, or a production default.
 immutable overlay installed from the exact current HEAD:
 
 1. verify that the immutable overlay matches the exact current source;
-2. from `/tmp`, run the M1-89 installed-runtime v2 gate without model or GPU
+2. from `/tmp`, run the M1-89 installed-runtime v3 gate without model or GPU
    execution;
 3. run the current M1-84 diagnostic service gate at TP1, including the M1-92
    omitted/auto/named tool-choice HTTP gate;
@@ -39,7 +41,7 @@ immutable overlay installed from the exact current HEAD:
 5. run the fixed M1-86 control/candidate multi-image A/B at TP1;
 6. recover only process groups recorded by this run, then require final service
    postflight, GPU preflight, recursive fatal scan, and timeout scan;
-7. bind all stages into the v4 `queue_status.json`.
+7. bind all stages into the v5 `queue_status.json`.
 
 The diagnostic and multi-image services use different fixed loopback ports.
 Those two service stages use the same four-layer structural real-weight
@@ -94,7 +96,8 @@ preflight comparisons to the declared `CUDA_VISIBLE_DEVICES`.
 
 The aggregate binds:
 
-- the M1-89 overlay identity and nine-check installed-runtime report;
+- the M1-89 overlay identity and ten-check installed-runtime report, including
+  request-swap namespace preservation and the prefix allocator module digest;
 - the full M1-84 status artifact manifest, including the M1-92 report;
 - the M1-86 v2 runner manifest and every input consumed by its comparison,
   including 7/11 control/candidate v4 trace records for palette and
@@ -110,8 +113,8 @@ the aggregate.
 
 ## Current status
 
-M1-92 implementation and local contract validation are complete on the
-current private experiment branch. No BI100 result has been claimed. The
+M1-92 and M1-93 implementation and local contract validation are complete on
+the current private experiment lineage. No BI100 result has been claimed. The
 latest bounded SSH probe still failed in the TLS ProxyCommand layer before
 authentication, and the local host has no usable CoreX GPU or Pillow
 installation.
@@ -151,7 +154,7 @@ privacy-safe structured evidence after manual review.
 
 ## Interpretation
 
-A qualified M1-87 v4 result authorizes only the single-GPU structural diagnostic
+A qualified M1-87 v5 result authorizes only the single-GPU structural diagnostic
 phase. Full-model TP4 functional, cold/warm correctness, long-context,
 multimodal, tool/reasoning, semantic-quality, and performance gates remain
 mandatory. M1-87 never authorizes changing `main`, formal YAML, repository
