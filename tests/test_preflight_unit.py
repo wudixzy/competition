@@ -3,6 +3,7 @@ import contextlib
 import io
 import os
 import pathlib
+import signal
 import socket
 import subprocess
 import sys
@@ -279,6 +280,12 @@ class Bi100PreflightUnitTest(unittest.TestCase):
 
 class Bi100NcclPreflightUnitTest(unittest.TestCase):
 
+    def setUp(self):
+        bi100_nccl_preflight._ACTIVE_PROCESSES = []
+
+    def tearDown(self):
+        bi100_nccl_preflight._ACTIVE_PROCESSES = []
+
     def test_nccl_parse_gpus_requires_at_least_two_gpus(self):
         self.assertEqual(bi100_nccl_preflight.parse_gpus("0,1, 3"), [0, 1, 3])
         with self.assertRaises(argparse.ArgumentTypeError):
@@ -309,6 +316,98 @@ class Bi100NcclPreflightUnitTest(unittest.TestCase):
         self.assertGreater(port, 0)
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind(("127.0.0.1", port))
+
+    def test_nccl_cleanup_terms_groups_and_reaps_without_kill(self):
+        first = MagicMock()
+        first.pid = 5001
+        first.is_alive.side_effect = [True, True, False, False]
+        second = MagicMock()
+        second.pid = 5002
+        second.is_alive.side_effect = [False, False]
+
+        with patch.object(bi100_nccl_preflight.os, "killpg") as killpg:
+            report = bi100_nccl_preflight._cleanup_processes(
+                [first, second])
+
+        self.assertTrue(report["reaped"])
+        self.assertEqual(report["term_ranks"], [0])
+        self.assertEqual(report["kill_ranks"], [])
+        self.assertEqual(
+            report["term_grace_s"],
+            bi100_nccl_preflight.TERM_GRACE_S,
+        )
+        killpg.assert_called_once_with(5001, signal.SIGTERM)
+        first.join.assert_called_once()
+        self.assertLessEqual(
+            first.join.call_args.args[0],
+            bi100_nccl_preflight.TERM_GRACE_S,
+        )
+        second.join.assert_not_called()
+
+    def test_nccl_cleanup_kills_only_survivor_after_term_grace(self):
+        process = MagicMock()
+        process.pid = 5101
+        process.is_alive.side_effect = [True, True, True, True, False]
+
+        with (
+            patch.object(bi100_nccl_preflight.os, "killpg") as killpg,
+            patch.object(
+                bi100_nccl_preflight.time,
+                "monotonic",
+                side_effect=[0.0, 0.0, 60.0, 60.0],
+            ),
+        ):
+            report = bi100_nccl_preflight._cleanup_processes([process])
+
+        self.assertTrue(report["reaped"])
+        self.assertEqual(report["term_ranks"], [0])
+        self.assertEqual(report["kill_ranks"], [0])
+        self.assertEqual(killpg.call_args_list, [
+            call(5101, signal.SIGTERM),
+            call(5101, signal.SIGKILL),
+        ])
+        self.assertEqual(process.join.call_count, 2)
+
+    def test_nccl_parent_termination_runs_scoped_cleanup(self):
+        cleanup = {
+            "reaped": True,
+            "term_ranks": [0, 1],
+            "kill_ranks": [],
+            "surviving_ranks": [],
+        }
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["bi100_nccl_preflight.py", "--gpus", "0,1"],
+            ),
+            patch.object(
+                bi100_nccl_preflight,
+                "run_probe",
+                side_effect=bi100_nccl_preflight.ParentTermination(
+                    signal.SIGTERM),
+            ),
+            patch.object(
+                bi100_nccl_preflight,
+                "_cleanup_active_processes",
+                return_value=cleanup,
+            ) as cleanup_active,
+            patch.object(
+                bi100_nccl_preflight.signal,
+                "getsignal",
+                return_value=signal.SIG_DFL,
+            ),
+            patch.object(
+                bi100_nccl_preflight.signal,
+                "signal",
+            ),
+            contextlib.redirect_stderr(io.StringIO()) as stderr,
+        ):
+            rc = bi100_nccl_preflight.main()
+
+        self.assertEqual(rc, 143)
+        self.assertEqual(cleanup_active.call_count, 2)
+        self.assertIn("child_cleanup_reaped=true", stderr.getvalue())
 
 
 if __name__ == "__main__":

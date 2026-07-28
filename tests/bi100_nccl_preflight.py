@@ -5,6 +5,8 @@ import argparse
 import json
 import multiprocessing as mp
 import os
+import queue as queue_module
+import signal
 import socket
 import sys
 import time
@@ -27,6 +29,21 @@ COREX_PYTHON_PATHS = [
     "/usr/local/corex/lib64/python3/dist-packages",
     "/usr/local/corex/lib/python3/dist-packages",
 ]
+TERM_GRACE_S = 60.0
+KILL_GRACE_S = 20.0
+_ACTIVE_PROCESSES: list[mp.Process] = []
+
+
+class ParentTermination(BaseException):
+    def __init__(self, signum: int) -> None:
+        super().__init__(signum)
+        self.signum = signum
+
+
+def _parent_signal_handler(signum: int, _frame: Any) -> None:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    raise ParentTermination(signum)
 
 
 def _prepend_env_list(key: str, values: list[str]) -> None:
@@ -69,6 +86,11 @@ def worker(rank: int,
            world_size: int,
            init_method: str,
            queue: mp.Queue) -> None:
+    signal.pthread_sigmask(
+        signal.SIG_UNBLOCK,
+        {signal.SIGTERM, signal.SIGINT},
+    )
+    os.setsid()
     setup_corex_env()
     try:
         import torch
@@ -102,7 +124,86 @@ def worker(rank: int,
         raise
 
 
+def _signal_process_group(process: mp.Process, signum: int) -> None:
+    if process.pid is None or not process.is_alive():
+        return
+    try:
+        os.killpg(process.pid, signum)
+    except ProcessLookupError:
+        return
+    except OSError:
+        if signum == signal.SIGTERM:
+            process.terminate()
+        else:
+            process.kill()
+
+
+def _join_processes(processes: list[mp.Process], timeout_s: float) -> None:
+    deadline = time.monotonic() + timeout_s
+    for process in processes:
+        process.join(max(0.0, deadline - time.monotonic()))
+
+
+def _cleanup_processes(processes: list[mp.Process]) -> dict[str, Any]:
+    term_ranks = [
+        rank for rank, process in enumerate(processes)
+        if process.is_alive()
+    ]
+    for rank in term_ranks:
+        _signal_process_group(processes[rank], signal.SIGTERM)
+    _join_processes(
+        [processes[rank] for rank in term_ranks],
+        TERM_GRACE_S,
+    )
+
+    kill_ranks = [
+        rank for rank in term_ranks
+        if processes[rank].is_alive()
+    ]
+    for rank in kill_ranks:
+        _signal_process_group(processes[rank], signal.SIGKILL)
+    _join_processes(
+        [processes[rank] for rank in kill_ranks],
+        KILL_GRACE_S,
+    )
+
+    surviving_ranks = [
+        rank for rank, process in enumerate(processes)
+        if process.is_alive()
+    ]
+    return {
+        "term_grace_s": TERM_GRACE_S,
+        "kill_grace_s": KILL_GRACE_S,
+        "term_ranks": term_ranks,
+        "kill_ranks": kill_ranks,
+        "surviving_ranks": surviving_ranks,
+        "reaped": not surviving_ranks,
+    }
+
+
+def _cleanup_active_processes() -> dict[str, Any]:
+    global _ACTIVE_PROCESSES
+    report = _cleanup_processes(_ACTIVE_PROCESSES)
+    if report["reaped"]:
+        _ACTIVE_PROCESSES = []
+    return report
+
+
+def _start_process(process: mp.Process) -> None:
+    global _ACTIVE_PROCESSES
+    blocked = {signal.SIGTERM, signal.SIGINT}
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+    try:
+        process.start()
+        _ACTIVE_PROCESSES.append(process)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+
 def run_probe(gpus: list[int], timeout_s: float) -> dict[str, Any]:
+    global _ACTIVE_PROCESSES
+    if _ACTIVE_PROCESSES:
+        raise RuntimeError("previous NCCL probe processes are still active")
     setup_corex_env()
     ctx = mp.get_context("spawn")
     queue: mp.Queue = ctx.Queue()
@@ -116,28 +217,30 @@ def run_probe(gpus: list[int], timeout_s: float) -> dict[str, Any]:
         for rank, gpu in enumerate(gpus)
     ]
 
-    for process in processes:
-        process.start()
+    try:
+        for process in processes:
+            _start_process(process)
 
-    deadline = time.monotonic() + timeout_s
-    for process in processes:
-        remaining = max(0.0, deadline - time.monotonic())
-        process.join(remaining)
-
-    timed_out = []
-    for rank, process in enumerate(processes):
-        if process.is_alive():
-            timed_out.append(rank)
-            process.terminate()
-    for process in processes:
-        process.join(5)
-        if process.is_alive():
-            process.kill()
-            process.join(5)
+        _join_processes(processes, timeout_s)
+        timed_out = [
+            rank for rank, process in enumerate(processes)
+            if process.is_alive()
+        ]
+        cleanup = _cleanup_processes(processes)
+        if cleanup["reaped"]:
+            _ACTIVE_PROCESSES = []
+    except BaseException:
+        _cleanup_active_processes()
+        raise
 
     rank_results: list[dict[str, Any]] = []
-    while not queue.empty():
-        rank_results.append(queue.get())
+    while True:
+        try:
+            rank_results.append(queue.get_nowait())
+        except queue_module.Empty:
+            break
+    queue.close()
+    queue.join_thread()
     rank_results_by_rank = {int(item["rank"]): item for item in rank_results}
     results = []
     expected_sum = float(sum(range(1, world_size + 1)))
@@ -162,6 +265,7 @@ def run_probe(gpus: list[int], timeout_s: float) -> dict[str, Any]:
         "init_method": init_method,
         "results": results,
         "timed_out_ranks": timed_out,
+        "cleanup": cleanup,
     }
 
 
@@ -173,7 +277,27 @@ def main() -> int:
     parser.add_argument("--json-out", type=Path)
     args = parser.parse_args()
 
-    summary = run_probe(args.gpus, args.timeout_s)
+    previous_handlers = {
+        signum: signal.getsignal(signum)
+        for signum in (signal.SIGTERM, signal.SIGINT)
+    }
+    for signum in previous_handlers:
+        signal.signal(signum, _parent_signal_handler)
+    try:
+        summary = run_probe(args.gpus, args.timeout_s)
+    except ParentTermination as termination:
+        cleanup = _cleanup_active_processes()
+        print(
+            f"NCCL preflight interrupted by signal {termination.signum}; "
+            f"child_cleanup_reaped={str(cleanup['reaped']).lower()}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 128 + termination.signum
+    finally:
+        _cleanup_active_processes()
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
     for result in summary["results"]:
         status = "PASS" if result.get("ok") else "FAIL"
         print(
