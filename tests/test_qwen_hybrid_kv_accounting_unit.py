@@ -167,9 +167,10 @@ class QwenHybridKvAccountingTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "configured 40, received 10"):
             validate(40, [object() for _ in range(10)])
 
-    def test_private_selector_is_absent_from_submission_yaml(self):
+    def test_qualified_selector_is_enabled_in_submission_yaml(self):
         yaml = (ROOT / "computility-run.yaml").read_text(encoding="utf-8")
-        self.assertNotIn("BI100_HYBRID_KV_ACCOUNTING", yaml)
+        self.assertIn("name: BI100_HYBRID_KV_ACCOUNTING", yaml)
+        self.assertIn("value: full_attention", yaml)
 
 
 if __name__ == "__main__":

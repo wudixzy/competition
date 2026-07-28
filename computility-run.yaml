@@ -36,3 +36,9 @@ env:
       value: 1
     - name: BI100_GDN_COREX_PACKED_DECODE
       value: 1
+    - name: BI100_HYBRID_KV_ACCOUNTING
+      value: full_attention
+    - name: BI100_GDN_CACHE_POLICY
+      value: admission64
+    - name: BI100_GDN_RESTORE_MODE
+      value: hybrid64

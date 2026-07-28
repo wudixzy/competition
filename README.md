@@ -99,13 +99,16 @@ size/SHA256、10 个预编译 CoreX 扩展的集合/大小/SHA256、关键文件
 M1-31 引入稳定 SHA-256 前缀键和 scheduler-owned GDN 状态动作协议。M1-32 的严格
 同请求 TP4 A/B 中，`admission64/direct` 将有效命中从 49.93% 提高到 61.07%、代理
 分提高 8.99%，但在 17 会话压力后恢复 10592-token 状态时产生了不同输出，因此按
-正确性门槛拒绝，不能合并或改为默认。当前仍使用
-`BI100_GDN_CACHE_POLICY=fine32`、`BI100_GDN_RESTORE_MODE=direct`；`aligned` 只作为
-预设回退验证。离线诊断可显式开启 `BI100_CACHE_TRACE=1`，正式性能提交必须保持
-关闭。实现设计见
+正确性门槛拒绝。M1-107 通过 canonical segment 和 aligned fast-forward 修复该问题；
+真实 TP4 A/B 的 18/18 候选/对照输出摘要一致，有效命中率从 49.93% 提高到 62.78%，
+Output TPS P10 为 21.986。因此当前提交使用
+`BI100_HYBRID_KV_ACCOUNTING=full_attention`、
+`BI100_GDN_CACHE_POLICY=admission64` 和
+`BI100_GDN_RESTORE_MODE=hybrid64`。融合 prefill 仍保持关闭。离线诊断可显式开启
+`BI100_CACHE_TRACE=1`，正式性能提交必须保持关闭。实现设计见
 [`docs/experiments/M1_31_STABLE_GDN_PREFIX_STATE_20260719.md`](docs/experiments/M1_31_STABLE_GDN_PREFIX_STATE_20260719.md)，
 TP4 证据和阶段决策见
-[`docs/experiments/M1_32_CONTENT_GDN_ADMISSION_20260720.md`](docs/experiments/M1_32_CONTENT_GDN_ADMISSION_20260720.md)。
+[`docs/experiments/M1_107_ALIGNED_FAST_FORWARD_20260728.md`](docs/experiments/M1_107_ALIGNED_FAST_FORWARD_20260728.md)。
 
 完整本地标准库测试可运行：
 
