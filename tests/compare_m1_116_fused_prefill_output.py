@@ -15,6 +15,28 @@ import quality_runtime_contract as runtime_contract
 SCHEMA = "bi100-m1-116-fused-prefill-output-comparison-v1"
 VERSION = 1
 Json = dict[str, Any]
+REPORT_FIELDS = {
+    "schema",
+    "version",
+    "mode",
+    "qualified_diagnostic",
+    "strict_quality_non_regression_authorized",
+    "production_promotion_authorized",
+    "reasons",
+    "source_revision",
+    "runtime_identity",
+    "instance",
+    "model_path",
+    "target_prompt_tokens",
+    "reproduction_max_tokens",
+    "max_tokens_ladder",
+    "seed",
+    "run_id_sha256",
+    "runtime_contract",
+    "reproduction",
+    "ladder",
+    "privacy",
+}
 
 
 def _load(path: Path) -> Json:
@@ -28,6 +50,8 @@ def _validate_report(report: Any, mode: str) -> list[str]:
     reasons = []
     if not isinstance(report, dict):
         return [f"{mode} report root is invalid"]
+    if set(report) != REPORT_FIELDS:
+        reasons.append(f"{mode} report fields are invalid")
     if (report.get("schema") != diagnostic.SCHEMA
             or report.get("version") != diagnostic.VERSION):
         reasons.append(f"{mode} report schema differs")

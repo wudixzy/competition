@@ -26,6 +26,20 @@ REPRODUCTION_MAX_TOKENS = 32
 SEED = 20260721
 MINIMUM_WARM_CACHED_TOKENS = TARGET_PROMPT_TOKENS - 32
 Json = dict[str, Any]
+REQUEST_FIELDS = {
+    "status",
+    "elapsed_s",
+    "ttft_s",
+    "decode_window_s",
+    "output_tps",
+    "prompt_tokens",
+    "cached_tokens",
+    "completion_tokens",
+    "finish_reason",
+    "first_token_hmac_sha256",
+    "output_hmac_sha256",
+    "request_contract_sha256",
+}
 
 
 def _atomic_write(path: Path, value: Json) -> None:
@@ -94,6 +108,8 @@ def _validate_request(
     label: str,
 ) -> list[str]:
     reasons = []
+    if not isinstance(request, dict) or set(request) != REQUEST_FIELDS:
+        return [f"{label} fields are invalid"]
     if request.get("status") != 200:
         reasons.append(f"{label} status differs")
     if request.get("prompt_tokens") != TARGET_PROMPT_TOKENS:

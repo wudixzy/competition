@@ -196,6 +196,16 @@ class DiagnosticValidationTests(unittest.TestCase):
         self.assertIn(
             "ladder max_tokens=4 repeated warm output differs", reasons)
 
+    def test_request_summary_rejects_extra_raw_field(self) -> None:
+        report = _report("control")
+        report["reproduction"]["cold"]["raw_output"] = "forbidden"
+        reasons = diagnostic._validate_observations(
+            report["reproduction"]["cold"],
+            report["reproduction"]["warm"],
+            report["ladder"],
+        )
+        self.assertIn("reproduction cold fields are invalid", reasons)
+
 
 class ComparisonTests(unittest.TestCase):
     def test_exact_output_authorizes_only_strict_quality_gate(self) -> None:
@@ -265,6 +275,17 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(control, original_control)
         self.assertEqual(candidate, original_candidate)
 
+    def test_report_rejects_extra_raw_field(self) -> None:
+        control = _report("control")
+        candidate = _report("candidate")
+        candidate["raw_output"] = "forbidden"
+        result = comparison.compare(control, candidate)
+        self.assertFalse(result["diagnostic_valid"])
+        self.assertIn(
+            "candidate report fields are invalid",
+            result["validation_reasons"],
+        )
+
 
 class HarnessWiringTests(unittest.TestCase):
     def test_wrapper_selects_m1_116_without_changing_shared_defaults(self) -> None:
@@ -310,6 +331,10 @@ class HarnessWiringTests(unittest.TestCase):
             "export BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID", service_gate)
         self.assertIn(
             "unset BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY", service_gate)
+        self.assertIn(
+            "unset BI100_RUN_FUSED_OUTPUT_DIAGNOSTIC", service_gate)
+        self.assertIn(
+            "unset BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID", service_gate)
         self.assertLess(
             service_gate.index(
                 "unset BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY"),
