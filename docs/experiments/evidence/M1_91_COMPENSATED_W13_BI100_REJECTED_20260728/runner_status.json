@@ -1,0 +1,60 @@
+{
+  "artifact_sha256": {
+    "artifact_binding": null,
+    "benchmark": "f2c3195eb2fadf40014d95d6a4d32dab87cd1f60fd138d81ec12c0ab6b52c014",
+    "candidate_extension": "b90d6118ef1dd46f26f7bc34ad4d208e0a843547af7b1aef1d79e0adb4b0539c",
+    "direct_extension": "0eb120e89608bb5b64ca4356a5d3d362121806d081ccc1ccf346dac472a819ec",
+    "preflight_comparison": "578f9e761c65cf3dadcdd84c63f2a90ca0ede7a30a39c47c2bbffab8c58e503f",
+    "qualification": "6fb69eb31dc402f6435f9cf8dbacb18aa8e1bc8d9add2398ba012a57bd98bda4",
+    "runtime_identity": "d7d982869069137664121acb0b99764332c564814fac2ed68d66ddb2975e33b9",
+    "scoped_cleanup": "eec4d4f6315a3b47190b78d5fd0fc7dc8c085acba982b60ebc96a933809420d2",
+    "scoped_cleanup_clean": "8ca03c2be4b9b8e5967a420757d3452642889ef55dd86722f35b2041023e958d"
+  },
+  "candidate_qualified": false,
+  "experiment_valid": false,
+  "gates": {
+    "artifact_binding": null,
+    "benchmark": 0,
+    "build": 0,
+    "fatal_scan": 0,
+    "postflight_after": 0,
+    "postflight_before": 0,
+    "preflight_after": 0,
+    "preflight_before": 0,
+    "preflight_comparison": 0,
+    "qualification": 1,
+    "runtime_identity": 0,
+    "scoped_cleanup": 0,
+    "scoped_cleanup_clean": 0,
+    "source_unchanged": 0,
+    "timeout_scan": 0
+  },
+  "instance": "ssh-73ca29ba-m191-6dbb8e1",
+  "last_stage": "qualification",
+  "limits": {
+    "complete_token_scan_required": true,
+    "fixed_speedup": 1.5,
+    "iterations": 300,
+    "kill_grace_s": 20,
+    "relative_l2": 1e-05,
+    "repeats": 9,
+    "routed_speedup": 1.25,
+    "seeds": [
+      20260716,
+      20260727
+    ],
+    "sequence_steps_per_seed": 500,
+    "term_grace_s": 60,
+    "warmup": 30
+  },
+  "main_merge_authorized": false,
+  "physical_gpu": 0,
+  "production_promotion_authorized": false,
+  "production_runtime_changed": false,
+  "returncode": 1,
+  "schema": "bi100-m1-91-compensated-w13-runner-v1",
+  "source_branch": "fix/M1-94-nccl-preflight-lifecycle-20260728",
+  "source_revision": "6dbb8e1ba3e5f2e003f4d997b33174e88afa20f5",
+  "version": 1,
+  "yaml_change_authorized": false
+}
