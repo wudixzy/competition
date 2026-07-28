@@ -6,7 +6,8 @@
 
 The initial runtime implementation is commit `0553769`; the installed-overlay
 gate was added in commit `8a39916`. Commit `369ff5d` corrects the empty
-multimodal-container boundary and upgrades the gate to v2. All are on the
+multimodal-container boundary and upgrades the gate to v2. Commit `9ecbf30`
+makes the gate a prerequisite of the M1-87 v2 single-GPU queue. All are on the
 private branch
 `fix/M1-89-multimodal-cache-namespace-20260728`. They do not authorize a
 `main`, submission YAML, runtime-default, or repository-visibility change.
@@ -77,7 +78,7 @@ tool/reasoning/multimodal capability, context limit, or formal command changed.
   on a traceback.
 - Related cache, scheduler, gate, and runtime-identity tests: 50 passed,
   2 dependency skips.
-- Full tests-root discovery after the v2 correction: 1028 passed,
+- Full tests-root discovery after queue integration: 1030 passed,
   25 dependency skips.
 - Submission preflight: all 9 checks passed.
 - Quality data and 53-case metric manifests passed.
@@ -103,10 +104,10 @@ identified from an attested run.
 
 ## Required remote gate
 
-The latest lightweight monitor attempted the declared `ssh-73ca29ba` endpoint
-three times with a 12-second bound. Every attempt failed in the TLS
-ProxyCommand layer with `Connection closed by UNKNOWN port 65535`; no remote
-command or GPU operation ran.
+Three earlier bounded attempts and one later 12-second lightweight probe of
+the declared `ssh-73ca29ba` endpoint all failed in the TLS ProxyCommand layer
+with `Connection closed by UNKNOWN port 65535`; no remote command or GPU
+operation ran.
 
 On a recovered BI100 host, install an immutable overlay built from the exact
 current branch revision. First run
@@ -125,6 +126,9 @@ python3 /path/to/source/tests/qwen36_cache_namespace_runtime_gate.py \
   --source-revision "$SOURCE_REVISION" \
   --out /tmp/m1-89-cache-namespace-runtime-gate.json
 ```
+
+The current `scripts/run_m1_87_single_gpu_queue.sh` performs both checks before
+starting M1-84 or M1-86 and binds their reports into its v2 aggregate.
 
 Only after runtime identity and all nine installed-overlay checks pass may the
 fixed single-GPU service A/B run. It must check:

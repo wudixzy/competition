@@ -24,7 +24,7 @@
   语义。installed-overlay 门禁已升级到 v2，直接调用远端实际
   `Sequence.multi_modal_data` 获取纯文本 `{}`，并同时绑定 sequence 与 block
   manager 模块 SHA。相关测试 50 项通过、2 项依赖 skip；完整 tests-root 为
-  1028 项通过、25 项依赖 skip；preflight 9/9、质量数据与 53 项指标 manifest
+  1030 项通过、25 项依赖 skip；preflight 9/9、质量数据与 53 项指标 manifest
   均通过。当前仍不能声明真实服务多模态、cold/warm 输出一致性或性能通过。健康实例
   恢复后需先验证绑定当前 HEAD 的 immutable overlay，再跑 installed-overlay
   门禁以及多图同图/异图、palette、transparency、异常回退和完成/中止释放的
@@ -33,7 +33,12 @@
   platform `main` 只有聚合指标，不能做逐请求 residual-prefill 投影或解锁
   `admission64`。API usage 的 `cached_tokens` 是 live KV 与精确 GDN 可恢复状态
   的交集，allocator hit-rate 则是 raw KV 命中，两者不得混用。
-- 最新轻量 subagent 对 `ssh-73ca29ba` 做了 3 次、每次 12 秒的只读连接尝试，均
+- `9ecbf30` 将 M1-87 单卡队列升级到 v2：先验证当前源码绑定的 immutable
+  overlay，再从 `/tmp` 执行 M1-89 九项 installed-runtime 门禁，之后才允许启动
+  M1-84/M1-86。三阶段必须绑定同一 runtime path/tree；外层中断清理的 TERM
+  宽限从 900 秒收敛为 60 秒，仍仅操作本轮 PID/PGID/starttime/session-token
+  匹配的进程组并 wait/reap。完整 tests-root 为 1030 项通过、25 项依赖 skip。
+- 轻量 subagent 早先做了 3 次、最新又做了 1 次 12 秒只读连接尝试，均
   在 TLS/ProxyCommand 层返回 `Connection closed by UNKNOWN port 65535`；
   远端命令、GPU 探针和进程操作均未发生，当前不能判断单卡或 TP4 状态。
 - 本轮未修改 `main`、正式 `computility-run.yaml`、Dockerfile、默认开关或仓库
