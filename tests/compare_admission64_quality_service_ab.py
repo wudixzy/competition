@@ -154,6 +154,7 @@ def _status_reasons(
     expected_policy: str,
     expected_label: str,
     file_sha256s: dict[str, str],
+    expected_optimization: dict[str, str] | None = None,
 ) -> list[str]:
     reasons: list[str] = []
     if not isinstance(status, dict):
@@ -173,11 +174,11 @@ def _status_reasons(
         reasons.append(f"{label}: fixed experiment label differs")
 
     optimization = status.get("optimization")
-    expected_optimization = {
+    required_optimization = expected_optimization or {
         **EXPECTED_COMMON_OPTIMIZATION,
         "gdn_cache_policy": expected_policy,
     }
-    if optimization != expected_optimization:
+    if optimization != required_optimization:
         reasons.append(f"{label}: optimization contract differs")
 
     gates = status.get("gates")
@@ -229,6 +230,10 @@ def _runtime_reasons(
     *,
     label: str,
     expected_policy: str,
+    expected_restore_mode: str = "direct",
+    expected_fused_prefill: str = "0",
+    expected_kv_eviction_policy: str = "lru",
+    expected_kernel_profile: str = "submission",
 ) -> list[str]:
     if not isinstance(contract, dict):
         return [f"{label}: runtime contract root must be an object"]
@@ -259,10 +264,10 @@ def _runtime_reasons(
     expected_environment = runtime_contract.service_environment(
         environment["BI100_RUNTIME_SITE_PACKAGES"],
         gdn_cache_policy=expected_policy,
-        gdn_restore_mode="direct",
-        fused_prefill="0",
-        kv_eviction_policy="lru",
-        kernel_profile="submission",
+        gdn_restore_mode=expected_restore_mode,
+        fused_prefill=expected_fused_prefill,
+        kv_eviction_policy=expected_kv_eviction_policy,
+        kernel_profile=expected_kernel_profile,
     )
     if environment != expected_environment:
         reasons.append(f"{label}: fixed service environment differs")
