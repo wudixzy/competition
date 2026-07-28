@@ -26,10 +26,12 @@ declared decision; a retest creates a new result with a new identity.
   `1.42e-5` to `1.45e-5`;
 - no fatal, OOM, lifecycle, or fixed high-precision failure.
 
-M1-96 has now completed the one permitted unchanged-kernel v2 rerun. The
-candidate is closer than vendor to the high-precision reference on both seeds
-and remains about `5.47x` faster on the routed boundary. It proceeds to
-next-token and full-model TP4 integration gates.
+M1-96 completed the one permitted unchanged-kernel v2 rerun. M1-98 then
+integrated the compensated W13 into the complete routed boundary. The
+candidate remained marginally closer than the direct reducer to the exact
+reference, but improved the complete candidate over the existing direct path
+by only `1.102%`. This is below the fixed 5% continuation threshold before
+model-level dilution. M1-98 is closed without TP4, YAML, or default changes.
 
 ### P1: M1-47 fused paged prefill
 
@@ -45,6 +47,12 @@ the kernel. Run at least three fixed-order paired TP4 A/B repetitions from
 the corrected artifact, evaluate the paired distribution, and require at
 least 5% targeted end-to-end improvement without decode, warm, quality, or
 capacity regression.
+
+M1-99 now contains the hash-pinned integration and the fixed three-pair
+alternating runner. Its 235K gate is a median improvement of at least 5%;
+65K is a non-regression control. An identical first generated token is hard,
+while a later 235K greedy split is diagnostic at this screen and must pass the
+full quality suite before any promotion.
 
 ### P2: E-PREFIX-08 cold-chunk hybrid
 
@@ -85,10 +93,9 @@ restart the full paged-attention implementation.
 
 ## Execution order
 
-1. integrate M1-91 behind a disabled-by-default switch and run next-token,
-   functional, capability, and TP4 paired performance gates;
-2. while the integration work is isolated, run the corrected M1-47 three-pair
-   TP4 A/B;
+1. retain M1-98 as complete-path negative evidence; do not spend TP4 time on
+   it;
+2. run the corrected M1-47 three-pair TP4 A/B through M1-99;
 3. run one E-PREFIX-08 high-precision oracle;
 4. run M1-28 only if capacity remains and no higher-value candidate has
    already supplied the needed attention gain.
