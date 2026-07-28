@@ -1,0 +1,39 @@
+{
+  "compensated": {
+    "max_step_relative_l2": 4.040534248872827e-06,
+    "mismatch_count": 4,
+    "relative_l2": 1.076397994904359e-06,
+    "row_count": 4096
+  },
+  "config": {
+    "hidden": 2048,
+    "lanes": 32,
+    "rows_per_step": 256,
+    "seed": 20260727,
+    "steps": 16,
+    "weight_scale": 0.02
+  },
+  "direct": {
+    "max_step_relative_l2": 1.665954949202838e-05,
+    "mismatch_count": 6,
+    "relative_l2": 4.314101009615386e-06,
+    "row_count": 4096
+  },
+  "elapsed_s": 8.38235522100149,
+  "method": {
+    "compensated": "fp32_kahan_lane_serial_then_fp32_warp_tree",
+    "direct": "fp32_lane_serial_then_fp32_warp_tree",
+    "input_dtype": "simulated_ieee_fp16",
+    "output_dtype": "simulated_ieee_fp16",
+    "reference": "math_fsum_rounded_to_fp16"
+  },
+  "qualified": false,
+  "runtime": {
+    "python_implementation": "CPython",
+    "python_version": "3.13.13",
+    "script_sha256": "833434b0cc3331e43a821a13b04eb6119dae3950c7bb319074e551b1fd056f51"
+  },
+  "schema": "nonqualifying-cpu-compensated-w13-screen-v1",
+  "version": 1,
+  "warning": "not CoreX vendor evidence and not a qualification result"
+}
