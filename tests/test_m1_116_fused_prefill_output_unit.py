@@ -37,6 +37,7 @@ def _request(
     cached: bool,
     output_digest: int,
     first_digest: int = 1,
+    target_prompt_tokens: int = diagnostic.TARGET_PROMPT_TOKENS,
 ) -> dict:
     return {
         "status": 200,
@@ -44,9 +45,9 @@ def _request(
         "ttft_s": 0.75,
         "decode_window_s": 0.25,
         "output_tps": float(max_tokens),
-        "prompt_tokens": diagnostic.TARGET_PROMPT_TOKENS,
+        "prompt_tokens": target_prompt_tokens,
         "cached_tokens": (
-            diagnostic.MINIMUM_WARM_CACHED_TOKENS if cached else 0),
+            target_prompt_tokens - 32 if cached else 0),
         "completion_tokens": max_tokens,
         "finish_reason": "length",
         "first_token_hmac_sha256": _digest(first_digest),
@@ -127,6 +128,27 @@ def _report(mode: str) -> dict:
             "warm": warm,
             "cold_warm_exact": True,
         },
+        "secondary_reproduction": {
+            "target_prompt_tokens":
+                diagnostic.SECONDARY_TARGET_PROMPT_TOKENS,
+            "max_tokens": diagnostic.REPRODUCTION_MAX_TOKENS,
+            "run_id_sha256": "e" * 64,
+            "cold": _request(
+                32,
+                cached=False,
+                output_digest=320,
+                target_prompt_tokens=
+                    diagnostic.SECONDARY_TARGET_PROMPT_TOKENS,
+            ),
+            "warm": _request(
+                32,
+                cached=True,
+                output_digest=320,
+                target_prompt_tokens=
+                    diagnostic.SECONDARY_TARGET_PROMPT_TOKENS,
+            ),
+            "cold_warm_exact": True,
+        },
         "ladder": ladder,
         "privacy": {
             "contains_raw_requests": False,
@@ -177,7 +199,7 @@ class DiagnosticValidationTests(unittest.TestCase):
     def test_non_cold_reproduction_is_rejected(self) -> None:
         report = _report("control")
         report["reproduction"]["cold"]["cached_tokens"] = (
-            diagnostic.MINIMUM_WARM_CACHED_TOKENS)
+            diagnostic.TARGET_PROMPT_TOKENS - 32)
         reasons = diagnostic._validate_observations(
             report["reproduction"]["cold"],
             report["reproduction"]["warm"],
@@ -195,6 +217,17 @@ class DiagnosticValidationTests(unittest.TestCase):
         )
         self.assertIn(
             "ladder max_tokens=4 repeated warm output differs", reasons)
+
+    def test_secondary_reproduction_requires_internal_exactness(self) -> None:
+        report = _report("control")
+        report["secondary_reproduction"]["warm"][
+            "output_hmac_sha256"] = "f" * 64
+        reasons = diagnostic._validate_secondary_reproduction(
+            report["secondary_reproduction"]["cold"],
+            report["secondary_reproduction"]["warm"],
+        )
+        self.assertIn(
+            "secondary reproduction cold/warm output differs", reasons)
 
     def test_request_summary_rejects_extra_raw_field(self) -> None:
         report = _report("control")
@@ -251,6 +284,25 @@ class ComparisonTests(unittest.TestCase):
         self.assertFalse(result["next_token_exact"])
         self.assertFalse(result["quality_adjudication_required"])
         self.assertFalse(result["strict_quality_non_regression_authorized"])
+
+    def test_secondary_235k_divergence_requires_adjudication(self) -> None:
+        control = _report("control")
+        candidate = _report("candidate")
+        candidate["secondary_reproduction"]["cold"][
+            "output_hmac_sha256"] = "f" * 64
+        candidate["secondary_reproduction"]["warm"][
+            "output_hmac_sha256"] = "f" * 64
+
+        result = comparison.compare(control, candidate)
+
+        self.assertTrue(result["diagnostic_valid"])
+        self.assertTrue(result["next_token_exact"])
+        self.assertFalse(result["strict_output_exact"])
+        self.assertTrue(result["quality_adjudication_required"])
+        self.assertIsNone(result["first_divergent_max_tokens"])
+        self.assertTrue(any(
+            "secondary reproduction" in reason
+            for reason in result["quality_reasons"]))
 
     def test_extra_runtime_change_invalidates_ab(self) -> None:
         control = _report("control")
