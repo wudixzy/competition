@@ -1,5 +1,46 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-28 M1-88 单卡 W13 舍入风险门禁
+
+- 最新私有实验分支为 `exp/M1-88-w13-rounding-guard-20260728`，实现提交
+  `833c931`，lineage 文档提交 `4083b08`；它基于已完成本地门禁的
+  `test/M1-87-single-gpu-diagnostic-queue-20260728@11ba53f`。
+- M1-88 不修改生产运行时。它在固定 TP4 rank-local W13 形状
+  `E=256, top_k=8, H=2048, I=128, FP16` 上，同时计算生产 direct W13
+  正向归约和一个固定逆向归约，只判断能否可靠定位跨 FP16 舍入边界的行。
+- 固定种子为 `20260716, 20260727`，每个种子 500 步。fixture 生成顺序与
+  M1-60/M1-61 一致；历史 direct W13 分别为 `7.302e-6` 和 `2.452e-5`，
+  后者已超过当前 `relative L2 <= 1e-5` 硬门槛。
+- 门禁要求零 vendor mismatch 漏报、标记行上的 float64 舍入结果与 vendor
+  一致、修正后 relative L2 不超过 `1e-5`、总标记比例不超过 5%、单步不超过
+  10%。失败即关闭该方向；通过也只允许再实现一个有界修正原型，不授权生产、
+  YAML 或 main。
+- runner 将 build/benchmark 放入带 session token 的独立进程组，只清理本轮
+  identity；先发 `SIGTERM` 并等待 60 秒，仍存活才发 `SIGKILL`，随后
+  wait/reap。前后 GPU preflight、API/worker/GPU-holder postflight、
+  fatal/Gloo/NCCL/worker-loss 和 timeout 扫描都是硬门禁。
+- 本地聚焦测试 15 项和完整 `tests/` 测试 1009 项通过，完整测试跳过 25；
+  submission preflight、质量数据 manifest、指标 manifest、shell/Python
+  语法、diff 和敏感制品扫描均通过。本机没有 Torch/CoreX GPU，不能据此声明
+  CUDA 编译、数值或性能通过。
+- 一个非资格 CPU 筛查在 2000 行随机 FP16 点积中观察到 2 个相对高精度舍入
+  偏差，其中固定正/逆舍入规则漏报 1 个。它不能替代 CoreX vendor 结果，但
+  表明 M1-88 很可能按零漏报规则被拒绝；恢复后只运行固定实验，不继续扫描
+  更多归约顺序或阈值。
+- `ssh-73ca29ba` 的 20 分钟轻量监控共 13 次，加一次后续有界复测，均在
+  TLS/ProxyCommand 转发层返回 `Connection closed by UNKNOWN port 65535`；
+  远端命令、GPU 和服务均未执行或修改。
+- 分支已推送 GitHub 私有远端。ModelHub 唯一一次推送因
+  `Recv failure: Connection reset by peer` 失败，已停止重试；仓库可见性没有
+  修改。
+- SSH 恢复后的顺序是：安装与准确 source revision 绑定的 immutable overlay，
+  先跑 M1-88 单卡；若通过才实现一次修正内核，若失败则保存负证据并关闭。
+  随后运行 M1-87 单卡队列，完成 M1-73 `n=2` HTTP 和 M1-86 多图隔离资格。
+  这些通过后仍需 TP4 完整质量、长上下文、稳定性和性能 A/B。
+- 详细合同见
+  `docs/experiments/M1_88_W13_ROUNDING_GUARD_20260728.md`。正式
+  `computility-run.yaml`、Dockerfile、默认开关、main 和仓库可见性均未修改。
+
 ## 2026-07-27 M1-60 真实权重缩层诊断模型
 
 - 私有分支 `exp/M1-60-qwen36-diagnostic-checkpoint-20260727` 已建立可重复的
