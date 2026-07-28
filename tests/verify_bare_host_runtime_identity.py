@@ -26,6 +26,9 @@ DIRECT_SOURCE_FILES = {
     "block_major_kv_extension": Path(
         "qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/"
         "corex_block_major_kv_transfer.so"),
+    "fused_paged_prefill_extension": Path(
+        "qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/"
+        "corex_fused_paged_prefill.so"),
     "block_table": Path("vllm/core/block/block_table.py"),
     "chat_utils": Path("qwen3_6_scripts/chat_utils.py"),
     "cli_args": Path("qwen3_6_scripts/cli_args.py"),

@@ -71,6 +71,7 @@ required=(
     qwen3_6_scripts/patch_block_major_cache_engine.py
     qwen3_6_scripts/patch_block_major_worker_capacity.py
     qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/corex_block_major_kv_transfer.so
+    qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/corex_fused_paged_prefill.so
     qwen3_6_scripts/patch_xformers_profile.py
     scripts/normalize_offline_distribution.py
 )
@@ -264,6 +265,13 @@ checks = {
             "corex_block_major_kv_transfer.so"
         ),
         vllm_root / "corex_block_major_kv_transfer.so",
+    ),
+    "fused_paged_prefill_extension": (
+        root / (
+            "qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/"
+            "corex_fused_paged_prefill.so"
+        ),
+        vllm_root / "corex_fused_paged_prefill.so",
     ),
     "paged_attention": (
         root / "qwen3_6_scripts/paged_attn.py",

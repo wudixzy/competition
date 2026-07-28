@@ -4,6 +4,8 @@
 | --- | --- | --- | --- | --- |
 | `BI100_ALLOW_PREFIX_GUARD_CAP` | `0` | boolean | Debug-only cap for undersized prefix block tables; default raises because truncation corrupts attention. | T3 |
 | `BI100_ATTN_COREX_PAGED_GATHER` | `1` | boolean | Enables the exact fused CoreX K/V gather in the long-context PyTorch decode fallback; set to `0` for native tensor indexing and layout copies. | E-ATTN-04 |
+| `BI100_ATTN_COREX_FUSED_PREFILL` | `0` | boolean | Private M1-99 retest selector for the hash-pinned M1-47 split4 prefill path. It accepts only causal, single-sequence, FP16 TP4 rank-local `4/1/256`, block-16 segments with an empty in-flight prefix and otherwise falls back to the current path. It remains absent from submission YAML. | M1-47/M1-99 |
+| `BI100_ATTN_COREX_FUSED_PREFILL_DIAGNOSTICS` | `0` | boolean | Emits one privacy-safe request, metadata, and tensor-shape guard snapshot per worker while validating M1-99 dispatch. Diagnostic only and invalid for timing runs. | M1-47/M1-99 |
 | `BI100_ATTN_COREX_HEAD_RMS_NORM` | `1` | boolean | Enables the exact decode-only CoreX elementwise path for 256-wide full-attention q/k head RMSNorm while retaining PyTorch mean/rsqrt; set to `0` for GemmaRMSNorm. | E-NORM-02 |
 | `BI100_DNN_CHUNK` | `4096` | `64..65536` | Caps GatedDeltaNet prefill sub-sequence chunk size to balance memory and launch overhead. | T3 |
 | `BI100_EXECUTOR_STARTUP_DEBUG` | `1` | boolean | Adds executor startup logs for TP=4 init/load stalls; enabled in the submission image after the 2026-07-15 evaluator Gloo reset. | T1 |

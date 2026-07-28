@@ -43,6 +43,8 @@ def _install_stubs():
         pass
 
     torch_mod.Tensor = _Tensor
+    torch_mod.float16 = object()
+    torch_mod.int32 = object()
     vllm_mod = types.ModuleType("vllm")
     vllm_mod._custom_ops = types.SimpleNamespace()
     env_mod = types.ModuleType("vllm.bi100_env")
@@ -98,6 +100,7 @@ def _load_paged_attn(**env):
             BI100_PREFIX_BLOCKS_PER_TILE=env.get("tile"),
             BI100_FORCE_PAGED_ATTN_V2=env.get("force_v2"),
             BI100_PAGED_ATTN_DIAGNOSTICS=env.get("diagnostics"),
+            BI100_ATTN_COREX_FUSED_PREFILL=env.get("fused_prefill"),
     ):
         old_modules = {
             name: sys.modules.get(name)
