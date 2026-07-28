@@ -1,0 +1,59 @@
+{
+  "schema": "bi100-m1-118-session-subreaper-qualification-v1",
+  "version": 1,
+  "source_revision": "2a752261ea53d3ade9ef9a5fcfad0ad203f7d148",
+  "instance": "ssh-73ca29ba",
+  "first_tp4_run": {
+    "source_revision": "c0bac0cefd278fc2b8d4e8842823574762962161",
+    "run_root": "/tmp/m1-116-fused-quality-c0bac0c-20260729-v1",
+    "returncode": 1,
+    "candidate_started": false,
+    "valid_ab": false,
+    "control_quality_passed": 52,
+    "control_quality_failed": 1,
+    "control_agent_passed": 10,
+    "control_agent_failed": 1,
+    "scoped_recovery_signal": "SIGTERM",
+    "scoped_recovery_sigkill_used": false,
+    "orchestrator_postflight_passed": true,
+    "orchestrator_preflight_after_passed": true
+  },
+  "root_cause": {
+    "category": "session_token_initial_environment",
+    "leader_observed_outer_token": true,
+    "descendants_observed_inner_token": true,
+    "recovery_failed_closed": true
+  },
+  "fix": {
+    "same_pid_reexec": true,
+    "token_present_in_leader_initial_environment": true,
+    "nested_sessions_receive_distinct_tokens": true,
+    "identity_validation_weakened": false
+  },
+  "verification": {
+    "local_focused_tests_passed": 20,
+    "local_full_tests_passed": 1211,
+    "local_full_tests_skipped": 26,
+    "local_submission_preflight_passed": 9,
+    "remote_exact_source": "/root/m1-118-source-2a75226-exact",
+    "remote_focused_tests_passed": 20,
+    "remote_submission_preflight_passed": 9,
+    "remote_nested_recovery_qualified": true,
+    "remote_nested_recovery_term_sent": true,
+    "remote_nested_recovery_kill_sent": false,
+    "remote_final_quiescent_identities": 2
+  },
+  "quality": {
+    "performance_authorized": false,
+    "default_policy_change_authorized": false,
+    "production_promotion_authorized": false,
+    "next_required_gate": "fresh full TP4 M1-116 fixed-order A/B"
+  },
+  "privacy": {
+    "contains_request_content": false,
+    "contains_generated_output": false,
+    "contains_token_ids": false,
+    "contains_session_tokens": false,
+    "contains_credentials": false
+  }
+}
