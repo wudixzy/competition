@@ -60,7 +60,7 @@ class M199FusedPrefillRunnerUnitTest(unittest.TestCase):
         )
         for marker in (
             "BI100_GDN_CACHE_POLICY=admission64",
-            "BI100_GDN_RESTORE_MODE=direct",
+            "BI100_GDN_RESTORE_MODE=hybrid64",
             "BI100_HYBRID_KV_ACCOUNTING=full_attention",
             "BI100_CPU_KV_OFFLOAD=0",
             "BI100_MOE_COREX_DIRECT_ROUTED=1",
