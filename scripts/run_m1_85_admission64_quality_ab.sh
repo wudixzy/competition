@@ -14,7 +14,8 @@ INSTANCE=$1
 QUALITY_AB_VARIANT=${BI100_QUALITY_AB_VARIANT:-admission64-policy}
 case "$QUALITY_AB_VARIANT" in
     admission64-policy|m1-112-fused-prefill|\
-m1-116-fused-prefill-adjudication) ;;
+m1-116-fused-prefill-adjudication|\
+m1-117-fused-prefill-long-context) ;;
     *)
         echo "BI100_QUALITY_AB_VARIANT is invalid" \
             >&2
@@ -89,12 +90,16 @@ def read_rc(path):
 
 report = {
     "schema": (
-        "bi100-fused-prefill-quality-adjudication-ab-runner-v1"
-        if variant == "m1-116-fused-prefill-adjudication"
+        "bi100-fused-prefill-long-context-ab-runner-v1"
+        if variant == "m1-117-fused-prefill-long-context"
         else (
-            "bi100-fused-prefill-quality-ab-runner-v1"
-            if variant == "m1-112-fused-prefill"
-            else "bi100-admission64-quality-ab-runner-v2"
+            "bi100-fused-prefill-quality-adjudication-ab-runner-v1"
+            if variant == "m1-116-fused-prefill-adjudication"
+            else (
+                "bi100-fused-prefill-quality-ab-runner-v1"
+                if variant == "m1-112-fused-prefill"
+                else "bi100-admission64-quality-ab-runner-v2"
+            )
         )
     ),
     "version": 2 if variant == "admission64-policy" else 1,
@@ -117,6 +122,8 @@ report = {
         "aggregate": read_rc(root / "aggregate.rc"),
         "fused_output_comparison": read_rc(
             root / "fused_output_comparison.rc"),
+        "long_context_comparison": read_rc(
+            root / "long_context_comparison.rc"),
         "orchestrator_cleanup": read_rc(
             root / "orchestrator_cleanup.rc"),
         "orchestrator_recovery": read_rc(
@@ -145,6 +152,7 @@ for name, relative_path in (
     ("orchestrator_recovery", "orchestrator_recovery.json"),
     ("orchestrator_recovery_clean", "orchestrator_recovery_clean.json"),
     ("fused_output_comparison", "fused_output_comparison.json"),
+    ("long_context_comparison", "long_context_comparison.json"),
 ):
     path = root / relative_path
     artifacts[f"{name}_sha256"] = (
@@ -373,12 +381,17 @@ run_arm() {
     local restore_mode=direct
     local fused_prefill=0
     local runner_name=$policy
+    local suite=functional
     if [[ "$QUALITY_AB_VARIANT" != admission64-policy ]]; then
         restore_mode=hybrid64
         runner_name=$arm
         if [[ "$arm" == candidate ]]; then
             fused_prefill=1
         fi
+    fi
+    if [[ "$QUALITY_AB_VARIANT" == \
+            m1-117-fused-prefill-long-context ]]; then
+        suite=long-context
     fi
     local identity="$RUN_ROOT/${arm}_child_identity.json"
     local identity_ok=0
@@ -395,6 +408,15 @@ run_arm() {
         )
     fi
     (
+        if [[ "$suite" == long-context ]]; then
+            exec python3 "$ROOT/scripts/exec_bi100_session.py" \
+                "$identity" -- \
+                env "${runner_env[@]}" \
+                "$ROOT/scripts/run_quality_service_gate.sh" \
+                long-context "$policy" "$restore_mode" \
+                "$fused_prefill" lru \
+                "$label" "$INSTANCE" "$output"
+        fi
         exec python3 "$ROOT/scripts/exec_bi100_session.py" \
             "$identity" -- \
             env "${runner_env[@]}" \
@@ -483,6 +505,10 @@ elif [[ "$QUALITY_AB_VARIANT" == \
         m1-116-fused-prefill-adjudication ]]; then
     run_arm control admission64 m1-116-control-fused-off \
         "$RUN_ROOT/control"
+elif [[ "$QUALITY_AB_VARIANT" == \
+        m1-117-fused-prefill-long-context ]]; then
+    run_arm control admission64 m1-117-control-fused-off \
+        "$RUN_ROOT/control"
 else
     run_arm control fine32 m1-85-control-fine32 "$RUN_ROOT/control"
 fi
@@ -499,6 +525,10 @@ elif [[ "$QUALITY_AB_VARIANT" == \
         m1-116-fused-prefill-adjudication ]]; then
     run_arm candidate admission64 m1-116-candidate-fused-on \
         "$RUN_ROOT/candidate"
+elif [[ "$QUALITY_AB_VARIANT" == \
+        m1-117-fused-prefill-long-context ]]; then
+    run_arm candidate admission64 m1-117-candidate-fused-on \
+        "$RUN_ROOT/candidate"
 else
     run_arm candidate admission64 m1-85-candidate-admission64 \
         "$RUN_ROOT/candidate"
@@ -508,53 +538,72 @@ set -e
 printf '%s\n' "$candidate_rc" > "$RUN_ROOT/candidate.rc"
 [[ $candidate_rc -eq 0 ]]
 
-set +e
-python3 "$ROOT/tests/compare_quality_gate_reports.py" \
-    "$RUN_ROOT/control/quality_report.json" \
-    "$RUN_ROOT/candidate/quality_report.json" \
-    --out "$RUN_ROOT/quality_comparison.json" \
-    > "$RUN_ROOT/quality_comparison.stdout" \
-    2> "$RUN_ROOT/quality_comparison.stderr"
-quality_comparison_rc=$?
-set -e
-printf '%s\n' "$quality_comparison_rc" \
-    > "$RUN_ROOT/quality_comparison.rc"
-
-set +e
-python3 "$ROOT/tests/compare_agent_workload_reports.py" \
-    "$RUN_ROOT/control/agent_workload.json" \
-    "$RUN_ROOT/candidate/agent_workload.json" \
-    --out "$RUN_ROOT/agent_comparison.json" \
-    > "$RUN_ROOT/agent_comparison.stdout" \
-    2> "$RUN_ROOT/agent_comparison.stderr"
-agent_comparison_rc=$?
-set -e
-printf '%s\n' "$agent_comparison_rc" \
-    > "$RUN_ROOT/agent_comparison.rc"
-
-set +e
-if [[ "$QUALITY_AB_VARIANT" != admission64-policy ]]; then
-    python3 "$ROOT/tests/compare_fused_prefill_quality_service_ab.py" \
-        --control-root "$RUN_ROOT/control" \
-        --candidate-root "$RUN_ROOT/candidate" \
-        --quality-comparison "$RUN_ROOT/quality_comparison.json" \
-        --agent-comparison "$RUN_ROOT/agent_comparison.json" \
-        --out "$RUN_ROOT/aggregate.json" \
-        > "$RUN_ROOT/aggregate.stdout" \
-        2> "$RUN_ROOT/aggregate.stderr"
+quality_comparison_rc=0
+agent_comparison_rc=0
+aggregate_rc=0
+long_context_comparison_rc=0
+if [[ "$QUALITY_AB_VARIANT" == \
+        m1-117-fused-prefill-long-context ]]; then
+    set +e
+    python3 "$ROOT/tests/compare_long_context_quality_reports.py" \
+        "$RUN_ROOT/control/quality_report.json" \
+        "$RUN_ROOT/candidate/quality_report.json" \
+        --out "$RUN_ROOT/long_context_comparison.json" \
+        > "$RUN_ROOT/long_context_comparison.stdout" \
+        2> "$RUN_ROOT/long_context_comparison.stderr"
+    long_context_comparison_rc=$?
+    set -e
+    printf '%s\n' "$long_context_comparison_rc" \
+        > "$RUN_ROOT/long_context_comparison.rc"
 else
-    python3 "$ROOT/tests/compare_admission64_quality_service_ab.py" \
-        --control-root "$RUN_ROOT/control" \
-        --candidate-root "$RUN_ROOT/candidate" \
-        --quality-comparison "$RUN_ROOT/quality_comparison.json" \
-        --agent-comparison "$RUN_ROOT/agent_comparison.json" \
-        --out "$RUN_ROOT/aggregate.json" \
-        > "$RUN_ROOT/aggregate.stdout" \
-        2> "$RUN_ROOT/aggregate.stderr"
+    set +e
+    python3 "$ROOT/tests/compare_quality_gate_reports.py" \
+        "$RUN_ROOT/control/quality_report.json" \
+        "$RUN_ROOT/candidate/quality_report.json" \
+        --out "$RUN_ROOT/quality_comparison.json" \
+        > "$RUN_ROOT/quality_comparison.stdout" \
+        2> "$RUN_ROOT/quality_comparison.stderr"
+    quality_comparison_rc=$?
+    set -e
+    printf '%s\n' "$quality_comparison_rc" \
+        > "$RUN_ROOT/quality_comparison.rc"
+
+    set +e
+    python3 "$ROOT/tests/compare_agent_workload_reports.py" \
+        "$RUN_ROOT/control/agent_workload.json" \
+        "$RUN_ROOT/candidate/agent_workload.json" \
+        --out "$RUN_ROOT/agent_comparison.json" \
+        > "$RUN_ROOT/agent_comparison.stdout" \
+        2> "$RUN_ROOT/agent_comparison.stderr"
+    agent_comparison_rc=$?
+    set -e
+    printf '%s\n' "$agent_comparison_rc" \
+        > "$RUN_ROOT/agent_comparison.rc"
+
+    set +e
+    if [[ "$QUALITY_AB_VARIANT" != admission64-policy ]]; then
+        python3 "$ROOT/tests/compare_fused_prefill_quality_service_ab.py" \
+            --control-root "$RUN_ROOT/control" \
+            --candidate-root "$RUN_ROOT/candidate" \
+            --quality-comparison "$RUN_ROOT/quality_comparison.json" \
+            --agent-comparison "$RUN_ROOT/agent_comparison.json" \
+            --out "$RUN_ROOT/aggregate.json" \
+            > "$RUN_ROOT/aggregate.stdout" \
+            2> "$RUN_ROOT/aggregate.stderr"
+    else
+        python3 "$ROOT/tests/compare_admission64_quality_service_ab.py" \
+            --control-root "$RUN_ROOT/control" \
+            --candidate-root "$RUN_ROOT/candidate" \
+            --quality-comparison "$RUN_ROOT/quality_comparison.json" \
+            --agent-comparison "$RUN_ROOT/agent_comparison.json" \
+            --out "$RUN_ROOT/aggregate.json" \
+            > "$RUN_ROOT/aggregate.stdout" \
+            2> "$RUN_ROOT/aggregate.stderr"
+    fi
+    aggregate_rc=$?
+    set -e
+    printf '%s\n' "$aggregate_rc" > "$RUN_ROOT/aggregate.rc"
 fi
-aggregate_rc=$?
-set -e
-printf '%s\n' "$aggregate_rc" > "$RUN_ROOT/aggregate.rc"
 
 fused_output_comparison_rc=0
 if [[ "$QUALITY_AB_VARIANT" == \
@@ -576,3 +625,4 @@ fi
 [[ $agent_comparison_rc -eq 0 ]]
 [[ $aggregate_rc -eq 0 ]]
 [[ $fused_output_comparison_rc -eq 0 ]]
+[[ $long_context_comparison_rc -eq 0 ]]
