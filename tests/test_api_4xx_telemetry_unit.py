@@ -15,6 +15,10 @@ HELPERS = {
     "_bi100_chat_request_shape",
     "_bi100_validation_message_reason",
     "_bi100_validation_reason",
+    "_bi100_validation_identifier",
+    "_bi100_validation_diagnostics",
+    "_bi100_safe_validation_errors",
+    "_bi100_log_request_validation_4xx",
 }
 
 
@@ -44,6 +48,13 @@ class Api4xxTelemetryTest(unittest.TestCase):
         cls.shape = staticmethod(helpers["_bi100_chat_request_shape"])
         cls.validation_reason = staticmethod(
             helpers["_bi100_validation_reason"])
+        cls.validation_diagnostics = staticmethod(
+            helpers["_bi100_validation_diagnostics"])
+        cls.safe_validation_errors = staticmethod(
+            helpers["_bi100_safe_validation_errors"])
+        cls.log_request_validation = staticmethod(
+            helpers["_bi100_log_request_validation_4xx"])
+        cls.helper_globals = helpers
 
     def test_known_errors_have_fixed_reason_codes(self):
         self.assertEqual(
@@ -303,16 +314,132 @@ class Api4xxTelemetryTest(unittest.TestCase):
         self.assertNotIn("private", reason)
         self.assertNotIn("prompt", reason)
 
+    def test_validation_diagnostics_extract_only_bounded_identifiers(self):
+        cases = (
+            ([{
+                "loc": ("body", "tools", 0, "function", "strict"),
+                "type": "value_error.extra",
+                "msg": "private error message",
+                "input": "private field value",
+            }], ("tools", "value_error.extra")),
+            ([{
+                "loc": (),
+                "type": "value_error",
+            }], ("root", "value_error")),
+            ([{
+                "loc": ("body", "__root__"),
+                "type": "value_error",
+            }], ("root", "value_error")),
+            ([{
+                "loc": ("body", "private field with spaces"),
+                "type": "private type with spaces",
+            }], ("unknown", "unknown")),
+            ([{
+                "loc": object(),
+                "type": "missing",
+            }], ("unknown", "missing")),
+            ([], ("unknown", "unknown")),
+            ([
+                {"loc": ("body", "tools"), "type": "missing"},
+                {"loc": ("body", "messages"), "type": "missing"},
+            ], ("multiple", "multiple")),
+        )
+        for errors, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(
+                    self.validation_diagnostics(errors), expected)
+
+    def test_validation_error_extraction_and_logging_never_raise(self):
+        class BrokenErrors:
+            body = {"messages": [{"content": "private request"}]}
+
+            def errors(self):
+                raise RuntimeError("private error message")
+
+        class BrokenRequest:
+            @property
+            def url(self):
+                raise RuntimeError("private request URL")
+
+        class BrokenLogger:
+            def warning(self, *_args):
+                raise RuntimeError("logger unavailable")
+
+        self.assertEqual(self.safe_validation_errors(BrokenErrors()), ())
+        self.helper_globals["logger"] = BrokenLogger()
+        self.log_request_validation(BrokenRequest(), BrokenErrors())
+
+    def test_validation_log_contains_dimensions_without_error_payload(self):
+        class CapturingLogger:
+            def __init__(self):
+                self.lines = []
+
+            def warning(self, template, *args):
+                self.lines.append(template % args)
+
+        error = types.SimpleNamespace(
+            body={"messages": [{"role": "user", "content": "private body"}]},
+            errors=lambda: [{
+                "loc": ("body", "tools", 0, "function", "strict"),
+                "type": "value_error.extra",
+                "msg": "private error message",
+                "input": "private field value",
+            }],
+        )
+        logger = CapturingLogger()
+        self.helper_globals["logger"] = logger
+        request = types.SimpleNamespace(
+            url=types.SimpleNamespace(path="/v1/chat/completions"))
+
+        self.log_request_validation(request, error)
+
+        self.assertEqual(len(logger.lines), 1)
+        line = logger.lines[0]
+        self.assertIn("validation_field=tools", line)
+        self.assertIn("validation_type=value_error.extra", line)
+        self.assertIn("errors=1", line)
+        self.assertNotIn("private", line)
+
     def test_runtime_logs_reason_without_raw_error_message(self):
         source = API_SERVER.read_text()
         self.assertIn("[BI100 4XX] endpoint=chat", source)
         self.assertIn("[BI100 4XX] endpoint=request_validation", source)
         self.assertIn(
             "_bi100_validation_reason(validation_errors, shape)", source)
+        self.assertIn(
+            "_bi100_validation_diagnostics(validation_errors)", source)
         self.assertIn("_bi100_chat_request_shape(body)", source)
         self.assertIn("_bi100_log_chat_4xx(request, generator)", source)
+        self.assertIn(
+            "_bi100_log_request_validation_4xx(raw_request, exc)", source)
         self.assertIn("images=%d image_data=%d image_remote=%d", source)
+        self.assertIn("validation_field=%s validation_type=%s", source)
         self.assertNotIn("[BI100 4XX] message=", source)
+
+    def test_docker_overlay_installs_the_instrumented_api_server(self):
+        dockerfile = (ROOT / "Dockerfile").read_text()
+        patch_ops = (ROOT / "qwen3_6_scripts/patch_ops.sh").read_text()
+        installer = (
+            ROOT / "scripts/install_bi100_bare_host_runtime.sh"
+        ).read_text()
+        protocol = (ROOT / "qwen3_6_scripts/protocol.py").read_text()
+
+        self.assertIn(
+            "COPY ./qwen3_6_scripts /workspace/qwen3_6_scripts",
+            dockerfile,
+        )
+        self.assertIn(
+            "RUN cd ./qwen3_6_scripts && bash ./patch_ops.sh",
+            dockerfile,
+        )
+        self.assertIn(
+            'cp ./api_server.py '
+            '"${VLLM_ROOT}/entrypoints/openai/api_server.py"',
+            patch_ops,
+        )
+        self.assertIn(
+            'root / "qwen3_6_scripts/api_server.py"', installer)
+        self.assertIn('ConfigDict(extra="forbid")', protocol)
 
 
 if __name__ == "__main__":
