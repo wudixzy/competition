@@ -30,7 +30,9 @@ class SummarizeApi4xxLogTest(unittest.TestCase):
     def test_complete_attribution_groups_only_bounded_fields(self):
         report, qualified = self.summarize(
             "WARNING [BI100 4XX] endpoint=request_validation code=400 "
-            f"reason=request_validation_tool_strict {SHAPE} errors=1\n"
+            f"reason=request_validation_tool_strict {SHAPE} errors=1 "
+            "validation_field=tools "
+            "validation_type=value_error.extra\n"
             'INFO: 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" '
             "400 Bad Request\n"
         )
@@ -38,6 +40,9 @@ class SummarizeApi4xxLogTest(unittest.TestCase):
         self.assertTrue(report["complete"])
         self.assertEqual(
             report["by_reason"], {"request_validation_tool_strict": 1})
+        self.assertEqual(report["by_validation_field"], {"tools": 1})
+        self.assertEqual(
+            report["by_validation_type"], {"value_error.extra": 1})
         self.assertEqual(report["request_shapes"], [{
             "messages": 3,
             "systems": 1,
@@ -115,6 +120,10 @@ class SummarizeApi4xxLogTest(unittest.TestCase):
             "400 Bad Request\n"
         )
         self.assertTrue(qualified, report)
+        self.assertEqual(
+            report["by_validation_field"], {"unknown": 1})
+        self.assertEqual(
+            report["by_validation_type"], {"unknown": 1})
         self.assertEqual(report["request_shapes"], [{
             "messages": 2,
             "systems": 0,
@@ -130,6 +139,46 @@ class SummarizeApi4xxLogTest(unittest.TestCase):
             "shape_version": 2,
             "count": 1,
         }])
+
+    def test_root_unknown_and_multiple_validation_dimensions_are_counted(self):
+        report, qualified = self.summarize(
+            "WARNING [BI100 4XX] endpoint=request_validation code=400 "
+            "reason=request_validation_unknown errors=1 "
+            "validation_field=root validation_type=value_error\n"
+            "WARNING [BI100 4XX] endpoint=request_validation code=400 "
+            "reason=request_validation_unknown errors=0 "
+            "validation_field=unknown validation_type=unknown\n"
+            "WARNING [BI100 4XX] endpoint=request_validation code=400 "
+            "reason=request_validation_other errors=2 "
+            "validation_field=multiple validation_type=multiple\n"
+            'INFO: 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" '
+            "400 Bad Request\n"
+            'INFO: 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" '
+            "400 Bad Request\n"
+            'INFO: 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" '
+            "400 Bad Request\n"
+        )
+        self.assertTrue(qualified, report)
+        self.assertEqual(report["by_validation_field"], {
+            "multiple": 1,
+            "root": 1,
+            "unknown": 1,
+        })
+        self.assertEqual(report["by_validation_type"], {
+            "multiple": 1,
+            "unknown": 1,
+            "value_error": 1,
+        })
+
+    def test_malformed_validation_identifier_fails_closed(self):
+        report, qualified = self.summarize(
+            "WARNING [BI100 4XX] endpoint=request_validation code=400 "
+            "reason=request_validation_unknown errors=1 "
+            "validation_field=private/value "
+            "validation_type=value_error\n"
+        )
+        self.assertFalse(qualified)
+        self.assertEqual(report["malformed_marker_count"], 1)
 
 
 if __name__ == "__main__":

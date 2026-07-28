@@ -206,6 +206,12 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
 
     def docker_contract() -> str:
         text = (root / "Dockerfile").read_text(encoding="utf-8")
+        patch_ops = (
+            root / "qwen3_6_scripts" / "patch_ops.sh"
+        ).read_text(encoding="utf-8")
+        api_server = (
+            root / "qwen3_6_scripts" / "api_server.py"
+        ).read_text(encoding="utf-8")
         expected_base = (
             "FROM harbor.4pd.io/modelhubxc/enginex-iluvatar/"
             "bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3"
@@ -221,6 +227,17 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
         ]:
             if fragment not in text:
                 raise ValueError(f"Dockerfile missing: {fragment}")
+        api_overlay_copy = (
+            'cp ./api_server.py '
+            '"${VLLM_ROOT}/entrypoints/openai/api_server.py"'
+        )
+        if api_overlay_copy not in patch_ops:
+            raise ValueError(
+                "runtime patch entrypoint does not install api_server.py")
+        for field in ("validation_field=%s", "validation_type=%s"):
+            if field not in api_server:
+                raise ValueError(
+                    f"runtime api_server.py missing diagnostic: {field}")
         registry_patcher = (
             root / "qwen3_6_scripts" / "patch_vllm_qwen3_5.py"
         ).read_text(encoding="utf-8")

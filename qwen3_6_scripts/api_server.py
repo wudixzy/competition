@@ -290,6 +290,62 @@ def _bi100_validation_reason(errors, request_shape=None):
     return "request_validation_unknown"
 
 
+def _bi100_validation_identifier(value):
+    if not isinstance(value, str) or not value or len(value) > 64:
+        return "unknown"
+    if not value.isascii():
+        return "unknown"
+    if not all(character.isalnum() or character in "._-"
+               for character in value):
+        return "unknown"
+    return value
+
+
+def _bi100_validation_diagnostics(errors):
+    if not isinstance(errors, (list, tuple)):
+        return "unknown", "unknown"
+    try:
+        error_count = len(errors)
+    except Exception:
+        return "unknown", "unknown"
+    if error_count > 1:
+        return "multiple", "multiple"
+    if error_count == 0:
+        return "unknown", "unknown"
+
+    try:
+        error = errors[0]
+        if not isinstance(error, dict):
+            return "unknown", "unknown"
+        location = error.get("loc")
+        validation_type = _bi100_validation_identifier(error.get("type"))
+        if not isinstance(location, (list, tuple)):
+            return "unknown", validation_type
+        if not location:
+            return "root", validation_type
+        index = 0
+        if location[0] in ("body", "query", "path", "header", "cookie"):
+            index = 1
+        if index >= len(location):
+            return "root", validation_type
+        field = location[index]
+        if field in ("__root__", "root"):
+            return "root", validation_type
+        return _bi100_validation_identifier(field), validation_type
+    except Exception:
+        return "unknown", "unknown"
+
+
+def _bi100_safe_validation_errors(exc):
+    try:
+        errors = exc.errors()
+        if not isinstance(errors, (list, tuple)):
+            return ()
+        return tuple(errors)
+    except Exception:
+        return ()
+
+
 def _bi100_startup_trace(message: str) -> None:
     if os.getenv("BI100_EXECUTOR_STARTUP_DEBUG") == "1":
         stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -392,6 +448,87 @@ def _bi100_log_chat_4xx(request, error) -> None:
         int(shape["stream"]),
         shape["n"] if shape["n"] is not None else "unset",
     )
+
+
+def _bi100_log_request_validation_4xx(raw_request, exc) -> None:
+    validation_errors = ()
+    validation_field = "unknown"
+    validation_type = "unknown"
+    try:
+        validation_errors = _bi100_safe_validation_errors(exc)
+        validation_field, validation_type = (
+            _bi100_validation_diagnostics(validation_errors)
+        )
+        body = getattr(exc, "body", None)
+        url = getattr(raw_request, "url", None)
+        path = getattr(url, "path", "")
+        is_chat_request = (
+            isinstance(path, str)
+            and path.endswith("/v1/chat/completions")
+            and isinstance(body, dict)
+        )
+        shape = (
+            _bi100_chat_request_shape(body) if is_chat_request else None
+        )
+        reason = _bi100_validation_reason(validation_errors, shape)
+        if shape is not None:
+            if (reason == "request_validation_tools"
+                    and shape["strict_true_count"]):
+                reason = "request_validation_tool_strict"
+            logger.warning(
+                "[BI100 4XX] endpoint=request_validation code=400 reason=%s "
+                "messages=%d systems=%d system_part_msgs=%d "
+                "system_text_parts=%d system_other_parts=%d tools=%d "
+                "tool_msgs=%d assistant_tool_msgs=%d strict_false=%d "
+                "strict_true=%d choice=%s images=%d image_data=%d "
+                "image_remote=%d image_other=%d stream=%d n=%s errors=%d "
+                "validation_field=%s validation_type=%s",
+                reason,
+                shape["message_count"],
+                shape["system_count"],
+                shape["system_part_message_count"],
+                shape["system_text_part_count"],
+                shape["system_other_part_count"],
+                shape["tool_count"],
+                shape["tool_message_count"],
+                shape["assistant_tool_message_count"],
+                shape["strict_false_count"],
+                shape["strict_true_count"],
+                shape["tool_choice_kind"],
+                shape["image_count"],
+                shape["image_data_count"],
+                shape["image_remote_count"],
+                shape["image_other_count"],
+                int(shape["stream"]),
+                shape["n"] if shape["n"] is not None else "unset",
+                len(validation_errors),
+                validation_field,
+                validation_type,
+            )
+        else:
+            logger.warning(
+                "[BI100 4XX] endpoint=request_validation code=400 reason=%s "
+                "errors=%d validation_field=%s validation_type=%s",
+                reason,
+                len(validation_errors),
+                validation_field,
+                validation_type,
+            )
+        return
+    except Exception:
+        pass
+
+    try:
+        logger.warning(
+            "[BI100 4XX] endpoint=request_validation code=400 "
+            "reason=request_validation_unknown errors=%d "
+            "validation_field=%s validation_type=%s",
+            len(validation_errors),
+            validation_field,
+            validation_type,
+        )
+    except Exception:
+        pass
 
 
 @asynccontextmanager
@@ -758,52 +895,7 @@ def build_app(args: Namespace) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(raw_request, exc):
-        validation_errors = exc.errors()
-        body = getattr(exc, "body", None)
-        is_chat_request = (
-            raw_request.url.path.endswith("/v1/chat/completions")
-            and isinstance(body, dict)
-        )
-        shape = _bi100_chat_request_shape(body) if is_chat_request else None
-        reason = _bi100_validation_reason(validation_errors, shape)
-        if shape is not None:
-            if (reason == "request_validation_tools"
-                    and shape["strict_true_count"]):
-                reason = "request_validation_tool_strict"
-            logger.warning(
-                "[BI100 4XX] endpoint=request_validation code=400 reason=%s "
-                "messages=%d systems=%d system_part_msgs=%d "
-                "system_text_parts=%d system_other_parts=%d tools=%d "
-                "tool_msgs=%d assistant_tool_msgs=%d strict_false=%d "
-                "strict_true=%d choice=%s images=%d image_data=%d "
-                "image_remote=%d image_other=%d stream=%d n=%s errors=%d",
-                reason,
-                shape["message_count"],
-                shape["system_count"],
-                shape["system_part_message_count"],
-                shape["system_text_part_count"],
-                shape["system_other_part_count"],
-                shape["tool_count"],
-                shape["tool_message_count"],
-                shape["assistant_tool_message_count"],
-                shape["strict_false_count"],
-                shape["strict_true_count"],
-                shape["tool_choice_kind"],
-                shape["image_count"],
-                shape["image_data_count"],
-                shape["image_remote_count"],
-                shape["image_other_count"],
-                int(shape["stream"]),
-                shape["n"] if shape["n"] is not None else "unset",
-                len(validation_errors),
-            )
-        else:
-            logger.warning(
-                "[BI100 4XX] endpoint=request_validation code=400 reason=%s "
-                "errors=%d",
-                reason,
-                len(validation_errors),
-            )
+        _bi100_log_request_validation_4xx(raw_request, exc)
         chat = app.state.openai_serving_chat
         err = chat.create_error_response(message=str(exc))
         return JSONResponse(err.model_dump(),

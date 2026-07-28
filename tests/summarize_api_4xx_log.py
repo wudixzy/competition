@@ -17,6 +17,7 @@ ACCESS_RE = re.compile(
     r'"POST /v1/chat/completions HTTP/1\.[01]" (?P<code>4\d\d)\b'
 )
 FIELD_RE = re.compile(r"(?P<key>[a-z_]+)=(?P<value>[^\s]+)")
+VALIDATION_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 ALLOWED_ENDPOINTS = {"chat", "request_validation"}
 ALLOWED_REASONS = {
     "empty_messages",
@@ -87,6 +88,15 @@ def require_int(value: str | None, field: str, *, minimum: int = 0) -> int:
     return parsed
 
 
+def require_validation_identifier(
+        value: str | None, field: str, *, legacy_default: str) -> str:
+    if value is None:
+        return legacy_default
+    if not VALIDATION_IDENTIFIER_RE.fullmatch(value):
+        raise ValueError(f"invalid {field}")
+    return value
+
+
 def parse_marker(line: str) -> dict[str, Any]:
     payload = line.split(MARKER, 1)[1]
     fields = {
@@ -111,7 +121,17 @@ def parse_marker(line: str) -> dict[str, Any]:
     }
     if endpoint == "request_validation":
         record["errors"] = require_int(
-            fields.get("errors"), "errors", minimum=1)
+            fields.get("errors"), "errors", minimum=0)
+        record["validation_field"] = require_validation_identifier(
+            fields.get("validation_field"),
+            "validation_field",
+            legacy_default="unknown",
+        )
+        record["validation_type"] = require_validation_identifier(
+            fields.get("validation_type"),
+            "validation_type",
+            legacy_default="unknown",
+        )
 
     has_shape = any(
         field in fields
@@ -177,6 +197,8 @@ def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
     attributed_codes: collections.Counter[int] = collections.Counter()
     endpoints: collections.Counter[str] = collections.Counter()
     reasons: collections.Counter[str] = collections.Counter()
+    validation_fields: collections.Counter[str] = collections.Counter()
+    validation_types: collections.Counter[str] = collections.Counter()
     shapes: collections.Counter[tuple[Any, ...]] = collections.Counter()
     malformed = 0
     attributed = 0
@@ -197,6 +219,9 @@ def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
             attributed_codes[record["code"]] += 1
             endpoints[record["endpoint"]] += 1
             reasons[record["reason"]] += 1
+            if record["endpoint"] == "request_validation":
+                validation_fields[record["validation_field"]] += 1
+                validation_types[record["validation_type"]] += 1
             key = shape_key(record)
             if key is not None:
                 shapes[key] += 1
@@ -224,6 +249,8 @@ def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
         },
         "by_endpoint": dict(sorted(endpoints.items())),
         "by_reason": dict(sorted(reasons.items())),
+        "by_validation_field": dict(sorted(validation_fields.items())),
+        "by_validation_type": dict(sorted(validation_types.items())),
         "request_shapes": [
             shape_report(key, count)
             for key, count in sorted(
@@ -240,6 +267,8 @@ def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
             "contains_response_content": False,
             "contains_tool_schema": False,
             "contains_multimodal_url_or_bytes": False,
+            "contains_validation_error_message": False,
+            "contains_validation_input_value": False,
         },
     }
     return report, qualified
