@@ -156,12 +156,17 @@ def _request_stream(
                 f"stream status {status}, expected {expected_status}; "
                 f"response_sha256={_canonical_sha256(response)}")
         error = response.get("error") if isinstance(response, dict) else None
+        error_shape = "nested"
+        if not isinstance(error, dict) and isinstance(response, dict):
+            error = response
+            error_shape = "top_level"
         message = error.get("message") if isinstance(error, dict) else None
         if not isinstance(message, str) or not message.strip():
             raise AssertionError("4xx response lacks a structured error message")
         return {
             "http_status": status,
             "error_fields": sorted(error),
+            "error_shape": error_shape,
             "error_message_sha256": hashlib.sha256(
                 message.encode("utf-8")).hexdigest(),
             "response_sha256": _canonical_sha256(response),

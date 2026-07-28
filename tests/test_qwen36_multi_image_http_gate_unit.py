@@ -92,6 +92,7 @@ class FakeClient:
         indexed_warm_drift: bool = False,
         cross_indexed_hit: bool = False,
         max_model_len: int = 262144,
+        top_level_error: bool = False,
     ) -> None:
         self.image_limit = image_limit
         self.warm_drift = warm_drift
@@ -99,6 +100,7 @@ class FakeClient:
         self.indexed_warm_drift = indexed_warm_drift
         self.cross_indexed_hit = cross_indexed_hit
         self.max_model_len = max_model_len
+        self.top_level_error = top_level_error
         self.seen: dict[tuple[str, ...], int] = {}
         self.indexed_cold_count = 0
 
@@ -146,13 +148,12 @@ class FakeClient:
         del timeout
         count = image_count(payload)
         if count > self.image_limit:
-            return 400, {
-                "error": {
-                    "message": "At most one image is allowed.",
-                    "type": "BadRequestError",
-                    "code": 400,
-                },
+            error = {
+                "message": "At most one image is allowed.",
+                "type": "BadRequestError",
+                "code": 400,
             }
+            return 400, error if self.top_level_error else {"error": error}
         raise AssertionError("post is only expected for the 4xx control path")
 
 
@@ -221,6 +222,10 @@ class MultiImageHttpGateUnitTest(unittest.TestCase):
             cases["stream_two_images_cold"]["evidence"]["error_fields"],
             ["code", "message", "type"],
         )
+        self.assertEqual(
+            cases["stream_two_images_cold"]["evidence"]["error_shape"],
+            "nested",
+        )
         self.assertTrue(
             cases["stream_two_images_warm"]["evidence"]["skipped"])
         for cold_name, warm_name in MODULE.PALETTE_PAIRS:
@@ -232,6 +237,21 @@ class MultiImageHttpGateUnitTest(unittest.TestCase):
             self.assertTrue(warm["cold_generation_exact"])
         self.assertEqual(
             cases["post_request_health"]["evidence"]["http_status"], 200)
+
+    def test_control_accepts_top_level_openai_error_response(self):
+        report = self.run_gate(
+            FakeClient(1, top_level_error=True),
+            400,
+        )
+        self.assertTrue(report["qualified"])
+        cases = {case["name"]: case for case in report["cases"]}
+        evidence = cases["stream_two_images_cold"]["evidence"]
+        self.assertEqual(evidence["http_status"], 400)
+        self.assertEqual(evidence["error_shape"], "top_level")
+        self.assertEqual(
+            evidence["error_fields"],
+            ["code", "message", "type"],
+        )
 
     def test_candidate_accepts_two_images_with_exact_warm_and_isolation(self):
         report = self.run_gate(FakeClient(2), 200)
