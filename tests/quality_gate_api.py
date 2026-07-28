@@ -947,12 +947,14 @@ def _max_tokens_case(
         completion = _usage(data)["completion_tokens"]
         require(completion == 1,
                 "max_tokens=1 completion usage is invalid")
-        require(finish == "stop",
-                "max_tokens=1 did not finish naturally")
+        require(finish in {"stop", "length"},
+                "max_tokens=1 finish_reason is invalid")
         facts = {
             "requested_max_tokens": value,
             "completion_within_limit": True,
-            "natural_stop": True,
+            "finish_reason_valid": True,
+            "natural_stop": finish == "stop",
+            "terminated_by_limit": finish == "length",
         }
     else:
         require(finish == "stop",

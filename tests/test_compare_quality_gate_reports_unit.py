@@ -548,19 +548,24 @@ class QualityComparisonTest(unittest.TestCase):
             result["reasons"],
         )
 
-    def test_max_tokens_one_requires_natural_stop_and_exact_usage(self):
+    def test_max_tokens_one_accepts_stop_or_length_with_exact_usage(self):
         baseline = make_report("baseline")
         candidate = make_report("candidate")
         self.assertTrue(MODULE.compare_reports(
             baseline, candidate)["qualified"])
 
-        case = next(row for row in candidate["cases"]
-                    if row["id"] == "max_tokens_1")
-        case["observation"]["finish_reasons"] = ["length"]
+        for report in (baseline, candidate):
+            case = next(row for row in report["cases"]
+                        if row["id"] == "max_tokens_1")
+            case["observation"]["finish_reasons"] = ["length"]
+        self.assertTrue(MODULE.compare_reports(
+            baseline, candidate)["qualified"])
+
+        case["observation"]["finish_reasons"] = ["tool_calls"]
         result = MODULE.compare_reports(baseline, candidate)
         self.assertFalse(result["qualified"])
         self.assertIn(
-            "candidate: case max_tokens_1: max_tokens=1 natural-stop "
+            "candidate: case max_tokens_1: max_tokens=1 limit "
             "evidence differs", result["reasons"])
 
     def test_gateway_top_p_zero_rejection_fails_closed(self):

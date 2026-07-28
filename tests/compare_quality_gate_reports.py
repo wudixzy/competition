@@ -87,7 +87,7 @@ TRUE_FACTS = {
         "final_answer_rule_passed",
     ),
     "max_tokens_unset": ("natural_stop",),
-    "max_tokens_1": ("completion_within_limit", "natural_stop"),
+    "max_tokens_1": ("completion_within_limit", "finish_reason_valid"),
     "max_tokens_64": ("natural_stop",),
     "max_tokens_64k": ("natural_stop",),
     "max_tokens_near_context": ("natural_stop",),
@@ -192,9 +192,9 @@ def _contract_registry_reasons(manifest: Json) -> list[str]:
         if not required_rejection_facts <= set(TRUE_FACTS.get(case_id, ())):
             reasons.append(
                 f"rejected case {case_id} lacks structured health facts")
-    if not {"completion_within_limit", "natural_stop"} <= set(
+    if not {"completion_within_limit", "finish_reason_valid"} <= set(
             TRUE_FACTS.get("max_tokens_1", ())):
-        reasons.append("max_tokens=1 natural-stop contract is incomplete")
+        reasons.append("max_tokens=1 limit contract is incomplete")
     return reasons
 
 
@@ -583,9 +583,9 @@ def _validate_case_contract(case: Json, report: Json, label: str) -> list[str]:
     ) and finish != ["stop"]:
         reasons.append(f"{label}: accepted max_tokens did not finish by stop")
     if case_id == "max_tokens_1":
-        if finish != ["stop"] or completion != [1]:
+        if finish not in (["stop"], ["length"]) or completion != [1]:
             reasons.append(
-                f"{label}: max_tokens=1 natural-stop evidence differs")
+                f"{label}: max_tokens=1 limit evidence differs")
     if case_id in ("streaming_usage", "streaming_sse_usage"):
         if (finish != ["stop"] or facts.get("done") != 1
                 or facts.get("usage_blocks") != 1

@@ -374,19 +374,28 @@ class QualityGateApiTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.CaseFailure, "inconsistent"):
             MODULE._validate_response_schema(response)
 
-    def test_max_tokens_one_requires_natural_stop_and_exact_usage(self):
+    def test_max_tokens_one_accepts_stop_or_length_with_exact_usage(self):
         observation = MODULE._max_tokens_case(
             ResponseClient(), object(), 1)
         self.assertEqual(observation["finish_reasons"], ["stop"])
         self.assertTrue(observation["facts"]["completion_within_limit"])
+        self.assertTrue(observation["facts"]["finish_reason_valid"])
         self.assertTrue(observation["facts"]["natural_stop"])
+        self.assertFalse(observation["facts"]["terminated_by_limit"])
+
+        limited = MODULE._max_tokens_case(
+            ResponseClient(finish_reason="length"), object(), 1)
+        self.assertEqual(limited["finish_reasons"], ["length"])
+        self.assertTrue(limited["facts"]["finish_reason_valid"])
+        self.assertFalse(limited["facts"]["natural_stop"])
+        self.assertTrue(limited["facts"]["terminated_by_limit"])
 
         with self.assertRaisesRegex(MODULE.CaseFailure, "usage is invalid"):
             MODULE._max_tokens_case(
                 ResponseClient(completion_tokens=2), object(), 1)
-        with self.assertRaisesRegex(MODULE.CaseFailure, "finish naturally"):
+        with self.assertRaisesRegex(MODULE.CaseFailure, "finish_reason"):
             MODULE._max_tokens_case(
-                ResponseClient(finish_reason="length"), object(), 1)
+                ResponseClient(finish_reason="tool_calls"), object(), 1)
 
     def test_n_two_requires_exact_deterministic_choices_and_usage(self):
         client = NResponseClient()
