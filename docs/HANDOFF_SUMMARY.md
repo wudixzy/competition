@@ -3,9 +3,10 @@
 ## 2026-07-28 M1-91 补偿累加 W13 单卡门禁
 
 - 私有实验分支为 `exp/M1-91-compensated-w13-20260728`，实现提交
-  `8819941`，基于 M1-88 恢复证据加固提交 `24c20a6`。该分支只增加单卡
-  probe、固定 benchmark、qualifier 和证明式 runner；生产模型、runtime、
-  正式 YAML、Dockerfile、默认开关、`main` 和可见性均未改变。
+  `8819941`、CoreX intrinsic 可移植性修正 `61d0105`，基于 M1-88 恢复证据
+  加固提交 `24c20a6`。该分支只增加单卡 probe、固定 benchmark、qualifier
+  和证明式 runner；生产模型、runtime、正式 YAML、Dockerfile、默认开关、
+  `main` 和可见性均未改变。
 - 生产 direct W13 在固定 seed `20260727` 的历史 relative L2 为
   `2.452e-5`，超过 `1e-5` 硬门槛；M1-63 的四路 pairwise 方案也已因
   500-step 数值误差被拒绝。M1-91 只验证一个不同算法：每 lane 使用显式
