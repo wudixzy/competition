@@ -1,5 +1,29 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-07-28 M1-89 多模态缓存命名空间修复
+
+- 最新私有分支为
+  `fix/M1-89-multimodal-cache-namespace-20260728`，实现提交 `0553769`。
+  审计确认旧路径会对 `multi_modal_data` 求真值、只对 `TypeError` 做请求级
+  隔离、遗漏 PIL 调色板/透明度，并永久保留请求级随机盐和告警集合。
+- 修复后使用 `is not None`，受支持对象规范化失败时按有界异常集合回退到稳定的
+  请求级隔离；PIL 哈希纳入 palette mode、palette 和 transparency。相同请求内
+  仍可稳定使用同一盐，不可规范化内容不会跨请求复用，也不应阻断多模态推理。
+- block manager 新增请求命名空间释放接口；生产 scheduler 在 finished、abort 和
+  async-stop 共用路径上对 decoder-only 与 encoder-decoder 都执行释放，旧 manager
+  没有该接口时仍兼容。`admission64` 空 live-prefix 的防御性越界也已修复。
+- 新测试覆盖不同 palette/透明度隔离、哈希读取 `OSError` 回退、禁止对象真值求值、
+  request ID 释放后重新加盐、物理块号复用，以及固定种子 1000 步 GDN LRU
+  状态机对照。聚焦测试 38 项通过，完整 tests-root 为 1018 项通过、25 项依赖
+  skip；preflight 9/9、质量数据和 53 项指标 manifest、语法和 diff 门禁均通过。
+- 本机没有 CoreX GPU，且没有 Pillow；新增 fake-image 测试已强制执行核心哈希
+  语义，但还不能声明真实服务多模态、cold/warm 输出一致性或性能通过。健康实例
+  恢复后需用绑定 `0553769` 的 immutable overlay 跑多图同图/异图、palette、
+  transparency、异常回退和完成/中止释放的服务级门禁。
+- 本轮未修改 `main`、正式 `computility-run.yaml`、Dockerfile、默认开关或仓库
+  可见性。详细证据和远端门禁见
+  `docs/experiments/M1_89_MULTIMODAL_CACHE_NAMESPACE_20260728.md`。
+
 ## 2026-07-28 M1-88 单卡 W13 舍入风险门禁
 
 - 最新私有实验分支为 `exp/M1-88-w13-rounding-guard-20260728`，实现提交
