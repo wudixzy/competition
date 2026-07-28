@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""Create a verified private session, record its identity, then exec."""
+"""Create a verified private session and reap all service descendants."""
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 from pathlib import Path
 import secrets
+import signal
+import subprocess
 import sys
+import time
+
+
+PR_SET_CHILD_SUBREAPER = 36
 
 
 def _starttime_ticks(pid: int) -> int:
@@ -17,6 +24,63 @@ def _starttime_ticks(pid: int) -> int:
         raise RuntimeError("malformed process stat")
     fields_after_command = value[closing + 2:].split()
     return int(fields_after_command[19])
+
+
+def _enable_child_subreaper() -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
+def _returncode(value: int) -> int:
+    return value if value >= 0 else 128 - value
+
+
+def _run_and_reap(command: list[str]) -> int:
+    pending_signal: int | None = None
+    forwarded_signal: int | None = None
+
+    def remember_signal(signum, _frame) -> None:
+        nonlocal pending_signal
+        pending_signal = signum
+
+    previous_handlers = {
+        signum: signal.signal(signum, remember_signal)
+        for signum in (signal.SIGINT, signal.SIGTERM)
+    }
+    child = None
+    try:
+        if pending_signal is not None:
+            return 128 + pending_signal
+        child = subprocess.Popen(command, env=os.environ)
+        while child.poll() is None:
+            if (
+                pending_signal is not None
+                and forwarded_signal != pending_signal
+            ):
+                try:
+                    os.kill(child.pid, pending_signal)
+                except ProcessLookupError:
+                    pass
+                forwarded_signal = pending_signal
+            time.sleep(0.05)
+        child_returncode = child.returncode
+
+        # The API server can exit before its multiprocessing workers. As a
+        # subreaper, this session leader adopts those workers and waits until
+        # every descendant has been reaped.
+        while True:
+            try:
+                os.waitpid(-1, 0)
+            except InterruptedError:
+                continue
+            except ChildProcessError:
+                break
+        return _returncode(child_returncode)
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,6 +102,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     os.setsid()
+    try:
+        _enable_child_subreaper()
+    except OSError as error:
+        print(
+            f"cannot enable child subreaper: {error.strerror}",
+            file=sys.stderr,
+        )
+        return 2
     pid = os.getpid()
     session_token = secrets.token_hex(16)
     os.environ["BI100_PROCESS_SESSION_TOKEN"] = session_token
@@ -75,8 +147,15 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         os.close(directory)
 
-    os.execvpe(command[0], command, os.environ)
-    raise AssertionError("os.execvpe unexpectedly returned")
+    print("[BI100 SESSION] child subreaper active", flush=True)
+    try:
+        return _run_and_reap(command)
+    except OSError as error:
+        print(
+            f"cannot start session command: {error.strerror}",
+            file=sys.stderr,
+        )
+        return 127
 
 
 if __name__ == "__main__":
