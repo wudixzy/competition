@@ -439,6 +439,21 @@ def load_manifest(path: Path) -> tuple[Json, str]:
     return manifest, digest
 
 
+def select_cases(cases: dict[str, Json],
+                 requested: list[str]) -> dict[str, Json]:
+    if not requested:
+        return cases
+    require(len(set(requested)) == len(requested),
+            "agent case ids must be unique")
+    unknown = set(requested) - set(cases)
+    require(not unknown, "unknown agent workload case requested")
+    requested_set = set(requested)
+    return {
+        name: case for name, case in cases.items()
+        if name in requested_set
+    }
+
+
 def load_runtime_contract(path: Path, source_revision: str,
                           runtime_identity: str, instance: str) -> tuple[Json, str]:
     contract = json.loads(path.read_text(encoding="utf-8"))
@@ -466,6 +481,7 @@ def main() -> int:
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument("--timeout-s", type=float, default=360)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--runtime-identity", required=True)
     parser.add_argument("--runtime-contract", type=Path, required=True)
@@ -476,6 +492,10 @@ def main() -> int:
     args = parser.parse_args()
 
     manifest, manifest_sha = load_manifest(args.manifest)
+    try:
+        selected_cases = select_cases(build_cases(), args.case)
+    except AssertionError as error:
+        parser.error(str(error))
     contract, contract_sha = load_runtime_contract(
         args.runtime_contract, args.source_revision,
         args.runtime_identity, args.instance)
@@ -492,6 +512,11 @@ def main() -> int:
             "sha256": manifest_sha,
             "revision": manifest["revision"],
             "case_count": len(manifest["cases"]),
+        },
+        "selection": {
+            "explicit_cases": args.case,
+            "selected_cases": len(selected_cases),
+            "promotion_requires": "all 11 cases and baseline comparison",
         },
         "runtime": {
             "source_revision": args.source_revision,
@@ -522,7 +547,7 @@ def main() -> int:
         "cases": [],
     }
     atomic_write(args.out, report)
-    for name, case in build_cases().items():
+    for name, case in selected_cases.items():
         started = time.monotonic()
         try:
             if case.get("stream"):
@@ -572,7 +597,7 @@ def main() -> int:
         passed = sum(row["status"] == "pass" for row in report["cases"])
         failed = sum(row["status"] == "fail" for row in report["cases"])
         report["summary"] = {
-            "complete": len(report["cases"]) == len(manifest["cases"]),
+            "complete": len(report["cases"]) == len(selected_cases),
             "passed": passed,
             "failed": failed,
             "total": len(report["cases"]),

@@ -42,6 +42,19 @@ class AgentWorkloadMatrixUnitTest(unittest.TestCase):
         self.assertEqual(MODULE.parse_arguments('{"value": 7}'), {"value": 7})
         self.assertEqual(MODULE.parse_arguments({"value": 7}), {"value": 7})
 
+    def test_case_selection_is_fixed_order_and_fail_closed(self):
+        cases = MODULE.build_cases()
+        selected = MODULE.select_cases(
+            cases, ["stream_forced_terminal", "forced_terminal"])
+        self.assertEqual(
+            list(selected), ["forced_terminal", "stream_forced_terminal"])
+        self.assertIs(MODULE.select_cases(cases, []), cases)
+        with self.assertRaisesRegex(AssertionError, "unique"):
+            MODULE.select_cases(
+                cases, ["stream_forced_terminal", "stream_forced_terminal"])
+        with self.assertRaisesRegex(AssertionError, "unknown"):
+            MODULE.select_cases(cases, ["unknown_case"])
+
     def test_safe_observation_retains_only_hashes_and_rules(self):
         secret = "raw-agent-output-must-not-be-retained"
         result = {

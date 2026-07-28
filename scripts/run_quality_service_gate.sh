@@ -34,8 +34,12 @@ SERVICE_STARTED=0
 BEFORE_PREFLIGHT_PASSED=0
 
 case "$SUITE" in
-    functional|long-context|decode) ;;
-    *) echo "SUITE must be functional, long-context, or decode" >&2; exit 2 ;;
+    functional|long-context|decode|contract-smoke) ;;
+    *)
+        echo "SUITE must be functional, long-context, decode, or contract-smoke" \
+            >&2
+        exit 2
+        ;;
 esac
 case "$POLICY" in
     fine32|admission64) ;;
@@ -811,6 +815,50 @@ if [[ "$SUITE" == functional ]]; then
     rc=0
     if [[ $quality_rc -ne 0 || $agent_rc -ne 0 \
             || $fused_output_rc -ne 0 ]]; then
+        rc=1
+    fi
+elif [[ "$SUITE" == contract-smoke ]]; then
+    timeout --signal=TERM --kill-after=30s 900s \
+        python3 "$ROOT/tests/quality_gate_api.py" \
+        --base http://127.0.0.1:8000 \
+        --model llm \
+        --endpoint-mode direct \
+        --tier quick \
+        --case max_tokens_1 \
+        --max-model-len 262144 \
+        --truncation-tokens 32768 \
+        --label "$LABEL" \
+        --source-revision "$(git -C "$ROOT" rev-parse HEAD)" \
+        --runtime-identity "$RUNTIME_IDENTITY" \
+        --runtime-contract "$RUN_ROOT/runtime_contract.json" \
+        --instance "$INSTANCE" \
+        --gpu-count 4 \
+        --tensor-parallel-size 4 \
+        --model-path "$MODEL_PATH" \
+        --tokenizer-path "$MODEL_PATH" \
+        --run-id "${LABEL}-quality-smoke-$(date -u +%Y%m%dT%H%M%SZ)-$$" \
+        --out "$RUN_ROOT/quality_report.json" \
+        > "$RUN_ROOT/quality.stdout" 2> "$RUN_ROOT/quality.stderr"
+    quality_rc=$?
+    printf '%s\n' "$quality_rc" > "$RUN_ROOT/quality.rc"
+
+    timeout --signal=TERM --kill-after=30s 900s \
+        python3 "$ROOT/tests/agent_workload_matrix.py" \
+        --base http://127.0.0.1:8000 \
+        --case stream_forced_terminal \
+        --source-revision "$(git -C "$ROOT" rev-parse HEAD)" \
+        --runtime-identity "$RUNTIME_IDENTITY" \
+        --runtime-contract "$RUN_ROOT/runtime_contract.json" \
+        --instance "$INSTANCE" \
+        --label "$LABEL" \
+        --run-id "${LABEL}-agent-smoke-$(date -u +%Y%m%dT%H%M%SZ)-$$" \
+        --out "$RUN_ROOT/agent_workload.json" \
+        > "$RUN_ROOT/agent_workload.stdout" \
+        2> "$RUN_ROOT/agent_workload.stderr"
+    agent_rc=$?
+    printf '%s\n' "$agent_rc" > "$RUN_ROOT/agent_workload.rc"
+    rc=0
+    if [[ $quality_rc -ne 0 || $agent_rc -ne 0 ]]; then
         rc=1
     fi
 elif [[ "$SUITE" == long-context ]]; then

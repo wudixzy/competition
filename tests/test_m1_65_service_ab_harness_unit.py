@@ -30,7 +30,10 @@ class M165ServiceAbHarnessTest(unittest.TestCase):
             "compare_gdn_combined_qk_service_ab.py", self.orchestrator)
 
     def test_decode_arm_reuses_fail_closed_service_cleanup(self):
-        self.assertIn("functional|long-context|decode)", self.service_gate)
+        self.assertIn(
+            "functional|long-context|decode|contract-smoke",
+            self.service_gate,
+        )
         self.assertIn("gdn_combined_qk_decode_api.py", self.service_gate)
         self.assertIn(
             '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20 \\',

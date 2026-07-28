@@ -36,6 +36,17 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertIn('tests/agent_workload_matrix.py', self.source)
         self.assertIn('agent_workload.rc', self.source)
 
+    def test_contract_smoke_runs_only_the_two_regression_cases(self):
+        self.assertIn(
+            "functional|long-context|decode|contract-smoke", self.source)
+        self.assertIn("--case max_tokens_1", self.source)
+        self.assertIn("--case stream_forced_terminal", self.source)
+        self.assertIn(
+            "SUITE must be functional, long-context, decode, "
+            "or contract-smoke",
+            self.source,
+        )
+
     def test_current_hybrid64_candidate_is_an_explicit_quality_mode(self):
         self.assertIn("direct|hybrid64|aligned)", self.source)
         self.assertIn(
