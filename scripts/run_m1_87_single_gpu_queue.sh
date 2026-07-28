@@ -104,6 +104,11 @@ import sys
 print(Path(sys.argv[1]).resolve(strict=True))
 PY
 )
+RUNTIME_INSTALL=$(dirname "$BI100_RUNTIME_SITE_PACKAGES")/install.json
+if [[ ! -f "$RUNTIME_INSTALL" ]]; then
+    echo "runtime install report is missing: $RUNTIME_INSTALL" >&2
+    exit 3
+fi
 
 mkdir -p "$RUN_ROOT"
 SOURCE_REVISION=$(git -C "$ROOT" rev-parse HEAD)
@@ -166,7 +171,7 @@ stop_active_child() {
     fi
     if [[ -n "$ACTIVE_CHILD_PGID" ]]; then
         bi100_stop_process_group \
-            "$ACTIVE_CHILD_PGID" "$ACTIVE_CHILD_PID" 900 20 \
+            "$ACTIVE_CHILD_PGID" "$ACTIVE_CHILD_PID" 60 20 \
             "$ACTIVE_CHILD_STARTTIME" \
             "$ACTIVE_CHILD_SESSION_TOKEN" || rc=$?
     else
@@ -427,6 +432,41 @@ finish() {
 trap 'exit 143' TERM
 trap 'exit 130' INT
 trap finish EXIT
+
+CURRENT_STAGE=m1_89_overlay_identity
+set +e
+timeout --signal=TERM --kill-after=10s 120s \
+    env -u CUDA_VISIBLE_DEVICES \
+    python3 "$ROOT/tests/verify_bare_host_runtime_identity.py" \
+    --source-root "$ROOT" \
+    --runtime-site-packages "$BI100_RUNTIME_SITE_PACKAGES" \
+    --runtime-install "$RUNTIME_INSTALL" \
+    --out "$RUN_ROOT/m1_89_runtime_overlay_identity.json" \
+    > "$RUN_ROOT/m1_89_runtime_overlay_identity.stdout" \
+    2> "$RUN_ROOT/m1_89_runtime_overlay_identity.stderr"
+rc=$?
+set -e
+printf '%s\n' "$rc" > "$RUN_ROOT/m1_89_overlay_identity.rc"
+[[ $rc -eq 0 ]]
+
+CURRENT_STAGE=m1_89_runtime_gate
+set +e
+(
+    cd /tmp
+    timeout --signal=TERM --kill-after=10s 120s \
+        env -u CUDA_VISIBLE_DEVICES \
+        PYTHONPATH="$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH" \
+        LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \
+        python3 "$ROOT/tests/qwen36_cache_namespace_runtime_gate.py" \
+        --runtime-site-packages "$BI100_RUNTIME_SITE_PACKAGES" \
+        --source-revision "$SOURCE_REVISION" \
+        --out "$RUN_ROOT/m1_89_cache_namespace_runtime_gate.json"
+) > "$RUN_ROOT/m1_89_cache_namespace_runtime_gate.stdout" \
+  2> "$RUN_ROOT/m1_89_cache_namespace_runtime_gate.stderr"
+rc=$?
+set -e
+printf '%s\n' "$rc" > "$RUN_ROOT/m1_89_runtime_gate.rc"
+[[ $rc -eq 0 ]]
 
 CURRENT_STAGE=m1_84
 set +e

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bind the M1-84 functional gate and M1-86 image A/B into one result."""
+"""Bind M1-89 runtime, M1-84 functional, and M1-86 image gates."""
 
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ from typing import Any
 
 
 Json = dict[str, Any]
-SCHEMA = "bi100-m1-87-single-gpu-queue-v1"
+SCHEMA = "bi100-m1-87-single-gpu-queue-v2"
+CACHE_NAMESPACE_SCHEMA = "qwen36-cache-namespace-runtime-gate-v2"
 DIAGNOSTIC_SCHEMA = "qwen36-diagnostic-service-gate-v1"
 IMAGE_RUNNER_SCHEMA = "bi100-m1-86-multi-image-ab-runner-v1"
 IMAGE_COMPARISON_SCHEMA = "bi100-m1-86-multi-image-ab-v1"
@@ -21,6 +22,17 @@ OVERLAY_SCHEMA = "bi100-bare-host-runtime-identity-v1"
 POSTFLIGHT_SCHEMA = "bi100-service-postflight-v1"
 RECOVERY_SCHEMA = "bi100-recorded-session-cleanup-v1"
 SESSION_SCHEMA = "bi100-process-session-v1"
+CACHE_NAMESPACE_CHECKS = frozenset({
+    "module_bound_to_overlay",
+    "same_palette_stable",
+    "different_palette_isolated",
+    "different_transparency_isolated",
+    "empty_multimodal_matches_text",
+    "truthiness_not_evaluated",
+    "normalization_error_is_request_local",
+    "release_clears_request_state",
+    "request_id_reuse_gets_fresh_namespace",
+})
 DIAGNOSTIC_GATE_NAMES = frozenset({
     "checkpoint_verify",
     "runtime_overlay_identity",
@@ -236,6 +248,8 @@ def qualify(
     image_root = root / "m1_86"
 
     rc_names = (
+        "m1_89_overlay_identity",
+        "m1_89_runtime_gate",
         "m1_84",
         "interstage_postflight",
         "interstage_preflight",
@@ -254,6 +268,18 @@ def qualify(
     if runner_returncode != 0:
         reasons.append(f"queue primary return code is {runner_returncode}")
 
+    cache_overlay = _load(
+        root / "m1_89_runtime_overlay_identity.json",
+        "M1-89 overlay identity",
+        reasons,
+        root,
+    )
+    cache_gate = _load(
+        root / "m1_89_cache_namespace_runtime_gate.json",
+        "M1-89 cache namespace runtime gate",
+        reasons,
+        root,
+    )
     diagnostic = _load(
         diagnostic_root / "status.json", "M1-84 status", reasons, root)
     diagnostic_overlay = _load(
@@ -305,6 +331,43 @@ def qualify(
         )
         for name in ("m1_84", "m1_86")
     ]
+
+    cache_checks = cache_gate.get("checks")
+    cache_privacy = cache_gate.get("privacy")
+    cache_module_digests = (
+        cache_gate.get("block_manager_module_sha256"),
+        cache_gate.get("sequence_module_sha256"),
+    )
+    if (
+        cache_gate.get("schema") != CACHE_NAMESPACE_SCHEMA
+        or cache_gate.get("version") != 2
+        or cache_gate.get("qualified") is not True
+        or cache_gate.get("reasons") != []
+        or cache_gate.get("source_revision") != expected_source_revision
+        or not isinstance(cache_checks, dict)
+        or set(cache_checks) != CACHE_NAMESPACE_CHECKS
+        or any(value is not True for value in cache_checks.values())
+        or cache_gate.get("error_types") != {}
+        or not all(
+            isinstance(value, str)
+            and len(value) == 64
+            and all(character in "0123456789abcdef"
+                    for character in value)
+            for value in cache_module_digests
+        )
+        or not isinstance(cache_gate.get("pillow_version"), str)
+        or not cache_gate.get("pillow_version")
+        or not isinstance(cache_privacy, dict)
+        or cache_privacy.get("contains_image_bytes") is not False
+        or cache_privacy.get("contains_namespace_digest") is not False
+        or cache_privacy.get("contains_request_id") is not False
+        or cache_privacy.get("contains_prompt_or_output") is not False
+        or cache_privacy.get("contains_credentials") is not False
+        or cache_gate.get("gpu_execution_required") is not False
+        or cache_gate.get("model_execution_performed") is not False
+        or cache_gate.get("production_promotion_authorized") is not False
+    ):
+        reasons.append("M1-89 cache namespace runtime gate did not qualify")
 
     runtime_identity = diagnostic.get("runtime_identity")
     tool_http_summary = diagnostic.get("tool_http_summary")
@@ -383,11 +446,14 @@ def qualify(
         )
 
     overlay_trees: list[str] = []
+    overlay_sites: list[str] = []
     for label, overlay in (
+        ("M1-89", cache_overlay),
         ("M1-84", diagnostic_overlay),
         ("M1-86", image_overlay),
     ):
         tree = overlay.get("runtime_tree_sha256")
+        site = overlay.get("runtime_site_packages")
         if (
             overlay.get("schema") != OVERLAY_SCHEMA
             or overlay.get("version") != 1
@@ -395,12 +461,24 @@ def qualify(
             or overlay.get("source_revision") != expected_source_revision
             or not isinstance(tree, str)
             or len(tree) != 64
+            or not isinstance(site, str)
+            or not Path(site).is_absolute()
         ):
             reasons.append(f"{label} overlay identity did not qualify")
         else:
             overlay_trees.append(tree)
-    if len(overlay_trees) == 2 and len(set(overlay_trees)) != 1:
-        reasons.append("M1-84 and M1-86 used different runtime overlays")
+            overlay_sites.append(site)
+    if len(overlay_trees) == 3 and len(set(overlay_trees)) != 1:
+        reasons.append(
+            "M1-89, M1-84, and M1-86 used different runtime overlays")
+    if len(overlay_sites) == 3 and len(set(overlay_sites)) != 1:
+        reasons.append(
+            "M1-89, M1-84, and M1-86 used different runtime paths")
+    if (
+        cache_gate.get("runtime_site_packages")
+        != cache_overlay.get("runtime_site_packages")
+    ):
+        reasons.append("M1-89 gate and overlay runtime paths differ")
 
     manifest = (
         runtime_identity.get("diagnostic_manifest_sha256")
@@ -516,6 +594,10 @@ def qualify(
         reasons.append("recorded service recovery was not clean")
 
     artifact_paths = {
+        "m1_89_cache_namespace_runtime_gate":
+            root / "m1_89_cache_namespace_runtime_gate.json",
+        "m1_89_overlay":
+            root / "m1_89_runtime_overlay_identity.json",
         "m1_84_status": diagnostic_root / "status.json",
         "m1_84_overlay": diagnostic_root / "runtime_overlay_identity.json",
         "m1_86_runner_status": image_root / "runner_status.json",
@@ -538,7 +620,7 @@ def qualify(
 
     return {
         "schema": SCHEMA,
-        "version": 1,
+        "version": 2,
         "qualified": not reasons,
         "reasons": reasons,
         "source_revision": expected_source_revision,

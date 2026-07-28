@@ -29,7 +29,7 @@ class M187SingleGpuQueueRunnerUnitTest(unittest.TestCase):
             "exec_bi100_session.py",
             "${label}_child_identity.json",
             "bi100_stop_process_group",
-            '"$ACTIVE_CHILD_PGID" "$ACTIVE_CHILD_PID" 900 20 \\\n'
+            '"$ACTIVE_CHILD_PGID" "$ACTIVE_CHILD_PID" 60 20 \\\n'
             '            "$ACTIVE_CHILD_STARTTIME" \\\n'
             '            "$ACTIVE_CHILD_SESSION_TOKEN"',
             'kill -TERM "$ACTIVE_CHILD_PID"',
@@ -48,7 +48,12 @@ class M187SingleGpuQueueRunnerUnitTest(unittest.TestCase):
         ):
             self.assertIn(marker, self.source)
 
-    def test_runner_orders_functional_then_audit_then_image_ab(self) -> None:
+    def test_runner_orders_runtime_gate_then_functional_and_image_ab(
+            self) -> None:
+        overlay = self.source.index(
+            'CURRENT_STAGE=m1_89_overlay_identity\n')
+        runtime_gate = self.source.index(
+            'CURRENT_STAGE=m1_89_runtime_gate\n')
         diagnostic = self.source.index(
             'CURRENT_STAGE=m1_84\n')
         audit = self.source.index(
@@ -57,9 +62,18 @@ class M187SingleGpuQueueRunnerUnitTest(unittest.TestCase):
             'CURRENT_STAGE=m1_86\n')
         completed = self.source.index(
             'CURRENT_STAGE=completed\n')
+        self.assertLess(overlay, runtime_gate)
+        self.assertLess(runtime_gate, diagnostic)
         self.assertLess(diagnostic, audit)
         self.assertLess(audit, image)
         self.assertLess(image, completed)
+        self.assertIn(
+            "verify_bare_host_runtime_identity.py", self.source)
+        self.assertIn(
+            "qwen36_cache_namespace_runtime_gate.py", self.source)
+        self.assertIn(
+            "m1_89_cache_namespace_runtime_gate.json", self.source)
+        self.assertIn("cd /tmp", self.source)
         self.assertIn("run_qwen36_diagnostic_gate.sh", self.source)
         self.assertIn("run_m1_86_multi_image_ab.sh", self.source)
         self.assertIn(

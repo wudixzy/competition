@@ -20,6 +20,7 @@ REVISION = "1" * 40
 TREE = "2" * 64
 MANIFEST = "3" * 64
 MODEL = "/models/Qwen3.6-35B-A3B-diagnostic-4L-real"
+RUNTIME = "/runtime/site-packages"
 
 
 class M187QueueQualifierUnitTest(unittest.TestCase):
@@ -54,12 +55,44 @@ class M187QueueQualifierUnitTest(unittest.TestCase):
             "version": 1,
             "qualified": True,
             "source_revision": REVISION,
+            "runtime_site_packages": RUNTIME,
             "runtime_tree_sha256": TREE,
         }
+        self._write(
+            self.root / "m1_89_runtime_overlay_identity.json", overlay)
         self._write(
             self.root / "m1_84" / "runtime_overlay_identity.json", overlay)
         self._write(
             self.root / "m1_86" / "runtime_overlay_identity.json", overlay)
+        self._write(
+            self.root / "m1_89_cache_namespace_runtime_gate.json",
+            {
+                "schema": qualifier.CACHE_NAMESPACE_SCHEMA,
+                "version": 2,
+                "qualified": True,
+                "reasons": [],
+                "source_revision": REVISION,
+                "runtime_site_packages": RUNTIME,
+                "block_manager_module_sha256": "4" * 64,
+                "sequence_module_sha256": "5" * 64,
+                "pillow_version": "11.3.0",
+                "checks": {
+                    name: True
+                    for name in qualifier.CACHE_NAMESPACE_CHECKS
+                },
+                "error_types": {},
+                "privacy": {
+                    "contains_image_bytes": False,
+                    "contains_namespace_digest": False,
+                    "contains_request_id": False,
+                    "contains_prompt_or_output": False,
+                    "contains_credentials": False,
+                },
+                "gpu_execution_required": False,
+                "model_execution_performed": False,
+                "production_promotion_authorized": False,
+            },
+        )
         runtime_identity = {
             "source_revision": REVISION,
             "physical_gpus": ["3"],
@@ -246,6 +279,8 @@ class M187QueueQualifierUnitTest(unittest.TestCase):
             ],
         })
         for name in (
+            "m1_89_overlay_identity",
+            "m1_89_runtime_gate",
             "m1_84",
             "interstage_postflight",
             "interstage_preflight",
@@ -270,6 +305,8 @@ class M187QueueQualifierUnitTest(unittest.TestCase):
     def test_qualified_queue_binds_identity_and_authority(self) -> None:
         report = self._qualify()
         self.assertTrue(report["qualified"], report["reasons"])
+        self.assertEqual(report["schema"], qualifier.SCHEMA)
+        self.assertEqual(report["version"], 2)
         self.assertEqual(report["identity"]["runtime_tree_sha256"], TREE)
         self.assertEqual(
             report["identity"]["diagnostic_manifest_sha256"], MANIFEST)
@@ -285,7 +322,35 @@ class M187QueueQualifierUnitTest(unittest.TestCase):
         report = self._qualify()
         self.assertFalse(report["qualified"])
         self.assertIn(
-            "M1-84 and M1-86 used different runtime overlays",
+            "M1-89, M1-84, and M1-86 used different runtime overlays",
+            report["reasons"],
+        )
+
+    def test_cache_namespace_runtime_failure_fails_before_promotion(
+            self) -> None:
+        path = self.root / "m1_89_cache_namespace_runtime_gate.json"
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["checks"]["different_palette_isolated"] = False
+        value["qualified"] = False
+        value["reasons"] = [
+            "runtime check failed: different_palette_isolated"]
+        self._write(path, value)
+        report = self._qualify()
+        self.assertFalse(report["qualified"])
+        self.assertIn(
+            "M1-89 cache namespace runtime gate did not qualify",
+            report["reasons"],
+        )
+
+    def test_cache_namespace_runtime_path_mismatch_fails_closed(self) -> None:
+        path = self.root / "m1_89_cache_namespace_runtime_gate.json"
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["runtime_site_packages"] = "/different/site-packages"
+        self._write(path, value)
+        report = self._qualify()
+        self.assertFalse(report["qualified"])
+        self.assertIn(
+            "M1-89 gate and overlay runtime paths differ",
             report["reasons"],
         )
 
