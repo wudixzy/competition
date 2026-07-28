@@ -354,7 +354,7 @@ def main() -> int:
         args.candidate_extension,
     )
     direct = load_extension(
-        "corex_moe_direct_routed_compensated_gate",
+        "corex_moe_direct_routed",
         args.direct_extension,
     )
     if not hasattr(compensated, "w13") or not hasattr(direct, "w13"):

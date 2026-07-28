@@ -77,6 +77,18 @@ class M191CompensatedW13RunnerUnitTest(unittest.TestCase):
         ):
             self.assertIn(marker, self.source)
 
+    def test_benchmark_uses_direct_extension_export_name(self) -> None:
+        benchmark = (ROOT / "tests" / "bench_moe_compensated_w13.py").read_text(
+            encoding="utf-8")
+        self.assertIn(
+            '"corex_moe_direct_routed",',
+            benchmark,
+        )
+        self.assertNotIn(
+            '"corex_moe_direct_routed_compensated_gate",',
+            benchmark,
+        )
+
     def test_runner_keeps_probe_authority_boundary(self) -> None:
         for marker in (
             '"production_runtime_changed": False',
