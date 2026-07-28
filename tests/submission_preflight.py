@@ -234,7 +234,7 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
         if api_overlay_copy not in patch_ops:
             raise ValueError(
                 "runtime patch entrypoint does not install api_server.py")
-        if "cmp -s ./api_server.py" not in patch_ops:
+        if "python3 - ./api_server.py" not in patch_ops:
             raise ValueError(
                 "runtime patch entrypoint does not verify api_server.py")
         for field in ("validation_field=%s", "validation_type=%s"):
