@@ -179,6 +179,20 @@ _USE_COREX_MOE_WEIGHT_GATHER = (
 _USE_COREX_MOE_DIRECT_ROUTED = (
     _corex_moe_direct_routed is not None
     and env_bool("BI100_MOE_COREX_DIRECT_ROUTED", False))
+_REQUEST_COREX_MOE_COMPENSATED_W13 = env_bool(
+    "BI100_MOE_COREX_COMPENSATED_W13", False)
+if _REQUEST_COREX_MOE_COMPENSATED_W13 and not _USE_COREX_MOE_DIRECT_ROUTED:
+    raise RuntimeError(
+        "BI100_MOE_COREX_COMPENSATED_W13 requires "
+        "BI100_MOE_COREX_DIRECT_ROUTED=1")
+if (
+    _REQUEST_COREX_MOE_COMPENSATED_W13
+    and not hasattr(_corex_moe_direct_routed, "w13_compensated")
+):
+    raise RuntimeError(
+        "corex_moe_direct_routed lacks the qualified "
+        "w13_compensated entry point")
+_USE_COREX_MOE_COMPENSATED_W13 = _REQUEST_COREX_MOE_COMPENSATED_W13
 _USE_FUSED_MOE_ACTIVATION = env_bool("BI100_MOE_FUSED_ACTIVATION", True)
 
 
@@ -1631,8 +1645,12 @@ class Qwen3_5MoeSparseBlock(nn.Module):
                 and w2.shape == (256, 2048, 128)
                 and eids.shape == (8,) and ws.shape == (8,))
             if use_corex_direct:
-                gate_up = _corex_moe_direct_routed.w13(
-                    hidden_states, w13, eids)
+                if _USE_COREX_MOE_COMPENSATED_W13:
+                    gate_up = _corex_moe_direct_routed.w13_compensated(
+                        hidden_states, w13, eids)
+                else:
+                    gate_up = _corex_moe_direct_routed.w13(
+                        hidden_states, w13, eids)
                 act = self.act_fn(gate_up)
                 return _corex_moe_direct_routed.w2_reduce(
                     act, w2, eids, ws)

@@ -134,6 +134,7 @@ def main() -> int:
         "_corex_moe_weight_gather": None,
         "_corex_moe_exact_reduce": None,
         "_USE_COREX_MOE_DIRECT_ROUTED": True,
+        "_USE_COREX_MOE_COMPENSATED_W13": False,
         "_USE_COREX_MOE_WEIGHT_GATHER": False,
         "_USE_COREX_MOE_EXACT_REDUCE": False,
         "_USE_FUSED_MOE_ACTIVATION": True,

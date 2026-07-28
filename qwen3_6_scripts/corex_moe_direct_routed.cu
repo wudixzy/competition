@@ -21,6 +21,27 @@ __device__ inline float warp_sum(float value) {
   return value;
 }
 
+__device__ inline float subtract_rn(float left, float right) {
+  return __fadd_rn(left, -right);
+}
+
+__device__ inline void compensated_add(float value, float& sum,
+                                        float& correction) {
+  const float adjusted = subtract_rn(value, correction);
+  const float next = __fadd_rn(sum, adjusted);
+  correction = subtract_rn(subtract_rn(next, sum), adjusted);
+  sum = next;
+}
+
+__device__ inline float warp_sum_rn(float value) {
+#pragma unroll
+  for (int offset = kWarpSize / 2; offset > 0; offset /= 2) {
+    const float peer = __shfl_down_sync(0xffffffff, value, offset);
+    value = __fadd_rn(value, peer);
+  }
+  return value;
+}
+
 __global__ void direct_w13_kernel(
     const __half* input, const __half* w13, const int64_t* expert_ids,
     __half* gate_up) {
@@ -47,6 +68,42 @@ __global__ void direct_w13_kernel(
     sum = fmaf(__half2float(weight.y), __half2float(x.y), sum);
   }
   sum = warp_sum(sum);
+  if (lane == 0) {
+    gate_up[warp] = __float2half_rn(sum);
+  }
+}
+
+__global__ void compensated_w13_kernel(
+    const __half* input, const __half* w13, const int64_t* expert_ids,
+    __half* gate_up) {
+  const int warp =
+      (static_cast<int>(blockIdx.x) * blockDim.x + threadIdx.x) / kWarpSize;
+  const int lane = threadIdx.x & (kWarpSize - 1);
+  if (warp >= kTopK * kW13Rows) {
+    return;
+  }
+
+  const int slot = warp / kW13Rows;
+  const int local_row = warp - slot * kW13Rows;
+  const int64_t expert = expert_ids[slot];
+  const int64_t weight_row =
+      (expert * kW13Rows + local_row) * static_cast<int64_t>(kHidden);
+  const __half2* input2 = reinterpret_cast<const __half2*>(input);
+  const __half2* weight2 =
+      reinterpret_cast<const __half2*>(w13 + weight_row);
+  float sum = 0.0f;
+  float correction = 0.0f;
+  for (int index = lane; index < kHidden / 2; index += kWarpSize) {
+    const __half2 x = input2[index];
+    const __half2 weight = weight2[index];
+    compensated_add(
+        __fmul_rn(__half2float(weight.x), __half2float(x.x)),
+        sum, correction);
+    compensated_add(
+        __fmul_rn(__half2float(weight.y), __half2float(x.y)),
+        sum, correction);
+  }
+  sum = warp_sum_rn(sum);
   if (lane == 0) {
     gate_up[warp] = __float2half_rn(sum);
   }
@@ -140,6 +197,34 @@ torch::Tensor direct_w13(const torch::Tensor& input,
   return output;
 }
 
+torch::Tensor compensated_w13(const torch::Tensor& input,
+                              const torch::Tensor& w13,
+                              const torch::Tensor& expert_ids) {
+  check_half_cuda(input, "input");
+  check_half_cuda(w13, "w13");
+  check_ids(expert_ids);
+  TORCH_CHECK(input.dim() == 2 && input.size(0) == 1
+                  && input.size(1) == kHidden,
+              "input must have shape (1, 2048)");
+  TORCH_CHECK(w13.dim() == 3 && w13.size(0) == kExperts
+                  && w13.size(1) == kW13Rows
+                  && w13.size(2) == kHidden,
+              "w13 must have shape (256, 256, 2048)");
+
+  auto output = torch::empty({kTopK, kW13Rows}, input.options());
+  constexpr int kWarpsPerBlock = kThreads / kWarpSize;
+  constexpr int kBlocks =
+      (kTopK * kW13Rows + kWarpsPerBlock - 1) / kWarpsPerBlock;
+  compensated_w13_kernel<<<kBlocks, kThreads, 0,
+                           at::cuda::getCurrentCUDAStream()>>>(
+      reinterpret_cast<const __half*>(input.data_ptr<at::Half>()),
+      reinterpret_cast<const __half*>(w13.data_ptr<at::Half>()),
+      expert_ids.data_ptr<int64_t>(),
+      reinterpret_cast<__half*>(output.data_ptr<at::Half>()));
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  return output;
+}
+
 torch::Tensor direct_w2_reduce(const torch::Tensor& activated,
                                const torch::Tensor& w2,
                                const torch::Tensor& expert_ids,
@@ -176,6 +261,8 @@ torch::Tensor direct_w2_reduce(const torch::Tensor& activated,
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def("w13", &direct_w13,
              "Direct selected-expert FP16 W13 matvec");
+  module.def("w13_compensated", &compensated_w13,
+             "Compensated selected-expert FP16 W13 matvec");
   module.def("w2_reduce", &direct_w2_reduce,
              "Direct selected-expert W2 matvec and routed reduction");
 }
