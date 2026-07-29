@@ -23,6 +23,14 @@ class PrepareIFEvalEnvironmentTest(unittest.TestCase):
         self.assertEqual(len(distributions), 10)
         self.assertTrue(all(path.is_file() for path in distributions))
 
+    def test_power149_manifest_uses_same_pinned_distributions(self):
+        manifest = MODULE.load_manifest(
+            MODULE.EXTERNAL_ROOT / "manifest.power149.v2.json")
+        distributions = MODULE.verify_distributions(manifest)
+        self.assertEqual(manifest["selection"]["size"], 149)
+        self.assertEqual(len(distributions), 10)
+        self.assertTrue(all(path.is_file() for path in distributions))
+
     def test_extracts_only_four_english_punkt_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -26,6 +26,21 @@ DEFAULT_MANIFEST = EXTERNAL_ROOT / "manifest.v1.json"
 EXPECTED_MANIFEST_SHA256 = (
     "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855"
 )
+EXPECTED_POWER_MANIFEST_SHA256 = (
+    "01c7e9dd4aafc11b5e2505fec2c3c71c53d8d27992ab40445638e97404440107"
+)
+SUPPORTED_MANIFESTS = {
+    EXPECTED_MANIFEST_SHA256: {
+        "schema": "bi100-ifeval-manifest-v1",
+        "version": 1,
+        "rows": 64,
+    },
+    EXPECTED_POWER_MANIFEST_SHA256: {
+        "schema": "bi100-ifeval-manifest-v2",
+        "version": 2,
+        "rows": 149,
+    },
+}
 REPORT_SCHEMA = "bi100-ifeval-result-v1"
 REPORT_VERSION = 1
 Json = dict[str, Any]
@@ -68,13 +83,17 @@ def atomic_write(path: Path, value: Json, mode: int = 0o644) -> None:
 
 def load_manifest(path: Path) -> tuple[Json, str, list[Json]]:
     digest = sha256(path)
-    if digest != EXPECTED_MANIFEST_SHA256:
+    expected = SUPPORTED_MANIFESTS.get(digest)
+    if expected is None:
         raise ValueError("canonical IFEval manifest SHA-256 differs")
     manifest = json.loads(path.read_text(encoding="utf-8"))
-    if (manifest.get("schema") != "bi100-ifeval-manifest-v1"
-            or manifest.get("version") != 1
-            or manifest.get("selection", {}).get("size") != 64
-            or manifest.get("subset", {}).get("rows") != 64):
+    expected_rows = expected["rows"]
+    if (
+        manifest.get("schema") != expected["schema"]
+        or manifest.get("version") != expected["version"]
+        or manifest.get("selection", {}).get("size") != expected_rows
+        or manifest.get("subset", {}).get("rows") != expected_rows
+    ):
         raise ValueError("canonical IFEval manifest is invalid")
     subset = ROOT / manifest["subset"]["repository_path"]
     if (not subset.is_file()
@@ -84,7 +103,11 @@ def load_manifest(path: Path) -> tuple[Json, str, list[Json]]:
     rows = [json.loads(line) for line in subset.read_text(
         encoding="utf-8").splitlines()]
     expected_keys = manifest["selection"]["selected_keys_in_request_order"]
-    if [row.get("key") for row in rows] != expected_keys:
+    if (
+        len(rows) != expected_rows
+        or len(expected_keys) != expected_rows
+        or [row.get("key") for row in rows] != expected_keys
+    ):
         raise ValueError("canonical IFEval request order differs")
     return manifest, digest, rows
 
@@ -429,7 +452,7 @@ def main() -> int:
     ) if scored_rows else []
     score_by_key = {row["key"]: row for row in scores}
     complete = len(responses) == len(rows) and not failures
-    full_selection = not explicit and len(rows) == 64
+    full_selection = not explicit and len(rows) == len(all_rows)
     cases = []
     for row in rows:
         key = row["key"]

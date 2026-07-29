@@ -30,8 +30,13 @@ def sha256(path: Path) -> str:
 
 def load_manifest(path: Path) -> dict:
     value = json.loads(path.read_text(encoding="utf-8"))
-    if (value.get("schema") != "bi100-ifeval-manifest-v1"
-            or value.get("version") != 1):
+    if (
+        (value.get("schema"), value.get("version"))
+        not in {
+            ("bi100-ifeval-manifest-v1", 1),
+            ("bi100-ifeval-manifest-v2", 2),
+        }
+    ):
         raise ValueError("IFEval manifest is invalid")
     return value
 

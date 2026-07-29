@@ -116,6 +116,23 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertIn("quality run output must use a private /tmp path",
                       self.source)
 
+    def test_ifeval_environment_is_bound_to_an_approved_manifest(self):
+        self.assertIn(
+            "BI100_IFEVAL_MANIFEST:-$ROOT/quality/external/"
+            "google_ifeval/manifest.v1.json",
+            self.source,
+        )
+        self.assertIn(
+            "01c7e9dd4aafc11b5e2505fec2c3c71c"
+            "53d8d27992ab40445638e97404440107",
+            self.source,
+        )
+        self.assertIn(
+            'value.get("manifest_sha256") != sys.argv[2]',
+            self.source,
+        )
+        self.assertIn('--manifest "$IFEVAL_MANIFEST"', self.source)
+
     def test_fatal_scan_covers_known_worker_failures(self):
         for marker in (
                 "CUDA error", "SIGSEGV", "out of memory",

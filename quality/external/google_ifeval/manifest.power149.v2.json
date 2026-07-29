@@ -1,0 +1,383 @@
+{
+  "derived_from": {
+    "evaluator_snapshot_unchanged": true,
+    "manifest_path": "quality/external/google_ifeval/manifest.v1.json",
+    "manifest_sha256": "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855",
+    "source_snapshot_unchanged": true
+  },
+  "evaluator": {
+    "dataset_difference_from_evaluator_repo": {
+      "different_key": 2785,
+      "different_row_count": 1,
+      "evaluator_repo_data_sha256": "67ffeee0fcb87c317c5b08a2de85557b4a7e96ada6178aa645b4954fe4b53d49",
+      "selected": true
+    },
+    "implementation": "Google Research instruction_following_eval",
+    "license": "Apache-2.0",
+    "revision": "e6890f85757dd84e27ca6df2dd30651dafad28e0",
+    "strict_and_loose_rules_unmodified": true,
+    "url": "https://github.com/google-research/google-research/tree/e6890f85757dd84e27ca6df2dd30651dafad28e0/instruction_following_eval",
+    "vendored_files": [
+      {
+        "bytes": 11358,
+        "path": "LICENSE.google-research",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      },
+      {
+        "bytes": 1457,
+        "path": "UPSTREAM_EVALUATOR_README.md",
+        "sha256": "fef3c44408e4b39837af345095ccce7da798853fd60ea94a1de63afa9d3d67b3"
+      },
+      {
+        "bytes": 6984,
+        "path": "instruction_following_eval/evaluation_lib.py",
+        "sha256": "35decc06000718487f44d7deafa6d3f48a8ec0886281edf40162c0265b7d248c"
+      },
+      {
+        "bytes": 55162,
+        "path": "instruction_following_eval/instructions.py",
+        "sha256": "60e086f5342a03ce8e18b64bbcccf86308f523c08aa826707a562150a52f3edf"
+      },
+      {
+        "bytes": 7240,
+        "path": "instruction_following_eval/instructions_registry.py",
+        "sha256": "ec92d72c264f6d906978613085db262356174300370a3fffe6fefd5969ce9cfc"
+      },
+      {
+        "bytes": 19538,
+        "path": "instruction_following_eval/instructions_util.py",
+        "sha256": "a73797261eee5bf447e279d82a2b700b1bdd3cb1193412dbab1270a85832bc6b"
+      },
+      {
+        "bytes": 35,
+        "path": "instruction_following_eval/requirements.upstream.txt",
+        "sha256": "1b1716c9ac21b9cc2bd0d7354ed8f7b6982ccf35598529601a7c08508acec94a"
+      },
+      {
+        "bytes": 5523,
+        "path": "source/HUGGINGFACE_DATASET_CARD.md",
+        "sha256": "c3e2d7da8286ae27649f526e3153cc72f071c21a6a7702d06f09cef5f9c114f1"
+      }
+    ]
+  },
+  "generator": {
+    "path": "scripts/freeze_ifeval_power_subset.py",
+    "sha256": "d3007d6fd7a0f156024f1139725ed68c1b06cbb34efce8d766577c1d978945d4"
+  },
+  "name": "google-ifeval-bi100-power149-v2",
+  "offline_environment": {
+    "distribution_artifacts": [
+      {
+        "bytes": 137410,
+        "path": "absl_py-2.5.0-py3-none-any.whl",
+        "sha256": "0f17b89f2a4eaaedc4f28c622998aa690564b3012a396a4ffad0821007fe03ba"
+      },
+      {
+        "bytes": 119243,
+        "path": "click-8.4.2-py3-none-any.whl",
+        "sha256": "e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76"
+      },
+      {
+        "bytes": 25604,
+        "path": "defusedxml-0.7.1-py2.py3-none-any.whl",
+        "sha256": "a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61"
+      },
+      {
+        "bytes": 5000,
+        "path": "immutabledict-4.3.1-py3-none-any.whl",
+        "sha256": "c9facdc0ff30fdb8e35bd16532026cac472a549e182c94fa201b51b25e4bf7bf"
+      },
+      {
+        "bytes": 309071,
+        "path": "joblib-1.5.3-py3-none-any.whl",
+        "sha256": "5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713"
+      },
+      {
+        "bytes": 981474,
+        "path": "langdetect-1.0.9.tar.gz",
+        "sha256": "cbc1fef89f8d062739774bd51eda3da3274006b3661d199c2655f6b3f6d605a0"
+      },
+      {
+        "bytes": 1716144,
+        "path": "nltk-3.10.0-py3-none-any.whl",
+        "sha256": "54ff84d4916d3ef127e8953bee0023f6a6b320b75d634a19e06ef056d3d244bf"
+      },
+      {
+        "bytes": 785515,
+        "path": "regex-2026.7.19-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "sha256": "4458124d71339f505bf1fb94f69fd1bb8fa9d2481eebfef27c10ef4f2b9e12f6"
+      },
+      {
+        "bytes": 11050,
+        "path": "six-1.17.0-py2.py3-none-any.whl",
+        "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"
+      },
+      {
+        "bytes": 675452,
+        "path": "tqdm-4.69.1-py3-none-any.whl",
+        "sha256": "0a654b96f7a2660cceb615b56f307ec2bef96c515409014a429a561981ab52b4"
+      }
+    ],
+    "nltk_punkt_tab": {
+      "archive_sha256": "e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106",
+      "license": "not stated in pinned nltk_data index",
+      "prestage_required": true,
+      "redistribution_allowed": false,
+      "repository_snapshot": false,
+      "revision": "4f15a3d89eefe9748ec1c05be495d91289197155",
+      "source_url": "https://raw.githubusercontent.com/nltk/nltk_data/4f15a3d89eefe9748ec1c05be495d91289197155/packages/tokenizers/punkt_tab.zip"
+    },
+    "python": "CPython 3.10 x86_64"
+  },
+  "privacy": {
+    "contains_credentials": false,
+    "contains_official_competition_requests": false,
+    "contains_private_user_data": false,
+    "result_reports_may_contain_raw_prompts_or_outputs": false
+  },
+  "request_conversion": {
+    "chat_template_override": false,
+    "endpoint": "/v1/chat/completions",
+    "max_tokens": 8192,
+    "messages": "one user message containing the source prompt verbatim",
+    "request_order": "selected_keys_in_request_order",
+    "revision": "bi100-openai-chat-v2-max-tokens-8192",
+    "seed": 20260725,
+    "stream": false,
+    "temperature": 0,
+    "thinking_override": false
+  },
+  "schema": "bi100-ifeval-manifest-v2",
+  "scoring": {
+    "candidate_rule": "one-sided 95% paired noninferiority for strict and loose prompt pass rates at a predeclared 0.02 margin",
+    "comparison_unit": "paired prompt",
+    "exact_output_role": "diagnostic_only_across_arms",
+    "loose": "official test_instruction_following_loose",
+    "overall_promotion_authorized": false,
+    "response_field": "choices[0].message.content",
+    "strict": "official test_instruction_following_strict"
+  },
+  "selection": {
+    "algorithm": "greedy maximum uncovered instruction IDs, then maximum remaining deficit, then ascending SHA-256(seed,row); fill by ascending SHA-256 and emit in source order",
+    "frozen_before_candidate_observation": true,
+    "instruction_arity_counts": {
+      "1": 47,
+      "2": 61,
+      "3": 41
+    },
+    "instruction_counts": {
+      "change_case:capital_word_frequency": 11,
+      "change_case:english_capital": 10,
+      "change_case:english_lowercase": 12,
+      "combination:repeat_prompt": 14,
+      "combination:two_responses": 10,
+      "detectable_content:number_placeholders": 11,
+      "detectable_content:postscript": 12,
+      "detectable_format:constrained_response": 10,
+      "detectable_format:json_format": 10,
+      "detectable_format:multiple_sections": 10,
+      "detectable_format:number_bullet_lists": 11,
+      "detectable_format:number_highlighted_sections": 10,
+      "detectable_format:title": 10,
+      "keywords:existence": 16,
+      "keywords:forbidden_words": 12,
+      "keywords:frequency": 13,
+      "keywords:letter_frequency": 11,
+      "language:response_language": 13,
+      "length_constraints:nth_paragraph_first_word": 10,
+      "length_constraints:number_paragraphs": 13,
+      "length_constraints:number_sentences": 14,
+      "length_constraints:number_words": 13,
+      "punctuation:no_comma": 16,
+      "startend:end_checker": 10,
+      "startend:quotation": 10
+    },
+    "instruction_id_count": 25,
+    "minimum_per_instruction_id": 10,
+    "seed": "bi100-ifeval-power149-v2-seed-20260730",
+    "selected_keys_in_request_order": [
+      1021,
+      1040,
+      1082,
+      1094,
+      1127,
+      1129,
+      1132,
+      1137,
+      1148,
+      1174,
+      1219,
+      1242,
+      1259,
+      1287,
+      1300,
+      1305,
+      1314,
+      1342,
+      1372,
+      1379,
+      1389,
+      1392,
+      1393,
+      142,
+      143,
+      1481,
+      1508,
+      1516,
+      1518,
+      1537,
+      1548,
+      1566,
+      1571,
+      1582,
+      1609,
+      1627,
+      1653,
+      1667,
+      1670,
+      1675,
+      1691,
+      1705,
+      1730,
+      1738,
+      1793,
+      181,
+      1834,
+      1845,
+      1858,
+      1883,
+      1906,
+      1908,
+      1943,
+      1954,
+      1964,
+      1980,
+      2035,
+      2071,
+      2118,
+      2139,
+      2162,
+      2180,
+      2215,
+      2216,
+      2243,
+      2246,
+      2250,
+      2266,
+      227,
+      2273,
+      2284,
+      2299,
+      2305,
+      2309,
+      2337,
+      2383,
+      2395,
+      2416,
+      2436,
+      2439,
+      2465,
+      2475,
+      2505,
+      2549,
+      2571,
+      2591,
+      2596,
+      2605,
+      2637,
+      2683,
+      2736,
+      2765,
+      2785,
+      279,
+      2853,
+      286,
+      2870,
+      2880,
+      2889,
+      2908,
+      2909,
+      2912,
+      2925,
+      2943,
+      296,
+      3035,
+      3041,
+      3069,
+      3073,
+      3084,
+      3098,
+      3114,
+      3195,
+      3272,
+      3287,
+      3305,
+      3311,
+      3324,
+      3327,
+      3329,
+      3335,
+      3345,
+      3351,
+      3367,
+      3371,
+      3434,
+      3456,
+      3494,
+      3506,
+      3518,
+      3563,
+      3567,
+      3623,
+      371,
+      3710,
+      3718,
+      3724,
+      3732,
+      374,
+      3744,
+      3749,
+      3750,
+      3751,
+      3752,
+      3753,
+      3754,
+      3755,
+      3756,
+      3757
+    ],
+    "size": 149
+  },
+  "source": {
+    "author_or_org": "Google Research",
+    "bytes": 207111,
+    "dataset": "google/IFEval",
+    "downloaded_at_utc": "2026-07-25T05:12:45Z",
+    "license": "Apache-2.0",
+    "redistribution_allowed": true,
+    "repository_path": "quality/external/google_ifeval/source/ifeval_input_data.jsonl",
+    "revision": "966cd89545d6b6acfd7638bc708b98261ca58e84",
+    "rows": 541,
+    "sha256": "6a85310ca8ce15eff755aa08a3a4ff931c7e273e7515ebb3c492ea85fd8288f2",
+    "split": "train",
+    "url": "https://huggingface.co/datasets/google/IFEval"
+  },
+  "statistical_contract": {
+    "bootstrap_samples": 20000,
+    "bootstrap_seed": 20260729,
+    "confidence": 0.95,
+    "margin_change_after_results_forbidden": true,
+    "minimum_zero_regression_pairs": 149,
+    "noninferiority_margin": 0.02,
+    "sample_count": 149,
+    "sample_selection_after_results_forbidden": true
+  },
+  "subset": {
+    "bytes": 64194,
+    "repository_path": "quality/external/google_ifeval/subset.power149.v2.jsonl",
+    "rows": 149,
+    "sha256": "14dee74f7fc65768d326140367b31b57cce24d59e76bd0098b94d2730eef22e2",
+    "stable_order": true
+  },
+  "version": 2
+}

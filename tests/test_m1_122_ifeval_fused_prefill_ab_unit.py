@@ -38,6 +38,9 @@ M = load_comparator()
 SHA = "a" * 64
 SOURCE = "b" * 40
 INSTANCE = "ssh-73ca29ba"
+MANIFEST = M.ifeval.canonical_manifest_contract(
+    M.ifeval.EXPECTED_MANIFEST_SHA256)
+assert MANIFEST is not None
 
 
 def contract(label: str, fused: str) -> dict:
@@ -83,8 +86,10 @@ def report(label: str, fused: str, output: str = "d" * 64) -> dict:
         "run_id_sha256": "e" * 64,
         "manifest": {
             "sha256": M.ifeval.EXPECTED_MANIFEST_SHA256,
+            "path_name": MANIFEST["path_name"],
+            "subset_sha256": MANIFEST["subset_sha256"],
             "full_selection": True,
-            "selected_keys": list(range(64)),
+            "selected_keys": list(MANIFEST["selected_keys"]),
         },
         "runtime": {
             "source_revision": SOURCE,
@@ -145,7 +150,7 @@ def report(label: str, fused: str, output: str = "d" * 64) -> dict:
                 "loose": [True],
                 "semantic_output_sha256": output,
             }
-            for key in range(64)
+            for key in MANIFEST["selected_keys"]
         ],
         "privacy": {
             "contains_credentials": False,
@@ -441,6 +446,13 @@ class M1122IFEvalRunnerStaticTest(unittest.TestCase):
             self.assertIn(marker, self.service)
         self.assertIn(
             'choices=("direct", "hybrid64", "aligned")', self.api)
+
+    def test_wrapper_explicitly_binds_the_v1_manifest(self) -> None:
+        wrapper = (
+            ROOT / "scripts/run_m1_122_ifeval_fused_prefill_ab.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("BI100_IFEVAL_MANIFEST", wrapper)
+        self.assertIn("manifest.v1.json", wrapper)
 
 
 if __name__ == "__main__":

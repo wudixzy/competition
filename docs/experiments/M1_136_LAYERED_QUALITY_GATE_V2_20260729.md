@@ -54,11 +54,16 @@ candidate drift outside the frozen tight envelope now triggers adjudication.
 
 Task capability uses paired request or task-item outcomes and a one-sided 95%
 noninferiority bound. For a 2 percentage-point margin, 149 paired items with no
-candidate-only regression are the minimum zero-regression screen because
+baseline-only regression are the minimum zero-regression screen because
 `1 - 0.05^(1/149) <= 0.02`. A small stratum may use a predeclared 5-point
 screen with at least 59 zero-regression pairs. Continuous scores use a paired
 cluster bootstrap with 20,000 fixed-seed resamples. Margins, strata, and sample
 selection cannot be changed after candidate results are observed.
+
+The frozen 149-prompt instruction-following surface and TP4 runner are defined
+in `M1_137_IFEVAL_POWER149_FUSED_PREFILL_AB_20260730.md`. That surface is one
+part of the required capability matrix; it does not stand in for tools,
+reasoning, multimodal, code/math, or long-context recall.
 
 ## M1-109 status under v2
 

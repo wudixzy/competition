@@ -12,6 +12,9 @@ SPEC = importlib.util.spec_from_file_location("compare_ifeval_reports", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
+MANIFEST = MODULE.canonical_manifest_contract(
+    MODULE.EXPECTED_MANIFEST_SHA256)
+assert MANIFEST is not None
 
 
 def report(policy: str) -> dict:
@@ -37,8 +40,10 @@ def report(policy: str) -> dict:
         "promotion_authorized": False,
         "manifest": {
             "sha256": MODULE.EXPECTED_MANIFEST_SHA256,
+            "path_name": MANIFEST["path_name"],
+            "subset_sha256": MANIFEST["subset_sha256"],
             "full_selection": True,
-            "selected_keys": list(range(64)),
+            "selected_keys": list(MANIFEST["selected_keys"]),
         },
         "runtime": {
             "source_revision": "a" * 40,
@@ -78,11 +83,11 @@ def report(policy: str) -> dict:
                 "key": key,
                 "status": "pass",
                 "instruction_id_list": ["keywords:existence"],
-                "strict": [key < 50],
-                "loose": [key < 55],
+                "strict": [ordinal < 50],
+                "loose": [ordinal < 55],
                 "semantic_output_sha256": "f" * 64,
             }
-            for key in range(64)
+            for ordinal, key in enumerate(MANIFEST["selected_keys"])
         ],
         "privacy": {
             "contains_credentials": False,
@@ -147,7 +152,29 @@ class CompareIFEvalReportsTest(unittest.TestCase):
         candidate["cases"][3]["semantic_output_sha256"] = "0" * 64
         reasons = MODULE.comparison_reasons(
             baseline, candidate, {"gdn_cache_policy"}, True)
-        self.assertIn("candidate output differs for key 3", reasons)
+        expected_key = MANIFEST["selected_keys"][3]
+        self.assertIn(
+            f"candidate output differs for key {expected_key}", reasons)
+
+    def test_manifest_selected_key_tamper_is_invalid(self):
+        baseline = report("fine32")
+        candidate = report("admission64")
+        candidate["manifest"]["selected_keys"][0:2] = reversed(
+            candidate["manifest"]["selected_keys"][0:2])
+        candidate["cases"][0:2] = reversed(candidate["cases"][0:2])
+        reasons = MODULE.comparison_reasons(
+            baseline, candidate, {"gdn_cache_policy"}, False)
+        self.assertIn(
+            "candidate: manifest identity or selection differs", reasons)
+
+    def test_manifest_subset_digest_tamper_is_invalid(self):
+        baseline = report("fine32")
+        candidate = report("admission64")
+        candidate["manifest"]["subset_sha256"] = "0" * 64
+        reasons = MODULE.comparison_reasons(
+            baseline, candidate, {"gdn_cache_policy"}, False)
+        self.assertIn(
+            "candidate: manifest identity or selection differs", reasons)
 
 
 if __name__ == "__main__":

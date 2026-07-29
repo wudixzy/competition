@@ -71,6 +71,7 @@ def _arm_paths(root: Path) -> dict[str, Path]:
     return {
         "status": root / "status.json",
         "runtime_contract": root / "runtime_contract.json",
+        "ifeval_install": root / "ifeval_install.json",
         "ifeval_report": root / "ifeval_report.json",
         "ifeval_progress": root / "ifeval_progress.json",
         "api_4xx_attribution": root / "api_4xx_attribution.json",

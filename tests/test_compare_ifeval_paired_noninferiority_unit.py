@@ -31,6 +31,9 @@ M = load_module()
 CONTRACT = json.loads(
     (ROOT / "quality/layered_quality_gate.v1.json").read_text(
         encoding="utf-8"))
+MANIFEST = M.ifeval.canonical_manifest_contract(
+    M.ifeval.EXPECTED_MANIFEST_SHA256)
+assert MANIFEST is not None
 
 
 def report(fused: bool) -> dict:
@@ -56,8 +59,10 @@ def report(fused: bool) -> dict:
         "promotion_authorized": False,
         "manifest": {
             "sha256": M.ifeval.EXPECTED_MANIFEST_SHA256,
+            "path_name": MANIFEST["path_name"],
+            "subset_sha256": MANIFEST["subset_sha256"],
             "full_selection": True,
-            "selected_keys": list(range(64)),
+            "selected_keys": list(MANIFEST["selected_keys"]),
         },
         "runtime": {
             "source_revision": "a" * 40,
@@ -101,7 +106,7 @@ def report(fused: bool) -> dict:
                 "loose": [True],
                 "semantic_output_sha256": "f" * 64,
             }
-            for key in range(64)
+            for key in MANIFEST["selected_keys"]
         ],
         "privacy": {
             "contains_credentials": False,

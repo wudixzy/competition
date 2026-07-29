@@ -16,8 +16,10 @@ import paired_noninferiority as paired
 
 
 SCHEMA = "bi100-ifeval-paired-noninferiority-v1"
+SCHEMA_V2 = "bi100-ifeval-paired-noninferiority-v2"
 VERSION = 1
 CONTRACT_SCHEMA = "bi100-layered-quality-gate-contract-v1"
+CONTRACT_SCHEMA_V2 = "bi100-layered-quality-gate-contract-v2"
 Json = dict[str, Any]
 
 
@@ -76,23 +78,57 @@ def _metric_outcomes(report: Json, metric: str, label: str) -> list[bool]:
     return outcomes
 
 
-def _contract_values(contract: Json) -> tuple[float, float, int, int, float]:
+def _contract_values(contract: Json) -> Json:
+    identity = (contract.get("schema"), contract.get("version"))
+    section = (
+        "paired_task_capability"
+        if identity == (CONTRACT_SCHEMA_V2, 2)
+        else "paired_capability"
+    )
     if (
-        contract.get("schema") != CONTRACT_SCHEMA
-        or contract.get("version") != 1
-        or not isinstance(contract.get("paired_capability"), dict)
+        identity not in {
+            (CONTRACT_SCHEMA, 1),
+            (CONTRACT_SCHEMA_V2, 2),
+        }
+        or not isinstance(contract.get(section), dict)
     ):
         raise ValueError("layered quality contract is invalid")
-    values = contract["paired_capability"]
+    values = contract[section]
     try:
         confidence = float(values["confidence"])
         screen_margin = float(values["small_stratum_noninferiority_margin"])
         promotion_margin = float(values["default_noninferiority_margin"])
         bootstrap_samples = int(values["bootstrap_samples"])
         seed = int(values["bootstrap_seed"])
+        small_floor = int(values.get(
+            "small_stratum_zero_regression_minimum_pairs",
+            paired.minimum_zero_regression_samples(
+                screen_margin, confidence),
+        ))
+        promotion_floor = int(values.get(
+            "default_zero_regression_minimum_pairs",
+            paired.minimum_zero_regression_samples(
+                promotion_margin, confidence),
+        ))
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("paired capability contract is incomplete") from exc
-    return confidence, screen_margin, bootstrap_samples, seed, promotion_margin
+    if (
+        small_floor != paired.minimum_zero_regression_samples(
+            screen_margin, confidence)
+        or promotion_floor != paired.minimum_zero_regression_samples(
+            promotion_margin, confidence)
+    ):
+        raise ValueError("paired capability power floor is inconsistent")
+    return {
+        "contract_version": contract["version"],
+        "confidence": confidence,
+        "small_margin": screen_margin,
+        "small_floor": small_floor,
+        "default_margin": promotion_margin,
+        "default_floor": promotion_floor,
+        "bootstrap_samples": bootstrap_samples,
+        "seed": seed,
+    }
 
 
 def compare(
@@ -106,8 +142,7 @@ def compare(
         baseline, candidate, allowed_switches)
     checks: dict[str, Json] = {}
     try:
-        (confidence, screen_margin, bootstrap_samples, seed,
-         promotion_margin) = _contract_values(contract)
+        contract_values = _contract_values(contract)
         baseline_strict = _metric_outcomes(
             baseline, "strict", "baseline")
         candidate_strict = _metric_outcomes(
@@ -122,6 +157,7 @@ def compare(
     if reasons:
         status = "invalid"
         qualified = False
+        contract_version = None
         confidence = None
         screen_margin = None
         promotion_margin = None
@@ -129,7 +165,25 @@ def compare(
         seed = None
         sample_count = None
         promotion_power_floor = None
+        screen_name = None
     else:
+        sample_count = len(baseline_strict)
+        contract_version = contract_values["contract_version"]
+        confidence = contract_values["confidence"]
+        bootstrap_samples = contract_values["bootstrap_samples"]
+        seed = contract_values["seed"]
+        promotion_margin = contract_values["default_margin"]
+        promotion_power_floor = contract_values["default_floor"]
+        use_default_margin = (
+            contract_version == 2
+            and sample_count >= promotion_power_floor
+        )
+        if use_default_margin:
+            screen_name = "default-two-point"
+            screen_margin = promotion_margin
+        else:
+            screen_name = "small-stratum-five-point"
+            screen_margin = contract_values["small_margin"]
         checks = {
             "strict_prompt": paired.paired_noninferiority(
                 baseline_strict,
@@ -156,27 +210,42 @@ def compare(
         else:
             status = "pass"
         qualified = status == "pass"
-        sample_count = len(baseline_strict)
-        promotion_power_floor = paired.minimum_zero_regression_samples(
-            promotion_margin, confidence)
         for name, value in checks.items():
             reasons.extend(
                 f"{name}: {reason}" for reason in value["reasons"])
 
-    return {
-        "schema": SCHEMA,
-        "version": VERSION,
+    two_point_authorized = (
+        qualified
+        and contract_version == 2
+        and screen_name == "default-two-point"
+    )
+    five_point_authorized = (
+        qualified and screen_name == "small-stratum-five-point"
+    )
+    screen = {
+        "confidence": confidence,
+        "noninferiority_margin": screen_margin,
+        "bootstrap_samples": bootstrap_samples,
+        "bootstrap_seed": seed,
+        "checks": checks,
+    }
+    authorization = {
+        "five_point_screen_authorized": five_point_authorized,
+        "two_point_promotion_authorized": False,
+        "overall_promotion_authorized": False,
+    }
+    if contract_version == 2:
+        screen["name"] = screen_name
+        authorization["two_point_capability_surface_authorized"] = (
+            two_point_authorized)
+    result = {
+        "schema": SCHEMA_V2 if contract_version == 2 else SCHEMA,
+        "version": 2 if contract_version == 2 else VERSION,
         "status": status,
         "qualified": qualified,
         "allowed_switches": sorted(allowed_switches),
         "sample_count": sample_count,
-        "screen": {
-            "confidence": confidence,
-            "noninferiority_margin": screen_margin,
-            "bootstrap_samples": bootstrap_samples,
-            "bootstrap_seed": seed,
-            "checks": checks,
-        },
+        "screen": screen,
         "promotion_power": {
             "noninferiority_margin": promotion_margin,
             "minimum_zero_regression_samples": promotion_power_floor,
@@ -193,11 +262,7 @@ def compare(
                 baseline, candidate)) if not reasons or checks else None,
         },
         "reasons": reasons,
-        "authorization": {
-            "five_point_screen_authorized": qualified,
-            "two_point_promotion_authorized": False,
-            "overall_promotion_authorized": False,
-        },
+        "authorization": authorization,
         "privacy": {
             "contains_sample_outcomes": False,
             "contains_prompts": False,
@@ -206,6 +271,9 @@ def compare(
             "contains_credentials": False,
         },
     }
+    if contract_version == 2:
+        result["contract_version"] = contract_version
+    return result
 
 
 def _exit_code(status: str) -> int:

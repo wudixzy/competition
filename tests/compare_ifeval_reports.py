@@ -17,6 +17,29 @@ COMPARISON_SCHEMA = "bi100-ifeval-comparison-v1"
 EXPECTED_MANIFEST_SHA256 = (
     "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855"
 )
+EXPECTED_POWER_MANIFEST_SHA256 = (
+    "01c7e9dd4aafc11b5e2505fec2c3c71c53d8d27992ab40445638e97404440107"
+)
+ROOT = Path(__file__).resolve().parents[1]
+SUPPORTED_MANIFESTS = {
+    EXPECTED_MANIFEST_SHA256: {
+        "path": ROOT / "quality/external/google_ifeval/manifest.v1.json",
+        "rows": 64,
+        "subset_sha256": (
+            "bdb2e4ec0b0fd19b89c55ebb9ed49e17361706c923ddedeeab429f669e4bdb78"
+        ),
+    },
+    EXPECTED_POWER_MANIFEST_SHA256: {
+        "path": (
+            ROOT / "quality/external/google_ifeval/"
+            "manifest.power149.v2.json"
+        ),
+        "rows": 149,
+        "subset_sha256": (
+            "14dee74f7fc65768d326140367b31b57cce24d59e76bd0098b94d2730eef22e2"
+        ),
+    },
+}
 ALLOWED_SWITCHES = {
     "gdn_cache_policy", "gdn_restore_mode", "fused_prefill",
     "kv_eviction_policy",
@@ -101,6 +124,34 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def canonical_manifest_contract(digest: Any) -> Json | None:
+    specification = SUPPORTED_MANIFESTS.get(digest)
+    if specification is None:
+        return None
+    path = specification["path"]
+    if not path.is_file() or sha256(path) != digest:
+        raise RuntimeError("canonical IFEval manifest identity differs")
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    selected_keys = (
+        (manifest.get("selection") or {})
+        .get("selected_keys_in_request_order")
+    )
+    subset = manifest.get("subset") or {}
+    if (
+        not isinstance(selected_keys, list)
+        or len(selected_keys) != specification["rows"]
+        or subset.get("rows") != specification["rows"]
+        or subset.get("sha256") != specification["subset_sha256"]
+    ):
+        raise RuntimeError("canonical IFEval manifest contract differs")
+    return {
+        "path_name": path.name,
+        "rows": specification["rows"],
+        "subset_sha256": specification["subset_sha256"],
+        "selected_keys": selected_keys,
+    }
+
+
 def atomic_write(path: Path, value: Json) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(
@@ -131,13 +182,20 @@ def validate_report(value: Any, label: str) -> list[str]:
             or value.get("promotion_authorized") is not False):
         reasons.append(f"{label}: report is not a qualified baseline-eligible run")
     manifest = value.get("manifest") or {}
-    if (manifest.get("sha256") != EXPECTED_MANIFEST_SHA256
-            or manifest.get("full_selection") is not True
-            or len(manifest.get("selected_keys") or []) != 64
-            or any(
-                not isinstance(key, (str, int)) or isinstance(key, bool)
-                for key in (manifest.get("selected_keys") or [])
-            )):
+    canonical = canonical_manifest_contract(manifest.get("sha256"))
+    expected_rows = canonical["rows"] if canonical is not None else None
+    selected_keys = manifest.get("selected_keys") or []
+    if (
+        canonical is None
+        or manifest.get("path_name") != canonical["path_name"]
+        or manifest.get("subset_sha256") != canonical["subset_sha256"]
+        or manifest.get("full_selection") is not True
+        or selected_keys != canonical["selected_keys"]
+        or any(
+            not isinstance(key, (str, int)) or isinstance(key, bool)
+            for key in selected_keys
+        )
+    ):
         reasons.append(f"{label}: manifest identity or selection differs")
     runtime = value.get("runtime") or {}
     if (runtime.get("gpu_count") != 4
@@ -153,7 +211,7 @@ def validate_report(value: Any, label: str) -> list[str]:
             or contract.get("schema") != "bi100-quality-runtime-contract-v1"):
         reasons.append(f"{label}: runtime contract is incomplete")
     summary = value.get("summary") or {}
-    if (summary.get("prompt_total") != 64
+    if (summary.get("prompt_total") != expected_rows
             or not isinstance(summary.get("instruction_total"), int)
             or summary.get("instruction_total", 0) <= 0):
         reasons.append(f"{label}: score summary is incomplete")
@@ -186,7 +244,7 @@ def validate_report(value: Any, label: str) -> list[str]:
     cases = value.get("cases")
     if (
         not isinstance(cases, list)
-        or len(cases) != 64
+        or len(cases) != expected_rows
         or any(
             not isinstance(case, dict)
             or not isinstance(case.get("key"), (str, int))

@@ -18,6 +18,7 @@ case "$QUALITY_AB_VARIANT" in
 m1-116-fused-prefill-adjudication|\
 m1-117-fused-prefill-long-context|\
 m1-122-fused-prefill-ifeval|\
+m1-137-fused-prefill-ifeval-power149|\
 m1-132-fused-prefill-teacher-forced|\
 m1-134-teacher-forced-control-repeat) ;;
     *)
@@ -26,6 +27,12 @@ m1-134-teacher-forced-control-repeat) ;;
         exit 2
         ;;
 esac
+IFEVAL_VARIANT=0
+if [[ "$QUALITY_AB_VARIANT" == m1-122-fused-prefill-ifeval \
+        || "$QUALITY_AB_VARIANT" == \
+        m1-137-fused-prefill-ifeval-power149 ]]; then
+    IFEVAL_VARIANT=1
+fi
 FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY=""
 TEACHER_FORCED_HMAC_KEY=""
 if [[ "$QUALITY_AB_VARIANT" == \
@@ -65,9 +72,9 @@ if [[ -z "${BI100_RUNTIME_SITE_PACKAGES:-}" \
     echo "A/B requires one immutable runtime overlay" >&2
     exit 3
 fi
-if [[ "$QUALITY_AB_VARIANT" == m1-122-fused-prefill-ifeval ]]; then
+if [[ "$IFEVAL_VARIANT" == 1 ]]; then
     if [[ -z "${BI100_IFEVAL_ENV:-}" ]]; then
-        echo "BI100_IFEVAL_ENV is required for M1-122" >&2
+        echo "BI100_IFEVAL_ENV is required for IFEval A/B" >&2
         exit 3
     fi
     BI100_IFEVAL_ENV=$(python3 - "$BI100_IFEVAL_ENV" <<'PY'
@@ -80,10 +87,21 @@ PY
     if [[ ! -f "$BI100_IFEVAL_ENV/install.json" \
             || ! -d "$BI100_IFEVAL_ENV/site-packages" \
             || ! -d "$BI100_IFEVAL_ENV/nltk_data" ]]; then
-        echo "M1-122 offline IFEval environment is incomplete" >&2
+        echo "offline IFEval A/B environment is incomplete" >&2
         exit 3
     fi
-    export BI100_IFEVAL_ENV
+    if [[ -z "${BI100_IFEVAL_MANIFEST:-}" ]]; then
+        echo "BI100_IFEVAL_MANIFEST is required for IFEval A/B" >&2
+        exit 3
+    fi
+    BI100_IFEVAL_MANIFEST=$(python3 - "$BI100_IFEVAL_MANIFEST" <<'PY'
+from pathlib import Path
+import sys
+
+print(Path(sys.argv[1]).resolve(strict=True))
+PY
+    )
+    export BI100_IFEVAL_ENV BI100_IFEVAL_MANIFEST
 fi
 if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all -- \
         . ':(exclude)bench_runs/**')" ]]; then
@@ -129,6 +147,8 @@ schemas = {
         "bi100-fused-prefill-long-context-ab-runner-v1"),
     "m1-122-fused-prefill-ifeval": (
         "bi100-m1-122-ifeval-fused-prefill-ab-runner-v1"),
+    "m1-137-fused-prefill-ifeval-power149": (
+        "bi100-m1-137-ifeval-power149-fused-prefill-ab-runner-v1"),
     "m1-132-fused-prefill-teacher-forced": (
         "bi100-m1-132-teacher-forced-fused-prefill-ab-runner-v1"),
     "m1-134-teacher-forced-control-repeat": (
@@ -181,11 +201,17 @@ report = {
     "default_policy_change_authorized": False,
     "production_promotion_authorized": False,
 }
-if variant == "m1-122-fused-prefill-ifeval":
+if variant in {
+    "m1-122-fused-prefill-ifeval",
+    "m1-137-fused-prefill-ifeval-power149",
+}:
     report["gates"].update({
         "ifeval_paired_noninferiority": read_rc(
             root / "ifeval_paired_noninferiority.rc"),
     })
+    if variant == "m1-137-fused-prefill-ifeval-power149":
+        report["gates"]["final_qualification"] = read_rc(
+            root / "final_qualification.rc")
     report["diagnostics"] = {
         "ifeval_score_comparison": read_rc(
             root / "ifeval_score_comparison.rc"),
@@ -218,7 +244,10 @@ for name, relative_path in (
         hashlib.sha256(path.read_bytes()).hexdigest()
         if path.is_file() else None
     )
-if variant == "m1-122-fused-prefill-ifeval":
+if variant in {
+    "m1-122-fused-prefill-ifeval",
+    "m1-137-fused-prefill-ifeval-power149",
+}:
     for name in (
         "ifeval_score_comparison",
         "ifeval_exact_comparison",
@@ -227,6 +256,12 @@ if variant == "m1-122-fused-prefill-ifeval":
     ):
         path = root / f"{name}.json"
         artifacts[f"{name}_sha256"] = (
+            hashlib.sha256(path.read_bytes()).hexdigest()
+            if path.is_file() else None
+        )
+    if variant == "m1-137-fused-prefill-ifeval-power149":
+        path = root / "final_qualification.json"
+        artifacts["final_qualification_sha256"] = (
             hashlib.sha256(path.read_bytes()).hexdigest()
             if path.is_file() else None
         )
@@ -240,6 +275,52 @@ elif variant in {
         if path.is_file() else None
     )
 report["artifacts"] = artifacts
+if variant == "m1-137-fused-prefill-ifeval-power149":
+    final_qualification = None
+    path = root / "final_qualification.json"
+    if path.is_file():
+        try:
+            final_qualification = json.loads(
+                path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            final_qualification = None
+    final_rescan = (
+        final_qualification.get("final_rescan", {})
+        if isinstance(final_qualification, dict) else {}
+    )
+    report["qualified"] = (
+        report["returncode"] == 0
+        and report["gates"]["final_qualification"] == 0
+        and isinstance(final_qualification, dict)
+        and final_qualification.get("schema")
+        == "bi100-m1-137-ifeval-power149-final-qualification-v1"
+        and final_qualification.get("version") == 1
+        and final_qualification.get("qualified") is True
+        and final_qualification.get("reasons") == []
+        and final_rescan.get("fatal_match_file_count") == 0
+        and final_rescan.get("malformed_return_code_count") == 0
+        and final_rescan.get("timeout_return_code_count") == 0
+        and isinstance(final_rescan.get("fatal_input_set_sha256"), str)
+        and len(final_rescan["fatal_input_set_sha256"]) == 64
+        and isinstance(
+            final_rescan.get("return_code_input_set_sha256"), str)
+        and len(final_rescan["return_code_input_set_sha256"]) == 64
+        and all(
+            final_qualification.get(name) is False
+            for name in (
+                "performance_authorized",
+                "default_change_authorized",
+                "yaml_change_authorized",
+                "main_merge_authorized",
+                "production_promotion_authorized",
+            )
+        )
+    )
+    report["ifeval_two_point_capability_surface_authorized"] = (
+        report["qualified"]
+        and final_qualification.get(
+            "ifeval_two_point_capability_surface_authorized") is True
+    )
 (root / "runner_status.json").write_text(
     json.dumps(report, indent=2, sort_keys=True) + "\n",
     encoding="utf-8")
@@ -424,6 +505,7 @@ finish() {
     local fatal_rc=0
     local timeout_rc=0
     local private_observation_cleanup_rc=0
+    local final_qualification_rc=0
     trap - EXIT
     trap '' TERM INT
     set +e
@@ -460,11 +542,24 @@ finish() {
         printf '%s\n' "$private_observation_cleanup_rc" \
             > "$RUN_ROOT/private_observation_cleanup.rc"
     fi
+    if [[ "$QUALITY_AB_VARIANT" == \
+            m1-137-fused-prefill-ifeval-power149 ]]; then
+        python3 "$ROOT/tests/qualify_m1_137_outer_lifecycle.py" \
+            --run-root "$RUN_ROOT" \
+            --aggregate "$RUN_ROOT/aggregate.json" \
+            --out "$RUN_ROOT/final_qualification.json" \
+            > "$RUN_ROOT/final_qualification.stdout" \
+            2> "$RUN_ROOT/final_qualification.stderr"
+        final_qualification_rc=$?
+        printf '%s\n' "$final_qualification_rc" \
+            > "$RUN_ROOT/final_qualification.rc"
+    fi
     if [[ $cleanup_rc -ne 0 || $recovery_rc -ne 0 \
             || $recovery_clean_rc -ne 0 || $postflight_rc -ne 0 \
             || $preflight_rc -ne 0 || $fatal_rc -ne 0 \
             || $timeout_rc -ne 0 \
-            || $private_observation_cleanup_rc -ne 0 ]]; then
+            || $private_observation_cleanup_rc -ne 0 \
+            || $final_qualification_rc -ne 0 ]]; then
         rc=1
     fi
     write_status "$rc"
@@ -495,8 +590,7 @@ run_arm() {
     if [[ "$QUALITY_AB_VARIANT" == \
             m1-117-fused-prefill-long-context ]]; then
         suite=long-context
-    elif [[ "$QUALITY_AB_VARIANT" == \
-            m1-122-fused-prefill-ifeval ]]; then
+    elif [[ "$IFEVAL_VARIANT" == 1 ]]; then
         suite=ifeval
     elif [[ "$QUALITY_AB_VARIANT" == \
             m1-132-fused-prefill-teacher-forced \
@@ -517,9 +611,11 @@ run_arm() {
             BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID=m1-109-pair-1-20260729
             BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY="$FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY"
         )
-    elif [[ "$QUALITY_AB_VARIANT" == \
-            m1-122-fused-prefill-ifeval ]]; then
-        runner_env+=(BI100_IFEVAL_ENV="$BI100_IFEVAL_ENV")
+    elif [[ "$IFEVAL_VARIANT" == 1 ]]; then
+        runner_env+=(
+            BI100_IFEVAL_ENV="$BI100_IFEVAL_ENV"
+            BI100_IFEVAL_MANIFEST="$BI100_IFEVAL_MANIFEST"
+        )
     fi
     (
         if [[ "$QUALITY_AB_VARIANT" == \
@@ -654,6 +750,10 @@ elif [[ "$QUALITY_AB_VARIANT" == \
     run_arm control admission64 m1-122-control-fused-off \
         "$RUN_ROOT/control"
 elif [[ "$QUALITY_AB_VARIANT" == \
+        m1-137-fused-prefill-ifeval-power149 ]]; then
+    run_arm control admission64 m1-137-control-fused-off \
+        "$RUN_ROOT/control"
+elif [[ "$QUALITY_AB_VARIANT" == \
         m1-132-fused-prefill-teacher-forced ]]; then
     run_arm control admission64 m1-132-control-fused-off \
         "$RUN_ROOT/control"
@@ -684,6 +784,10 @@ elif [[ "$QUALITY_AB_VARIANT" == \
 elif [[ "$QUALITY_AB_VARIANT" == \
         m1-122-fused-prefill-ifeval ]]; then
     run_arm candidate admission64 m1-122-candidate-fused-on \
+        "$RUN_ROOT/candidate"
+elif [[ "$QUALITY_AB_VARIANT" == \
+        m1-137-fused-prefill-ifeval-power149 ]]; then
+    run_arm candidate admission64 m1-137-candidate-fused-on \
         "$RUN_ROOT/candidate"
 elif [[ "$QUALITY_AB_VARIANT" == \
         m1-132-fused-prefill-teacher-forced ]]; then
@@ -745,8 +849,7 @@ elif [[ "$QUALITY_AB_VARIANT" == \
     set -e
     printf '%s\n' "$teacher_forced_comparison_rc" \
         > "$RUN_ROOT/teacher_forced_comparison.rc"
-elif [[ "$QUALITY_AB_VARIANT" == \
-        m1-122-fused-prefill-ifeval ]]; then
+elif [[ "$IFEVAL_VARIANT" == 1 ]]; then
     set +e
     python3 "$ROOT/tests/compare_ifeval_reports.py" \
         --baseline "$RUN_ROOT/control/ifeval_report.json" \
@@ -771,10 +874,17 @@ elif [[ "$QUALITY_AB_VARIANT" == \
     printf '%s\n' "$ifeval_exact_comparison_rc" \
         > "$RUN_ROOT/ifeval_exact_comparison.rc"
 
+    layered_contract="$ROOT/quality/layered_quality_gate.v1.json"
+    aggregate_script="$ROOT/tests/compare_m1_122_ifeval_service_ab.py"
+    if [[ "$QUALITY_AB_VARIANT" == \
+            m1-137-fused-prefill-ifeval-power149 ]]; then
+        layered_contract="$ROOT/quality/layered_quality_gate.v2.json"
+        aggregate_script="$ROOT/tests/compare_m1_137_ifeval_power_ab.py"
+    fi
     python3 "$ROOT/tests/compare_ifeval_paired_noninferiority.py" \
         --baseline "$RUN_ROOT/control/ifeval_report.json" \
         --candidate "$RUN_ROOT/candidate/ifeval_report.json" \
-        --contract "$ROOT/quality/layered_quality_gate.v1.json" \
+        --contract "$layered_contract" \
         --allowed-switch fused_prefill \
         --out "$RUN_ROOT/ifeval_paired_noninferiority.json" \
         > "$RUN_ROOT/ifeval_paired_noninferiority.stdout" \
@@ -783,7 +893,7 @@ elif [[ "$QUALITY_AB_VARIANT" == \
     printf '%s\n' "$ifeval_paired_noninferiority_rc" \
         > "$RUN_ROOT/ifeval_paired_noninferiority.rc"
 
-    python3 "$ROOT/tests/compare_m1_122_ifeval_service_ab.py" \
+    python3 "$aggregate_script" \
         --control-root "$RUN_ROOT/control" \
         --candidate-root "$RUN_ROOT/candidate" \
         --score-comparison "$RUN_ROOT/ifeval_score_comparison.json" \
@@ -863,7 +973,7 @@ if [[ "$QUALITY_AB_VARIANT" == \
         > "$RUN_ROOT/fused_output_comparison.rc"
 fi
 
-if [[ "$QUALITY_AB_VARIANT" == m1-122-fused-prefill-ifeval ]]; then
+if [[ "$IFEVAL_VARIANT" == 1 ]]; then
     [[ $ifeval_paired_noninferiority_rc -eq 0 ]]
     [[ $aggregate_rc -eq 0 ]]
 elif [[ "$QUALITY_AB_VARIANT" == \

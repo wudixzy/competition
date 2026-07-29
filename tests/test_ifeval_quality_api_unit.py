@@ -45,6 +45,17 @@ class IFEvalQualityAPITest(unittest.TestCase):
         self.assertNotIn("thinking", payload)
         self.assertNotIn("chat_template", payload)
 
+    def test_power149_manifest_is_independently_frozen(self):
+        manifest, digest, rows = MODULE.load_manifest(
+            MODULE.EXTERNAL_ROOT / "manifest.power149.v2.json")
+        self.assertEqual(digest, MODULE.EXPECTED_POWER_MANIFEST_SHA256)
+        self.assertEqual(len(rows), 149)
+        self.assertEqual(manifest["selection"]["size"], 149)
+        self.assertEqual(
+            manifest["statistical_contract"]["noninferiority_margin"],
+            0.02,
+        )
+
     def test_response_normalization_preserves_quality_fields(self):
         normalized = MODULE.normalize_response({
             "choices": [{

@@ -24,11 +24,14 @@ RUN_FUSED_OUTPUT_DIAGNOSTIC=${BI100_RUN_FUSED_OUTPUT_DIAGNOSTIC:-0}
 FUSED_OUTPUT_DIAGNOSTIC_RUN_ID=${BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID:-}
 FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY=${BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY:-}
 IFEVAL_ENV=${BI100_IFEVAL_ENV:-}
+IFEVAL_MANIFEST=${BI100_IFEVAL_MANIFEST:-$ROOT/quality/external/google_ifeval/manifest.v1.json}
+IFEVAL_MANIFEST_SHA256=""
 TEACHER_FORCED_HMAC_KEY=${BI100_TEACHER_FORCED_HMAC_KEY:-}
 unset BI100_RUN_FUSED_OUTPUT_DIAGNOSTIC
 unset BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID
 unset BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY
 unset BI100_IFEVAL_ENV
+unset BI100_IFEVAL_MANIFEST
 unset BI100_TEACHER_FORCED_HMAC_KEY
 ACTIVE_PID=""
 ACTIVE_PGID=""
@@ -132,6 +135,22 @@ PY
         echo "offline IFEval environment is incomplete" >&2
         exit 3
     fi
+    IFEVAL_MANIFEST=$(python3 - "$IFEVAL_MANIFEST" <<'PY'
+from pathlib import Path
+import sys
+
+print(Path(sys.argv[1]).resolve(strict=True))
+PY
+    )
+    IFEVAL_MANIFEST_SHA256=$(sha256sum "$IFEVAL_MANIFEST" | cut -d' ' -f1)
+    case "$IFEVAL_MANIFEST_SHA256" in
+        07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855|\
+01c7e9dd4aafc11b5e2505fec2c3c71c53d8d27992ab40445638e97404440107) ;;
+        *)
+            echo "IFEval manifest identity is not approved" >&2
+            exit 3
+            ;;
+    esac
 fi
 if [[ "$SUITE" == teacher-forced \
         && ! "$TEACHER_FORCED_HMAC_KEY" =~ ^[0-9a-f]{64}$ ]]; then
@@ -682,22 +701,35 @@ if [[ "$SUITE" == ifeval ]]; then
         "$RUN_ROOT/ifeval_install.json" || ifeval_environment_rc=$?
     if [[ $ifeval_environment_rc -eq 0 ]]; then
         set +e
-        python3 - "$RUN_ROOT/ifeval_install.json" <<'PY'
+        python3 - "$RUN_ROOT/ifeval_install.json" \
+                "$IFEVAL_MANIFEST_SHA256" "$IFEVAL_MANIFEST" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+manifest = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+offline = manifest.get("offline_environment") or {}
+artifacts = offline.get("distribution_artifacts")
+punkt = offline.get("nltk_punkt_tab") or {}
+if not isinstance(artifacts, list) or not artifacts:
+    raise SystemExit("offline IFEval manifest distributions differ")
+try:
+    expected_distributions = {
+        Path(item["path"]).name: item["sha256"] for item in artifacts
+    }
+except (KeyError, TypeError):
+    raise SystemExit("offline IFEval manifest distributions differ")
 if (
     value.get("schema") != "bi100-ifeval-offline-environment-v1"
     or value.get("version") != 1
     or value.get("qualified") is not True
-    or value.get("manifest_sha256")
-    != "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855"
+    or value.get("manifest_sha256") != sys.argv[2]
     or not str(value.get("python", "")).startswith("3.10.")
     or value.get("system_site_packages_modified") is not False
-    or not isinstance(value.get("distribution_sha256"), dict)
-    or not value["distribution_sha256"]
+    or value.get("distribution_sha256") != expected_distributions
+    or value.get("punkt_tab_archive_sha256")
+    != punkt.get("archive_sha256")
 ):
     raise SystemExit("offline IFEval install attestation differs")
 PY
@@ -988,6 +1020,7 @@ elif [[ "$SUITE" == ifeval ]]; then
         python3 "$ROOT/tests/ifeval_quality_api.py" \
         --base http://127.0.0.1:8000 \
         --model llm \
+        --manifest "$IFEVAL_MANIFEST" \
         --out "$RUN_ROOT/ifeval_report.json" \
         --checkpoint "$RUN_ROOT/ifeval.checkpoint.json" \
         --progress "$RUN_ROOT/ifeval_progress.json" \
