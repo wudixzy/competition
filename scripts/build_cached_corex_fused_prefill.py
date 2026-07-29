@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Any
@@ -290,7 +291,7 @@ def main() -> int:
         default=Path("/usr/local/corex-3.2.3/bin/clang++"),
     )
     parser.add_argument(
-        "--python", type=Path, default=Path("/usr/bin/python3"))
+        "--python", type=Path, default=Path(sys.executable))
     parser.add_argument(
         "--corex-root",
         type=Path,

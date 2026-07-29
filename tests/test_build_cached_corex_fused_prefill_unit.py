@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -15,6 +16,16 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CachedCorexBuildTest(unittest.TestCase):
+
+    def test_cli_default_python_tracks_the_running_interpreter(self):
+        self.assertEqual(
+            Path(MODULE.sys.executable).resolve(),
+            Path(sys.executable).resolve(),
+        )
+        self.assertIn(
+            'default=Path(sys.executable)',
+            SCRIPT.read_text(encoding="ascii"),
+        )
 
     def test_cache_key_changes_with_source_build_or_toolchain(self):
         with tempfile.TemporaryDirectory() as directory:
