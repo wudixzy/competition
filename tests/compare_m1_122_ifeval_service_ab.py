@@ -275,6 +275,7 @@ def _paired_noninferiority_reasons(
         screen.get("confidence") != 0.95
         or screen.get("noninferiority_margin") != 0.05
         or screen.get("bootstrap_samples") != 20000
+        or screen.get("bootstrap_seed") != 20260729
         or set(checks) != {"strict_prompt", "loose_prompt"}
         or any(
             value.get("status") != "pass"
@@ -286,6 +287,22 @@ def _paired_noninferiority_reasons(
         or any(not isinstance(value, dict) for value in checks.values())
     ):
         reasons.append("paired strict/loose prompt checks differ")
+    for name, expected_seed in (
+        ("strict_prompt", 20260729),
+        ("loose_prompt", 20260730),
+    ):
+        value = checks.get(name)
+        if not isinstance(value, dict):
+            continue
+        statistics = value.get("statistics") or {}
+        if (
+            statistics.get("confidence") != 0.95
+            or statistics.get("noninferiority_margin") != 0.05
+            or statistics.get("bootstrap_samples") != 20000
+            or statistics.get("bootstrap_seed") != expected_seed
+            or statistics.get("minimum_zero_regression_samples") != 59
+        ):
+            reasons.append(f"paired {name} statistical contract differs")
     power = report.get("promotion_power") or {}
     if (
         power.get("noninferiority_margin") != 0.02
