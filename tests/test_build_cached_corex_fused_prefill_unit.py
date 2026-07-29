@@ -26,6 +26,10 @@ class CachedCorexBuildTest(unittest.TestCase):
             'default=Path(sys.executable)',
             SCRIPT.read_text(encoding="ascii"),
         )
+        self.assertIn(
+            '["/bin/bash", str(build_script), str(build_root)]',
+            SCRIPT.read_text(encoding="ascii"),
+        )
 
     def test_cache_key_changes_with_source_build_or_toolchain(self):
         with tempfile.TemporaryDirectory() as directory:

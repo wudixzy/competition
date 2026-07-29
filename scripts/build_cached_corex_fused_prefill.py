@@ -197,7 +197,7 @@ def build_or_reuse(
                 environment = os.environ.copy()
                 environment["COREX_ROOT"] = str(corex_root.resolve())
                 result = subprocess.run(
-                    [str(build_script), str(build_root)],
+                    ["/bin/bash", str(build_script), str(build_root)],
                     check=False,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
