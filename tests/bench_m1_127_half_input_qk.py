@@ -41,12 +41,20 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _relative_l2(actual: Any, expected: Any) -> float:
-    difference = (actual.double() - expected.double()).norm().item()
-    denominator = expected.double().norm().item()
+def _error_metrics(actual: Any, expected: Any) -> dict[str, float]:
+    actual_cpu = actual.detach().cpu().double()
+    expected_cpu = expected.detach().cpu().double()
+    difference_tensor = actual_cpu - expected_cpu
+    difference = difference_tensor.norm().item()
+    denominator = expected_cpu.norm().item()
     if denominator == 0:
-        return 0.0 if difference == 0 else math.inf
-    return difference / denominator
+        relative_l2 = 0.0 if difference == 0 else math.inf
+    else:
+        relative_l2 = difference / denominator
+    return {
+        "relative_l2": relative_l2,
+        "max_abs": float(difference_tensor.abs().max().item()),
+    }
 
 
 def _load_extension(path: Path, expected_sha256: str) -> tuple[Any, dict[str, Any]]:
@@ -99,10 +107,7 @@ def _oracle_metrics(query: Any, key: Any, output: Any) -> dict[str, float]:
     key_cpu = key.cpu().double()
     oracle = torch.matmul(sampled_query * SCALE, key_cpu.transpose(0, 1))
     sampled_output = output.index_select(1, indices).cpu().double()
-    return {
-        "relative_l2": _relative_l2(sampled_output, oracle),
-        "max_abs": float((sampled_output - oracle).abs().max().item()),
-    }
+    return _error_metrics(sampled_output, oracle)
 
 
 def _valid_metric(value: Any) -> bool:
@@ -150,9 +155,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         control = extension.qk_sgemm(scaled_query, key_float)
         candidate = extension.qk_half_input(query, key, SCALE)
         torch.cuda.synchronize()
-        candidate_vs_control_l2 = _relative_l2(candidate, control)
-        candidate_vs_control_max_abs = float(
-            (candidate - control).abs().max().item())
+        candidate_vs_control = _error_metrics(candidate, control)
         control_oracle = _oracle_metrics(query, key, control)
         candidate_oracle = _oracle_metrics(query, key, candidate)
         numerical.append({
@@ -160,8 +163,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "finite": bool(
                 torch.isfinite(control).all().item()
                 and torch.isfinite(candidate).all().item()),
-            "candidate_vs_control_relative_l2": candidate_vs_control_l2,
-            "candidate_vs_control_max_abs": candidate_vs_control_max_abs,
+            "candidate_vs_control_relative_l2": candidate_vs_control[
+                "relative_l2"],
+            "candidate_vs_control_max_abs": candidate_vs_control["max_abs"],
             "control_vs_fp64_sample": control_oracle,
             "candidate_vs_fp64_sample": candidate_oracle,
         })
@@ -179,7 +183,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     else:
         candidate_trials, candidate_output = _measure(candidate_call)
         control_trials, control_output = _measure(control_call)
-    timing_l2 = _relative_l2(candidate_output, control_output)
+    timing_error = _error_metrics(candidate_output, control_output)
     control_median = statistics.median(control_trials)
     candidate_median = statistics.median(candidate_trials)
     speedup = control_median / candidate_median
@@ -204,8 +208,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             or candidate_oracle["max_abs"] > MAX_ABS_LIMIT
         ):
             reasons.append(f"{label}: sampled FP64 oracle gate failed")
-    if not _valid_metric(timing_l2) or timing_l2 > RELATIVE_L2_LIMIT:
-        reasons.append("timed output relative L2 gate failed")
+    if (
+        not _valid_metric(timing_error["relative_l2"])
+        or timing_error["relative_l2"] > RELATIVE_L2_LIMIT
+        or not _valid_metric(timing_error["max_abs"])
+        or timing_error["max_abs"] > MAX_ABS_LIMIT
+    ):
+        reasons.append("timed output error gate failed")
     if not _valid_metric(speedup) or speedup < MIN_SPEEDUP:
         reasons.append(f"QK speedup {speedup:.6f} is below {MIN_SPEEDUP:.2f}x")
 
@@ -234,7 +243,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "control_ms": control_median,
             "candidate_ms": candidate_median,
             "control_over_candidate_speedup": speedup,
-            "timed_candidate_vs_control_relative_l2": timing_l2,
+            "timed_candidate_vs_control_relative_l2": timing_error[
+                "relative_l2"],
+            "timed_candidate_vs_control_max_abs": timing_error["max_abs"],
         },
         "thresholds": {
             "relative_l2": RELATIVE_L2_LIMIT,

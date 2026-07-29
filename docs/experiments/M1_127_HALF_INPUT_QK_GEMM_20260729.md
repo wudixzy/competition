@@ -65,3 +65,10 @@ Local verification before remote execution:
 - complete unit suite: 1104 passed, 13 skipped;
 - submission preflight: 9/9 passed;
 - shell/Python syntax and `git diff --check`: passed.
+
+The first BI100 execution exposed a measurement defect: the GPU FP64 norm
+reported zero relative L2 despite a nonzero maximum absolute difference.
+CoreX GPU FP64 reduction is therefore not used for qualification. The fixed
+gate copies complete candidate and control outputs to CPU and computes both
+relative L2 and maximum absolute error in CPU FP64. The initial execution is
+diagnostic only and must be repeated with the corrected gate.
