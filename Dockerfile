@@ -15,4 +15,7 @@ COPY ./vllm/core/block/cpu_gpu_block_allocator.py /workspace/qwen3_6_scripts/ven
 COPY ./vllm/core/block/prefix_caching_block.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block/prefix_caching_block.py
 COPY ./vllm/core/block/block_table.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block/block_table.py
 COPY ./vllm/core/block_manager_v2.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/core/block_manager_v2.py
+COPY ./vllm/sampling_params.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/sampling_params.py
+COPY ./vllm/model_executor/sampling_metadata.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/model_executor/sampling_metadata.py
+COPY ./vllm/model_executor/layers/sampler.py /workspace/qwen3_6_scripts/vendor_overrides/vllm/model_executor/layers/sampler.py
 RUN cd ./qwen3_6_scripts && bash ./patch_ops.sh

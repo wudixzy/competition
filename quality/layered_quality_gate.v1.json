@@ -1,0 +1,47 @@
+{
+  "schema": "bi100-layered-quality-gate-contract-v1",
+  "version": 1,
+  "operator_numerics": {
+    "require_finite": true,
+    "maximum_relative_l2": 1e-05,
+    "maximum_absolute_error": 0.001
+  },
+  "teacher_forced_topk": {
+    "top_k": 5,
+    "required_prompt_tokens": [
+      4096,
+      32768,
+      65536,
+      131072,
+      235000
+    ],
+    "minimum_positions_per_case": 64,
+    "minimum_top1_agreement": 0.98,
+    "maximum_actual_logprob_absolute_delta": 0.1,
+    "maximum_actual_logprob_absolute_delta_p99": 0.02,
+    "maximum_shared_logprob_absolute_delta_p99": 0.02,
+    "maximum_mean_actual_nll_regression": 0.005,
+    "high_margin_floor_nats": 0.05,
+    "high_margin_error_multiplier": 4.0,
+    "maximum_high_margin_top1_mismatches": 0,
+    "maximum_mutually_uncovered_top1_mismatches": 0
+  },
+  "paired_capability": {
+    "confidence": 0.95,
+    "bootstrap_samples": 20000,
+    "bootstrap_seed": 20260729,
+    "default_noninferiority_margin": 0.02,
+    "small_stratum_noninferiority_margin": 0.05,
+    "critical_contract_baseline_only_failures": 0
+  },
+  "trajectory": {
+    "same_arm_repeat_exact_required": true,
+    "cache_cold_warm_exact_required": true,
+    "cross_arm_full_token_exact_required": false,
+    "cross_arm_full_token_exact_is_diagnostic": true
+  },
+  "authorization": {
+    "production_promotion_authorized": false,
+    "main_or_yaml_change_authorized": false
+  }
+}

@@ -45,7 +45,7 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
         self.assertIn("--case stream_forced_terminal", self.source)
         self.assertIn(
             "SUITE must be functional, long-context, decode, "
-            "contract-smoke, or ifeval",
+            "contract-smoke, ifeval, or teacher-forced",
             self.source,
         )
 

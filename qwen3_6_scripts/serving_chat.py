@@ -1232,13 +1232,30 @@ class OpenAIServingChat(OpenAIServing):
 
         request_metadata.final_usage_info = usage
 
+        prompt_logprobs = final_res.prompt_logprobs
+        sample_positions = request.bi100_prompt_logprobs_sample_positions
+        if sample_positions is not None:
+            if num_cached_tokens not in (None, 0):
+                return self.create_error_response(
+                    "BI100 sampled prompt logprobs require a cold request.")
+            if prompt_logprobs is None or (
+                    sample_positions
+                    and sample_positions[-1] >= len(prompt_logprobs)):
+                return self.create_error_response(
+                    "BI100 prompt-logprob sample positions exceed the prompt.")
+            selected = set(sample_positions)
+            prompt_logprobs = [
+                row if position in selected else None
+                for position, row in enumerate(prompt_logprobs)
+            ]
+
         response = ChatCompletionResponse(
             id=request_id,
             created=created_time,
             model=model_name,
             choices=choices,
             usage=usage,
-            prompt_logprobs=final_res.prompt_logprobs,
+            prompt_logprobs=prompt_logprobs,
         )
 
         return response

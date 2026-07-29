@@ -126,6 +126,15 @@ install_patch_file \
 install_patch_file \
     "${VLLM_OVERRIDE_ROOT}/core/block_manager_v2.py" \
     "${VLLM_ROOT}/core/block_manager_v2.py"
+install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/sampling_params.py" \
+    "${VLLM_ROOT}/sampling_params.py"
+install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/model_executor/sampling_metadata.py" \
+    "${VLLM_ROOT}/model_executor/sampling_metadata.py"
+install_patch_file \
+    "${VLLM_OVERRIDE_ROOT}/model_executor/layers/sampler.py" \
+    "${VLLM_ROOT}/model_executor/layers/sampler.py"
 
 build_stage "installing hash-pinned CoreX 3.2.3 extensions"
 bash ./install_prebuilt_corex.sh "${VLLM_ROOT}"
@@ -218,6 +227,8 @@ cp -r ./reasoning "${VLLM_ROOT}/"
 cp ./protocol.py "${VLLM_ROOT}/entrypoints/openai/protocol.py"
 cp ./cli_args.py "${VLLM_ROOT}/entrypoints/openai/cli_args.py"
 cp ./serving_chat.py "${VLLM_ROOT}/entrypoints/openai/serving_chat.py"
+cp ./serving_tokenization.py \
+    "${VLLM_ROOT}/entrypoints/openai/serving_tokenization.py"
 cp ./api_server.py "${VLLM_ROOT}/entrypoints/openai/api_server.py"
 cp ./chat_utils.py "${VLLM_ROOT}/entrypoints/chat_utils.py"
 python3 - ./api_server.py \

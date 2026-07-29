@@ -182,6 +182,39 @@ class ProtocolUnitTest(unittest.TestCase):
         self.assert_validation_error(thinking={"type": "maybe"})
         self.assert_validation_error(thinking="off")
 
+    def test_private_prompt_logprob_sample_is_strict_and_opt_in(self):
+        request = self.request(
+            prompt_logprobs=5,
+            bi100_prompt_logprobs_sample_positions=[1, 8191, 8192],
+        )
+        self.assertEqual(
+            request.bi100_prompt_logprobs_sample_positions,
+            [1, 8191, 8192],
+        )
+        self.assert_validation_error(
+            prompt_logprobs=5,
+            bi100_prompt_logprobs_sample_positions=[2, 1],
+        )
+        self.assert_validation_error(
+            bi100_prompt_logprobs_sample_positions=[1],
+        )
+        self.assert_validation_error(
+            prompt_logprobs=5,
+            stream=True,
+            bi100_prompt_logprobs_sample_positions=[1],
+        )
+
+    def test_tokenize_chat_accepts_matching_template_kwargs(self):
+        request = self.protocol.TokenizeChatRequest.model_validate({
+            "model": "llm",
+            "messages": [{"role": "user", "content": "test"}],
+            "chat_template_kwargs": {"enable_thinking": False},
+        })
+        self.assertEqual(
+            request.chat_template_kwargs,
+            {"enable_thinking": False},
+        )
+
     def test_tools_default_to_auto_but_explicit_none_is_preserved(self):
         auto = self.request(tools=[_tool()])
         self.assertEqual(auto.tool_choice, "auto")

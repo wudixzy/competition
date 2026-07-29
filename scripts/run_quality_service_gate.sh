@@ -24,10 +24,12 @@ RUN_FUSED_OUTPUT_DIAGNOSTIC=${BI100_RUN_FUSED_OUTPUT_DIAGNOSTIC:-0}
 FUSED_OUTPUT_DIAGNOSTIC_RUN_ID=${BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID:-}
 FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY=${BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY:-}
 IFEVAL_ENV=${BI100_IFEVAL_ENV:-}
+TEACHER_FORCED_HMAC_KEY=${BI100_TEACHER_FORCED_HMAC_KEY:-}
 unset BI100_RUN_FUSED_OUTPUT_DIAGNOSTIC
 unset BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID
 unset BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY
 unset BI100_IFEVAL_ENV
+unset BI100_TEACHER_FORCED_HMAC_KEY
 ACTIVE_PID=""
 ACTIVE_PGID=""
 ACTIVE_STARTTIME=""
@@ -36,10 +38,9 @@ SERVICE_STARTED=0
 BEFORE_PREFLIGHT_PASSED=0
 
 case "$SUITE" in
-    functional|long-context|decode|contract-smoke|ifeval) ;;
+    functional|long-context|decode|contract-smoke|ifeval|teacher-forced) ;;
     *)
-        echo "SUITE must be functional, long-context, decode, contract-smoke, or ifeval" \
-            >&2
+        echo "SUITE must be functional, long-context, decode, contract-smoke, ifeval, or teacher-forced" >&2
         exit 2
         ;;
 esac
@@ -131,6 +132,11 @@ PY
         echo "offline IFEval environment is incomplete" >&2
         exit 3
     fi
+fi
+if [[ "$SUITE" == teacher-forced \
+        && ! "$TEACHER_FORCED_HMAC_KEY" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "BI100_TEACHER_FORCED_HMAC_KEY is required and invalid" >&2
+    exit 2
 fi
 
 RUN_ROOT=$(python3 - "$RUN_ROOT" <<'PY'
@@ -476,6 +482,10 @@ if suite == "ifeval":
         "ifeval": read_rc("ifeval.rc"),
         "checkpoint_cleanup": read_rc("checkpoint_cleanup.rc"),
     })
+elif suite == "teacher-forced":
+    gates.update({
+        "teacher_forced": read_rc("teacher_forced.rc"),
+    })
 else:
     gates.update({
         "quality": read_rc("quality.rc"),
@@ -492,6 +502,10 @@ if suite == "ifeval":
     privacy["raw_checkpoint_absent_after_lifecycle"] = not (
         root / "ifeval.checkpoint.json"
     ).exists()
+elif suite == "teacher-forced":
+    privacy["private_observation_for_outer_comparison"] = (
+        root / "teacher_forced_observation.json"
+    ).is_file()
 
 report = {
     "schema": "bi100-quality-service-gate-status-v2",
@@ -546,7 +560,7 @@ if suite == "ifeval":
             hashlib.sha256(path.read_bytes()).hexdigest()
             if path.is_file() else None
         )
-else:
+elif suite != "teacher-forced":
     artifacts.update({
         "quality_report_sha256": (
             hashlib.sha256(quality.read_bytes()).hexdigest()
@@ -994,6 +1008,27 @@ elif [[ "$SUITE" == ifeval ]]; then
         > "$RUN_ROOT/ifeval.stdout" 2> "$RUN_ROOT/ifeval.stderr"
     rc=$?
     printf '%s\n' "$rc" > "$RUN_ROOT/ifeval.rc"
+elif [[ "$SUITE" == teacher-forced ]]; then
+    diagnostic_mode=control
+    if [[ "$FUSED_PREFILL" == 1 ]]; then
+        diagnostic_mode=candidate
+    fi
+    BI100_TEACHER_FORCED_HMAC_KEY="$TEACHER_FORCED_HMAC_KEY" \
+        timeout --signal=TERM --kill-after=30s 21600s \
+        python3 "$ROOT/tests/teacher_forced_topk_api.py" \
+        --base http://127.0.0.1:8000 \
+        --model-path "$MODEL_PATH" \
+        --runtime-contract "$RUN_ROOT/runtime_contract.json" \
+        --runtime-identity "$RUNTIME_IDENTITY" \
+        --source-revision "$(git -C "$ROOT" rev-parse HEAD)" \
+        --instance "$INSTANCE" \
+        --mode "$diagnostic_mode" \
+        --timeout-s 3600 \
+        --out "$RUN_ROOT/teacher_forced_observation.json" \
+        > "$RUN_ROOT/teacher_forced.stdout" \
+        2> "$RUN_ROOT/teacher_forced.stderr"
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/teacher_forced.rc"
 elif [[ "$SUITE" == long-context ]]; then
     timeout --signal=TERM --kill-after=30s 43200s \
         "$ROOT/scripts/run_quality_long_context_gate.sh" \

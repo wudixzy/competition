@@ -213,6 +213,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
     spaces_between_special_tokens: bool = True
     truncate_prompt_tokens: Optional[Annotated[int, Field(ge=1)]] = None
     prompt_logprobs: Optional[int] = None
+    bi100_prompt_logprobs_sample_positions: Optional[List[int]] = None
     # doc: end-chat-completion-sampling-params
 
     # doc: begin-chat-completion-extra-params
@@ -374,6 +375,8 @@ class ChatCompletionRequest(OpenAIBaseModel):
             stop_token_ids=self.stop_token_ids,
             logprobs=self.top_logprobs if self.logprobs else None,
             prompt_logprobs=prompt_logprobs,
+            prompt_logprob_positions=(
+                self.bi100_prompt_logprobs_sample_positions),
             ignore_eos=self.ignore_eos,
             max_tokens=max_tokens,
             min_tokens=self.min_tokens,
@@ -577,6 +580,38 @@ class ChatCompletionRequest(OpenAIBaseModel):
                     "when using `top_logprobs`, `logprobs` must be set to true."
                 )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_bi100_prompt_logprob_sample(cls, data):
+        positions = data.get("bi100_prompt_logprobs_sample_positions")
+        if positions is None:
+            return data
+        if (
+            not isinstance(positions, list)
+            or not positions
+            or len(positions) > 4096
+            or any(
+                not isinstance(position, int)
+                or isinstance(position, bool)
+                or position <= 0
+                or position >= 262144
+                for position in positions
+            )
+            or positions != sorted(set(positions))
+        ):
+            raise ValueError(
+                "`bi100_prompt_logprobs_sample_positions` must be a sorted "
+                "unique list of prompt positions in [1, 262143].")
+        if data.get("stream"):
+            raise ValueError(
+                "BI100 sampled prompt logprobs require `stream=False`.")
+        if not isinstance(data.get("prompt_logprobs"), int) \
+                or data["prompt_logprobs"] <= 0:
+            raise ValueError(
+                "BI100 sampled prompt logprobs require positive "
+                "`prompt_logprobs`.")
         return data
 
     @model_validator(mode="before")
@@ -1140,6 +1175,7 @@ class TokenizeChatRequest(OpenAIBaseModel):
     add_generation_prompt: bool = Field(default=True)
     continue_final_message: bool = Field(default=False)
     add_special_tokens: bool = Field(default=False)
+    chat_template_kwargs: Optional[Dict[str, Any]] = Field(default=None)
 
     @model_validator(mode="before")
     @classmethod

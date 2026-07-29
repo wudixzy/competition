@@ -168,6 +168,9 @@ class SamplingParams(
         allowed_token_ids: If provided, the engine will construct a logits
             processor which only retains scores for the given token ids.
             Defaults to None.
+        prompt_logprob_positions: Optional prompt-token positions whose logits
+            should be materialized. None preserves the standard all-position
+            prompt-logprob behavior.
     """
 
     n: int = 1
@@ -210,6 +213,7 @@ class SamplingParams(
     guided_decoding: Optional[GuidedDecodingParams] = None
     logit_bias: Optional[Dict[int, float]] = None
     allowed_token_ids: Optional[List[int]] = None
+    prompt_logprob_positions: Optional[List[int]] = None
 
     @staticmethod
     def from_optional(
@@ -241,6 +245,7 @@ class SamplingParams(
         guided_decoding: Optional[GuidedDecodingParams] = None,
         logit_bias: Optional[Union[Dict[int, float], Dict[str, float]]] = None,
         allowed_token_ids: Optional[List[int]] = None,
+        prompt_logprob_positions: Optional[List[int]] = None,
     ) -> "SamplingParams":
         if logit_bias is not None:
             logit_bias = {
@@ -279,6 +284,7 @@ class SamplingParams(
             guided_decoding=guided_decoding,
             logit_bias=logit_bias,
             allowed_token_ids=allowed_token_ids,
+            prompt_logprob_positions=prompt_logprob_positions,
         )
 
     def __post_init__(self) -> None:
@@ -318,6 +324,9 @@ class SamplingParams(
         self.logprobs = 1 if self.logprobs is True else self.logprobs
         self.prompt_logprobs = (1 if self.prompt_logprobs is True else
                                 self.prompt_logprobs)
+        if self.prompt_logprob_positions is not None:
+            self.prompt_logprob_positions = list(
+                self.prompt_logprob_positions)
 
         # Number of characters to hold back for stop string evaluation
         # until sequence is finished.
@@ -380,6 +389,24 @@ class SamplingParams(
         if self.prompt_logprobs is not None and self.prompt_logprobs < 0:
             raise ValueError(f"prompt_logprobs must be non-negative, got "
                              f"{self.prompt_logprobs}.")
+        if self.prompt_logprob_positions is not None:
+            if self.prompt_logprobs is None:
+                raise ValueError(
+                    "prompt_logprob_positions requires prompt_logprobs.")
+            if (
+                not self.prompt_logprob_positions
+                or any(
+                    not isinstance(position, int)
+                    or isinstance(position, bool)
+                    or position <= 0
+                    for position in self.prompt_logprob_positions
+                )
+                or self.prompt_logprob_positions
+                != sorted(set(self.prompt_logprob_positions))
+            ):
+                raise ValueError(
+                    "prompt_logprob_positions must be a sorted unique list "
+                    "of positive integers.")
         if (self.truncate_prompt_tokens is not None
                 and self.truncate_prompt_tokens < 1):
             raise ValueError(f"truncate_prompt_tokens must be >= 1, "
@@ -471,6 +498,8 @@ class SamplingParams(
             f"min_tokens={self.min_tokens}, "
             f"logprobs={self.logprobs}, "
             f"prompt_logprobs={self.prompt_logprobs}, "
+            "prompt_logprob_positions="
+            f"{self.prompt_logprob_positions}, "
             f"skip_special_tokens={self.skip_special_tokens}, "
             "spaces_between_special_tokens="
             f"{self.spaces_between_special_tokens}, "

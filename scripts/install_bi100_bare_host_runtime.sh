@@ -65,9 +65,13 @@ required=(
     vllm/core/block/prefix_caching_block.py
     vllm/core/block/block_table.py
     vllm/core/block_manager_v2.py
+    vllm/sampling_params.py
+    vllm/model_executor/sampling_metadata.py
+    vllm/model_executor/layers/sampler.py
     qwen3_6_scripts/patch_ops.sh
     qwen3_6_scripts/patch_utils.py
     qwen3_6_scripts/block_major_kv_cache.py
+    qwen3_6_scripts/serving_tokenization.py
     qwen3_6_scripts/patch_block_major_cache_engine.py
     qwen3_6_scripts/patch_block_major_worker_capacity.py
     qwen3_6_scripts/prebuilt/corex-3.2.3-ivcore10/corex_block_major_kv_transfer.so
@@ -95,6 +99,7 @@ trap cleanup EXIT
 PATCH_STAGE=$(mktemp -d /tmp/bi100-patch-stage.XXXXXX)
 cp -a "$ROOT/qwen3_6_scripts/." "$PATCH_STAGE/"
 mkdir -p "$PATCH_STAGE/vendor_overrides/vllm/core/block"
+mkdir -p "$PATCH_STAGE/vendor_overrides/vllm/model_executor/layers"
 install -m 0644 "$ROOT/vllm/core/evictor_v2.py" \
     "$PATCH_STAGE/vendor_overrides/vllm/core/evictor_v2.py"
 for name in cpu_kv_content_cache.py cpu_gpu_block_allocator.py \
@@ -104,6 +109,12 @@ for name in cpu_kv_content_cache.py cpu_gpu_block_allocator.py \
 done
 install -m 0644 "$ROOT/vllm/core/block_manager_v2.py" \
     "$PATCH_STAGE/vendor_overrides/vllm/core/block_manager_v2.py"
+install -m 0644 "$ROOT/vllm/sampling_params.py" \
+    "$PATCH_STAGE/vendor_overrides/vllm/sampling_params.py"
+install -m 0644 "$ROOT/vllm/model_executor/sampling_metadata.py" \
+    "$PATCH_STAGE/vendor_overrides/vllm/model_executor/sampling_metadata.py"
+install -m 0644 "$ROOT/vllm/model_executor/layers/sampler.py" \
+    "$PATCH_STAGE/vendor_overrides/vllm/model_executor/layers/sampler.py"
 
 RUNTIME_PARENT=$(dirname "$RUNTIME_ROOT")
 RUNTIME_NAME=$(basename "$RUNTIME_ROOT")
@@ -289,6 +300,18 @@ checks = {
         root / "qwen3_6_scripts/scheduler.py",
         vllm_root / "core/scheduler.py",
     ),
+    "sampling_params": (
+        root / "vllm/sampling_params.py",
+        vllm_root / "sampling_params.py",
+    ),
+    "sampling_metadata": (
+        root / "vllm/model_executor/sampling_metadata.py",
+        vllm_root / "model_executor/sampling_metadata.py",
+    ),
+    "sampler": (
+        root / "vllm/model_executor/layers/sampler.py",
+        vllm_root / "model_executor/layers/sampler.py",
+    ),
     "block_manager": (
         expected_block_manager,
         vllm_root / "core/block_manager_v2.py",
@@ -352,6 +375,10 @@ checks = {
     "serving_chat": (
         root / "qwen3_6_scripts/serving_chat.py",
         vllm_root / "entrypoints/openai/serving_chat.py",
+    ),
+    "serving_tokenization": (
+        root / "qwen3_6_scripts/serving_tokenization.py",
+        vllm_root / "entrypoints/openai/serving_tokenization.py",
     ),
     "tool_parser": (
         root / "qwen3_6_scripts/qwen3coder_tool_parser.py",

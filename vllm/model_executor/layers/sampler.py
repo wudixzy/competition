@@ -980,17 +980,12 @@ def get_logprobs(
 
         assert len(next_token_ids) == len(query_indices)
 
-    if len(query_indices) == 0:
-        empty_sampled_logprob: SampleLogprobs = []
-        empty_prompt_logprob: Optional[PromptLogprobs] = None
-        return [empty_prompt_logprob], [empty_sampled_logprob]
-
     selected_logprobs, ranks = None, None
     top_logprobs, top_token_ids = None, None
 
     # If largest_num_logprobs == -1, i.e. no logprobs are requested, we can
     # skip the whole logprob calculation.
-    if largest_num_logprobs >= 0:
+    if query_indices and largest_num_logprobs >= 0:
         query_indices_gpu = torch.tensor(query_indices, device=logprobs.device)
         next_token_ids_gpu = torch.tensor(next_token_ids,
                                           device=logprobs.device)
@@ -1059,18 +1054,45 @@ def _get_prompt_logprob_if_needed(
     # Find prompt logprobs
     prompt_logprobs: Optional[PromptLogprobs] = None
     if is_prompt and sampling_params.prompt_logprobs is not None:
-        prompt_logprobs = []
+        query_len = seq_group.query_len
+        assert query_len is not None
+        requested_prompt_logprob_len = (
+            query_len - len(seq_group.seq_ids)
+            if seq_group.do_sample else query_len)
+        seq_data = seq_group.seq_data[seq_group.seq_ids[0]]
+        available_next_tokens = max(
+            0,
+            len(seq_data.prompt_token_ids)
+            - seq_data.get_num_computed_tokens()
+            - 1,
+        )
+        full_prompt_logprob_len = min(
+            requested_prompt_logprob_len,
+            available_next_tokens,
+        )
+        prompt_logprobs = [None] * full_prompt_logprob_len
         num_logprobs = sampling_params.prompt_logprobs
         next_prompt_tokens = _get_next_prompt_tokens(seq_group)
+        assert (len(next_prompt_tokens)
+                == len(seq_group.prompt_logprob_indices)
+                == len(seq_group.prompt_logprob_output_indices))
         # Pre-select indexes and create a list. It is faster than calling .item
         # repetitively.
-        selected_logprob_items = selected_logprobs[
-            selected_logprobs_idx:selected_logprobs_idx +
-            len(next_prompt_tokens)].tolist()
-        rank_items = ranks[selected_logprobs_idx:selected_logprobs_idx +
-                           len(next_prompt_tokens)].tolist()
-
-        for idx, token_id in enumerate(next_prompt_tokens):
+        if next_prompt_tokens:
+            assert selected_logprobs is not None
+            assert ranks is not None
+            selected_logprob_items = selected_logprobs[
+                selected_logprobs_idx:selected_logprobs_idx +
+                len(next_prompt_tokens)].tolist()
+            rank_items = ranks[
+                selected_logprobs_idx:selected_logprobs_idx +
+                len(next_prompt_tokens)].tolist()
+        else:
+            selected_logprob_items = []
+            rank_items = []
+        for idx, (token_id, output_index) in enumerate(zip(
+                next_prompt_tokens,
+                seq_group.prompt_logprob_output_indices)):
             # Calculate the prompt logprob of the real prompt tokens.
             # {token_id: (logprob, rank_from_vocab)}
             prompt_logprobs_dict: Dict[int, Tuple[float, int]] = {
@@ -1079,6 +1101,8 @@ def _get_prompt_logprob_if_needed(
 
             # Add top K prompt logprobs along with its rank.
             if num_logprobs > 0:
+                assert top_token_ids is not None
+                assert top_logprobs is not None
                 top_ids = top_token_ids[
                     top_logprob_idx, :num_logprobs].tolist()
                 top_probs = top_logprobs[
@@ -1091,10 +1115,10 @@ def _get_prompt_logprob_if_needed(
                     for top_id, top_prob, rank in zip(top_ids, top_probs,
                                                       top_ranks)
                 })
-            prompt_logprobs.append({
+            prompt_logprobs[output_index] = {
                 token_id: Logprob(*logprob_and_rank)
                 for token_id, logprob_and_rank in prompt_logprobs_dict.items()
-            })
+            }
             # + 1 to go to the next prompt token.
             top_logprob_idx += 1
 
@@ -1308,10 +1332,9 @@ def _get_next_prompt_tokens(seq_group: SequenceGroupToSample) -> List[int]:
     seq_data = seq_group.seq_data[seq_ids[0]]
     computed_len = seq_data.get_num_computed_tokens()
     prompt_tokens = seq_data.prompt_token_ids
-    # +1 because we are looking for a next prompt token.
-    next_token_index_start = computed_len + 1
-    next_token_index_end = min(computed_len + query_len + 1,
-                               len(prompt_tokens))
-    next_prompt_tokens = prompt_tokens[
-        next_token_index_start:next_token_index_end]
+    next_prompt_tokens = []
+    for output_index in seq_group.prompt_logprob_output_indices:
+        token_index = computed_len + output_index + 1
+        assert token_index < len(prompt_tokens)
+        next_prompt_tokens.append(prompt_tokens[token_index])
     return next_prompt_tokens

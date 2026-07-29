@@ -48,8 +48,14 @@ DIRECT_SOURCE_FILES = {
     "reasoning_qwen3": Path(
         "qwen3_6_scripts/reasoning/qwen3_reasoning_parser.py"),
     "scheduler": Path("qwen3_6_scripts/scheduler.py"),
+    "sampling_params": Path("vllm/sampling_params.py"),
+    "sampling_metadata": Path(
+        "vllm/model_executor/sampling_metadata.py"),
+    "sampler": Path("vllm/model_executor/layers/sampler.py"),
     "sequence": Path("qwen3_6_scripts/sequence.py"),
     "serving_chat": Path("qwen3_6_scripts/serving_chat.py"),
+    "serving_tokenization": Path(
+        "qwen3_6_scripts/serving_tokenization.py"),
     "content_cache": Path("vllm/core/block/cpu_kv_content_cache.py"),
     "tool_parser": Path("qwen3_6_scripts/qwen3coder_tool_parser.py"),
     "transformers_qwen3_5_config": Path(

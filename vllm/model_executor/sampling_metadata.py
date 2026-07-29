@@ -43,6 +43,9 @@ class SequenceGroupToSample:
     # Query token indices from logits. to compute prompt logprob. Empty if
     # prompt logprob is not required.
     prompt_logprob_indices: List[int]
+    # Output offsets within this prefill chunk. Sparse diagnostic requests use
+    # this to retain the standard full-length prompt-logprob response shape.
+    prompt_logprob_output_indices: List[int]
     # Sample token indices from logits. Empty if sampling is not required.
     sample_indices: List[int]
 
@@ -53,9 +56,16 @@ class SequenceGroupToSample:
     def __post_init__(self):
         if len(self.prompt_logprob_indices) > 0:
             assert self.sampling_params.prompt_logprobs is not None
+        assert (len(self.prompt_logprob_indices)
+                == len(self.prompt_logprob_output_indices))
+        assert self.prompt_logprob_output_indices == sorted(
+            set(self.prompt_logprob_output_indices))
         if self.is_prompt:
             assert self.seq_len is not None
             assert self.query_len is not None
+            assert all(
+                0 <= index < self.query_len
+                for index in self.prompt_logprob_output_indices)
 
 
 def gen_seq_group_to_sample_builder(num_seqs: int):
@@ -68,6 +78,7 @@ def gen_seq_group_to_sample_builder(num_seqs: int):
         generator=None,
         is_prompt=True,
         prompt_logprob_indices=[],
+        prompt_logprob_output_indices=[],
         sample_indices=[],
     )
 
@@ -191,6 +202,34 @@ class SamplingMetadata:
             f"categorized_sample_indices={self.categorized_sample_indices}), ")
 
 
+def _get_prompt_logprob_output_indices(
+    sampling_params: SamplingParams,
+    seq_data: SequenceData,
+    prompt_logprob_len: int,
+) -> List[int]:
+    if sampling_params.prompt_logprobs is None or prompt_logprob_len <= 0:
+        return []
+    positions = sampling_params.prompt_logprob_positions
+    computed_len = seq_data.get_num_computed_tokens()
+    available_next_tokens = max(
+        0,
+        len(seq_data.prompt_token_ids) - computed_len - 1,
+    )
+    materialized_len = min(prompt_logprob_len, available_next_tokens)
+    if positions is None:
+        return list(range(materialized_len))
+
+    output_indices = [
+        position - computed_len - 1
+        for position in positions
+        if computed_len < position
+        <= computed_len + materialized_len
+    ]
+    assert output_indices == sorted(set(output_indices))
+    assert all(0 <= index < materialized_len for index in output_indices)
+    return output_indices
+
+
 def _prepare_seq_groups(
     seq_group_metadata_list: List[SequenceGroupMetadata],
     seq_lens: List[int],
@@ -250,6 +289,7 @@ def _prepare_seq_groups(
                 sample_obj.seq_ids[j] = seq_id
 
             sample_obj.prompt_logprob_indices.clear()
+            sample_obj.prompt_logprob_output_indices.clear()
             sample_obj.sample_indices.clear()
 
         sampling_params = seq_group_metadata.sampling_params
@@ -260,6 +300,9 @@ def _prepare_seq_groups(
         query_len: Optional[int] = None
         prompt_logprob_indices: List[int] = (sample_obj.prompt_logprob_indices
                                              if cache is not None else [])
+        prompt_logprob_output_indices: List[int] = (
+            sample_obj.prompt_logprob_output_indices
+            if cache is not None else [])
         sample_indices: List[int] = (sample_obj.sample_indices
                                      if cache is not None else [])
         do_sample = seq_group_metadata.do_sample
@@ -290,6 +333,14 @@ def _prepare_seq_groups(
             if sampling_params.seed is not None and generators is not None:
                 generator = generators.get(seq_group_metadata.request_id)
 
+        seq_data = next(iter(seq_group_metadata.seq_data.values()))
+        prompt_logprob_output_indices.extend(
+            _get_prompt_logprob_output_indices(
+                sampling_params,
+                seq_data,
+                prompt_logprob_len,
+            ))
+
         # Update indices to select from the model output.
         """
         This blocks computes selected_token_indices which is used in the
@@ -301,7 +352,8 @@ def _prepare_seq_groups(
 
         if sampling_params.prompt_logprobs is not None:
             selected_token_indices.extend(
-                range(model_output_idx, model_output_idx + prompt_logprob_len))
+                model_output_idx + output_index
+                for output_index in prompt_logprob_output_indices)
         model_output_idx += prompt_logprob_len
         if do_sample:
             selected_token_indices.extend(
@@ -323,8 +375,9 @@ def _prepare_seq_groups(
 
         if sampling_params.prompt_logprobs is not None:
             prompt_logprob_indices.extend(
-                range(logit_idx, logit_idx + prompt_logprob_len))
-            logit_idx += prompt_logprob_len
+                range(logit_idx,
+                      logit_idx + len(prompt_logprob_output_indices)))
+            logit_idx += len(prompt_logprob_output_indices)
         if do_sample:
             sample_indices.extend(range(logit_idx, logit_idx + sample_len))
             categorized_sample_indices[sampling_params.sampling_type].extend(
@@ -348,9 +401,13 @@ def _prepare_seq_groups(
                 generator=generator,
                 is_prompt=is_prompt,
                 prompt_logprob_indices=list(prompt_logprob_indices),
+                prompt_logprob_output_indices=list(
+                    prompt_logprob_output_indices),
                 sample_indices=list(sample_indices),
             )
 
+        assert (len(sample_obj.prompt_logprob_indices)
+                == len(sample_obj.prompt_logprob_output_indices))
         seq_groups.append(sample_obj)
 
     if cache is not None:
