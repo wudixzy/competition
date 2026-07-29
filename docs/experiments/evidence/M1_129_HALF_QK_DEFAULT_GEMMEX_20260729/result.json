@@ -1,0 +1,93 @@
+{
+  "schema": "bi100-m1-129-half-qk-default-gemmex-v1",
+  "version": 1,
+  "date": "2026-07-29",
+  "source_revision": "de9d91e32eb1feff6ec176d7084a80095fb98ef2",
+  "instance": "ssh-73ca29ba",
+  "control_extension": {
+    "label": "M1-109",
+    "sha256": "ad4ea7707bb2f2bfe04e07a7ad5fd58a647232be70a3056937a0d738c8254bff"
+  },
+  "candidate_extension": {
+    "label": "M1-129-default-gemmex",
+    "size_bytes": 247248,
+    "sha256": "62fc3af12eb863801abfb6e08336e9a04f5c377ba7d03511ad0a2412b0f37f82"
+  },
+  "fixed_contract": {
+    "maximum_relative_l2": 1e-05,
+    "maximum_output_abs": 0.001,
+    "minimum_median_control_over_candidate_speedup": 1.1,
+    "minimum_positive_cases": 3,
+    "maximum_single_case_regression": 0.02
+  },
+  "rows": [
+    {
+      "case": "production_dense_q8176",
+      "control_ms": 39.796958923339844,
+      "candidate_ms": 35.08769989013672,
+      "control_over_candidate_speedup": 1.134213956684203,
+      "output_relative_l2": 1.4702597156930388e-05,
+      "lse_relative_l2": 3.933209400000015e-08,
+      "output_max_abs": 0.000244140625
+    },
+    {
+      "case": "production_65k_q8176",
+      "control_ms": 293.82666015625,
+      "candidate_ms": 251.834716796875,
+      "control_over_candidate_speedup": 1.166744060920103,
+      "output_relative_l2": 1.964766318262615e-05,
+      "lse_relative_l2": 3.196493167181432e-08,
+      "output_max_abs": 1.52587890625e-05
+    },
+    {
+      "case": "production_128k_q8176",
+      "control_ms": 516.1383666992188,
+      "candidate_ms": 441.24639892578125,
+      "control_over_candidate_speedup": 1.1697282243113207,
+      "output_relative_l2": 1.988415944114535e-05,
+      "lse_relative_l2": 3.653337726656838e-08,
+      "output_max_abs": 1.52587890625e-05
+    },
+    {
+      "case": "production_235k_q5616",
+      "control_ms": 659.4963989257812,
+      "candidate_ms": 568.2261962890625,
+      "control_over_candidate_speedup": 1.1606230111050506,
+      "output_relative_l2": 2.1681498937105133e-05,
+      "lse_relative_l2": 4.2859838946394494e-08,
+      "output_max_abs": 7.62939453125e-06
+    }
+  ],
+  "aggregate": {
+    "positive_cases": 4,
+    "median_control_over_candidate_speedup": 1.1636835360125768,
+    "numerical_failures": 4,
+    "runner_returncode": 1
+  },
+  "lifecycle_returncodes": {
+    "postflight_before": 0,
+    "preflight_before": 0,
+    "fatal_scan": 0,
+    "final_postflight": 0,
+    "preflight_after": 0,
+    "preflight_comparison": 0
+  },
+  "adjudication": {
+    "qualified": false,
+    "finite_gate_passed": true,
+    "performance_gate_passed": true,
+    "relative_l2_gate_passed": false,
+    "numerically_identical_to_m1_128": true,
+    "outer_session_reaped": true,
+    "half_input_full_pipeline_route_closed": true,
+    "additional_algorithm_scan_authorized": false,
+    "tp4_service_experiment_authorized": false,
+    "main_or_yaml_change_authorized": false
+  },
+  "privacy": {
+    "contains_raw_tensors": false,
+    "contains_model_outputs": false,
+    "contains_token_ids": false,
+    "contains_credentials": false
+  }
+}
