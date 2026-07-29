@@ -68,7 +68,7 @@ EXPECTED_GENERATED_ASSETS = {
         "f3da291816c2a09bfd5ca73709a678da32fc1b423ffdb4626c462f65e9ec11f4"),
 }
 EXPECTED_MATRIX_SHA256 = (
-    "1b862874ca98a0f1e19341cc040a0c1c3011529a9d8d6db3b67f50c313138246"
+    "787d603818e5238b8fd45332d30c2991a7b0873d0012e2f0caad0a5c50b40115"
 )
 EXPECTED_AGENT_MATRIX_SHA256 = (
     "962d19f51cfbeb3f414e62444a225029616ed547682e5a97219b0af98c8959ba"
@@ -231,6 +231,7 @@ def validate_matrix(value: Any) -> list[str]:
         "version": 4,
         "required_for_multimodal_isolation": True,
         "required_for_partial_branch": True,
+        "partial_branch_same_session_required": True,
         "same_image_prompt_chain_must_match": True,
         "different_image_first_prompt_hash_must_differ": True,
         "fine32_first_and_subsequent_siblings_must_hit": True,

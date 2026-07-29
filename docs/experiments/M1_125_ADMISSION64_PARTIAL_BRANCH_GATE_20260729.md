@@ -25,6 +25,7 @@ changes only the two partial-branch cases. Both now construct deterministic
 A/B/C sibling requests and require cache trace v4:
 
 - A cold and A warm must remain output-identical with cold/warm accounting.
+- All partial-branch trace records must belong to one service trace session.
 - A, B, and C must return their own branch marker with no leakage.
 - Under `fine32`, both B and C must be strict partial hits backed by restored
   GDN states.
@@ -40,8 +41,8 @@ digests.
 
 ## Local verification
 
-- Focused manifest, runner, and comparator tests: 49 passed.
-- Complete unit suite: 1098 passed, 13 skipped.
+- Focused manifest, runner, and comparator tests: 50 passed.
+- Complete unit suite: 1099 passed, 13 skipped.
 - Quality-data manifest validation: qualified.
 - Submission preflight: 9/9 passed.
 - `git diff --check`: passed.

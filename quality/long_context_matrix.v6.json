@@ -32,6 +32,7 @@
     "version": 4,
     "required_for_multimodal_isolation": true,
     "required_for_partial_branch": true,
+    "partial_branch_same_session_required": true,
     "same_image_prompt_chain_must_match": true,
     "different_image_first_prompt_hash_must_differ": true,
     "fine32_first_and_subsequent_siblings_must_hit": true,

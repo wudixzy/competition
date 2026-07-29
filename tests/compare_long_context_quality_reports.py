@@ -19,7 +19,7 @@ import validate_quality_data_manifests as manifest_validator
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v6.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "1b862874ca98a0f1e19341cc040a0c1c3011529a9d8d6db3b67f50c313138246"
+    "787d603818e5238b8fd45332d30c2991a7b0873d0012e2f0caad0a5c50b40115"
 )
 REPORT_SCHEMA = "bi100-long-context-quality-result-v6"
 COMPARISON_SCHEMA = "bi100-long-context-quality-comparison-v5"
@@ -80,7 +80,8 @@ TRUE_FACTS = {
     "short_basic_recall": ("marker_rule_passed",),
     "4k_cold_warm_recall": ("marker_rule_passed", "cold_warm_exact"),
     "32k_partial_branch": (
-        "branch_markers_correct", "cold_warm_exact", "strict_partial_hit"),
+        "branch_markers_correct", "cache_trace_session_attested",
+        "cold_warm_exact", "strict_partial_hit"),
     "32k_multimodal_isolation": (
         "red_blue_rules_passed", "same_image_cold_warm_exact",
         "different_image_isolated", "image_identity_digests_distinct",
@@ -103,7 +104,8 @@ TRUE_FACTS = {
         "reasoning_present", "cold_warm_exact",
         "natural_finish_before_max_tokens"),
     "235k_partial_branch": (
-        "branch_markers_correct", "cold_warm_exact", "strict_partial_hit"),
+        "branch_markers_correct", "cache_trace_session_attested",
+        "cold_warm_exact", "strict_partial_hit"),
     "near_262k_capacity": (
         "marker_rule_passed", "cold_warm_exact",
         "exact_capacity_boundary_passed",

@@ -25,7 +25,7 @@ import validate_quality_data_manifests as manifest_validator
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v6.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "1b862874ca98a0f1e19341cc040a0c1c3011529a9d8d6db3b67f50c313138246"
+    "787d603818e5238b8fd45332d30c2991a7b0873d0012e2f0caad0a5c50b40115"
 )
 SCHEMA = "bi100-long-context-quality-result-v6"
 BASE_IMAGE = runtime_contract.BASE_IMAGE
@@ -750,6 +750,15 @@ def _partial_branch_trace_facts(
         len(records) == len(requests) and len(records) in {4, 5},
         "partial-branch cache trace sequence length differs",
     )
+    trace_sessions = {
+        record.get("trace_session_sha256") for record in records
+        if isinstance(record, dict)
+    }
+    require(
+        len(trace_sessions) == 1
+        and all(isinstance(value, str) and value for value in trace_sessions),
+        "partial-branch cache traces do not share one service session",
+    )
     for index, (record, request) in enumerate(zip(records, requests), 1):
         require(record.get("version") == 4,
                 f"partial-branch trace {index} version differs")
@@ -804,6 +813,7 @@ def _partial_branch_trace_facts(
             "fine32 first sibling did not restore a GDN state",
         )
         return {
+            "cache_trace_session_attested": True,
             "first_sibling_strict_partial_hit": True,
             "subsequent_sibling_strict_partial_hit": True,
             "subsequent_sibling_restored": True,
@@ -836,6 +846,7 @@ def _partial_branch_trace_facts(
         "admission64 first sibling did not admit the repeated branch",
     )
     return {
+        "cache_trace_session_attested": True,
         "first_sibling_effective_miss": True,
         "repeated_branch_admitted": True,
         "subsequent_sibling_strict_partial_hit": True,

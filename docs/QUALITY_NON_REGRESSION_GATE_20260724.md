@@ -40,7 +40,7 @@ A/B pair.
 - Functional manifest SHA-256:
   `fe9b958610d9d0df8f54504d9c149442f145226c03cf76668711d2d38ed51d0e`
 - Long-context matrix SHA-256:
-  `1b862874ca98a0f1e19341cc040a0c1c3011529a9d8d6db3b67f50c313138246`
+  `787d603818e5238b8fd45332d30c2991a7b0873d0012e2f0caad0a5c50b40115`
 - Required base image:
   `harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3`
 - Maximum model length: `262144`

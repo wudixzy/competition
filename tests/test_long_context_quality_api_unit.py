@@ -470,6 +470,7 @@ class LongContextQualityApiTest(unittest.TestCase):
     ):
         return {
             "version": 4,
+            "trace_session_sha256": "unit-session",
             "gdn_policy": policy,
             "prompt_tokens": 32,
             "initial_raw_kv_contiguous_hit_blocks": raw,
@@ -506,6 +507,7 @@ class LongContextQualityApiTest(unittest.TestCase):
         facts = MODULE._partial_branch_trace_facts(
             records, self._partial_requests([0, 16, 0, 16]), "admission64")
         self.assertEqual(facts, {
+            "cache_trace_session_attested": True,
             "first_sibling_effective_miss": True,
             "repeated_branch_admitted": True,
             "subsequent_sibling_strict_partial_hit": True,
@@ -553,10 +555,30 @@ class LongContextQualityApiTest(unittest.TestCase):
         facts = MODULE._partial_branch_trace_facts(
             records, self._partial_requests([0, 16, 16, 16]), "fine32")
         self.assertEqual(facts, {
+            "cache_trace_session_attested": True,
             "first_sibling_strict_partial_hit": True,
             "subsequent_sibling_strict_partial_hit": True,
             "subsequent_sibling_restored": True,
         })
+
+    def test_partial_branch_rejects_mixed_trace_sessions(self):
+        records = [
+            self._partial_trace_record("fine32", 0),
+            self._partial_trace_record(
+                "fine32", 16, raw=1, effective=1, restore="state-a"),
+            self._partial_trace_record(
+                "fine32", 16, raw=2, effective=1, restore="state-b"),
+            self._partial_trace_record(
+                "fine32", 16, raw=2, effective=1, restore="state-c"),
+        ]
+        records[-1]["trace_session_sha256"] = "other-session"
+        with self.assertRaisesRegex(
+                MODULE.MatrixFailure, "one service session"):
+            MODULE._partial_branch_trace_facts(
+                records,
+                self._partial_requests([0, 16, 16, 16]),
+                "fine32",
+            )
 
     def _runtime_args(self):
         return SimpleNamespace(
