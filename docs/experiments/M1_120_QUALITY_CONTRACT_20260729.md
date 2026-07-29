@@ -52,16 +52,54 @@ This changes only the test oracle. It does not increase or reduce
 
 - named-tool, quality-contract, and Agent focused tests: 63 passed
 - patch/static/tool-parser tests: 70 passed
-- full suite: 1212 passed, 26 skipped
+- targeted smoke and lifecycle harness tests: 52 passed
+- full suite after the targeted runner was added: 1214 passed, 26 skipped
 - Python compile check: passed
 - all 52 tracked shell scripts passed `bash -n`
 - submission preflight: 9 of 9 checks passed
 - `git diff --check`: passed
 
+## Targeted TP4 verification
+
+Commit `40ea9d79794f6ca0816705b069694e8fb8933545` adds a fixed
+`contract-smoke` service suite. It runs only `max_tokens_1` and
+`stream_forced_terminal` while retaining the normal runtime identity, startup,
+TP4 preflight, scoped cleanup, postflight, fatal, timeout, and 4xx gates.
+Partial reports cannot authorize promotion.
+
+The exact-source TP4 run was:
+
+- source: `/root/m1-120-source-40ea9d7-exact`
+- overlay: `/root/m1-120-runtime-40ea9d7/site-packages`
+- runtime tree SHA-256:
+  `e76396bf3c27303b882271d7c984b4d9308f174a993553754f84a3bae2e82bae`
+- run: `/tmp/m1-120-contract-smoke-40ea9d7-20260729-v1`
+- instance: `ssh-73ca29ba`
+- outer and service return codes: `0`
+
+The installer and runtime identity gate both qualified. The installed
+`api_server.py` was byte-identical to the exact source with SHA-256
+`46e498b15b36c20f29b67d6bcf7028d7083466ae1a03b03d443917af88732f89`.
+This also proves that the request-validation diagnostic implementation in the
+source is present in the active runtime overlay.
+
+Results:
+
+- `max_tokens_1`: HTTP 200, exactly one completion token,
+  `finish_reason=length`, and all bounded-completion facts passed;
+- `stream_forced_terminal`: HTTP 200, exactly one valid tool call, valid JSON
+  arguments, valid SSE framing, one final usage block, and one done event;
+- API 4xx count: zero;
+- fatal and timeout scans: zero;
+- preflight before, preflight after, and preflight comparison: passed;
+- cleanup, recovery, and recovery qualification: passed;
+- recovery found the scoped session already quiescent, with no escaped,
+  live, or zombie members and no SIGKILL;
+- postflight found no API server, worker, or GPU process.
+
 ## Remaining gate
 
-The commits require an immutable exact-source runtime overlay and a real TP4
-targeted replay of both failed cases. If that replay passes, M1-116 must be
-rerun from a clean service for both control and candidate. M1-120 alone does
-not authorize a default-policy change, a production YAML change, or a merge to
-`main`.
+M1-120 qualifies these two repairs only. M1-116 must now be rerun from fresh
+control and candidate services using this exact source and overlay. M1-120
+alone does not authorize a default-policy change, a production YAML change, or
+a merge to `main`.
