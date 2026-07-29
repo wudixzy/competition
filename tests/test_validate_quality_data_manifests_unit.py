@@ -24,7 +24,7 @@ class QualityDataManifestTest(unittest.TestCase):
             ROOT / "quality/source_provenance.v1.json"
         ).read_text(encoding="utf-8"))
         cls.matrix = json.loads((
-            ROOT / "quality/long_context_matrix.v5.json"
+            ROOT / "quality/long_context_matrix.v6.json"
         ).read_text(encoding="utf-8"))
         cls.agent_matrix = json.loads((
             ROOT / "quality/agent_workload_matrix.v1.json"
@@ -40,7 +40,7 @@ class QualityDataManifestTest(unittest.TestCase):
         self.assertEqual(len(self.agent_matrix["cases"]), 11)
         self.assertEqual(
             hashlib.sha256((
-                ROOT / "quality/long_context_matrix.v5.json"
+                ROOT / "quality/long_context_matrix.v6.json"
             ).read_bytes()).hexdigest(),
             MODULE.EXPECTED_MATRIX_SHA256,
         )

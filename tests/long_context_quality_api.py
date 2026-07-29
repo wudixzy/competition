@@ -23,11 +23,11 @@ import validate_quality_data_manifests as manifest_validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v5.json"
+DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v6.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "924642ffe55ff8bba66aa42c81889e1c35a231a558a9e1f902619f7c6f0182ac"
+    "1b862874ca98a0f1e19341cc040a0c1c3011529a9d8d6db3b67f50c313138246"
 )
-SCHEMA = "bi100-long-context-quality-result-v5"
+SCHEMA = "bi100-long-context-quality-result-v6"
 BASE_IMAGE = runtime_contract.BASE_IMAGE
 TIER_RANK = {"quick": 0, "full": 1, "extended": 2}
 Json = dict[str, Any]
@@ -331,13 +331,19 @@ class Context:
         served_model_name: str,
         template_kwargs_mode: str,
         cache_trace_path: Path | None = None,
+        gdn_cache_policy: str = "fine32",
     ):
+        require(
+            gdn_cache_policy in {"fine32", "admission64"},
+            "long-context GDN cache policy is invalid",
+        )
         self.client = client
         self.tokenizer = tokenizer
         self.timeout_s = timeout_s
         self.served_model_name = served_model_name
         self.template_kwargs_mode = template_kwargs_mode
         self.cache_trace_path = cache_trace_path
+        self.gdn_cache_policy = gdn_cache_policy
         self._case_requests: list[Json] = []
         self._case_failure_facts: Json = {}
 
@@ -640,6 +646,11 @@ def _simple_recall(context: Context, case: Json) -> Json:
 
 def _partial_branch(context: Context, case: Json) -> Json:
     target = case["target_prompt_tokens"]
+    require(context.cache_trace_path is not None,
+            "partial-branch quality gate requires a cache trace file")
+    require(context.cache_trace_path.is_file(),
+            "partial-branch cache trace file is unavailable")
+    trace_offset = context.cache_trace_path.stat().st_size
     messages_a, _, construction_a = _fit_recipe(
         context.tokenizer, target, _branch_recipe(case["id"], "A"),
         namespace=case["id"],
@@ -648,38 +659,52 @@ def _partial_branch(context: Context, case: Json) -> Json:
         context.tokenizer, target, _branch_recipe(case["id"], "B"),
         namespace=case["id"],
         template_kwargs_mode=context.template_kwargs_mode)
+    messages_c, _, construction_c = _fit_recipe(
+        context.tokenizer, target, _branch_recipe(case["id"], "C"),
+        namespace=case["id"],
+        template_kwargs_mode=context.template_kwargs_mode)
     payload_a = _payload(
         case, messages_a, served_model_name=context.served_model_name)
     payload_b = _payload(
         case, messages_b, served_model_name=context.served_model_name)
+    payload_c = _payload(
+        case, messages_c, served_model_name=context.served_model_name)
     a_cold_data, a_cold = _post(context, payload_a, target)
     a_warm_data, a_warm = _post(context, payload_a, target)
     b_data, branch_b = _post(context, payload_b, target)
+    c_data, branch_c = _post(context, payload_c, target)
     require(_content(a_cold_data) == "SHARED-731|BRANCH-A-947",
             "branch A marker rule failed")
     require(_content(b_data) == "SHARED-731|BRANCH-B-947",
             "branch B marker rule failed")
+    require(_content(c_data) == "SHARED-731|BRANCH-C-947",
+            "branch C marker rule failed")
     require(quality._normalized_response(a_cold_data)
             == quality._normalized_response(a_warm_data),
             "branch A cold/warm output differs")
     require(a_cold["cached_tokens"] == 0 and a_warm["cached_tokens"] > 0,
             "branch A cold/warm cache accounting differs")
-    require(0 < branch_b["cached_tokens"] < branch_b["prompt_tokens"],
-            "partial branch did not report a strict partial hit")
-    requests = [a_cold, a_warm, branch_b]
+    requests = [a_cold, a_warm, branch_b, branch_c]
     if case["id"] == "235k_partial_branch":
         b_repeat_data, b_repeat = _post(context, payload_b, target)
         require(quality._normalized_response(b_data)
                 == quality._normalized_response(b_repeat_data),
                 "235K branch warm repeat differs")
+        require(b_repeat["cached_tokens"] > 0,
+                "235K branch warm repeat did not hit cache")
         requests.append(b_repeat)
+    records = _cache_trace_records(
+        context.cache_trace_path, trace_offset, len(requests))
+    policy_facts = _partial_branch_trace_facts(
+        records, requests, context.gdn_cache_policy)
     return {
         "requests": requests,
-        "construction": [construction_a, construction_b],
+        "construction": [construction_a, construction_b, construction_c],
         "facts": {
             "branch_markers_correct": True,
             "cold_warm_exact": True,
             "strict_partial_hit": True,
+            **policy_facts,
         },
     }
 
@@ -708,8 +733,114 @@ def _cache_trace_records(path: Path, offset: int, expected: int) -> list[Json]:
             break
         time.sleep(0.1)
     require(len(records) == expected,
-            "multimodal gate requires exactly three isolated cache traces")
+            "cache gate trace record count differs")
     return records
+
+
+def _partial_branch_trace_facts(
+    records: list[Json],
+    requests: list[Json],
+    gdn_cache_policy: str,
+) -> Json:
+    require(
+        gdn_cache_policy in {"fine32", "admission64"},
+        "partial-branch GDN cache policy is invalid",
+    )
+    require(
+        len(records) == len(requests) and len(records) in {4, 5},
+        "partial-branch cache trace sequence length differs",
+    )
+    for index, (record, request) in enumerate(zip(records, requests), 1):
+        require(record.get("version") == 4,
+                f"partial-branch trace {index} version differs")
+        require(record.get("gdn_policy") == gdn_cache_policy,
+                f"partial-branch trace {index} GDN policy differs")
+        for field in (
+                "initial_raw_kv_contiguous_hit_blocks",
+                "effective_gdn_hit_blocks",
+                "observed_effective_cached_tokens"):
+            value = record.get(field)
+            require(
+                isinstance(value, int) and not isinstance(value, bool)
+                and value >= 0,
+                f"partial-branch trace {index} {field} is invalid",
+            )
+        require(
+            record["observed_effective_cached_tokens"]
+            == request["cached_tokens"],
+            f"partial-branch trace {index} and API cached_tokens differ",
+        )
+        require(
+            record.get("prompt_tokens") == request["prompt_tokens"],
+            f"partial-branch trace {index} prompt token count differs",
+        )
+
+    branch_b_record = records[2]
+    branch_c_record = records[3]
+    branch_b = requests[2]
+    branch_c = requests[3]
+    require(
+        0 < branch_c["cached_tokens"] < branch_c["prompt_tokens"],
+        "subsequent sibling did not report a strict partial hit",
+    )
+    require(
+        branch_c_record["effective_gdn_hit_blocks"] > 0
+        and isinstance(
+            branch_c_record.get("gdn_restore_digest_base64"), str)
+        and bool(branch_c_record["gdn_restore_digest_base64"]),
+        "subsequent sibling did not restore a GDN state",
+    )
+
+    if gdn_cache_policy == "fine32":
+        require(
+            0 < branch_b["cached_tokens"] < branch_b["prompt_tokens"],
+            "fine32 first sibling did not report a strict partial hit",
+        )
+        require(
+            branch_b_record["effective_gdn_hit_blocks"] > 0
+            and isinstance(
+                branch_b_record.get("gdn_restore_digest_base64"), str)
+            and bool(branch_b_record["gdn_restore_digest_base64"]),
+            "fine32 first sibling did not restore a GDN state",
+        )
+        return {
+            "first_sibling_strict_partial_hit": True,
+            "subsequent_sibling_strict_partial_hit": True,
+            "subsequent_sibling_restored": True,
+        }
+
+    require(
+        branch_b_record["initial_raw_kv_contiguous_hit_blocks"] > 0,
+        "admission64 first sibling did not observe a raw KV prefix",
+    )
+    require(
+        branch_b["cached_tokens"] == 0
+        and branch_b_record["effective_gdn_hit_blocks"] == 0,
+        "admission64 first sibling was incorrectly reported as reusable",
+    )
+    admissions = branch_b_record.get("gdn_admissions")
+    require(
+        isinstance(admissions, list),
+        "admission64 first-sibling admission evidence is invalid",
+    )
+    repeated_branch = [
+        action for action in admissions
+        if isinstance(action, dict)
+        and action.get("reason") == "repeated_branch"
+        and isinstance(action.get("block_count"), int)
+        and not isinstance(action["block_count"], bool)
+        and action["block_count"] > 0
+    ]
+    require(
+        bool(repeated_branch),
+        "admission64 first sibling did not admit the repeated branch",
+    )
+    return {
+        "first_sibling_effective_miss": True,
+        "repeated_branch_admitted": True,
+        "subsequent_sibling_strict_partial_hit": True,
+        "subsequent_sibling_restored": True,
+    }
 
 
 def _prompt_trace_hashes(record: Json, expected_cached_tokens: int) -> list[bytes]:
@@ -1208,9 +1339,14 @@ def main() -> int:
             "generated assets differ from the frozen matrix")
     selected = _selected_cases(manifest, args.tier, args.case)
     requires_cache_trace = any(
-        case["id"] == "32k_multimodal_isolation" for case in selected)
+        case["id"] in {
+            "32k_multimodal_isolation",
+            "32k_partial_branch",
+            "235k_partial_branch",
+        }
+        for case in selected)
     if requires_cache_trace and args.cache_trace_file is None:
-        parser.error("selected multimodal matrix case requires --cache-trace-file")
+        parser.error("selected cache matrix case requires --cache-trace-file")
     if args.cache_trace_file is not None and not args.cache_trace_file.is_file():
         parser.error("--cache-trace-file must be an existing regular file")
     model_path = Path(args.model_path)
@@ -1243,11 +1379,13 @@ def main() -> int:
         served_model_name=args.served_model_name,
         template_kwargs_mode=args.chat_template_kwargs_mode,
         cache_trace_path=args.cache_trace_file,
+        gdn_cache_policy=loaded_runtime_contract[
+            "environment"]["BI100_GDN_CACHE_POLICY"],
     )
     results = []
     report: Json = {
         "schema": SCHEMA,
-        "version": 5,
+        "version": 6,
         "qualified": False,
         "quality_run_eligible_for_baseline": False,
         "overall_promotion_authorized": False,

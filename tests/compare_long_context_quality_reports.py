@@ -17,12 +17,12 @@ import validate_quality_data_manifests as manifest_validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v5.json"
+DEFAULT_MANIFEST = ROOT / "quality/long_context_matrix.v6.json"
 EXPECTED_MANIFEST_SHA256 = (
-    "924642ffe55ff8bba66aa42c81889e1c35a231a558a9e1f902619f7c6f0182ac"
+    "1b862874ca98a0f1e19341cc040a0c1c3011529a9d8d6db3b67f50c313138246"
 )
-REPORT_SCHEMA = "bi100-long-context-quality-result-v5"
-COMPARISON_SCHEMA = "bi100-long-context-quality-comparison-v4"
+REPORT_SCHEMA = "bi100-long-context-quality-result-v6"
+COMPARISON_SCHEMA = "bi100-long-context-quality-comparison-v5"
 EXPECTED_CASES = 12
 BASE_IMAGE = runtime_contract.BASE_IMAGE
 Json = dict[str, Any]
@@ -38,7 +38,7 @@ ALLOWED_AB_ENV_DIFFERENCES = {
 REQUEST_COUNTS = {
     "short_basic_recall": 1,
     "4k_cold_warm_recall": 2,
-    "32k_partial_branch": 3,
+    "32k_partial_branch": 4,
     "32k_multimodal_isolation": 3,
     "65k_multiturn_large_tools": 2,
     "65k_long_tool_result": 2,
@@ -46,13 +46,13 @@ REQUEST_COUNTS = {
     "131k_cold_warm_recall": 2,
     "131k_reasoning_recall": 1,
     "235k_agent_large_output_budget": 2,
-    "235k_partial_branch": 4,
+    "235k_partial_branch": 5,
     "near_262k_capacity": 3,
 }
 CONSTRUCTION_COUNTS = {
     "short_basic_recall": 1,
     "4k_cold_warm_recall": 1,
-    "32k_partial_branch": 2,
+    "32k_partial_branch": 3,
     "32k_multimodal_isolation": 2,
     "65k_multiturn_large_tools": 1,
     "65k_long_tool_result": 1,
@@ -60,8 +60,21 @@ CONSTRUCTION_COUNTS = {
     "131k_cold_warm_recall": 1,
     "131k_reasoning_recall": 1,
     "235k_agent_large_output_budget": 1,
-    "235k_partial_branch": 2,
+    "235k_partial_branch": 3,
     "near_262k_capacity": 2,
+}
+PARTIAL_POLICY_TRUE_FACTS = {
+    "fine32": (
+        "first_sibling_strict_partial_hit",
+        "subsequent_sibling_strict_partial_hit",
+        "subsequent_sibling_restored",
+    ),
+    "admission64": (
+        "first_sibling_effective_miss",
+        "repeated_branch_admitted",
+        "subsequent_sibling_strict_partial_hit",
+        "subsequent_sibling_restored",
+    ),
 }
 TRUE_FACTS = {
     "short_basic_recall": ("marker_rule_passed",),
@@ -338,7 +351,12 @@ def _validate_construction(
     return reasons
 
 
-def _validate_case(case: Any, expected: Json, label: str) -> list[str]:
+def _validate_case(
+    case: Any,
+    expected: Json,
+    label: str,
+    gdn_cache_policy: str | None,
+) -> list[str]:
     reasons = []
     metadata = (
         "ordinal", "id", "tier", "target_prompt_tokens", "max_tokens",
@@ -405,6 +423,15 @@ def _validate_case(case: Any, expected: Json, label: str) -> list[str]:
     for fact in TRUE_FACTS[expected["id"]]:
         if facts.get(fact) is not True:
             reasons.append(f"{label}: required fact {fact} is not true")
+    if expected["id"] in {"32k_partial_branch", "235k_partial_branch"}:
+        policy_facts = PARTIAL_POLICY_TRUE_FACTS.get(gdn_cache_policy or "")
+        if policy_facts is None:
+            reasons.append(f"{label}: GDN cache policy is invalid")
+        else:
+            for fact in policy_facts:
+                if facts.get(fact) is not True:
+                    reasons.append(
+                        f"{label}: required policy fact {fact} is not true")
     if expected["id"] in (
             "65k_multiturn_large_tools", "235k_agent_large_output_budget"):
         if facts.get("tool_count") != 92:
@@ -447,9 +474,16 @@ def _validate_case(case: Any, expected: Json, label: str) -> list[str]:
                 reasons.append(f"{label}: cold/warm cache accounting differs")
         elif expected["id"] in ("32k_partial_branch", "235k_partial_branch"):
             if (cached[0] != 0 or cached[1] <= 0
-                    or not 0 < cached[2] < expected["target_prompt_tokens"]):
+                    or not 0 < cached[3] < expected["target_prompt_tokens"]):
                 reasons.append(f"{label}: partial branch cache accounting differs")
-            if expected["id"] == "235k_partial_branch" and cached[3] <= 0:
+            if gdn_cache_policy == "fine32" and not (
+                    0 < cached[2] < expected["target_prompt_tokens"]):
+                reasons.append(
+                    f"{label}: fine32 first sibling cache accounting differs")
+            if gdn_cache_policy == "admission64" and cached[2] != 0:
+                reasons.append(
+                    f"{label}: admission64 first sibling must effectively miss")
+            if expected["id"] == "235k_partial_branch" and cached[4] <= 0:
                 reasons.append(f"{label}: branch warm repeat did not hit cache")
         elif expected["id"] == "32k_multimodal_isolation":
             if cached[0] != 0 or cached[1] <= 0 or cached[2] != 0:
@@ -469,7 +503,7 @@ def _validate_case(case: Any, expected: Json, label: str) -> list[str]:
             "65k_interleaved_sessions": ((0, 2), (1, 3)),
             "131k_cold_warm_recall": ((0, 1),),
             "235k_agent_large_output_budget": ((0, 1),),
-            "235k_partial_branch": ((0, 1), (2, 3)),
+            "235k_partial_branch": ((0, 1), (2, 4)),
             "near_262k_capacity": ((0, 1),),
         }.get(expected["id"], ())
         for left, right in repeated_pairs:
@@ -501,9 +535,10 @@ def _validate_report(
     manifest_name: str,
 ) -> tuple[dict[str, Json], list[str]]:
     reasons = []
+    gdn_cache_policy: str | None = None
     if not isinstance(report, dict):
         return {}, [f"{label}: report root is not an object"]
-    if report.get("schema") != REPORT_SCHEMA or report.get("version") != 5:
+    if report.get("schema") != REPORT_SCHEMA or report.get("version") != 6:
         reasons.append(f"{label}: report schema or version is invalid")
     if (report.get("qualified") is not True
             or report.get("quality_run_eligible_for_baseline") is not True
@@ -605,6 +640,10 @@ def _validate_report(
                 reasons.append(f"{label}: runtime contract differs from runtime")
             command = contract["command"]
             environment = contract["environment"]
+            if isinstance(environment, dict):
+                policy = environment.get("BI100_GDN_CACHE_POLICY")
+                if isinstance(policy, str):
+                    gdn_cache_policy = policy
             if (not isinstance(command, list) or not command
                     or not all(isinstance(item, str) and item
                                for item in command)
@@ -699,7 +738,11 @@ def _validate_report(
     case_map = {}
     for expected, case in zip(manifest["cases"], cases):
         case_reasons = _validate_case(
-            case, expected, f"{label}: case {expected['id']}")
+            case,
+            expected,
+            f"{label}: case {expected['id']}",
+            gdn_cache_policy,
+        )
         reasons.extend(case_reasons)
         if isinstance(case, dict) and not case_reasons:
             case_map[expected["id"]] = case
@@ -725,6 +768,22 @@ def _validate_report(
     return case_map, reasons
 
 
+def _report_gdn_cache_policy(report: Any) -> str | None:
+    if not isinstance(report, dict):
+        return None
+    wrapper = report.get("runtime_contract")
+    if not isinstance(wrapper, dict):
+        return None
+    contract = wrapper.get("contract")
+    if not isinstance(contract, dict):
+        return None
+    environment = contract.get("environment")
+    if not isinstance(environment, dict):
+        return None
+    policy = environment.get("BI100_GDN_CACHE_POLICY")
+    return policy if isinstance(policy, str) else None
+
+
 def compare_reports(
     baseline: Any,
     candidate: Any,
@@ -743,6 +802,8 @@ def compare_reports(
         candidate, "candidate", manifest, manifest_sha, manifest_name)
     reasons.extend(candidate_reasons)
     comparisons = []
+    baseline_policy = _report_gdn_cache_policy(baseline)
+    candidate_policy = _report_gdn_cache_policy(candidate)
 
     if isinstance(baseline, dict) and isinstance(candidate, dict):
         baseline_runtime = baseline.get("runtime") or {}
@@ -817,7 +878,14 @@ def compare_reports(
                             "first_generated_token_sha256"):
                     case_reasons.append(
                         f"request {index} first generated token differs")
-        if case_id in SEMANTIC_IDS | NEXT_TOKEN_IDS:
+        if (case_id == "235k_partial_branch"
+                and baseline_policy != candidate_policy):
+            if any(
+                    base_observation["facts"].get(fact)
+                    != cand_observation["facts"].get(fact)
+                    for fact in TRUE_FACTS[case_id]):
+                case_reasons.append("independent capability facts differ")
+        elif case_id in SEMANTIC_IDS | NEXT_TOKEN_IDS:
             if base_observation["facts"] != cand_observation["facts"]:
                 case_reasons.append("independent capability facts differ")
         comparisons.append({
@@ -835,7 +903,7 @@ def compare_reports(
     qualified = not reasons and len(comparisons) == EXPECTED_CASES
     return {
         "schema": COMPARISON_SCHEMA,
-        "version": 4,
+        "version": 5,
         "qualified": qualified,
         "long_context_quality_non_regression_authorized": qualified,
         "overall_promotion_authorized": False,

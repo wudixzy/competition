@@ -32,16 +32,19 @@ def repeated_pairs(case_id: str) -> tuple[tuple[int, int], ...]:
         "65k_interleaved_sessions": ((0, 2), (1, 3)),
         "131k_cold_warm_recall": ((0, 1),),
         "235k_agent_large_output_budget": ((0, 1),),
-        "235k_partial_branch": ((0, 1), (2, 3)),
+        "235k_partial_branch": ((0, 1), (2, 4)),
         "near_262k_capacity": ((0, 1),),
     }.get(case_id, ())
 
 
-def cached_pattern(case_id: str, target: int) -> list[int]:
-    return {
+def cached_pattern(
+    case_id: str,
+    target: int,
+    gdn_cache_policy: str,
+) -> list[int]:
+    patterns = {
         "short_basic_recall": [0],
         "4k_cold_warm_recall": [0, target - 16],
-        "32k_partial_branch": [0, target - 16, target - 32],
         "32k_multimodal_isolation": [0, target - 16, 0],
         "65k_multiturn_large_tools": [0, target - 16],
         "65k_long_tool_result": [0, target - 16],
@@ -49,9 +52,21 @@ def cached_pattern(case_id: str, target: int) -> list[int]:
         "131k_cold_warm_recall": [0, target - 16],
         "131k_reasoning_recall": [0],
         "235k_agent_large_output_budget": [0, target - 16],
-        "235k_partial_branch": [0, target - 16, target - 32, target - 16],
         "near_262k_capacity": [0, target - 16, 0],
-    }[case_id]
+    }
+    if case_id == "32k_partial_branch":
+        return (
+            [0, target - 16, target - 32, target - 32]
+            if gdn_cache_policy == "fine32"
+            else [0, target - 16, 0, target - 32]
+        )
+    if case_id == "235k_partial_branch":
+        return (
+            [0, target - 16, target - 32, target - 32, target - 16]
+            if gdn_cache_policy == "fine32"
+            else [0, target - 16, 0, target - 32, target - 16]
+        )
+    return patterns[case_id]
 
 
 def construction(case: dict, target: int, index: int) -> dict:
@@ -84,8 +99,13 @@ def construction(case: dict, target: int, index: int) -> dict:
     }
 
 
-def facts(case_id: str) -> dict:
+def facts(case_id: str, gdn_cache_policy: str) -> dict:
     value = {name: True for name in MODULE.TRUE_FACTS[case_id]}
+    if case_id in {"32k_partial_branch", "235k_partial_branch"}:
+        value.update({
+            name: True
+            for name in MODULE.PARTIAL_POLICY_TRUE_FACTS[gdn_cache_policy]
+        })
     if case_id in {
             "65k_multiturn_large_tools",
             "235k_agent_large_output_budget"}:
@@ -102,13 +122,14 @@ def facts(case_id: str) -> dict:
     return value
 
 
-def case_result(case: dict) -> dict:
+def case_result(case: dict, gdn_cache_policy: str) -> dict:
     case_id = case["id"]
     count = MODULE.REQUEST_COUNTS[case_id]
     targets = [case["target_prompt_tokens"]] * count
     if case_id == "near_262k_capacity":
         targets[-1] -= 1
-    cached = cached_pattern(case_id, case["target_prompt_tokens"])
+    cached = cached_pattern(
+        case_id, case["target_prompt_tokens"], gdn_cache_policy)
     requests = []
     for index, (target, hit) in enumerate(zip(targets, cached)):
         prompt = target + (64 if case_id == "32k_multimodal_isolation" else 0)
@@ -185,7 +206,7 @@ def case_result(case: dict) -> dict:
             construction(case, target, index)
             for index, target in enumerate(construction_targets)
         ],
-        "facts": facts(case_id),
+        "facts": facts(case_id, gdn_cache_policy),
     }
     return {
         **case,
@@ -197,15 +218,17 @@ def case_result(case: dict) -> dict:
     }
 
 
-def valid_report() -> dict:
+def valid_report(gdn_cache_policy: str = "fine32") -> dict:
     manifest, manifest_sha = MODULE._load_manifest(MODULE.DEFAULT_MANIFEST)
-    cases = [case_result(case) for case in manifest["cases"]]
+    cases = [
+        case_result(case, gdn_cache_policy) for case in manifest["cases"]
+    ]
     files = [{"name": "tokenizer.json", "bytes": 10,
               "sha256": digest("a")}]
     command = MODULE.runtime_contract.service_command("/model")
     environment = MODULE.runtime_contract.service_environment(
         "/runtime/site-packages",
-        gdn_cache_policy="fine32",
+        gdn_cache_policy=gdn_cache_policy,
         gdn_restore_mode="direct",
         fused_prefill="0",
         kv_eviction_policy="lru",
@@ -231,7 +254,7 @@ def valid_report() -> dict:
     }
     return {
         "schema": MODULE.REPORT_SCHEMA,
-        "version": 5,
+        "version": 6,
         "qualified": True,
         "quality_run_eligible_for_baseline": True,
         "overall_promotion_authorized": False,
@@ -422,9 +445,7 @@ class LongContextQualityComparisonTest(unittest.TestCase):
 
     def test_only_declared_environment_may_differ_between_ab_runs(self):
         baseline = valid_report()
-        candidate = copy.deepcopy(baseline)
-        candidate["runtime_contract"]["contract"]["environment"][
-            "BI100_GDN_CACHE_POLICY"] = "admission64"
+        candidate = valid_report("admission64")
         candidate["runtime_contract"]["contract"][
             "optimization_label"] = "candidate"
         refresh_runtime_contract(candidate)
@@ -435,6 +456,39 @@ class LongContextQualityComparisonTest(unittest.TestCase):
             "BI100_UNDOCUMENTED_FAST_PATH"] = "1"
         refresh_runtime_contract(candidate)
         self.assertFalse(self.compare(baseline, candidate)["qualified"])
+
+    def test_admission64_first_sibling_must_effectively_miss(self):
+        baseline = valid_report("admission64")
+        candidate = copy.deepcopy(baseline)
+        candidate["cases"][2]["observation"]["requests"][2][
+            "cached_tokens"] = 16
+        result = self.compare(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "admission64 first sibling must effectively miss" in reason
+            for reason in result["reasons"]))
+
+    def test_policy_specific_partial_branch_fact_is_required(self):
+        baseline = valid_report("admission64")
+        candidate = copy.deepcopy(baseline)
+        candidate["cases"][10]["observation"]["facts"].pop(
+            "repeated_branch_admitted")
+        result = self.compare(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "required policy fact repeated_branch_admitted" in reason
+            for reason in result["reasons"]))
+
+    def test_fine32_first_sibling_must_strictly_hit(self):
+        baseline = valid_report()
+        candidate = copy.deepcopy(baseline)
+        candidate["cases"][2]["observation"]["requests"][2][
+            "cached_tokens"] = 0
+        result = self.compare(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "fine32 first sibling cache accounting differs" in reason
+            for reason in result["reasons"]))
 
     def test_combined_qk_is_the_only_allowed_kernel_profile_delta(self):
         baseline = valid_report()

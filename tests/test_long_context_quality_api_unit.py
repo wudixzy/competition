@@ -119,7 +119,7 @@ class LongContextQualityApiTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.manifest, cls.manifest_sha = MODULE._load_manifest(
-            ROOT / "quality/long_context_matrix.v5.json")
+            ROOT / "quality/long_context_matrix.v6.json")
 
     def test_handlers_and_tiers_match_frozen_matrix(self):
         self.assertEqual(
@@ -411,7 +411,7 @@ class LongContextQualityApiTest(unittest.TestCase):
 
     def test_matrix_file_hash_cannot_be_overridden(self):
         value = json.loads((
-            ROOT / "quality/long_context_matrix.v5.json"
+            ROOT / "quality/long_context_matrix.v6.json"
         ).read_text(encoding="utf-8"))
         value["cases"][0]["max_tokens"] = 32
         with tempfile.TemporaryDirectory() as directory:
@@ -457,6 +457,106 @@ class LongContextQualityApiTest(unittest.TestCase):
         with self.assertRaisesRegex(
                 MODULE.MatrixFailure, "API cached_tokens differ"):
             MODULE._prompt_trace_hashes(record, 0)
+
+    @staticmethod
+    def _partial_trace_record(
+        policy,
+        cached,
+        *,
+        raw=0,
+        effective=0,
+        restore=None,
+        admissions=None,
+    ):
+        return {
+            "version": 4,
+            "gdn_policy": policy,
+            "prompt_tokens": 32,
+            "initial_raw_kv_contiguous_hit_blocks": raw,
+            "effective_gdn_hit_blocks": effective,
+            "observed_effective_cached_tokens": cached,
+            "gdn_restore_digest_base64": restore,
+            "gdn_admissions": admissions or [],
+        }
+
+    @staticmethod
+    def _partial_requests(pattern):
+        return [
+            {"prompt_tokens": 32, "cached_tokens": cached}
+            for cached in pattern
+        ]
+
+    def test_admission64_partial_branch_requires_admit_then_restore(self):
+        records = [
+            self._partial_trace_record("admission64", 0),
+            self._partial_trace_record(
+                "admission64", 16, raw=1, effective=1, restore="state-a"),
+            self._partial_trace_record(
+                "admission64",
+                0,
+                raw=2,
+                admissions=[{
+                    "reason": "repeated_branch",
+                    "block_count": 1,
+                }],
+            ),
+            self._partial_trace_record(
+                "admission64", 16, raw=2, effective=1, restore="state-shared"),
+        ]
+        facts = MODULE._partial_branch_trace_facts(
+            records, self._partial_requests([0, 16, 0, 16]), "admission64")
+        self.assertEqual(facts, {
+            "first_sibling_effective_miss": True,
+            "repeated_branch_admitted": True,
+            "subsequent_sibling_strict_partial_hit": True,
+            "subsequent_sibling_restored": True,
+        })
+        self.assertNotIn("state-shared", json.dumps(facts))
+
+    def test_admission64_partial_branch_rejects_false_first_hit(self):
+        records = [
+            self._partial_trace_record("admission64", 0),
+            self._partial_trace_record(
+                "admission64", 16, raw=1, effective=1, restore="state-a"),
+            self._partial_trace_record(
+                "admission64",
+                16,
+                raw=2,
+                effective=1,
+                restore="wrong-state",
+                admissions=[{
+                    "reason": "repeated_branch",
+                    "block_count": 1,
+                }],
+            ),
+            self._partial_trace_record(
+                "admission64", 16, raw=2, effective=1, restore="state-shared"),
+        ]
+        with self.assertRaisesRegex(
+                MODULE.MatrixFailure, "incorrectly reported as reusable"):
+            MODULE._partial_branch_trace_facts(
+                records,
+                self._partial_requests([0, 16, 16, 16]),
+                "admission64",
+            )
+
+    def test_fine32_partial_branch_requires_both_siblings_to_restore(self):
+        records = [
+            self._partial_trace_record("fine32", 0),
+            self._partial_trace_record(
+                "fine32", 16, raw=1, effective=1, restore="state-a"),
+            self._partial_trace_record(
+                "fine32", 16, raw=2, effective=1, restore="state-b"),
+            self._partial_trace_record(
+                "fine32", 16, raw=2, effective=1, restore="state-c"),
+        ]
+        facts = MODULE._partial_branch_trace_facts(
+            records, self._partial_requests([0, 16, 16, 16]), "fine32")
+        self.assertEqual(facts, {
+            "first_sibling_strict_partial_hit": True,
+            "subsequent_sibling_strict_partial_hit": True,
+            "subsequent_sibling_restored": True,
+        })
 
     def _runtime_args(self):
         return SimpleNamespace(

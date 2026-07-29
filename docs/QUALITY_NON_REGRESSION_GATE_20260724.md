@@ -9,11 +9,21 @@ reports before it can be proposed for `main` or for a formal YAML change.
 
 The functional gate executes all 53 frozen rows derived from `指标集合`. The
 long-context gate executes the 12 deterministic cases in
-`quality/long_context_matrix.v5.json`. The selected 13-request performance
+`quality/long_context_matrix.v6.json`. The selected 13-request performance
 sample remains a smoke/proxy dataset and is not treated as an 881-request score
 or a model-quality reference.
 
-Matrix v5 supersedes v4 for new runs. Bound v4 evidence confirmed the 235K
+Matrix v6 supersedes v5 for new runs. V6 preserves the v5 capability contracts
+and makes partial-prefix validation aware of the runtime GDN admission policy.
+Both 32K and 235K cases now construct A/B/C sibling branches and bind API cache
+accounting to cache trace v4. `fine32` must restore both B and C as strict
+partial hits. `admission64` must treat B as the first observed sibling: raw KV
+may exist, but the effective hit remains zero until B emits a
+`repeated_branch` admission; C must then restore that state as a strict partial
+hit. Counting B as cached before the recurrent state exists is a correctness
+failure.
+
+Bound v4 evidence confirmed the 235K
 automatic Agent contract and showed that the 131K response naturally stopped,
 contained the complete ordered marker sequence and correct arithmetic result as
 its final suffix, but included additional explanatory content before it. V5
@@ -21,7 +31,7 @@ therefore gates the intended long-context semantic capability: the expected
 answer must occur exactly once as the final suffix, with ordered markers,
 correct arithmetic, separated reasoning, and a natural stop. Strict instruction
 following is not discarded or inferred from this case; a frozen IFEval gate is
-mandatory before promotion. V2, v3, and v4 files and reports remain immutable
+mandatory before promotion. V2 through v5 files and reports remain immutable
 historical evidence, and results from different matrix versions cannot form an
 A/B pair.
 
@@ -30,7 +40,7 @@ A/B pair.
 - Functional manifest SHA-256:
   `fe9b958610d9d0df8f54504d9c149442f145226c03cf76668711d2d38ed51d0e`
 - Long-context matrix SHA-256:
-  `924642ffe55ff8bba66aa42c81889e1c35a231a558a9e1f902619f7c6f0182ac`
+  `1b862874ca98a0f1e19341cc040a0c1c3011529a9d8d6db3b67f50c313138246`
 - Required base image:
   `harbor.4pd.io/modelhubxc/enginex-iluvatar/bi100-3.2.3-x86-ubuntu20.04-py3.10-poc-llm-infer:v1.2.3`
 - Maximum model length: `262144`
