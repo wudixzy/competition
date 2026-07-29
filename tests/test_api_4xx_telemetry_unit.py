@@ -62,6 +62,20 @@ class Api4xxTelemetryTest(unittest.TestCase):
             "empty_messages",
         )
         self.assertEqual(
+            self.reason("top_p must be in (0, 1], got 0.0."),
+            "invalid_top_p",
+        )
+        self.assertEqual(
+            self.reason("max_tokens must be at least 1, got -1."),
+            "invalid_max_tokens",
+        )
+        self.assertEqual(
+            self.reason(
+                "This model's maximum context length is 262144 tokens. "
+                "However, you requested 262150 tokens."),
+            "context_length_exceeded",
+        )
+        self.assertEqual(
             self.reason("n=2 exceeds max_num_seqs=1. Use n<=1 or omit n."),
             "n_exceeds_max_num_seqs",
         )

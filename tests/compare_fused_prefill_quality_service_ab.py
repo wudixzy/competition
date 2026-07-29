@@ -14,8 +14,21 @@ import compare_admission64_quality_service_ab as base
 Json = dict[str, Any]
 SCHEMA = "bi100-fused-prefill-quality-service-ab-v1"
 VERSION = 1
-CONTROL_LABEL = "m1-112-control-fused-off"
-CANDIDATE_LABEL = "m1-112-candidate-fused-on"
+DEFAULT_VARIANT = "m1-112-fused-prefill"
+VARIANTS = {
+    DEFAULT_VARIANT: {
+        "control_label": "m1-112-control-fused-off",
+        "candidate_label": "m1-112-candidate-fused-on",
+        "require_fused_output_diagnostic": False,
+    },
+    "m1-116-fused-prefill-adjudication": {
+        "control_label": "m1-116-control-fused-off",
+        "candidate_label": "m1-116-candidate-fused-on",
+        "require_fused_output_diagnostic": True,
+    },
+}
+CONTROL_LABEL = VARIANTS[DEFAULT_VARIANT]["control_label"]
+CANDIDATE_LABEL = VARIANTS[DEFAULT_VARIANT]["candidate_label"]
 COMMON_OPTIMIZATION = {
     "gdn_cache_policy": "admission64",
     "gdn_restore_mode": "hybrid64",
@@ -44,22 +57,30 @@ def compare(
     quality_comparison: Any,
     agent_comparison: Any,
     file_sha256s: dict[str, dict[str, str]],
+    variant: str = DEFAULT_VARIANT,
 ) -> Json:
+    if variant not in VARIANTS:
+        raise ValueError("unsupported fused-prefill quality variant")
+    variant_contract = VARIANTS[variant]
+    require_diagnostic = variant_contract[
+        "require_fused_output_diagnostic"]
     reasons = base._status_reasons(
         control_status,
         label="control",
         expected_policy="admission64",
-        expected_label=CONTROL_LABEL,
+        expected_label=variant_contract["control_label"],
         file_sha256s=file_sha256s["control"],
         expected_optimization=_optimization("0"),
+        require_fused_output_diagnostic=require_diagnostic,
     )
     reasons.extend(base._status_reasons(
         candidate_status,
         label="candidate",
         expected_policy="admission64",
-        expected_label=CANDIDATE_LABEL,
+        expected_label=variant_contract["candidate_label"],
         file_sha256s=file_sha256s["candidate"],
         expected_optimization=_optimization("1"),
+        require_fused_output_diagnostic=require_diagnostic,
     ))
     if isinstance(control_status, dict):
         reasons.extend(base._runtime_reasons(
@@ -161,6 +182,7 @@ def compare(
     return {
         "schema": SCHEMA,
         "version": VERSION,
+        "variant": variant,
         "qualified": qualified,
         "fused_prefill_quality_non_regression_authorized": qualified,
         "fused_only_runtime_delta_attested": fused_only_delta,
@@ -210,11 +232,21 @@ def main() -> int:
     parser.add_argument("--candidate-root", type=Path, required=True)
     parser.add_argument("--quality-comparison", type=Path, required=True)
     parser.add_argument("--agent-comparison", type=Path, required=True)
+    parser.add_argument(
+        "--variant",
+        choices=tuple(VARIANTS),
+        default=DEFAULT_VARIANT,
+    )
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
     control_paths = base._arm_paths(args.control_root)
     candidate_paths = base._arm_paths(args.candidate_root)
+    if VARIANTS[args.variant]["require_fused_output_diagnostic"]:
+        control_paths["fused_output_diagnostic"] = (
+            args.control_root / "fused_output_diagnostic.json")
+        candidate_paths["fused_output_diagnostic"] = (
+            args.candidate_root / "fused_output_diagnostic.json")
     file_sha256s = {
         "control": {
             name: base._file_sha256(path)
@@ -241,6 +273,7 @@ def main() -> int:
         quality_comparison=base._load(args.quality_comparison),
         agent_comparison=base._load(args.agent_comparison),
         file_sha256s=file_sha256s,
+        variant=args.variant,
     )
     result["inputs"] = {
         "control_status_sha256": base._file_sha256(control_paths["status"]),
@@ -266,6 +299,13 @@ def main() -> int:
             args.quality_comparison),
         "agent_comparison_sha256": base._file_sha256(args.agent_comparison),
     }
+    if VARIANTS[args.variant]["require_fused_output_diagnostic"]:
+        result["inputs"].update({
+            "control_fused_output_diagnostic_sha256": file_sha256s[
+                "control"]["fused_output_diagnostic"],
+            "candidate_fused_output_diagnostic_sha256": file_sha256s[
+                "candidate"]["fused_output_diagnostic"],
+        })
     base._atomic_write(args.out, result)
     print(json.dumps({
         "qualified": result["qualified"],

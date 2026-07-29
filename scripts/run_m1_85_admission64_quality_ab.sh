@@ -292,14 +292,24 @@ recover_recorded_children() {
 }
 
 qualify_recorded_children() {
+    local expected_identities=()
+    local path
+    for path in \
+        "$RUN_ROOT/control_child_identity.json" \
+        "$RUN_ROOT/control/process_group_identity.json" \
+        "$RUN_ROOT/candidate_child_identity.json" \
+        "$RUN_ROOT/candidate/process_group_identity.json"; do
+        if [[ -f "$path" ]]; then
+            expected_identities+=(--expected-identity "$path")
+        fi
+    done
+    if [[ ${#expected_identities[@]} -eq 0 ]]; then
+        echo "no recorded A/B process identities were available" >&2
+        return 1
+    fi
     python3 "$ROOT/tests/qualify_recorded_session_cleanup.py" \
         "$RUN_ROOT/orchestrator_recovery.json" \
-        --expected-identity "$RUN_ROOT/control_child_identity.json" \
-        --expected-identity \
-            "$RUN_ROOT/control/process_group_identity.json" \
-        --expected-identity "$RUN_ROOT/candidate_child_identity.json" \
-        --expected-identity \
-            "$RUN_ROOT/candidate/process_group_identity.json" \
+        "${expected_identities[@]}" \
         --out "$RUN_ROOT/orchestrator_recovery_clean.json" \
         > "$RUN_ROOT/orchestrator_recovery_clean.stdout" \
         2> "$RUN_ROOT/orchestrator_recovery_clean.stderr"
@@ -545,10 +555,12 @@ PY
         stop_active_child
         return 125
     fi
-    set +e
-    wait "$ACTIVE_CHILD_PID"
-    local rc=$?
-    set -e
+    local rc=0
+    if wait "$ACTIVE_CHILD_PID"; then
+        rc=0
+    else
+        rc=$?
+    fi
     ACTIVE_CHILD_PID=""
     ACTIVE_CHILD_PGID=""
     ACTIVE_CHILD_STARTTIME=""
@@ -692,6 +704,7 @@ else
         python3 "$ROOT/tests/compare_fused_prefill_quality_service_ab.py" \
             --control-root "$RUN_ROOT/control" \
             --candidate-root "$RUN_ROOT/candidate" \
+            --variant "$QUALITY_AB_VARIANT" \
             --quality-comparison "$RUN_ROOT/quality_comparison.json" \
             --agent-comparison "$RUN_ROOT/agent_comparison.json" \
             --out "$RUN_ROOT/aggregate.json" \

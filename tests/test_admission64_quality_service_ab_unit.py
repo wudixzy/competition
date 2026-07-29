@@ -103,7 +103,10 @@ def status(policy: str) -> dict:
         "source_revision": REVISION,
         "source_branch": BRANCH,
         "gates": {
-            name: 0 for name in COMPARE.EXPECTED_STATUS_GATES
+            name: (
+                None if name == "fused_output_diagnostic" else 0
+            )
+            for name in COMPARE.EXPECTED_STATUS_GATES
         },
         "privacy": {
             "raw_service_log_outside_repository": True,
@@ -124,6 +127,7 @@ def status(policy: str) -> dict:
                 policy_key(policy)]["service_recovery"],
             "service_recovery_clean_sha256": FILE_SHA256S[
                 policy_key(policy)]["service_recovery_clean"],
+            "fused_output_diagnostic_sha256": None,
         },
     }
 
@@ -484,6 +488,7 @@ class Admission64QualityServiceAbTest(unittest.TestCase):
                         "service_recovery"],
                     "service_recovery_clean_sha256": arm_hashes[arm][
                         "service_recovery_clean"],
+                    "fused_output_diagnostic_sha256": None,
                 }
                 write_json(arm_root / "status.json", arm_status)
 
@@ -612,6 +617,32 @@ class Admission64QualityRunnerStaticTest(unittest.TestCase):
         self.assertIn("-name '*.rc'", self.source)
         self.assertIn("124|137|143", self.source)
         self.assertNotIn("pkill", self.source)
+
+    def test_child_failure_rc_is_captured_before_restoring_errexit(self):
+        run_arm = self.source.split("run_arm() {", 1)[1].split(
+            "\n}\n\nset +e", 1)[0]
+        self.assertIn('if wait "$ACTIVE_CHILD_PID"; then', run_arm)
+        self.assertIn("else\n        rc=$?\n    fi", run_arm)
+        self.assertNotIn("set +e", run_arm)
+        self.assertNotIn("set -e", run_arm)
+        self.assertIn(
+            'printf \'%s\\n\' "$control_rc" > "$RUN_ROOT/control.rc"',
+            self.source,
+        )
+
+    def test_partial_run_recovery_qualifies_only_recorded_identities(self):
+        self.assertIn(
+            'expected_identities+=(--expected-identity "$path")',
+            self.source,
+        )
+        self.assertIn(
+            '"${expected_identities[@]}"',
+            self.source,
+        )
+        self.assertIn(
+            "no recorded A/B process identities were available",
+            self.source,
+        )
 
     def test_inner_service_is_attested_and_gracefully_reaped(self):
         self.assertIn("exec_bi100_session.py", self.quality_source)

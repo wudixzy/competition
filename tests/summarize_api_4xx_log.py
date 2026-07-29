@@ -21,8 +21,11 @@ VALIDATION_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 ALLOWED_ENDPOINTS = {"chat", "request_validation"}
 ALLOWED_REASONS = {
     "empty_messages",
+    "context_length_exceeded",
     "invalid_tool_arguments_json",
     "invalid_tool_arguments_type",
+    "invalid_max_tokens",
+    "invalid_top_p",
     "image_count_limit",
     "image_model_type_unsupported",
     "n_exceeds_max_num_seqs",

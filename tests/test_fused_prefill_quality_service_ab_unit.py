@@ -69,6 +69,7 @@ def status(arm: str) -> dict:
         "service_recovery_sha256": hashes["service_recovery"],
         "service_recovery_clean_sha256": hashes[
             "service_recovery_clean"],
+        "fused_output_diagnostic_sha256": None,
     }
     return value
 
@@ -106,6 +107,41 @@ class FusedPrefillQualityServiceAbTest(unittest.TestCase):
         self.assertTrue(result["fused_only_runtime_delta_attested"])
         self.assertFalse(result["performance_authorized"])
         self.assertFalse(result["production_promotion_authorized"])
+
+    def test_m1_116_labels_diagnostic_gate_and_artifact_qualify(self):
+        variant = "m1-116-fused-prefill-adjudication"
+        file_sha256s = copy.deepcopy(fixtures.FILE_SHA256S)
+        statuses = {}
+        contracts = {}
+        for arm, digest in (
+            ("control", "e" * 64),
+            ("candidate", "f" * 64),
+        ):
+            file_sha256s[arm]["fused_output_diagnostic"] = digest
+            statuses[arm] = status(arm)
+            statuses[arm]["label"] = COMPARE.VARIANTS[variant][
+                f"{arm}_label"]
+            statuses[arm]["gates"]["fused_output_diagnostic"] = 0
+            statuses[arm]["artifacts"][
+                "fused_output_diagnostic_sha256"] = digest
+            contracts[arm] = contract(arm)
+            contracts[arm]["optimization_label"] = statuses[arm]["label"]
+        result = COMPARE.compare(
+            control_status=statuses["control"],
+            candidate_status=statuses["candidate"],
+            control_contract=contracts["control"],
+            candidate_contract=contracts["candidate"],
+            control_4xx=fixtures.api_4xx_report(),
+            candidate_4xx=fixtures.api_4xx_report(),
+            control_process_identity=fixtures.process_identity("fine32"),
+            candidate_process_identity=fixtures.process_identity("admission64"),
+            quality_comparison=fixtures.quality_comparison(),
+            agent_comparison=fixtures.agent_comparison(),
+            file_sha256s=file_sha256s,
+            variant=variant,
+        )
+        self.assertTrue(result["qualified"], result)
+        self.assertEqual(result["variant"], variant)
 
     def test_extra_environment_delta_is_rejected(self):
         candidate = contract("candidate")
@@ -171,6 +207,8 @@ class FusedPrefillQualityServiceAbTest(unittest.TestCase):
                     f"{name}_sha256": digest
                     for name, digest in arm_hashes[arm].items()
                 }
+                arm_status["artifacts"][
+                    "fused_output_diagnostic_sha256"] = None
                 fixtures.write_json(arm_root / "status.json", arm_status)
 
             quality = fixtures.quality_comparison()
@@ -242,6 +280,7 @@ class FusedPrefillQualityRunnerStaticTest(unittest.TestCase):
         )
         self.assertIn(
             "compare_fused_prefill_quality_service_ab.py", source)
+        self.assertIn('--variant "$QUALITY_AB_VARIANT"', source)
         self.assertNotIn("computility-run.yaml", source)
 
     def test_shell_syntax(self):

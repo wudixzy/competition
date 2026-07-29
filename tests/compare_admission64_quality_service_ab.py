@@ -32,6 +32,7 @@ EXPECTED_STATUS_GATES = {
     "startup_contract",
     "quality",
     "agent_workload",
+    "fused_output_diagnostic",
     "api_4xx_attribution",
     "cleanup",
     "service_recovery",
@@ -159,6 +160,7 @@ def _status_reasons(
     expected_label: str,
     file_sha256s: dict[str, str],
     expected_optimization: dict[str, str] | None = None,
+    require_fused_output_diagnostic: bool = False,
 ) -> list[str]:
     reasons: list[str] = []
     if not isinstance(status, dict):
@@ -186,38 +188,47 @@ def _status_reasons(
         reasons.append(f"{label}: optimization contract differs")
 
     gates = status.get("gates")
+    expected_gates = {
+        name: 0 for name in EXPECTED_STATUS_GATES
+    }
+    expected_gates["fused_output_diagnostic"] = (
+        0 if require_fused_output_diagnostic else None
+    )
     if not isinstance(gates, dict) or set(gates) != EXPECTED_STATUS_GATES:
         reasons.append(f"{label}: status gate set is invalid")
-    elif any(not _is_zero_rc(value) for value in gates.values()):
+    else:
         failed = sorted(
-            name for name, value in gates.items() if not _is_zero_rc(value))
-        reasons.append(f"{label}: gates did not pass: {', '.join(failed)}")
+            name for name, value in gates.items()
+            if value != expected_gates[name]
+            or isinstance(value, bool)
+        )
+        if failed:
+            reasons.append(
+                f"{label}: gates did not pass: {', '.join(failed)}")
 
     artifacts = status.get("artifacts")
+    expected_file_names = {
+        "runtime_contract",
+        "quality_report",
+        "agent_workload",
+        "api_4xx_attribution",
+        "process_group_identity",
+        "service_recovery",
+        "service_recovery_clean",
+    }
+    if require_fused_output_diagnostic:
+        expected_file_names.add("fused_output_diagnostic")
     if (
-        set(file_sha256s) != {
-            "runtime_contract",
-            "quality_report",
-            "agent_workload",
-            "api_4xx_attribution",
-            "process_group_identity",
-            "service_recovery",
-            "service_recovery_clean",
-        }
+        set(file_sha256s) != expected_file_names
         or any(not _is_sha256(value) for value in file_sha256s.values())
     ):
         reasons.append(f"{label}: computed artifact identities are invalid")
     expected_artifacts = {
-        "runtime_contract_sha256": file_sha256s["runtime_contract"],
-        "quality_report_sha256": file_sha256s["quality_report"],
-        "agent_workload_sha256": file_sha256s["agent_workload"],
-        "api_4xx_attribution_sha256": file_sha256s["api_4xx_attribution"],
-        "process_group_identity_sha256": file_sha256s[
-            "process_group_identity"],
-        "service_recovery_sha256": file_sha256s["service_recovery"],
-        "service_recovery_clean_sha256": file_sha256s[
-            "service_recovery_clean"],
+        f"{name}_sha256": file_sha256s.get(name)
+        for name in sorted(expected_file_names)
     }
+    if not require_fused_output_diagnostic:
+        expected_artifacts["fused_output_diagnostic_sha256"] = None
     if artifacts != expected_artifacts:
         reasons.append(f"{label}: status artifact bindings differ")
     if status.get("privacy") != {

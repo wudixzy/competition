@@ -99,6 +99,28 @@ class SummarizeApi4xxLogTest(unittest.TestCase):
         self.assertTrue(report["complete"])
         self.assertFalse(report["classified"])
 
+    def test_known_sampling_and_context_errors_are_classified(self):
+        lines = []
+        for reason in (
+            "invalid_top_p",
+            "invalid_max_tokens",
+            "context_length_exceeded",
+        ):
+            lines.extend([
+                "WARNING [BI100 4XX] endpoint=chat code=400 "
+                f"reason={reason} {SHAPE}\n",
+                'INFO: 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" '
+                "400 Bad Request\n",
+            ])
+        report, qualified = self.summarize("".join(lines))
+        self.assertTrue(qualified, report)
+        self.assertTrue(report["classified"])
+        self.assertEqual(report["by_reason"], {
+            "context_length_exceeded": 1,
+            "invalid_max_tokens": 1,
+            "invalid_top_p": 1,
+        })
+
     def test_zero_4xx_is_complete(self):
         report, qualified = self.summarize(
             'INFO: 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" '

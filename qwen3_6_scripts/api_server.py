@@ -53,6 +53,16 @@ def _bi100_image_source_kind(value):
 def _bi100_chat_4xx_reason(message):
     if message == "messages must contain at least one message":
         return "empty_messages"
+    if (isinstance(message, str)
+            and message.startswith("top_p must be in (0, 1], got ")):
+        return "invalid_top_p"
+    if (isinstance(message, str)
+            and message.startswith("max_tokens must be at least 1, got ")):
+        return "invalid_max_tokens"
+    if (isinstance(message, str)
+            and message.startswith("This model's maximum context length is ")
+            and "tokens. However, you requested " in message):
+        return "context_length_exceeded"
     if (isinstance(message, str) and message.startswith("n=")
             and " exceeds max_num_seqs=" in message):
         return "n_exceeds_max_num_seqs"
