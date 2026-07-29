@@ -2,7 +2,9 @@
 
 Date: 2026-07-29
 
-Status: implementation ready for fixed-shape BI100 execution.
+Status: fixed-shape BI100 execution completed. Independent FP32 QK/PV
+submission on two streams regressed both shapes, so the double-buffer pipeline
+route is closed.
 
 ## Rationale
 
@@ -59,3 +61,25 @@ If the fixed probe fails, stream-overlapped QK/PV is closed without changing
 the model path. No stream-count, launch-order, tile, threshold, or YAML scan is
 allowed. The next investigation must return to measured end-to-end profile
 data.
+
+## Result
+
+Source commit `73da58f0ab253407fde7e460d783845c226f38fd` ran on
+`ssh-73ca29ba`. Both cells executed successfully and produced bit-identical
+sequential and concurrent QK/PV outputs:
+
+| Case | QK only ms | PV only ms | Sequential ms | Concurrent ms | Speedup |
+|---|---:|---:|---:|---:|---:|
+| q8176 | 0.699 | 0.637 | 1.309 | 1.352 | 0.968x |
+| q5616 | 0.491 | 0.481 | 0.948 | 0.964 | 0.983x |
+
+The median speedup was `0.976x`, below the fixed `1.10x` threshold, and each
+cell was below the `1.05x` floor. Concurrent submission increased latency by
+about 3.3% and 1.7%, respectively. This shows that the installed BI100/CoreX
+BLAS path does not expose useful overlap for these two dominant FP32 GEMMs.
+
+All cell execution, scoped cleanup, fatal scan, timeout scan, pre/postflight,
+and repeated four-GPU preflight checks passed. The runner's nonzero overall
+status reflects the performance rejection only. M1-131 double buffering, TP4
+service testing, runtime overlay changes, and `main` or YAML changes are not
+authorized.

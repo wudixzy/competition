@@ -1,0 +1,98 @@
+{
+  "schema": "bi100-m1-130-cublas-concurrency-evidence-v1",
+  "version": 1,
+  "source_revision": "73da58f0ab253407fde7e460d783845c226f38fd",
+  "branch": "exp/M1-130-cublas-concurrency-20260729",
+  "instance": "ssh-73ca29ba",
+  "run_root": "/tmp/m1-130-cublas-concurrency-73da58f-20260729-v1",
+  "fixed_contract": {
+    "heads": 4,
+    "head_dim": 256,
+    "key_tokens": 512,
+    "query_tokens": [
+      8176,
+      5616
+    ],
+    "dtype": "float32",
+    "seed": 20260729,
+    "warmups": 5,
+    "trials": 20,
+    "maximum_relative_l2": 1e-07,
+    "maximum_absolute_error": 1e-05,
+    "minimum_cell_speedup": 1.05,
+    "minimum_median_speedup": 1.1
+  },
+  "rows": [
+    {
+      "case": "q8176",
+      "physical_gpu": 0,
+      "finite": true,
+      "qk_only_ms": 0.6987265,
+      "pv_only_ms": 0.6365544999999999,
+      "sequential_ms": 1.3088009999999999,
+      "concurrent_ms": 1.3517709999999998,
+      "sequential_over_concurrent_speedup": 0.9682120714233402,
+      "overlap_efficiency": -0.0704340207630379,
+      "qk_relative_l2": 0.0,
+      "qk_max_abs": 0.0,
+      "pv_relative_l2": 0.0,
+      "pv_max_abs": 0.0,
+      "cell_qualified": false
+    },
+    {
+      "case": "q5616",
+      "physical_gpu": 1,
+      "finite": true,
+      "qk_only_ms": 0.4913195,
+      "pv_only_ms": 0.481005,
+      "sequential_ms": 0.947827,
+      "concurrent_ms": 0.963808,
+      "sequential_over_concurrent_speedup": 0.983418896709718,
+      "overlap_efficiency": -0.03500709188786608,
+      "qk_relative_l2": 0.0,
+      "qk_max_abs": 0.0,
+      "pv_relative_l2": 0.0,
+      "pv_max_abs": 0.0,
+      "cell_qualified": false
+    }
+  ],
+  "aggregate": {
+    "qualified": false,
+    "median_speedup": 0.9758154840665292,
+    "minimum_speedup": 0.9682120714233402
+  },
+  "lifecycle_returncodes": {
+    "cells_execution": 0,
+    "q8176": 0,
+    "q5616": 0,
+    "cleanup": 0,
+    "fatal_scan": 0,
+    "timeout_scan": 0,
+    "postflight_before": 0,
+    "postflight_after": 0,
+    "preflight_before": 0,
+    "preflight_after": 0,
+    "preflight_comparison": 0,
+    "overall": 1
+  },
+  "runtime_checks": {
+    "fatal_scan_empty": true,
+    "timeout_scan_empty": true,
+    "four_gpu_preflight_comparison_qualified": true
+  },
+  "adjudication": {
+    "qualified": false,
+    "stream_overlap_route_closed": true,
+    "double_buffer_pipeline_authorized": false,
+    "additional_stream_or_threshold_scan_authorized": false,
+    "tp4_service_experiment_authorized": false,
+    "runtime_overlay_change_authorized": false,
+    "main_or_yaml_change_authorized": false
+  },
+  "privacy": {
+    "contains_raw_tensors": false,
+    "contains_model_outputs": false,
+    "contains_credentials": false,
+    "contains_process_session_identity": false
+  }
+}
