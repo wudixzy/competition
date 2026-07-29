@@ -1,0 +1,140 @@
+{
+  "schema": "bi100-m1-127-half-input-qk-qualified-v1",
+  "version": 1,
+  "date": "2026-07-29",
+  "source_revision": "da640c7a93e9a5ea78775e0fc34dbd026e4e3a30",
+  "instance": "ssh-73ca29ba",
+  "extension": {
+    "size_bytes": 189664,
+    "sha256": "d8381e6d85fedd6b2477bbfe81dbbc5a1236d239004704d4ea7132d4e49bf75a"
+  },
+  "fixed_contract": {
+    "heads": 4,
+    "key_tokens": 512,
+    "head_dim": 256,
+    "seed": 20260729,
+    "magnitudes": [
+      0.5,
+      1.0,
+      2.0
+    ],
+    "relative_l2_limit": 1e-05,
+    "max_abs_limit": 0.001,
+    "minimum_qk_speedup": 1.25,
+    "error_reduction_device": "cpu_fp64"
+  },
+  "cases": [
+    {
+      "case": "q8176",
+      "physical_gpu": 0,
+      "query_tokens": 8176,
+      "qualified": true,
+      "numerical": [
+        {
+          "magnitude": 0.5,
+          "finite": true,
+          "candidate_vs_control_relative_l2": 3.0903325954397586e-07,
+          "candidate_vs_control_max_abs": 1.1920928955078125e-06,
+          "candidate_vs_fp64_sample_relative_l2": 1.4574485428872445e-07,
+          "candidate_vs_fp64_sample_max_abs": 2.799233698169701e-07
+        },
+        {
+          "magnitude": 1.0,
+          "finite": true,
+          "candidate_vs_control_relative_l2": 3.093081897366616e-07,
+          "candidate_vs_control_max_abs": 4.76837158203125e-06,
+          "candidate_vs_fp64_sample_relative_l2": 1.4625057306736436e-07,
+          "candidate_vs_fp64_sample_max_abs": 1.247011823579669e-06
+        },
+        {
+          "magnitude": 2.0,
+          "finite": true,
+          "candidate_vs_control_relative_l2": 3.0882363004620117e-07,
+          "candidate_vs_control_max_abs": 1.9073486328125e-05,
+          "candidate_vs_fp64_sample_relative_l2": 1.456253065681167e-07,
+          "candidate_vs_fp64_sample_max_abs": 4.512956365942955e-06
+        }
+      ],
+      "timing": {
+        "warmups": 5,
+        "trials": 20,
+        "control_ms": 0.7226807773113251,
+        "candidate_ms": 0.4283115267753601,
+        "control_over_candidate_speedup": 1.6872783759806564,
+        "relative_l2": 3.093081897366616e-07,
+        "max_abs": 4.76837158203125e-06
+      },
+      "reason_count": 0
+    },
+    {
+      "case": "q5616",
+      "physical_gpu": 1,
+      "query_tokens": 5616,
+      "qualified": true,
+      "numerical": [
+        {
+          "magnitude": 0.5,
+          "finite": true,
+          "candidate_vs_control_relative_l2": 3.0901421944655417e-07,
+          "candidate_vs_control_max_abs": 1.0132789611816406e-06,
+          "candidate_vs_fp64_sample_relative_l2": 1.443717625226047e-07,
+          "candidate_vs_fp64_sample_max_abs": 3.2751995604485273e-07
+        },
+        {
+          "magnitude": 1.0,
+          "finite": true,
+          "candidate_vs_control_relative_l2": 3.091795191706318e-07,
+          "candidate_vs_control_max_abs": 4.291534423828125e-06,
+          "candidate_vs_fp64_sample_relative_l2": 1.465416912940828e-07,
+          "candidate_vs_fp64_sample_max_abs": 1.2406962923705578e-06
+        },
+        {
+          "magnitude": 2.0,
+          "finite": true,
+          "candidate_vs_control_relative_l2": 3.093512300431688e-07,
+          "candidate_vs_control_max_abs": 1.9073486328125e-05,
+          "candidate_vs_fp64_sample_relative_l2": 1.4683135664493194e-07,
+          "candidate_vs_fp64_sample_max_abs": 5.991896614432335e-06
+        }
+      ],
+      "timing": {
+        "warmups": 5,
+        "trials": 20,
+        "control_ms": 0.5076422989368439,
+        "candidate_ms": 0.3100076913833618,
+        "control_over_candidate_speedup": 1.6375151747737868,
+        "relative_l2": 3.091795191706318e-07,
+        "max_abs": 4.291534423828125e-06
+      },
+      "reason_count": 0
+    }
+  ],
+  "lifecycle_returncodes": {
+    "q8176": 0,
+    "q5616": 0,
+    "overall": 0,
+    "cleanup": 0,
+    "fatal_scan": 0,
+    "timeout_scan": 0,
+    "postflight_before": 0,
+    "postflight_after": 0,
+    "preflight_before": 0,
+    "preflight_after": 0,
+    "preflight_comparison": 0
+  },
+  "adjudication": {
+    "qualified": true,
+    "first_gpu_norm_run_diagnostic_only": true,
+    "corrected_cpu_fp64_run_qualified": true,
+    "outer_session_reaped": true,
+    "full_pipeline_integration_authorized": true,
+    "tp4_service_authorized": false,
+    "main_or_yaml_change_authorized": false
+  },
+  "privacy": {
+    "contains_raw_tensors": false,
+    "contains_model_outputs": false,
+    "contains_token_ids": false,
+    "contains_credentials": false
+  }
+}

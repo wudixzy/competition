@@ -2,8 +2,8 @@
 
 Date: 2026-07-29
 
-Status: source and local static validation in progress. CoreX compilation and
-fixed production-shape GPU qualification are pending.
+Status: corrected CoreX capability gate qualified. Full-pipeline component
+integration is authorized; TP4 service, `main`, and YAML changes are not.
 
 ## Motivation
 
@@ -62,7 +62,7 @@ experimental full-pipeline integration; it cannot authorize TP4 service,
 Local verification before remote execution:
 
 - focused M1-127 tests: 5 passed;
-- complete unit suite: 1104 passed, 13 skipped;
+- complete unit suite after evidence capture: 1109 passed, 13 skipped;
 - submission preflight: 9/9 passed;
 - shell/Python syntax and `git diff --check`: passed.
 
@@ -72,3 +72,22 @@ CoreX GPU FP64 reduction is therefore not used for qualification. The fixed
 gate copies complete candidate and control outputs to CPU and computes both
 relative L2 and maximum absolute error in CPU FP64. The initial execution is
 diagnostic only and must be repeated with the corrected gate.
+
+## Corrected BI100 result
+
+The corrected gate ran from source `da640c7` with complete candidate/control
+errors reduced on CPU in FP64:
+
+- q8176: `0.722681 ms` control, `0.428312 ms` candidate, `1.6873x`;
+- q5616: `0.507642 ms` control, `0.310008 ms` candidate, `1.6375x`;
+- candidate/control relative L2 stayed between `3.088e-7` and `3.094e-7`;
+- worst candidate/control maximum absolute error was `1.908e-5`;
+- all outputs were finite and the independent sampled FP64 checks passed;
+- both cells, cleanup, fatal/timeout scans, process postflight, and four-card
+  before/after preflight returned zero;
+- the foreground parent session reaped the outer helper.
+
+The result authorizes one experimental integration into the complete M1-109
+split4 attention pipeline. It does not establish end-to-end or TP4 model
+benefit. Privacy-safe evidence is stored under
+`docs/experiments/evidence/M1_127_HALF_INPUT_QK_QUALIFIED_20260729`.
