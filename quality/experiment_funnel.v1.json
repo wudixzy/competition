@@ -1,0 +1,182 @@
+{
+  "schema": "bi100-experiment-funnel-v1",
+  "version": 1,
+  "frozen_date": "2026-07-30",
+  "scope": {
+    "model": "Qwen3.6-35B-A3B",
+    "device": "BI100/CoreX",
+    "max_model_len": 262144,
+    "production_yaml_may_change": false,
+    "main_may_change": false
+  },
+  "invariants": {
+    "cache_transparency": "exact_hard_gate",
+    "protocol_semantics": "exact_hard_gate",
+    "nonfinite_output": "fail_fast",
+    "malformed_operator_result": "fail_fast",
+    "real_numeric_error": "hard_gate",
+    "request_semantics_may_change": false,
+    "model_capability_may_regress": false
+  },
+  "stages": [
+    {
+      "id": "L0",
+      "name": "static_and_abi",
+      "gpu_count": 0,
+      "purpose": "Reject syntax, ABI, dispatch, artifact and unit-test failures.",
+      "required_evidence": [
+        "source_identity",
+        "syntax_and_unit_tests",
+        "extension_abi_contract",
+        "fallback_present"
+      ],
+      "not_claimed": [
+        "operator_numerics",
+        "tp4_performance",
+        "model_capability"
+      ]
+    },
+    {
+      "id": "L1",
+      "name": "synthetic_operator_screen",
+      "gpu_count": 4,
+      "parallelism": "one independent production shape per GPU",
+      "purpose": "Reject nonfinite, numerically invalid or structurally unpromising kernels without loading the model.",
+      "fixed_shapes": [
+        "dense_q8176",
+        "65k_q8176",
+        "128k_q8176",
+        "235k_q5616"
+      ],
+      "required_evidence": [
+        "artifact_sha256",
+        "finite_outputs",
+        "reference_relative_error",
+        "kernel_timings",
+        "gpu_preflight_and_postflight"
+      ],
+      "not_claimed": [
+        "real_activation_coverage",
+        "tp4_end_to_end_gain",
+        "model_capability"
+      ]
+    },
+    {
+      "id": "L2",
+      "name": "real_activation_replay",
+      "gpu_count": 4,
+      "parallelism": "one captured TP rank per GPU",
+      "purpose": "Reuse one private baseline capture bank to test many candidate artifacts on real model activations.",
+      "capture": {
+        "producer_path": "baseline_pytorch_fallback",
+        "synthetic_prompt_only": true,
+        "raw_bank_location": "private_tmp_only",
+        "raw_bank_may_be_committed": false,
+        "required_context_buckets": [
+          24576,
+          57344,
+          122880
+        ],
+        "required_full_attention_call_ordinals": [
+          0,
+          4,
+          9
+        ],
+        "required_tp_ranks": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      "continuation_screen": {
+        "minimum_median_candidate_speedup": 1.05,
+        "maximum_single_case_regression_fraction": 0.02,
+        "numeric_contract": "fused_prefill_numeric_adjudication.v1.json"
+      },
+      "required_evidence": [
+        "capture_manifest_and_sha256",
+        "candidate_artifact_sha256",
+        "finite_outputs",
+        "m1_138_calibrated_numeric_gate",
+        "replay_kernel_timings"
+      ],
+      "not_claimed": [
+        "tp4_collective_correctness",
+        "end_to_end_ttft",
+        "model_capability"
+      ]
+    },
+    {
+      "id": "L3",
+      "name": "short_tp4_screen",
+      "gpu_count": 4,
+      "service_startups_per_arm": 1,
+      "batched_prompt_lengths": [
+        4096,
+        32768,
+        65536
+      ],
+      "purpose": "Check dispatch, short end-to-end value, cache transparency and protocol health before expensive long-context work.",
+      "required_evidence": [
+        "exact_runtime_overlay_identity",
+        "startup_timeline",
+        "per_length_ttft",
+        "same_arm_cold_warm_identity",
+        "health_and_lifecycle"
+      ],
+      "not_claimed": [
+        "131k_to_262k_capacity",
+        "full_model_capability",
+        "production_promotion"
+      ]
+    },
+    {
+      "id": "L4",
+      "name": "long_context_confirmation",
+      "gpu_count": 4,
+      "batched_prompt_lengths": [
+        131072,
+        235000,
+        262000
+      ],
+      "purpose": "Confirm material long-context benefit, capacity and deterministic same-arm behavior.",
+      "required_evidence": [
+        "paired_or_order_balanced_tp4_measurement",
+        "long_context_capacity",
+        "cold_warm_cache_transparency",
+        "fatal_oom_gloo_worker_loss_scan"
+      ],
+      "not_claimed": [
+        "full_capability_noninferiority",
+        "production_promotion"
+      ]
+    },
+    {
+      "id": "L5",
+      "name": "final_promotion",
+      "gpu_count": 4,
+      "purpose": "Run complete functional, capability, performance and lifecycle gates only for mature candidates.",
+      "required_evidence": [
+        "official_functional_surface",
+        "tool_reasoning_multimodal",
+        "powered_capability_noninferiority",
+        "full_performance_metrics",
+        "262144_capacity",
+        "clean_lifecycle"
+      ],
+      "authorizes_proposal_only": [
+        "main_merge",
+        "formal_yaml_change",
+        "official_submission"
+      ]
+    }
+  ],
+  "transition_rules": {
+    "stages_must_run_in_order": true,
+    "failed_hard_gate_may_not_be_waived_by_performance": true,
+    "semantic_score_may_not_waive_numeric_failure": true,
+    "cross_arm_greedy_difference_alone_is_not_quality_failure": true,
+    "every_stage_only_authorizes_the_next_stage": true
+  }
+}

@@ -114,6 +114,19 @@ def _load_paged_attn(**env):
                 env.get("shadow_numeric_mode")),
             BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_FAILURE_ACTION=(
                 env.get("shadow_failure_action")),
+            BI100_ATTN_CAPTURE_REPLAY=env.get("capture"),
+            BI100_ATTN_CAPTURE_REPLAY_DIR=env.get("capture_dir"),
+            BI100_ATTN_CAPTURE_REPLAY_RUN_ID=env.get("capture_run_id"),
+            BI100_ATTN_CAPTURE_REPLAY_CONTEXTS=(
+                env.get("capture_contexts")),
+            BI100_ATTN_CAPTURE_REPLAY_CALL_ORDINALS=(
+                env.get("capture_ordinals")),
+            BI100_ATTN_CAPTURE_REPLAY_SOURCE_REVISION=(
+                env.get("capture_source_revision")),
+            BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY=(
+                env.get("capture_runtime_identity")),
+            BI100_ATTN_CAPTURE_REPLAY_SYNTHETIC_ATTESTATION=(
+                env.get("capture_attestation")),
     ):
         old_modules = {
             name: sys.modules.get(name)
@@ -400,6 +413,65 @@ class PagedAttentionUnitTest(unittest.TestCase):
                 shadow_report_dir="/tmp/m1-136-unit",
                 shadow_run_id="m1-136-unit",
             )
+
+    def test_capture_requires_private_baseline_and_attestation(self):
+        module = _load_paged_attn()
+        revision = "a" * 40
+        with tempfile.TemporaryDirectory(
+                prefix="bi100-activation-bank-") as directory:
+            path = module._validate_activation_capture_configuration(
+                True,
+                False,
+                directory,
+                "m1-140-unit",
+                revision,
+                "bare-host-overlay-v1:abc",
+                "synthetic-exact-prompt-v1",
+            )
+            self.assertEqual(path, pathlib.Path(directory))
+        with self.assertRaisesRegex(RuntimeError, "baseline PyTorch"):
+            module._validate_activation_capture_configuration(
+                True,
+                True,
+                "/tmp/m1-140",
+                "m1-140-unit",
+                revision,
+                "bare-host-overlay-v1:abc",
+                "synthetic-exact-prompt-v1",
+            )
+        with self.assertRaisesRegex(RuntimeError, "attestation"):
+            module._validate_activation_capture_configuration(
+                True,
+                False,
+                "/tmp/m1-140",
+                "m1-140-unit",
+                revision,
+                "bare-host-overlay-v1:abc",
+                "unknown",
+            )
+
+    def test_capture_selects_fixed_full_attention_ordinals_once(self):
+        module = _load_paged_attn()
+        module._ACTIVATION_CAPTURE_ENABLED = True
+        module._ACTIVATION_CAPTURE_CONTEXTS = (24576, 57344)
+        module._ACTIVATION_CAPTURE_CALL_ORDINALS = (0, 4, 9)
+        module._ACTIVATION_CAPTURE_STATE = {
+            "pid": None,
+            "seen_by_bucket": {},
+            "records": [],
+        }
+        selected = [
+            module._reserve_activation_capture(32768)
+            for _ in range(11)
+        ]
+        self.assertEqual(
+            [value for value in selected if value is not None],
+            [(24576, 0), (24576, 4), (24576, 9)],
+        )
+        self.assertEqual(
+            module._reserve_activation_capture(65536),
+            (57344, 0),
+        )
 
     def test_shadow_context_buckets_are_disjoint(self):
         module = _load_paged_attn()

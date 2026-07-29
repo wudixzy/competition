@@ -1,0 +1,91 @@
+{
+  "schema": "bi100-m1-139-experiment-funnel-audit-v1",
+  "version": 1,
+  "date": "2026-07-30",
+  "historical_cost_evidence": {
+    "m1_99_runner": {
+      "source": "scripts/run_m1_99_fused_prefill_service_ab.sh",
+      "tp4_service_startups": 6,
+      "prompt_lengths_per_arm": [
+        32768,
+        65536,
+        131072,
+        235000
+      ],
+      "requests_per_length_per_arm": 3,
+      "total_requests": 72
+    },
+    "m1_116_quality_truncation_pair": {
+      "source": "docs/experiments/evidence/M1_116_FUSED_PREFILL_QUALITY_ADJUDICATION_20260729/qualification.json",
+      "control_elapsed_s": 1494.6671893894672,
+      "candidate_elapsed_s": 1501.907036524266,
+      "summed_elapsed_s": 2996.574225913733
+    },
+    "long_context_cold_requests": [
+      {
+        "prompt_tokens": 131000,
+        "elapsed_s": 273.172,
+        "source": "docs/experiments/evidence/M1_45_TP4_131K_DIRECT_EXACT.json"
+      },
+      {
+        "prompt_tokens": 235000,
+        "elapsed_s": 589.673,
+        "source": "docs/experiments/evidence/M1_45_TP4_235K_WARM_REPEAT.json"
+      },
+      {
+        "prompt_tokens": 262000,
+        "elapsed_s": 615.437,
+        "source": "docs/experiments/evidence/M1_45_TP4_262K_CAPACITY_EXACT.json"
+      }
+    ],
+    "m1_109_component": {
+      "source": "scripts/run_m1_109_fused_softmax_component_ab.sh",
+      "model_service_startups": 0,
+      "independent_gpu_workers": 4,
+      "production_shapes": 4,
+      "missing_overall_wall_timeline": true
+    }
+  },
+  "waste_findings": [
+    "immature attention candidates entered repeated fresh TP4 service arms",
+    "attention-only changes could enter a broad single-GPU queue containing unrelated MoE and GDN probes",
+    "runtime overlays were rebuilt for exact commits without a reusable ensure layer",
+    "operator builds had no content-addressed toolchain cache",
+    "historical runners usually lacked stage-level monotonic wall-time evidence",
+    "M1-136 and M1-138 recomputed the real-activation PyTorch reference inside every fresh model run",
+    "the first shadow observations sampled early full-attention calls rather than fixed layer-spanning ordinals"
+  ],
+  "new_funnel": {
+    "contract": "quality/experiment_funnel.v1.json",
+    "contract_sha256": "2e3e6d5fe23fa36d031002cd2d299a264d7161cf7f8c0e747a3e14af0de97a9a",
+    "stages": [
+      "L0 static_and_abi",
+      "L1 synthetic_operator_screen",
+      "L2 real_activation_replay",
+      "L3 short_tp4_screen",
+      "L4 long_context_confirmation",
+      "L5 final_promotion"
+    ],
+    "l2_capture_service_startups_per_bank": 1,
+    "l2_capture_requests_full_profile": 3,
+    "l2_parallel_rank_replays": 4,
+    "l3_service_startups_per_arm": 1,
+    "l3_requests_per_arm": 6,
+    "full_tp4_and_capability_gates_removed": false
+  },
+  "pilot": {
+    "status": "pending_bi100_execution",
+    "actual_capture_wall_s": null,
+    "actual_replay_wall_s": null,
+    "actual_compile_cache_miss_s": null,
+    "actual_compile_cache_hit_s": null,
+    "actual_overlay_cache_miss_s": null,
+    "actual_overlay_cache_hit_s": null
+  },
+  "privacy": {
+    "contains_prompts": false,
+    "contains_model_outputs": false,
+    "contains_tensor_values": false,
+    "contains_credentials": false
+  }
+}

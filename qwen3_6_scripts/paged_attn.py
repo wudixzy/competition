@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -83,6 +84,15 @@ _FUSED_PREFILL_SHADOW_ERROR_MULTIPLIER = 2.0
 _FUSED_PREFILL_SHADOW_RATIO_FLOOR = 1.0e-12
 _FUSED_PREFILL_SHADOW_STATE = {
     "pid": None,
+    "records": [],
+}
+_ACTIVATION_CAPTURE_ENABLED = env_bool(
+    "BI100_ATTN_CAPTURE_REPLAY", False)
+_ACTIVATION_CAPTURE_ATTESTATION = (
+    "synthetic-exact-prompt-v1")
+_ACTIVATION_CAPTURE_STATE = {
+    "pid": None,
+    "seen_by_bucket": {},
     "records": [],
 }
 
@@ -186,6 +196,134 @@ _FUSED_PREFILL_SHADOW_REPORT_DIR = (
     ))
 
 
+def _parse_strict_int_tuple(
+    raw: str,
+    *,
+    name: str,
+    minimum: int,
+    maximum: int,
+) -> Tuple[int, ...]:
+    values = []
+    for field in raw.split(","):
+        field = field.strip()
+        if not field:
+            raise RuntimeError(f"{name} contains an empty field")
+        try:
+            value = int(field)
+        except ValueError as exc:
+            raise RuntimeError(f"{name} must contain integers") from exc
+        if value < minimum or value > maximum:
+            raise RuntimeError(
+                f"{name} value is outside [{minimum}, {maximum}]")
+        values.append(value)
+    if not values or values != sorted(set(values)):
+        raise RuntimeError(f"{name} must be strictly increasing and unique")
+    return tuple(values)
+
+
+_ACTIVATION_CAPTURE_CONTEXTS = _parse_strict_int_tuple(
+    os.environ.get(
+        "BI100_ATTN_CAPTURE_REPLAY_CONTEXTS",
+        "24576,57344,122880",
+    ),
+    name="BI100_ATTN_CAPTURE_REPLAY_CONTEXTS",
+    minimum=0,
+    maximum=262144,
+)
+_ACTIVATION_CAPTURE_CALL_ORDINALS = _parse_strict_int_tuple(
+    os.environ.get(
+        "BI100_ATTN_CAPTURE_REPLAY_CALL_ORDINALS",
+        "0,4,9",
+    ),
+    name="BI100_ATTN_CAPTURE_REPLAY_CALL_ORDINALS",
+    minimum=0,
+    maximum=63,
+)
+
+
+def _validate_activation_capture_configuration(
+    enabled: bool,
+    fused_enabled: bool,
+    report_dir: Optional[str],
+    run_id: Optional[str],
+    source_revision: Optional[str],
+    runtime_identity: Optional[str],
+    attestation: Optional[str],
+) -> Optional[Path]:
+    if not enabled:
+        return None
+    if fused_enabled:
+        raise RuntimeError(
+            "activation capture requires the baseline PyTorch fallback")
+    if attestation != _ACTIVATION_CAPTURE_ATTESTATION:
+        raise RuntimeError(
+            "activation capture requires the synthetic prompt attestation")
+    if (
+        not source_revision
+        or re.fullmatch(r"[0-9a-f]{40,64}", source_revision) is None
+    ):
+        raise RuntimeError(
+            "BI100_ATTN_CAPTURE_REPLAY_SOURCE_REVISION is invalid")
+    if (
+        not runtime_identity
+        or len(runtime_identity) > 160
+        or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.:/-]*", runtime_identity) is None
+    ):
+        raise RuntimeError(
+            "BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY is invalid")
+    if (
+        not run_id
+        or len(run_id) > 96
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", run_id) is None
+    ):
+        raise RuntimeError(
+            "BI100_ATTN_CAPTURE_REPLAY_RUN_ID is invalid")
+    if not report_dir:
+        raise RuntimeError(
+            "BI100_ATTN_CAPTURE_REPLAY_DIR is required")
+    path = Path(report_dir).expanduser()
+    tmp_root = Path("/tmp").resolve()
+    try:
+        path = path.resolve(strict=False)
+    except OSError as exc:
+        raise RuntimeError(
+            "activation capture directory cannot be resolved") from exc
+    if (
+        not path.is_absolute()
+        or path == tmp_root
+        or not path.is_relative_to(tmp_root)
+    ):
+        raise RuntimeError(
+            "activation capture directory must be under /tmp")
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not path.resolve(strict=True).is_relative_to(tmp_root):
+        raise RuntimeError(
+            "activation capture directory escaped /tmp")
+    try:
+        path.chmod(0o700)
+    except OSError:
+        pass
+    return path
+
+
+_ACTIVATION_CAPTURE_RUN_ID = os.environ.get(
+    "BI100_ATTN_CAPTURE_REPLAY_RUN_ID")
+_ACTIVATION_CAPTURE_SOURCE_REVISION = os.environ.get(
+    "BI100_ATTN_CAPTURE_REPLAY_SOURCE_REVISION")
+_ACTIVATION_CAPTURE_RUNTIME_IDENTITY = os.environ.get(
+    "BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY")
+_ACTIVATION_CAPTURE_DIR = _validate_activation_capture_configuration(
+    _ACTIVATION_CAPTURE_ENABLED,
+    _ENABLE_COREX_FUSED_PAGED_PREFILL,
+    os.environ.get("BI100_ATTN_CAPTURE_REPLAY_DIR"),
+    _ACTIVATION_CAPTURE_RUN_ID,
+    _ACTIVATION_CAPTURE_SOURCE_REVISION,
+    _ACTIVATION_CAPTURE_RUNTIME_IDENTITY,
+    os.environ.get("BI100_ATTN_CAPTURE_REPLAY_SYNTHETIC_ATTESTATION"),
+)
+
+
 def _log_corex_fused_prefill_diagnostic(stage: str, **fields) -> None:
     """Emit one privacy-safe guard snapshot per stage and worker."""
     if not _FUSED_PREFILL_DIAGNOSTICS:
@@ -238,6 +376,220 @@ def _fused_prefill_shadow_rank() -> int:
         except (AttributeError, RuntimeError, TypeError, ValueError):
             pass
     return -1
+
+
+def _activation_capture_process_state() -> dict:
+    pid = os.getpid()
+    if _ACTIVATION_CAPTURE_STATE["pid"] != pid:
+        _ACTIVATION_CAPTURE_STATE["pid"] = pid
+        _ACTIVATION_CAPTURE_STATE["seen_by_bucket"] = {}
+        _ACTIVATION_CAPTURE_STATE["records"] = []
+    return _ACTIVATION_CAPTURE_STATE
+
+
+def _activation_capture_bucket(context_tokens: int) -> Optional[int]:
+    for index, lower_bound in enumerate(_ACTIVATION_CAPTURE_CONTEXTS):
+        upper_bound = (
+            _ACTIVATION_CAPTURE_CONTEXTS[index + 1]
+            if index + 1 < len(_ACTIVATION_CAPTURE_CONTEXTS)
+            else 262145
+        )
+        if lower_bound <= context_tokens < upper_bound:
+            return lower_bound
+    return None
+
+
+def _atomic_write_activation_manifest(records: list) -> None:
+    if _ACTIVATION_CAPTURE_DIR is None:
+        raise RuntimeError("activation capture directory is unset")
+    rank = _fused_prefill_shadow_rank()
+    if rank < 0:
+        raise RuntimeError("activation capture cannot determine TP rank")
+    value = {
+        "schema": "bi100-fused-prefill-activation-bank-v1",
+        "version": 1,
+        "run_id": _ACTIVATION_CAPTURE_RUN_ID,
+        "rank": rank,
+        "source_revision": _ACTIVATION_CAPTURE_SOURCE_REVISION,
+        "runtime_identity": _ACTIVATION_CAPTURE_RUNTIME_IDENTITY,
+        "producer": "baseline-pytorch-fallback",
+        "synthetic_prompt_attestation": (
+            _ACTIVATION_CAPTURE_ATTESTATION),
+        "selection": {
+            "context_buckets": list(_ACTIVATION_CAPTURE_CONTEXTS),
+            "full_attention_call_ordinals": list(
+                _ACTIVATION_CAPTURE_CALL_ORDINALS),
+        },
+        "record_count": len(records),
+        "records": records,
+        "privacy": {
+            "raw_activation_files_private": True,
+            "raw_activation_files_may_be_committed": False,
+            "contains_prompts": False,
+            "contains_model_outputs": False,
+            "contains_token_ids": False,
+            "contains_credentials": False,
+        },
+    }
+    destination = _ACTIVATION_CAPTURE_DIR / f"rank-{rank}.manifest.json"
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
+        dir=destination.parent,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="ascii") as stream:
+            json.dump(value, stream, ensure_ascii=True, indent=2,
+                      sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def _reserve_activation_capture(
+    context_tokens: int,
+) -> Optional[Tuple[int, int]]:
+    if not _ACTIVATION_CAPTURE_ENABLED:
+        return None
+    bucket = _activation_capture_bucket(context_tokens)
+    if bucket is None:
+        return None
+    state = _activation_capture_process_state()
+    ordinal = int(state["seen_by_bucket"].get(bucket, 0))
+    state["seen_by_bucket"][bucket] = ordinal + 1
+    if ordinal not in _ACTIVATION_CAPTURE_CALL_ORDINALS:
+        return None
+    return bucket, ordinal
+
+
+def _tensor_shape_dtype(tensor: torch.Tensor) -> dict:
+    return {
+        "shape": list(tensor.shape),
+        "dtype": str(tensor.dtype),
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _capture_fused_prefill_activation(
+    reservation: Tuple[int, int],
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    active_block_table: torch.Tensor,
+    context_tokens: int,
+    scale: float,
+) -> None:
+    if _ACTIVATION_CAPTURE_DIR is None:
+        raise RuntimeError("activation capture directory is unset")
+    bucket, ordinal = reservation
+    rank = _fused_prefill_shadow_rank()
+    if rank < 0:
+        raise RuntimeError("activation capture cannot determine TP rank")
+
+    active_ids = [
+        int(value) for value in active_block_table.detach().cpu().tolist()
+    ]
+    identity_to_compact = {}
+    unique_ids = []
+    compact_table = []
+    for physical_id in active_ids:
+        if physical_id < 0 or physical_id >= key_cache.shape[0]:
+            raise RuntimeError(
+                "activation capture block table is outside the KV cache")
+        compact_id = identity_to_compact.get(physical_id)
+        if compact_id is None:
+            compact_id = len(unique_ids)
+            identity_to_compact[physical_id] = compact_id
+            unique_ids.append(physical_id)
+        compact_table.append(compact_id)
+
+    if unique_ids:
+        physical = torch.tensor(
+            unique_ids,
+            dtype=torch.long,
+            device=key_cache.device,
+        )
+        compact_key_cache = (
+            key_cache.index_select(0, physical).detach().cpu().contiguous())
+        compact_value_cache = (
+            value_cache.index_select(0, physical).detach().cpu().contiguous())
+    else:
+        compact_key_cache = key_cache[:0].detach().cpu().contiguous()
+        compact_value_cache = value_cache[:0].detach().cpu().contiguous()
+    compact_block_table = torch.tensor(
+        compact_table,
+        dtype=torch.int32,
+    )
+    tensors = {
+        "query": query.detach().cpu().contiguous(),
+        "key": key.detach().cpu().contiguous(),
+        "value": value.detach().cpu().contiguous(),
+        "key_cache": compact_key_cache,
+        "value_cache": compact_value_cache,
+        "block_table": compact_block_table,
+    }
+    filename = (
+        f"rank-{rank}.bucket-{bucket}.ordinal-{ordinal}."
+        f"ctx-{context_tokens}.q-{query.shape[0]}.pt"
+    )
+    destination = _ACTIVATION_CAPTURE_DIR / filename
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{filename}.", suffix=".tmp",
+        dir=destination.parent)
+    os.close(descriptor)
+    try:
+        torch.save({
+            "schema": "bi100-fused-prefill-activation-case-v1",
+            "version": 1,
+            "context_tokens": context_tokens,
+            "scale": float(scale),
+            "rank": rank,
+            "bucket": bucket,
+            "call_ordinal": ordinal,
+            "tensors": tensors,
+        }, temporary)
+        os.chmod(temporary, 0o600)
+        with open(temporary, "rb") as stream:
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+    state = _activation_capture_process_state()
+    state["records"].append({
+        "bucket_min_context_tokens": bucket,
+        "call_ordinal": ordinal,
+        "context_tokens": context_tokens,
+        "query_length": int(query.shape[0]),
+        "file": filename,
+        "sha256": _sha256_file(destination),
+        "size_bytes": destination.stat().st_size,
+        "compact_physical_blocks": len(unique_ids),
+        "logical_blocks": len(compact_table),
+        "tensors": {
+            name: _tensor_shape_dtype(tensor)
+            for name, tensor in tensors.items()
+        },
+    })
+    _atomic_write_activation_manifest(state["records"])
 
 
 def _fused_prefill_shadow_process_state() -> dict:
@@ -679,7 +1031,7 @@ def _strict_prefix_query_segments(
     return [(0, query_len, context_len)]
 
 
-def _can_enable_corex_fused_paged_prefill_request(
+def _is_supported_corex_fused_paged_prefill_request(
     kv_cache_dtype: str,
     max_query_len: int,
     total_query_len: int,
@@ -691,8 +1043,7 @@ def _can_enable_corex_fused_paged_prefill_request(
 ) -> bool:
     """Check request-wide properties that are outside the native ABI."""
     return bool(
-        _USE_COREX_FUSED_PAGED_PREFILL
-        and is_causal_decoder
+        is_causal_decoder
         and _PREFIX_BLOCKS_PER_TILE == 32
         and kv_cache_dtype == "auto"
         and max_query_len == total_query_len
@@ -700,6 +1051,31 @@ def _can_enable_corex_fused_paged_prefill_request(
         and sliding_window is None
         and k_scale == 1.0
         and v_scale == 1.0
+    )
+
+
+def _can_enable_corex_fused_paged_prefill_request(
+    kv_cache_dtype: str,
+    max_query_len: int,
+    total_query_len: int,
+    alibi_slopes: Optional[torch.Tensor],
+    sliding_window: Optional[int],
+    k_scale: float,
+    v_scale: float,
+    is_causal_decoder: bool,
+) -> bool:
+    return bool(
+        _USE_COREX_FUSED_PAGED_PREFILL
+        and _is_supported_corex_fused_paged_prefill_request(
+            kv_cache_dtype,
+            max_query_len,
+            total_query_len,
+            alibi_slopes,
+            sliding_window,
+            k_scale,
+            v_scale,
+            is_causal_decoder,
+        )
     )
 
 
@@ -730,7 +1106,7 @@ def _is_single_sequence_fused_prefill_metadata(
     )
 
 
-def _can_use_corex_fused_paged_prefill(
+def _is_supported_corex_fused_paged_prefill_segment(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
@@ -748,8 +1124,6 @@ def _can_use_corex_fused_paged_prefill(
     block_size: int,
 ) -> bool:
     """Accept only the fixed M1-47 production shape."""
-    if not _USE_COREX_FUSED_PAGED_PREFILL:
-        return False
     query_len = query.shape[0]
     if (
         query_len <= 16
@@ -805,6 +1179,45 @@ def _can_use_corex_fused_paged_prefill(
     if any(not tensor.is_contiguous() for tensor in tensors):
         return False
     return True
+
+
+def _can_use_corex_fused_paged_prefill(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    prefix_key: torch.Tensor,
+    prefix_value: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    block_tables: torch.Tensor,
+    seq_index: int,
+    block_context_len: int,
+    num_q_heads: int,
+    num_kv_heads: int,
+    head_dim: int,
+    gqa_ratio: int,
+    block_size: int,
+) -> bool:
+    return bool(
+        _USE_COREX_FUSED_PAGED_PREFILL
+        and _is_supported_corex_fused_paged_prefill_segment(
+            query,
+            key,
+            value,
+            prefix_key,
+            prefix_value,
+            key_cache,
+            value_cache,
+            block_tables,
+            seq_index,
+            block_context_len,
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            gqa_ratio,
+            block_size,
+        )
+    )
 
 
 def _prefix_context_tile_spans(
@@ -1275,8 +1688,10 @@ class PagedAttention:
         # NOTE: The Triton context_attention_fwd kernel hangs on Iluvatar
         # BI-V100 hardware (same class of issue as cudnnFlashAttnForward).
         # Use a pure-PyTorch fallback that reads the paged KV cache directly.
-        fused_request_eligible = (
-            _can_enable_corex_fused_paged_prefill_request(
+        supported_request = bool(
+            (_USE_COREX_FUSED_PAGED_PREFILL
+             or _ACTIVATION_CAPTURE_ENABLED)
+            and _is_supported_corex_fused_paged_prefill_request(
                 kv_cache_dtype,
                 max_query_len,
                 query.shape[0],
@@ -1286,6 +1701,10 @@ class PagedAttention:
                 v_scale,
                 is_causal_decoder,
             ))
+        fused_request_eligible = bool(
+            _USE_COREX_FUSED_PAGED_PREFILL and supported_request)
+        capture_request_eligible = bool(
+            _ACTIVATION_CAPTURE_ENABLED and supported_request)
         _log_corex_fused_prefill_diagnostic(
             "request",
             eligible=fused_request_eligible,
@@ -1306,6 +1725,7 @@ class PagedAttention:
             block_tables, query_start_loc,
             seq_lens_tensor, context_lens,
             fused_request_eligible=fused_request_eligible,
+            capture_request_eligible=capture_request_eligible,
         )
 
     @staticmethod
@@ -1320,6 +1740,7 @@ class PagedAttention:
         seq_lens_tensor: torch.Tensor,
         context_lens: torch.Tensor,
         fused_request_eligible: bool = False,
+        capture_request_eligible: bool = False,
     ) -> torch.Tensor:
         """Pure-PyTorch prefix-attention with K-tiling (Flash-Attention online softmax).
 
@@ -1371,7 +1792,7 @@ class PagedAttention:
             orig_dtype   = query.dtype
             output       = torch.empty_like(query)
 
-            if fused_request_eligible:
+            if fused_request_eligible or capture_request_eligible:
                 query_start_count = query_start_loc.numel()
                 seq_lens_count = seq_lens_tensor.numel()
                 context_lens_count = context_lens.numel()
@@ -1414,7 +1835,10 @@ class PagedAttention:
                     context_len=context_len,
                     total_query_len=query.shape[0],
                 )
-                fused_request_eligible = metadata_eligible
+                fused_request_eligible = bool(
+                    fused_request_eligible and metadata_eligible)
+                capture_request_eligible = bool(
+                    capture_request_eligible and metadata_eligible)
 
             for i in range(batch_size):
                 ctx_len = int(context_lens[i].item())
@@ -1459,7 +1883,10 @@ class PagedAttention:
                                 tile_sz,
                                 scale,
                                 orig_dtype,
-                                fused_request_eligible,
+                                fused_request_eligible=(
+                                    fused_request_eligible),
+                                capture_request_eligible=(
+                                    capture_request_eligible),
                             ))
 
         except Exception as e:
@@ -1491,12 +1918,12 @@ class PagedAttention:
         orig_dtype,
         fused_request_eligible: bool = False,
         return_fp32: bool = False,
+        capture_request_eligible: bool = False,
     ) -> torch.Tensor:
         """Run online-softmax attention for one strict-prefix query segment."""
         q_len = query.shape[0]
-        segment_eligible = (
-            fused_request_eligible
-            and _can_use_corex_fused_paged_prefill(
+        supported_segment = (
+            _is_supported_corex_fused_paged_prefill_segment(
                 query,
                 key,
                 value,
@@ -1513,6 +1940,14 @@ class PagedAttention:
                 gqa_ratio,
                 block_size,
             ))
+        segment_eligible = bool(
+            fused_request_eligible
+            and _USE_COREX_FUSED_PAGED_PREFILL
+            and supported_segment)
+        capture_segment_eligible = bool(
+            capture_request_eligible
+            and _ACTIVATION_CAPTURE_ENABLED
+            and supported_segment)
         _log_corex_fused_prefill_diagnostic(
             "segment",
             eligible=segment_eligible,
@@ -1538,10 +1973,25 @@ class PagedAttention:
             gqa_ratio=gqa_ratio,
             block_size=block_size,
         )
-        if segment_eligible:
+        if segment_eligible or capture_segment_eligible:
             required_blocks = block_context_len // block_size
             active_block_table = block_tables[
                 seq_index, :required_blocks].contiguous()
+        if capture_segment_eligible:
+            reservation = _reserve_activation_capture(block_context_len)
+            if reservation is not None:
+                _capture_fused_prefill_activation(
+                    reservation,
+                    query,
+                    key,
+                    value,
+                    key_cache,
+                    value_cache,
+                    active_block_table,
+                    block_context_len,
+                    scale,
+                )
+        if segment_eligible:
             shadow_index = _reserve_fused_prefill_shadow(
                 query,
                 block_context_len,
@@ -1620,11 +2070,11 @@ class PagedAttention:
                             tile_sz,
                             scale,
                             orig_dtype,
-                            False,
-                            (
+                            fused_request_eligible=False,
+                            capture_request_eligible=False,
+                            return_fp32=(
                                 _FUSED_PREFILL_SHADOW_NUMERIC_MODE
-                                == "calibrated"
-                            ),
+                                == "calibrated"),
                         ))
                     reference_fp32 = (
                         reference_result
