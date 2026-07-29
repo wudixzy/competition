@@ -69,3 +69,26 @@ does not produce the required long-shape speedup, close the unchanged M1-55
 route. Do not scan query tiles, PV split counts, numerical tolerances, or YAML
 parameters. Use M1-110's measured dominant stage to select a distinct
 arithmetic-preserving data flow.
+
+## M1-121 lifecycle rebase
+
+The fixed M1-111 matrix is rebased onto the current M1-120 safety baseline
+before execution. The candidate CUDA source remains byte-identical to the
+best M1-55 revision at `a30b6e7`; this rebase changes only experiment
+lifecycle and evidence handling.
+
+Each GPU cell now runs through `exec_bi100_session.py` with a private session
+token, PID starttime, SID, and PGID identity. The parent attests that identity
+before accepting the cell. The exit trap:
+
+- recovers only the four recorded sessions;
+- allows 60 seconds after SIGTERM before any SIGKILL;
+- waits and reaps tracked child processes;
+- requires recovery to find every identity already quiescent for a valid run;
+- scans explicit return codes for timeout exits;
+- scans fatal, CoreX, Gloo, NCCL, worker-loss, and OOM markers;
+- requires clean process/GPU postflight and repeated four-GPU preflight.
+
+An interrupted or hung run that needs emergency recovery remains invalid even
+if cleanup succeeds. This lifecycle rebase does not authorize the component
+matrix until the exact private branch is compiled and executed on BI100.

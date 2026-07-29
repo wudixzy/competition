@@ -125,20 +125,25 @@ class M1111QueryTiledProductionRetestUnitTest(unittest.TestCase):
         for marker in (
             "for gpu in 0 1 2 3",
             'CUDA_VISIBLE_DEVICES="$GPU"',
-            "setsid",
-            "bi100_stop_process_group",
-            '"$pid" "$pid" 60 20',
+            "exec_bi100_session.py",
+            "cleanup_recorded_bi100_sessions.py",
+            "qualify_recorded_session_cleanup.py",
+            "session_recovery_clean.rc",
+            "identity.get(\"starttime_ticks\")",
+            "BI100_PROCESS_SESSION_TOKEN",
             "trap finish EXIT",
             "timeout --foreground --signal=TERM --kill-after=60s",
             "service_postflight_gate.py",
             "bi100_preflight.py",
             "compare_bi100_preflights.py",
             "fatal_scan.rc",
+            "timeout_scan.rc",
             '"unchanged_m1_55_route_closed"',
         ):
             self.assertIn(marker, self.runner)
         for forbidden in ("pkill", "killall", "git push"):
             self.assertNotIn(forbidden, self.runner)
+        self.assertNotIn("setsid ", self.runner)
 
     def test_invalid_invocation_fails_before_runtime_access(self) -> None:
         result = subprocess.run(
