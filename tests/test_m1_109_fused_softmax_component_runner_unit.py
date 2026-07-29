@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import subprocess
 import unittest
 
@@ -30,25 +31,41 @@ class M1109FusedSoftmaxComponentRunnerUnitTest(unittest.TestCase):
     def test_runner_compares_binaries_on_the_same_gpu(self) -> None:
         self.assertIn('"$INSTANCE" "$gpu" "${CASES[$gpu]}"', self.source)
         self.assertIn("median old/new speedup", self.source)
+        self.assertIn(
+            'printf \'%s\\n\' "$comparison_rc" > "$RUN_ROOT/comparison.rc"',
+            self.source,
+        )
+        self.assertIn('exit "$comparison_rc"', self.source)
         self.assertIn('"tp4_service_experiment_authorized": not reasons',
                       self.source)
         self.assertIn('"main_or_yaml_change_authorized": False', self.source)
 
     def test_runner_uses_scoped_graceful_cleanup(self) -> None:
         for marker in (
-            "setsid",
-            "bi100_stop_process_group",
-            '"$pid" "$pid" 60 20',
+            "exec_bi100_session.py",
+            "cleanup_recorded_bi100_sessions.py",
+            "qualify_recorded_session_cleanup.py",
+            "session_recovery_clean.rc",
             "trap finish EXIT",
             "timeout --foreground --signal=TERM --kill-after=60s",
             "service_postflight_gate.py",
             "bi100_preflight.py",
             "compare_bi100_preflights.py",
             "fatal_scan.rc",
+            "timeout_scan.rc",
+            "runner_status.json",
         ):
             self.assertIn(marker, self.source)
+        self.assertNotIn("setsid ", self.source)
         self.assertNotIn("pkill", self.source)
         self.assertNotIn("killall", self.source)
+
+    def test_embedded_python_is_syntactically_valid(self) -> None:
+        blocks = re.findall(
+            r"<<'PY'\n(.*?)\nPY", self.source, flags=re.DOTALL)
+        self.assertGreaterEqual(len(blocks), 3)
+        for index, block in enumerate(blocks):
+            compile(block, f"<runner-heredoc-{index}>", "exec")
 
     def test_invalid_invocation_fails_before_runtime_access(self) -> None:
         result = subprocess.run(

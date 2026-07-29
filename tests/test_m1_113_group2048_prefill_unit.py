@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 import subprocess
 import unittest
@@ -81,6 +82,14 @@ class Group2048PrefillSourceTest(unittest.TestCase):
 
     def test_build_script_is_syntactically_valid_and_targets_ivcore10(self):
         source = BUILD.read_text(encoding="utf-8")
+        self.assertEqual(
+            hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
+            "74a0ca7551cd567217971ec6bbf2ed1507ca829f1bfecbfa2c60bca484f5fcae",
+        )
+        self.assertEqual(
+            hashlib.sha256(BUILD.read_bytes()).hexdigest(),
+            "0ca153b0415a6085bc0336c0715ea90cbfce6692e7c1c401e0cda16ee4d7c161",
+        )
         self.assertIn("--cuda-gpu-arch=ivcore10", source)
         self.assertIn(
             "-DTORCH_EXTENSION_NAME=corex_fused_paged_prefill", source)
@@ -118,8 +127,16 @@ class Group2048PrefillSourceTest(unittest.TestCase):
         self.assertIn("min(speedups) < 1.0 / 1.02", source)
         self.assertIn("service_postflight_gate.py", source)
         self.assertIn("bi100_preflight.py", source)
-        self.assertIn("bi100_stop_process_group", source)
+        self.assertIn("exec_bi100_session.py", source)
+        self.assertIn("cleanup_recorded_bi100_sessions.py", source)
+        self.assertIn("qualify_recorded_session_cleanup.py", source)
+        self.assertIn("session_recovery_clean.rc", source)
+        self.assertIn("timeout_scan.rc", source)
+        self.assertIn('"bi100-component-ab-runner-status-v1"', source)
+        self.assertIn('wait "${PIDS[$gpu]}"', source)
+        self.assertNotIn("setsid ", source)
         self.assertNotIn("pkill", source)
+        self.assertNotIn("killall", source)
         for path in (COMPONENT_RUNNER, WRAPPER):
             completed = subprocess.run(
                 ["bash", "-n", str(path)],
