@@ -296,11 +296,13 @@ class CaptureRunner:
         rc = _run_to_files(
             [
                 "/usr/bin/python3",
-                str(self.root / "tests" / "bi100_preflight.py"),
+                str(self.root / "tests" / "bi100_parallel_preflight.py"),
                 "--gpus", "0,1,2,3",
                 "--timeout-s", "25",
                 "--matmul-size", "1024",
                 "--json-out", str(self.run_root / f"{label}.json"),
+                "--work-dir",
+                str(self.run_root / f"{label}-parallel"),
             ],
             self.run_root / f"{label}.stdout",
             self.run_root / f"{label}.stderr",

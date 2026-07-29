@@ -111,9 +111,10 @@ run_preflight() {
     timeout --foreground --signal=TERM --kill-after=70s 480s \
         env PYTHONPATH="$ROOT/tests:$SYSTEM_PYTHONPATH" \
         LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \
-        python3 "$ROOT/tests/bi100_preflight.py" \
+        python3 "$ROOT/tests/bi100_parallel_preflight.py" \
         --gpus 0,1,2,3 --timeout-s 25 --matmul-size 1024 \
         --json-out "$RUN_ROOT/$label.json" \
+        --work-dir "$RUN_ROOT/$label-parallel" \
         > "$RUN_ROOT/$label.stdout" 2> "$RUN_ROOT/$label.stderr"
 }
 
