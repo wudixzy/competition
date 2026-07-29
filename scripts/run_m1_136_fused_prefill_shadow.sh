@@ -11,6 +11,31 @@ if [[ $# -ne 2 ]]; then
 fi
 
 INSTANCE=$1
+SHADOW_VARIANT=${BI100_FUSED_PREFILL_SHADOW_VARIANT:-legacy}
+case "$SHADOW_VARIANT" in
+    legacy)
+        EXPERIMENT_LABEL=M1-136
+        RUN_ID_PREFIX=m1-136-shadow
+        NUMERIC_MODE=legacy
+        FAILURE_ACTION=raise
+        QUALIFIER="$ROOT/tests/qualify_fused_prefill_shadow.py"
+        CONTRACT="$ROOT/quality/layered_quality_gate.v2.json"
+        RUNNER_SCHEMA=bi100-m1-136-fused-prefill-shadow-runner-v1
+        ;;
+    calibrated)
+        EXPERIMENT_LABEL=M1-138
+        RUN_ID_PREFIX=m1-138-calibrated-shadow
+        NUMERIC_MODE=calibrated
+        FAILURE_ACTION=record
+        QUALIFIER="$ROOT/tests/qualify_fused_prefill_calibrated_shadow.py"
+        CONTRACT="$ROOT/quality/fused_prefill_numeric_adjudication.v1.json"
+        RUNNER_SCHEMA=bi100-m1-138-fused-prefill-calibrated-shadow-runner-v1
+        ;;
+    *)
+        echo "BI100_FUSED_PREFILL_SHADOW_VARIANT is invalid" >&2
+        exit 2
+        ;;
+esac
 RUN_ROOT=$(python3 - "$2" <<'PY'
 from pathlib import Path
 import sys
@@ -19,15 +44,16 @@ print(Path(sys.argv[1]).resolve())
 PY
 )
 if [[ "$RUN_ROOT/" == "$ROOT/"* ]]; then
-    echo "M1-136 output must stay outside the source repository" >&2
+    echo "$EXPERIMENT_LABEL output must stay outside the source repository" \
+        >&2
     exit 2
 fi
 if [[ "$RUN_ROOT" != /tmp/* ]]; then
-    echo "M1-136 output must use a private /tmp path" >&2
+    echo "$EXPERIMENT_LABEL output must use a private /tmp path" >&2
     exit 2
 fi
 if [[ -e "$RUN_ROOT" || -L "$RUN_ROOT" ]]; then
-    echo "M1-136 output already exists: $RUN_ROOT" >&2
+    echo "$EXPERIMENT_LABEL output already exists: $RUN_ROOT" >&2
     exit 2
 fi
 
@@ -38,13 +64,14 @@ COREX_PATH=/usr/local/corex/bin:/usr/local/corex-3.2.3/bin:/usr/local/openmpi/bi
 
 if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all -- \
         . ':(exclude)bench_runs/**')" ]]; then
-    echo "M1-136 runner refuses a dirty source tree" >&2
+    echo "$EXPERIMENT_LABEL runner refuses a dirty source tree" >&2
     exit 3
 fi
 if [[ -z "${BI100_RUNTIME_SITE_PACKAGES:-}" \
         || ! -d "$BI100_RUNTIME_SITE_PACKAGES/vllm" \
         || ! -d "$BI100_RUNTIME_SITE_PACKAGES/transformers" ]]; then
-    echo "M1-136 requires an immutable bare-host runtime overlay" >&2
+    echo "$EXPERIMENT_LABEL requires an immutable bare-host runtime overlay" \
+        >&2
     exit 3
 fi
 if [[ ! -d "$MODEL_PATH" ]]; then
@@ -74,14 +101,15 @@ PY
 RUNTIME_ROOT=$(dirname "$BI100_RUNTIME_SITE_PACKAGES")
 RUNTIME_INSTALL=${BI100_RUNTIME_INSTALL_REPORT:-$RUNTIME_ROOT/install.json}
 if [[ ! -f "$RUNTIME_INSTALL" ]]; then
-    echo "M1-136 runtime install report is missing: $RUNTIME_INSTALL" >&2
+    echo "$EXPERIMENT_LABEL runtime install report is missing: " \
+        "$RUNTIME_INSTALL" >&2
     exit 3
 fi
 
 mkdir -p "$RUN_ROOT/runtime-workdir" "$RUN_ROOT/shadow"
 SOURCE_REVISION=$(git -C "$ROOT" rev-parse HEAD)
 SOURCE_BRANCH=$(git -C "$ROOT" branch --show-current)
-RUN_ID="m1-136-shadow-${SOURCE_REVISION:0:12}"
+RUN_ID="${RUN_ID_PREFIX}-${SOURCE_REVISION:0:12}"
 printf '%s\n' "$SOURCE_REVISION" > "$RUN_ROOT/source_revision.txt"
 printf '%s\n' "$SOURCE_BRANCH" > "$RUN_ROOT/source_branch.txt"
 printf '%s\n' "$INSTANCE" > "$RUN_ROOT/instance.txt"
@@ -128,15 +156,36 @@ raise SystemExit(
 PY
 }
 
+wait_for_recorded_group_empty() {
+    local pgid=$1
+    local attempts=$2
+    local live_count
+    local zombie_count
+    for _ in $(seq 1 "$attempts"); do
+        live_count=$(bi100_process_group_count "$pgid" live) || return 2
+        zombie_count=$(bi100_process_group_count "$pgid" zombie) || return 2
+        if [[ "$live_count" == 0 && "$zombie_count" == 0 ]]; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "recorded service process group did not fully reap: pgid=$pgid" >&2
+    return 1
+}
+
 stop_active_group() {
     local rc=0
+    local stopped_pgid
     if [[ -z "$ACTIVE_PID" ]]; then
         return 0
     fi
     if [[ -n "$ACTIVE_PGID" ]]; then
+        stopped_pgid=$ACTIVE_PGID
         bi100_stop_process_group \
             "$ACTIVE_PGID" "$ACTIVE_PID" 60 20 \
             "$ACTIVE_STARTTIME" "$ACTIVE_SESSION_TOKEN" || rc=$?
+        wait "$ACTIVE_PID" 2>/dev/null || true
+        wait_for_recorded_group_empty "$stopped_pgid" 20 || rc=$?
     else
         if active_pid_is_live; then
             kill -TERM "$ACTIVE_PID" 2>/dev/null || true
@@ -230,6 +279,8 @@ start_service() {
             BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_RUN_ID="$RUN_ID" \
             BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_CONTEXTS=49152,114688 \
             BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT=2 \
+            BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_NUMERIC_MODE="$NUMERIC_MODE" \
+            BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_FAILURE_ACTION="$FAILURE_ACTION" \
             BI100_PROFILE=0 BI100_PROFILE_INCLUDE_STARTUP=0 \
             BI100_PAGED_ATTN_DIAGNOSTICS=0 \
             BI100_GDN_ALLOW_NAN_ZERO=0 BI100_GDN_FINITE_CHECK=0 \
@@ -294,7 +345,8 @@ PY
 write_runner_status() {
     local final_rc=$1
     python3 - "$RUN_ROOT" "$INSTANCE" "$SOURCE_REVISION" \
-            "$SOURCE_BRANCH" "$CURRENT_STAGE" "$final_rc" <<'PY'
+            "$SOURCE_BRANCH" "$CURRENT_STAGE" "$final_rc" \
+            "$RUNNER_SCHEMA" "$NUMERIC_MODE" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -315,7 +367,7 @@ def sha(name):
         if path.is_file() else None
 
 report = {
-    "schema": "bi100-m1-136-fused-prefill-shadow-runner-v1",
+    "schema": sys.argv[7],
     "version": 1,
     "qualified": int(sys.argv[6]) == 0,
     "source_revision": sys.argv[3],
@@ -323,6 +375,7 @@ report = {
     "instance": sys.argv[2],
     "terminal_stage": sys.argv[5],
     "returncode": int(sys.argv[6]),
+    "numeric_mode": sys.argv[8],
     "gpu_count": 4,
     "tensor_parallel_size": 4,
     "max_model_len": 262144,
@@ -564,11 +617,11 @@ printf '%s\n' "$DISPATCH_COUNT" > "$RUN_ROOT/dispatch_count.txt"
 printf '0\n' > "$RUN_ROOT/dispatch.rc"
 
 CURRENT_STAGE=shadow_qualification
-python3 "$ROOT/tests/qualify_fused_prefill_shadow.py" \
+python3 "$QUALIFIER" \
     --report-dir "$RUN_ROOT/shadow" --run-id "$RUN_ID" \
     --source-revision "$SOURCE_REVISION" \
     --runtime-identity "$RUNTIME_IDENTITY" \
-    --contract "$ROOT/quality/layered_quality_gate.v2.json" \
+    --contract "$CONTRACT" \
     --out "$RUN_ROOT/shadow_qualification.json"
 printf '0\n' > "$RUN_ROOT/shadow_qualification.rc"
 

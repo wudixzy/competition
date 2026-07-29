@@ -1,0 +1,53 @@
+{
+  "schema": "bi100-fused-prefill-numeric-adjudication-v1",
+  "version": 1,
+  "candidate_dtype": "float16",
+  "reference": {
+    "implementation": "same-activation-pytorch-online-softmax",
+    "accumulation_dtype": "float32",
+    "rounded_baseline": "float32-reference-cast-to-float16",
+    "same_input_tensors_required": true
+  },
+  "hard_gates": {
+    "candidate_and_reference_finite": true,
+    "maximum_candidate_vs_rounded_relative_l2": 1e-05,
+    "maximum_error_multiple_over_fp16_rounding": 2.0,
+    "ratio_denominator_floor": 1e-12,
+    "max_abs_fixed_threshold_role": "diagnostic_only",
+    "semantic_evidence_may_waive_failure": false
+  },
+  "sampling": {
+    "required_ranks": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "required_minimum_context_tokens": [
+      49152,
+      114688
+    ],
+    "minimum_observations_per_context_per_rank": 2,
+    "query_length_min_exclusive": 16,
+    "query_length_max_inclusive": 8192,
+    "query_heads": 4,
+    "kv_heads": 1,
+    "head_dim": 256,
+    "block_size": 16
+  },
+  "execution": {
+    "finite_numeric_failure_action": "record_and_continue_test_only",
+    "invalid_or_nonfinite_action": "fail_fast",
+    "cross_arm_output_identity_role": "diagnostic",
+    "task_capability_still_required": true,
+    "performance_still_required": true
+  },
+  "promotion": {
+    "operator_surface_only": true,
+    "performance_authorized": false,
+    "capability_authorized": false,
+    "yaml_change_authorized": false,
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false
+  }
+}

@@ -2,10 +2,11 @@
 
 Date: 2026-07-29
 
-Status: implemented on the private experiment branch. M1-109 remains an
-experimental candidate until TP4 real-activation numerics and powered paired
-capability noninferiority are complete. No default, YAML, `main`, or repository
-visibility change is authorized.
+Status: implemented and executed on the private experiment branch. M1-136
+failed its frozen legacy absolute-error gate and exposed two harness defects;
+it did not establish a gross numeric failure or reject M1-109. The
+predeclared M1-138 calibrated adjudication is now required. No default, YAML,
+`main`, or repository visibility change is authorized.
 
 ## Why v1 was too coarse
 
@@ -104,3 +105,26 @@ each disjoint context interval on every TP rank, then performs scoped service
 cleanup, recorded-session recovery, postflight, four-card preflight comparison,
 and fatal/timeout scans. A passing shadow result decides only the hard operator
 numeric layer; it does not decide task capability or production promotion.
+
+## Executed result
+
+The run at source revision
+`71860f6f668008168295967cae4851cdb83ac13a` collected eight finite 65K
+observations before the legacy fail-fast stopped the service. Maximum relative
+L2 was `7.1011427252343464e-6`. Six observations passed both legacy bounds; two
+failed only fixed max absolute error with `0.001953125`.
+
+The run is invalid for promotion for three independent reasons:
+
+- the frozen `0.001` absolute bound failed;
+- rank environment variables were unavailable, so all four process reports
+  used an unknown rank;
+- the runner did not reap the already-quiescent parent before its cleanup
+  audit, which observed two transient zombies.
+
+Final postflight nevertheless found no residual API, worker, or GPU process.
+The privacy-safe evidence is recorded in
+`docs/experiments/evidence/M1_136_REAL_ACTIVATION_SHADOW_20260730/summary.json`.
+M1-138 fixes rank resolution and parent reaping and replaces only the
+scale-dependent absolute-error adjudication with a frozen FP32/FP16-rounding
+baseline. It does not reinterpret M1-136 as a pass.

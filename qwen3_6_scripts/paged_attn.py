@@ -44,11 +44,31 @@ _ENABLE_COREX_FUSED_PAGED_PREFILL = env_bool(
     "BI100_ATTN_COREX_FUSED_PREFILL", False)
 _FUSED_PREFILL_DIAGNOSTICS = env_bool(
     "BI100_ATTN_COREX_FUSED_PREFILL_DIAGNOSTICS", False)
+
+
+def _env_choice(name: str, default: str, choices: Tuple[str, ...]) -> str:
+    value = os.environ.get(name, default)
+    if value not in choices:
+        raise RuntimeError(
+            f"{name} must be one of {', '.join(choices)}, got {value!r}")
+    return value
+
+
 _FUSED_PREFILL_SHADOW = env_bool(
     "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW", False)
 _FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT = env_int(
     "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT",
     2, 1, 8)
+_FUSED_PREFILL_SHADOW_NUMERIC_MODE = _env_choice(
+    "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_NUMERIC_MODE",
+    "legacy",
+    ("legacy", "calibrated"),
+)
+_FUSED_PREFILL_SHADOW_FAILURE_ACTION = _env_choice(
+    "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_FAILURE_ACTION",
+    "raise",
+    ("raise", "record"),
+)
 _USE_COREX_FUSED_PAGED_PREFILL = (
     _corex_fused_paged_prefill is not None
     and _ENABLE_COREX_FUSED_PAGED_PREFILL)
@@ -59,6 +79,8 @@ _FUSED_PREFILL_DIAGNOSTICS_LOGGED = set()
 _CACHE_WRITE_LOGGED = False
 _FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT = 1.0e-5
 _FUSED_PREFILL_SHADOW_MAX_ABS_LIMIT = 1.0e-3
+_FUSED_PREFILL_SHADOW_ERROR_MULTIPLIER = 2.0
+_FUSED_PREFILL_SHADOW_RATIO_FLOOR = 1.0e-12
 _FUSED_PREFILL_SHADOW_STATE = {
     "pid": None,
     "records": [],
@@ -110,6 +132,12 @@ def _validate_fused_prefill_shadow_configuration(
     if not fused_enabled:
         raise RuntimeError(
             "fused-prefill shadow requires the fused-prefill path")
+    if (
+        _FUSED_PREFILL_SHADOW_FAILURE_ACTION == "record"
+        and _FUSED_PREFILL_SHADOW_NUMERIC_MODE != "calibrated"
+    ):
+        raise RuntimeError(
+            "record-only shadow failures require calibrated numeric mode")
     if not report_dir:
         raise RuntimeError(
             "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_REPORT_DIR is required")
@@ -178,6 +206,18 @@ def _log_corex_fused_prefill_diagnostic(stage: str, **fields) -> None:
 
 
 def _fused_prefill_shadow_rank() -> int:
+    distributed = getattr(torch, "distributed", None)
+    if distributed is not None:
+        try:
+            if (
+                distributed.is_available()
+                and distributed.is_initialized()
+            ):
+                rank = int(distributed.get_rank())
+                if rank >= 0:
+                    return rank
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            pass
     for name in ("RANK", "LOCAL_RANK"):
         raw = os.environ.get(name)
         if raw is None:
@@ -188,6 +228,15 @@ def _fused_prefill_shadow_rank() -> int:
             continue
         if value >= 0:
             return value
+    cuda = getattr(torch, "cuda", None)
+    if cuda is not None:
+        try:
+            if cuda.is_available():
+                device = int(cuda.current_device())
+                if device >= 0:
+                    return device
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            pass
     return -1
 
 
@@ -255,7 +304,7 @@ def _build_fused_prefill_shadow_report(records: list) -> dict:
         status = "pass"
     else:
         status = "collecting"
-    return {
+    report = {
         "schema": "bi100-fused-prefill-real-activation-shadow-v1",
         "version": 1,
         "run_id": _FUSED_PREFILL_SHADOW_RUN_ID,
@@ -298,6 +347,38 @@ def _build_fused_prefill_shadow_report(records: list) -> dict:
             "contains_credentials": False,
         },
     }
+    if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+        report["schema"] = (
+            "bi100-fused-prefill-real-activation-calibrated-shadow-v1")
+        report["thresholds"] = {
+            "require_finite_candidate": True,
+            "require_finite_reference": True,
+            "maximum_candidate_vs_rounded_relative_l2": (
+                _FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT),
+            "maximum_error_multiple_over_fp16_rounding": (
+                _FUSED_PREFILL_SHADOW_ERROR_MULTIPLIER),
+            "ratio_denominator_floor": (
+                _FUSED_PREFILL_SHADOW_RATIO_FLOOR),
+            "fixed_max_abs_role": "diagnostic_only",
+            "finite_failure_action": (
+                _FUSED_PREFILL_SHADOW_FAILURE_ACTION),
+        }
+        calibrated_metrics = (
+            "candidate_to_fp32_relative_l2",
+            "candidate_to_fp32_max_abs",
+            "rounded_to_fp32_relative_l2",
+            "rounded_to_fp32_max_abs",
+            "relative_l2_baseline_ratio",
+            "max_abs_baseline_ratio",
+        )
+        for name in calibrated_metrics:
+            values = [
+                record[name] for record in completed
+                if isinstance(record.get(name), float)
+            ]
+            report["observations"][f"maximum_{name}"] = (
+                max(values) if values else None)
+    return report
 
 
 def _reserve_fused_prefill_shadow(
@@ -347,6 +428,15 @@ def _reserve_fused_prefill_shadow(
         "error_stage": None,
         "error_type": None,
     }
+    if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+        record.update({
+            "candidate_to_fp32_relative_l2": None,
+            "candidate_to_fp32_max_abs": None,
+            "rounded_to_fp32_relative_l2": None,
+            "rounded_to_fp32_max_abs": None,
+            "relative_l2_baseline_ratio": None,
+            "max_abs_baseline_ratio": None,
+        })
     records.append(record)
     _atomic_write_fused_prefill_shadow_report(
         _build_fused_prefill_shadow_report(records))
@@ -361,6 +451,12 @@ def _finish_fused_prefill_shadow(
     reference_finite: Optional[bool] = None,
     relative_l2: Optional[float] = None,
     max_abs: Optional[float] = None,
+    candidate_to_fp32_relative_l2: Optional[float] = None,
+    candidate_to_fp32_max_abs: Optional[float] = None,
+    rounded_to_fp32_relative_l2: Optional[float] = None,
+    rounded_to_fp32_max_abs: Optional[float] = None,
+    relative_l2_baseline_ratio: Optional[float] = None,
+    max_abs_baseline_ratio: Optional[float] = None,
     error_stage: Optional[str] = None,
     error_type: Optional[str] = None,
 ) -> None:
@@ -371,7 +467,7 @@ def _finish_fused_prefill_shadow(
     if status not in {"pass", "fail", "invalid"}:
         raise RuntimeError("fused-prefill shadow status is invalid")
     record = records[index]
-    record.update({
+    updates = {
         "status": status,
         "candidate_finite": candidate_finite,
         "reference_finite": reference_finite,
@@ -379,31 +475,139 @@ def _finish_fused_prefill_shadow(
         "max_abs": max_abs,
         "error_stage": error_stage,
         "error_type": error_type,
-    })
+    }
+    if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+        updates.update({
+            "candidate_to_fp32_relative_l2": (
+                candidate_to_fp32_relative_l2),
+            "candidate_to_fp32_max_abs": candidate_to_fp32_max_abs,
+            "rounded_to_fp32_relative_l2": (
+                rounded_to_fp32_relative_l2),
+            "rounded_to_fp32_max_abs": rounded_to_fp32_max_abs,
+            "relative_l2_baseline_ratio": relative_l2_baseline_ratio,
+            "max_abs_baseline_ratio": max_abs_baseline_ratio,
+        })
+    record.update(updates)
     _atomic_write_fused_prefill_shadow_report(
         _build_fused_prefill_shadow_report(records))
+
+
+def _calibrated_shadow_metrics_qualified(metrics: dict) -> bool:
+    return (
+        metrics["relative_l2"]
+        <= _FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT
+        and metrics["candidate_to_fp32_relative_l2"]
+        <= (
+            _FUSED_PREFILL_SHADOW_ERROR_MULTIPLIER
+            * metrics["rounded_to_fp32_relative_l2"]
+            + _FUSED_PREFILL_SHADOW_RATIO_FLOOR
+        )
+        and metrics["candidate_to_fp32_max_abs"]
+        <= (
+            _FUSED_PREFILL_SHADOW_ERROR_MULTIPLIER
+            * metrics["rounded_to_fp32_max_abs"]
+            + _FUSED_PREFILL_SHADOW_RATIO_FLOOR
+        )
+    )
+
+
+def _error_metrics(
+    actual: torch.Tensor,
+    reference: torch.Tensor,
+    denominator: float,
+) -> Tuple[float, float]:
+    difference = actual - reference
+    relative_l2 = float(torch.norm(difference).item()) / denominator
+    max_abs = float(difference.abs().max().item())
+    return relative_l2, max_abs
 
 
 def _compare_fused_prefill_shadow_outputs(
     candidate: torch.Tensor,
     reference: torch.Tensor,
+    reference_fp32: Optional[torch.Tensor] = None,
 ) -> dict:
     candidate_float = candidate.float()
     reference_float = reference.float()
     candidate_finite = bool(torch.isfinite(candidate_float).all().item())
     reference_finite = bool(torch.isfinite(reference_float).all().item())
+    if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+        if reference_fp32 is None:
+            raise RuntimeError(
+                "calibrated fused-prefill shadow requires FP32 reference")
+        reference_fp32 = reference_fp32.float()
+        reference_finite = (
+            reference_finite
+            and bool(torch.isfinite(reference_fp32).all().item())
+        )
     if not candidate_finite or not reference_finite:
-        return {
+        result = {
             "status": "fail" if not candidate_finite else "invalid",
             "candidate_finite": candidate_finite,
             "reference_finite": reference_finite,
             "relative_l2": None,
             "max_abs": None,
         }
-    difference = candidate_float - reference_float
-    max_abs = float(difference.abs().max().item())
+        if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+            result.update({
+                "candidate_to_fp32_relative_l2": None,
+                "candidate_to_fp32_max_abs": None,
+                "rounded_to_fp32_relative_l2": None,
+                "rounded_to_fp32_max_abs": None,
+                "relative_l2_baseline_ratio": None,
+                "max_abs_baseline_ratio": None,
+            })
+        return result
     denominator = max(float(torch.norm(reference_float).item()), 1.0e-12)
-    relative_l2 = float(torch.norm(difference).item()) / denominator
+    relative_l2, max_abs = _error_metrics(
+        candidate_float, reference_float, denominator)
+    if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+        if reference_fp32 is None:
+            raise RuntimeError(
+                "calibrated fused-prefill shadow lost its FP32 reference")
+        fp32_denominator = max(
+            float(torch.norm(reference_fp32).item()),
+            _FUSED_PREFILL_SHADOW_RATIO_FLOOR,
+        )
+        candidate_fp32_relative_l2, candidate_fp32_max_abs = (
+            _error_metrics(
+                candidate_float, reference_fp32, fp32_denominator))
+        rounded_fp32_relative_l2, rounded_fp32_max_abs = (
+            _error_metrics(
+                reference_float, reference_fp32, fp32_denominator))
+        metrics = {
+            "relative_l2": relative_l2,
+            "max_abs": max_abs,
+            "candidate_to_fp32_relative_l2": (
+                candidate_fp32_relative_l2),
+            "candidate_to_fp32_max_abs": candidate_fp32_max_abs,
+            "rounded_to_fp32_relative_l2": rounded_fp32_relative_l2,
+            "rounded_to_fp32_max_abs": rounded_fp32_max_abs,
+            "relative_l2_baseline_ratio": (
+                candidate_fp32_relative_l2
+                / max(
+                    rounded_fp32_relative_l2,
+                    _FUSED_PREFILL_SHADOW_RATIO_FLOOR,
+                )
+            ),
+            "max_abs_baseline_ratio": (
+                candidate_fp32_max_abs
+                / max(
+                    rounded_fp32_max_abs,
+                    _FUSED_PREFILL_SHADOW_RATIO_FLOOR,
+                )
+            ),
+        }
+        return {
+            "status": (
+                "pass"
+                if _calibrated_shadow_metrics_qualified(metrics)
+                else "fail"
+            ),
+            "candidate_finite": True,
+            "reference_finite": True,
+            **metrics,
+        }
     qualified = (
         relative_l2 <= _FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT
         and max_abs <= _FUSED_PREFILL_SHADOW_MAX_ABS_LIMIT)
@@ -1286,6 +1490,7 @@ class PagedAttention:
         scale: float,
         orig_dtype,
         fused_request_eligible: bool = False,
+        return_fp32: bool = False,
     ) -> torch.Tensor:
         """Run online-softmax attention for one strict-prefix query segment."""
         q_len = query.shape[0]
@@ -1395,7 +1600,7 @@ class PagedAttention:
                     "corex fused paged-prefill returned an invalid output")
             if shadow_index is not None:
                 try:
-                    reference_output = (
+                    reference_result = (
                         PagedAttention._forward_prefix_segment_pytorch(
                             query,
                             key,
@@ -1416,9 +1621,27 @@ class PagedAttention:
                             scale,
                             orig_dtype,
                             False,
+                            (
+                                _FUSED_PREFILL_SHADOW_NUMERIC_MODE
+                                == "calibrated"
+                            ),
                         ))
+                    reference_fp32 = (
+                        reference_result
+                        if _FUSED_PREFILL_SHADOW_NUMERIC_MODE
+                        == "calibrated"
+                        else None
+                    )
+                    reference_output = (
+                        reference_result.to(orig_dtype)
+                        if reference_fp32 is not None
+                        else reference_result
+                    )
                     shadow_metrics = _compare_fused_prefill_shadow_outputs(
-                        fused_output, reference_output)
+                        fused_output,
+                        reference_output,
+                        reference_fp32,
+                    )
                 except Exception as exc:
                     _finish_fused_prefill_shadow(
                         shadow_index,
@@ -1431,7 +1654,15 @@ class PagedAttention:
                     shadow_index,
                     **shadow_metrics,
                 )
-                if shadow_metrics["status"] != "pass":
+                if (
+                    shadow_metrics["status"] != "pass"
+                    and (
+                        _FUSED_PREFILL_SHADOW_FAILURE_ACTION == "raise"
+                        or shadow_metrics["status"] == "invalid"
+                        or shadow_metrics.get("candidate_finite") is not True
+                        or shadow_metrics.get("reference_finite") is not True
+                    )
+                ):
                     raise RuntimeError(
                         "corex fused paged-prefill failed the real-activation "
                         "shadow-reference numerical gate")
@@ -1516,8 +1747,11 @@ class PagedAttention:
                 scores, v_t, m, l, o)
 
         o.div_(l.unsqueeze(-1))
-        return (o.view(num_q_heads, q_len, head_dim)
-                .permute(1, 0, 2).to(orig_dtype))
+        output = (
+            o.view(num_q_heads, q_len, head_dim)
+            .permute(1, 0, 2)
+        )
+        return output if return_fp32 else output.to(orig_dtype)
 
     @staticmethod
     def _update_online_softmax(

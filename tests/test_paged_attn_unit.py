@@ -110,6 +110,10 @@ def _load_paged_attn(**env):
                 env.get("shadow_contexts")),
             BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT=(
                 env.get("shadow_max_calls")),
+            BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_NUMERIC_MODE=(
+                env.get("shadow_numeric_mode")),
+            BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_FAILURE_ACTION=(
+                env.get("shadow_failure_action")),
     ):
         old_modules = {
             name: sys.modules.get(name)
@@ -198,6 +202,10 @@ class PagedAttentionUnitTest(unittest.TestCase):
             module._FUSED_PREFILL_SHADOW_CONTEXTS, (49152, 114688))
         self.assertEqual(
             module._FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT, 2)
+        self.assertEqual(
+            module._FUSED_PREFILL_SHADOW_NUMERIC_MODE, "legacy")
+        self.assertEqual(
+            module._FUSED_PREFILL_SHADOW_FAILURE_ACTION, "raise")
         self.assertEqual(module._DECODE_LOG_INTERVAL, 0)
         self.assertTrue(module.PagedAttention._should_use_paged_attention_v1(
             max_seq_len=100000,
@@ -228,6 +236,10 @@ class PagedAttentionUnitTest(unittest.TestCase):
     def test_attention_env_rejects_invalid_values(self):
         with self.assertRaises(RuntimeError):
             _load_paged_attn(threshold="0")
+        with self.assertRaisesRegex(RuntimeError, "NUMERIC_MODE"):
+            _load_paged_attn(shadow_numeric_mode="unknown")
+        with self.assertRaisesRegex(RuntimeError, "FAILURE_ACTION"):
+            _load_paged_attn(shadow_failure_action="unknown")
 
     def test_shadow_context_parser_rejects_ambiguous_buckets(self):
         module = _load_paged_attn()
@@ -263,6 +275,17 @@ class PagedAttentionUnitTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "RUN_ID is invalid"):
             module._validate_fused_prefill_shadow_configuration(
                 True, True, "/tmp/m1-136", "bad run id")
+        module._FUSED_PREFILL_SHADOW_FAILURE_ACTION = "record"
+        with self.assertRaisesRegex(RuntimeError, "calibrated numeric mode"):
+            module._validate_fused_prefill_shadow_configuration(
+                True, True, "/tmp/m1-136", "m1-136-unit")
+        module._FUSED_PREFILL_SHADOW_NUMERIC_MODE = "calibrated"
+        with tempfile.TemporaryDirectory(prefix="bi100-shadow-") as directory:
+            self.assertEqual(
+                module._validate_fused_prefill_shadow_configuration(
+                    True, True, directory, "m1-138-unit"),
+                pathlib.Path(directory),
+            )
 
     def test_shadow_report_contains_only_aggregate_shape_metrics(self):
         module = _load_paged_attn()
@@ -292,6 +315,82 @@ class PagedAttentionUnitTest(unittest.TestCase):
             self.assertNotIn(forbidden, serialized)
         self.assertTrue(all(
             value is False for value in report["privacy"].values()))
+
+    def test_calibrated_shadow_report_uses_rounding_relative_metrics(self):
+        module = _load_paged_attn(shadow_numeric_mode="calibrated")
+        module._FUSED_PREFILL_SHADOW_FAILURE_ACTION = "record"
+        record = {
+            "index": 0,
+            "status": "pass",
+            "bucket_min_context_tokens": 49152,
+            "context_tokens": 57344,
+            "query_shape": [8192, 4, 256],
+            "query_heads": 4,
+            "kv_heads": 1,
+            "head_dim": 256,
+            "block_size": 16,
+            "candidate_finite": True,
+            "reference_finite": True,
+            "relative_l2": 7.0e-6,
+            "max_abs": 0.001953125,
+            "candidate_to_fp32_relative_l2": 5.0e-4,
+            "candidate_to_fp32_max_abs": 0.0014,
+            "rounded_to_fp32_relative_l2": 3.0e-4,
+            "rounded_to_fp32_max_abs": 0.0009,
+            "relative_l2_baseline_ratio": 5.0 / 3.0,
+            "max_abs_baseline_ratio": 1.4 / 0.9,
+            "error_stage": None,
+            "error_type": None,
+        }
+        report = module._build_fused_prefill_shadow_report([record])
+        self.assertEqual(
+            report["schema"],
+            "bi100-fused-prefill-real-activation-calibrated-shadow-v1",
+        )
+        self.assertEqual(
+            report["thresholds"][
+                "maximum_error_multiple_over_fp16_rounding"],
+            2.0,
+        )
+        self.assertEqual(
+            report["thresholds"]["fixed_max_abs_role"],
+            "diagnostic_only",
+        )
+        self.assertEqual(
+            report["observations"][
+                "maximum_candidate_to_fp32_max_abs"],
+            0.0014,
+        )
+
+    def test_calibrated_scalar_gate_is_hard_but_scale_aware(self):
+        module = _load_paged_attn(shadow_numeric_mode="calibrated")
+        metrics = {
+            "relative_l2": 7.1e-6,
+            "candidate_to_fp32_relative_l2": 5.0e-4,
+            "rounded_to_fp32_relative_l2": 3.0e-4,
+            "candidate_to_fp32_max_abs": 0.0015,
+            "rounded_to_fp32_max_abs": 0.0008,
+        }
+        self.assertTrue(
+            module._calibrated_shadow_metrics_qualified(metrics))
+        changed = dict(metrics)
+        changed["candidate_to_fp32_max_abs"] = 0.0017
+        self.assertFalse(
+            module._calibrated_shadow_metrics_qualified(changed))
+        changed = dict(metrics)
+        changed["relative_l2"] = 1.1e-5
+        self.assertFalse(
+            module._calibrated_shadow_metrics_qualified(changed))
+
+    def test_shadow_rank_prefers_initialized_distributed_rank(self):
+        module = _load_paged_attn()
+        module.torch.distributed = types.SimpleNamespace(
+            is_available=lambda: True,
+            is_initialized=lambda: True,
+            get_rank=lambda: 3,
+        )
+        with _EnvPatch(RANK=None, LOCAL_RANK=None):
+            self.assertEqual(module._fused_prefill_shadow_rank(), 3)
 
     def test_enabling_shadow_without_native_extension_fails_startup(self):
         with self.assertRaisesRegex(RuntimeError, "requires the fused"):

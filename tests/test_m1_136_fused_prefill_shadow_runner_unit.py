@@ -50,6 +50,9 @@ class M1136FusedPrefillShadowRunnerTests(unittest.TestCase):
     def test_cleanup_uses_term_grace_and_recorded_identity(self) -> None:
         for fragment in (
             '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20',
+            'wait "$ACTIVE_PID" 2>/dev/null || true',
+            'wait_for_recorded_group_empty "$stopped_pgid" 20',
+            'bi100_process_group_count "$pgid" zombie',
             "cleanup_recorded_bi100_sessions.py",
             "qualify_recorded_session_cleanup.py",
             "service_postflight_gate.py",
@@ -62,6 +65,23 @@ class M1136FusedPrefillShadowRunnerTests(unittest.TestCase):
         self.assertIn('"production_promotion_authorized": False', self.source)
         self.assertIn('"yaml_change_authorized": False', self.source)
         self.assertIn('"main_merge_authorized": False', self.source)
+
+    def test_calibrated_variant_is_explicit_and_fail_closed(self) -> None:
+        for fragment in (
+            "BI100_FUSED_PREFILL_SHADOW_VARIANT",
+            "NUMERIC_MODE=calibrated",
+            "FAILURE_ACTION=record",
+            "qualify_fused_prefill_calibrated_shadow.py",
+            "fused_prefill_numeric_adjudication.v1.json",
+            "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_NUMERIC_MODE",
+            "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_FAILURE_ACTION",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, self.source)
+        self.assertIn(
+            'echo "BI100_FUSED_PREFILL_SHADOW_VARIANT is invalid"',
+            self.source,
+        )
 
 
 if __name__ == "__main__":

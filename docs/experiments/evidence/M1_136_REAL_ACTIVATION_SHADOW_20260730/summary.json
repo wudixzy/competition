@@ -1,0 +1,80 @@
+{
+  "schema": "bi100-m1-136-real-activation-shadow-evidence-v1",
+  "version": 1,
+  "date": "2026-07-30",
+  "experiment": "M1-136",
+  "source_revision": "71860f6f668008168295967cae4851cdb83ac13a",
+  "instance": "ssh-73ca29ba",
+  "run_root": "/tmp/m1-136-shadow-71860f6-20260730a",
+  "runtime": {
+    "identity": "bare-host-overlay-v1:0c96afb8c42c4ede4971",
+    "tree_sha256": "0c96afb8c42c4ede497122e007b5c5944e1eea0a4061434ef06c9fac30f6715e",
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144
+  },
+  "runner": {
+    "schema": "bi100-m1-136-fused-prefill-shadow-runner-v1",
+    "returncode": 1,
+    "terminal_stage": "measurement",
+    "outer_timeout": false,
+    "shadow_qualification_reached": false
+  },
+  "structured_shadow_aggregation": {
+    "authoritative_qualification": false,
+    "report_file_count": 4,
+    "resolved_rank_count": 0,
+    "unknown_rank_report_count": 4,
+    "observation_count": 8,
+    "context_bucket_counts": {
+      "49152": 8,
+      "114688": 0
+    },
+    "candidate_finite_count": 8,
+    "reference_finite_count": 8,
+    "maximum_relative_l2": 7.1011427252343464e-06,
+    "maximum_absolute_error_histogram": {
+      "0.00048828125": 3,
+      "0.0009765625": 3,
+      "0.001953125": 2
+    },
+    "legacy_fixed_threshold_pass_count": 6,
+    "legacy_fixed_threshold_fail_count": 2,
+    "missing_131k_reason": "legacy_fail_fast_stopped_measurement"
+  },
+  "privacy_safe_failure_scan": {
+    "server_corex_failure_marker_count": 8,
+    "server_runtime_error_count": 10,
+    "server_worker_loss_count": 1,
+    "measurement_timeout_exception_count": 1
+  },
+  "lifecycle": {
+    "cleanup_initial_zombie_count": 2,
+    "cleanup_final_zombie_count": 0,
+    "term_sent": false,
+    "kill_sent": false,
+    "outcome": "already_quiescent",
+    "cleanup_qualification": "fail_initial_zombie_count",
+    "final_postflight_qualified": true,
+    "residual_api_or_worker_process_count": 0,
+    "residual_gpu_process_count": 0
+  },
+  "decision": {
+    "legacy_numeric_gate_passed": false,
+    "gross_numeric_failure_observed": false,
+    "capability_evaluated": false,
+    "m1_109_rejected": false,
+    "classification": "hard-numeric-adjudication-required",
+    "next_experiment": "M1-138",
+    "yaml_change_authorized": false,
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false
+  },
+  "privacy": {
+    "contains_prompts": false,
+    "contains_model_outputs": false,
+    "contains_tensor_values": false,
+    "contains_token_ids": false,
+    "contains_credentials": false,
+    "contains_private_hmac_identity": false
+  }
+}
