@@ -329,17 +329,109 @@ def refresh_runtime_contract(report: dict) -> None:
         contract["environment"])
 
 
+def targeted_report(report: dict, *case_ids: str) -> dict:
+    selected = [
+        case for case in report["cases"] if case["id"] in set(case_ids)
+    ]
+    report["quality_run_eligible_for_baseline"] = False
+    report["selection"] = {
+        "tier": "extended",
+        "explicit_cases": list(case_ids),
+        "selected_cases": len(selected),
+    }
+    report["cases"] = selected
+    report["summary"] = {
+        "passed": len(selected),
+        "failed": 0,
+        "total": len(selected),
+        "selected_total": len(selected),
+        "complete": True,
+        "pass_rate": 1.0,
+        "wall_s": 2.0 * len(selected),
+    }
+    return report
+
+
 class LongContextQualityComparisonTest(unittest.TestCase):
 
-    def compare(self, baseline: dict, candidate: dict) -> dict:
-        return MODULE.compare_reports(baseline, candidate)
+    def compare(
+        self,
+        baseline: dict,
+        candidate: dict,
+        *,
+        case_ids: tuple[str, ...] | None = None,
+    ) -> dict:
+        return MODULE.compare_reports(
+            baseline, candidate, case_ids=case_ids)
 
     def test_identical_complete_reports_qualify_without_overall_promotion(self):
         report = valid_report()
         result = self.compare(report, copy.deepcopy(report))
         self.assertTrue(result["qualified"])
+        self.assertFalse(result["targeted_diagnostic_qualified"])
         self.assertTrue(result["long_context_quality_non_regression_authorized"])
         self.assertFalse(result["overall_promotion_authorized"])
+        self.assertEqual(result["comparison_scope"]["mode"], "complete_matrix")
+
+    def test_targeted_comparison_qualifies_without_gate_authorization(self):
+        case_ids = ("32k_partial_branch",)
+        baseline = targeted_report(valid_report("admission64"), *case_ids)
+        candidate = copy.deepcopy(baseline)
+        result = self.compare(
+            baseline, candidate, case_ids=case_ids)
+        self.assertTrue(result["qualified"])
+        self.assertTrue(result["targeted_diagnostic_qualified"])
+        self.assertFalse(
+            result["long_context_quality_non_regression_authorized"])
+        self.assertFalse(result["overall_promotion_authorized"])
+        self.assertEqual(result["comparison_scope"], {
+            "mode": "targeted_diagnostic",
+            "case_ids": ["32k_partial_branch"],
+        })
+        self.assertEqual(result["summary"]["compared_cases"], 1)
+
+    def test_targeted_report_cannot_pass_complete_matrix_comparison(self):
+        baseline = targeted_report(
+            valid_report("admission64"), "32k_partial_branch")
+        candidate = copy.deepcopy(baseline)
+        result = self.compare(baseline, candidate)
+        self.assertFalse(result["qualified"])
+        self.assertFalse(
+            result["long_context_quality_non_regression_authorized"])
+
+    def test_targeted_comparison_rejects_report_selection_drift(self):
+        case_ids = ("32k_partial_branch",)
+        baseline = targeted_report(valid_report("admission64"), *case_ids)
+        candidate = copy.deepcopy(baseline)
+        candidate["selection"]["explicit_cases"] = ["235k_partial_branch"]
+        result = self.compare(
+            baseline, candidate, case_ids=case_ids)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "candidate: report selection differs" in reason
+            for reason in result["reasons"]))
+
+    def test_targeted_comparison_detects_output_regression(self):
+        case_ids = ("32k_partial_branch",)
+        baseline = targeted_report(valid_report("admission64"), *case_ids)
+        candidate = copy.deepcopy(baseline)
+        candidate["cases"][0]["observation"]["requests"][0][
+            "semantic_output_sha256"] = digest("e")
+        result = self.compare(
+            baseline, candidate, case_ids=case_ids)
+        self.assertFalse(result["qualified"])
+        self.assertFalse(result["targeted_diagnostic_qualified"])
+
+    def test_targeted_case_ids_must_be_unique_and_known(self):
+        report = valid_report()
+        for case_ids in (
+                (),
+                ("32k_partial_branch", "32k_partial_branch"),
+                ("unknown",)):
+            with self.subTest(case_ids=case_ids):
+                with self.assertRaises(ValueError):
+                    self.compare(
+                        report, copy.deepcopy(report), case_ids=case_ids)
 
     def test_exact_output_regression_fails(self):
         baseline = valid_report()

@@ -535,15 +535,21 @@ def _validate_report(
     manifest: Json,
     manifest_sha: str,
     manifest_name: str,
+    expected_cases: list[Json],
+    explicit_case_ids: tuple[str, ...] | None,
 ) -> tuple[dict[str, Json], list[str]]:
     reasons = []
     gdn_cache_policy: str | None = None
+    targeted = explicit_case_ids is not None
+    expected_baseline_eligibility = not targeted
+    expected_case_count = len(expected_cases)
     if not isinstance(report, dict):
         return {}, [f"{label}: report root is not an object"]
     if report.get("schema") != REPORT_SCHEMA or report.get("version") != 6:
         reasons.append(f"{label}: report schema or version is invalid")
     if (report.get("qualified") is not True
-            or report.get("quality_run_eligible_for_baseline") is not True
+            or report.get("quality_run_eligible_for_baseline")
+            is not expected_baseline_eligibility
             or report.get("overall_promotion_authorized") is not False):
         reasons.append(f"{label}: report qualification state is invalid")
     expected_manifest = {
@@ -724,9 +730,10 @@ def _validate_report(
             reasons.append(f"{label}: tokenizer/template contract is invalid")
     selection = report.get("selection") or {}
     if (selection.get("tier") != "extended"
-            or selection.get("explicit_cases") != []
-            or selection.get("selected_cases") != EXPECTED_CASES):
-        reasons.append(f"{label}: report is not the complete extended matrix")
+            or selection.get("explicit_cases")
+            != ([] if explicit_case_ids is None else list(explicit_case_ids))
+            or selection.get("selected_cases") != expected_case_count):
+        reasons.append(f"{label}: report selection differs")
     privacy = report.get("privacy") or {}
     if (privacy.get("contains_raw_requests") is not False
             or privacy.get("contains_raw_model_outputs") is not False
@@ -734,11 +741,12 @@ def _validate_report(
         reasons.append(f"{label}: privacy contract is invalid")
 
     cases = report.get("cases")
-    if not isinstance(cases, list) or len(cases) != EXPECTED_CASES:
-        reasons.append(f"{label}: report must contain twelve cases")
+    if not isinstance(cases, list) or len(cases) != expected_case_count:
+        reasons.append(
+            f"{label}: report must contain {expected_case_count} selected cases")
         cases = []
     case_map = {}
-    for expected, case in zip(manifest["cases"], cases):
+    for expected, case in zip(expected_cases, cases):
         case_reasons = _validate_case(
             case,
             expected,
@@ -756,8 +764,8 @@ def _validate_report(
         "passed": recomputed_passed,
         "failed": len(cases) - recomputed_passed,
         "total": len(cases),
-        "selected_total": EXPECTED_CASES,
-        "complete": len(cases) == EXPECTED_CASES,
+        "selected_total": expected_case_count,
+        "complete": len(cases) == expected_case_count,
         "pass_rate": recomputed_passed / len(cases) if cases else 0.0,
     }
     for field, value in expected_summary.items():
@@ -768,6 +776,26 @@ def _validate_report(
             or not math.isfinite(wall_s) or wall_s <= 0):
         reasons.append(f"{label}: summary wall_s is invalid")
     return case_map, reasons
+
+
+def _select_manifest_cases(
+    manifest: Json,
+    case_ids: tuple[str, ...] | None,
+) -> list[Json]:
+    cases = manifest["cases"]
+    if case_ids is None:
+        return cases
+    if not case_ids:
+        raise ValueError("targeted comparison requires at least one case")
+    if len(case_ids) != len(set(case_ids)):
+        raise ValueError("targeted comparison case ids must be unique")
+    known = {case["id"] for case in cases}
+    unknown = set(case_ids) - known
+    if unknown:
+        raise ValueError(
+            "unknown targeted comparison case: " + ", ".join(sorted(unknown)))
+    requested = set(case_ids)
+    return [case for case in cases if case["id"] in requested]
 
 
 def _report_gdn_cache_policy(report: Any) -> str | None:
@@ -793,15 +821,31 @@ def compare_reports(
     manifest: Json | None = None,
     manifest_sha: str | None = None,
     manifest_name: str | None = None,
+    case_ids: tuple[str, ...] | None = None,
 ) -> Json:
     if manifest is None or manifest_sha is None:
         manifest, manifest_sha = _load_manifest(DEFAULT_MANIFEST)
         manifest_name = DEFAULT_MANIFEST.name
     assert manifest_name is not None
+    expected_cases = _select_manifest_cases(manifest, case_ids)
     baseline_cases, reasons = _validate_report(
-        baseline, "baseline", manifest, manifest_sha, manifest_name)
+        baseline,
+        "baseline",
+        manifest,
+        manifest_sha,
+        manifest_name,
+        expected_cases,
+        case_ids,
+    )
     candidate_cases, candidate_reasons = _validate_report(
-        candidate, "candidate", manifest, manifest_sha, manifest_name)
+        candidate,
+        "candidate",
+        manifest,
+        manifest_sha,
+        manifest_name,
+        expected_cases,
+        case_ids,
+    )
     reasons.extend(candidate_reasons)
     comparisons = []
     baseline_policy = _report_gdn_cache_policy(baseline)
@@ -852,7 +896,7 @@ def compare_reports(
                         "A/B changed disallowed runtime environment values: "
                         + ", ".join(sorted(disallowed_env)))
 
-    for expected in manifest["cases"]:
+    for expected in expected_cases:
         case_id = expected["id"]
         if case_id not in baseline_cases or case_id not in candidate_cases:
             continue
@@ -902,13 +946,24 @@ def compare_reports(
         })
         reasons.extend(f"{case_id}: {reason}" for reason in case_reasons)
 
-    qualified = not reasons and len(comparisons) == EXPECTED_CASES
+    targeted = case_ids is not None
+    qualified = not reasons and len(comparisons) == len(expected_cases)
+    full_gate_qualified = qualified and not targeted
     return {
         "schema": COMPARISON_SCHEMA,
         "version": 5,
         "qualified": qualified,
-        "long_context_quality_non_regression_authorized": qualified,
+        "targeted_diagnostic_qualified": qualified and targeted,
+        "long_context_quality_non_regression_authorized": full_gate_qualified,
         "overall_promotion_authorized": False,
+        "comparison_scope": {
+            "mode": "targeted_diagnostic" if targeted else "complete_matrix",
+            "case_ids": (
+                list(case_ids)
+                if case_ids is not None
+                else [case["id"] for case in expected_cases]
+            ),
+        },
         "reasons": reasons,
         "summary": {
             "compared_cases": len(comparisons),
@@ -929,6 +984,16 @@ def main() -> int:
     parser.add_argument("baseline", type=Path)
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument(
+        "--case",
+        action="append",
+        choices=tuple(REQUEST_COUNTS),
+        default=[],
+        help=(
+            "compare an explicitly selected diagnostic case; may be repeated "
+            "and never authorizes the complete long-context gate"
+        ),
+    )
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     manifest, manifest_sha = _load_manifest(args.manifest)
@@ -940,6 +1005,7 @@ def main() -> int:
         manifest=manifest,
         manifest_sha=manifest_sha,
         manifest_name=args.manifest.name,
+        case_ids=tuple(args.case) if args.case else None,
     )
     result["inputs"] = {
         "manifest_sha256": manifest_sha,

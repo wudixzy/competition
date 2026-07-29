@@ -41,8 +41,8 @@ digests.
 
 ## Local verification
 
-- Focused manifest, runner, and comparator tests: 50 passed.
-- Complete unit suite: 1099 passed, 13 skipped.
+- Focused manifest, runner, and comparator tests: 52 passed.
+- Complete unit suite: 1104 passed, 13 skipped.
 - Quality-data manifest validation: qualified.
 - Submission preflight: 9/9 passed.
 - `git diff --check`: passed.
@@ -51,3 +51,17 @@ This change repairs the quality harness. It does not alter the runtime,
 `computility-run.yaml`, default optimization switches, or model semantics.
 The v6 contract still requires a fresh TP4 A/B before it can authorize any
 candidate.
+
+## Targeted diagnostic comparison
+
+The strict comparator accepts explicit, repeated `--case` arguments for
+short diagnostic A/B runs. A targeted report must declare the same explicit
+case selection and remains ineligible as a complete quality baseline. A
+successful targeted comparison sets `targeted_diagnostic_qualified=true` but
+always keeps `long_context_quality_non_regression_authorized=false` and
+`overall_promotion_authorized=false`.
+
+This mode exists only to adjudicate a focused runtime question before paying
+the cost of the complete twelve-case TP4 matrix. Omitting `--case` preserves
+the complete-matrix contract and is the only mode that can authorize the
+long-context non-regression gate.
