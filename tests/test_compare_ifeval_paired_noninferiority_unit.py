@@ -146,6 +146,13 @@ class CompareIFEvalPairedNoninferiorityTest(unittest.TestCase):
         candidate = report(True)
         for case in candidate["cases"][:10]:
             case["strict"] = [False]
+            case["semantic_output_sha256"] = "0" * 64
+        candidate["summary"]["strict_prompt_passed"] -= 10
+        candidate["summary"]["strict_instruction_passed"] -= 10
+        candidate["summary"]["by_instruction_id"][
+            "keywords:existence"]["strict_passed"] -= 10
+        candidate["summary"]["by_family"][
+            "keywords"]["strict_passed"] -= 10
         value = self.compare(baseline, candidate)
         self.assertEqual(value["status"], "fail", value)
         self.assertFalse(value["qualified"])

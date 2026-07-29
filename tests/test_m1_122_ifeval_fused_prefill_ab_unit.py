@@ -288,7 +288,7 @@ def paired_comparison(control: dict, candidate: dict) -> dict:
 def invoke(
     *,
     output_drift: bool = False,
-    score_regression: bool = False,
+    single_paired_regression: bool = False,
     paired_regression: bool = False,
     failed_gate: bool = False,
 ) -> dict:
@@ -298,11 +298,19 @@ def invoke(
         "1",
         output="0" * 64 if output_drift else "d" * 64,
     )
-    if score_regression:
+    if single_paired_regression:
+        candidate_report["cases"][0]["strict"] = [False]
+        candidate_report["cases"][0]["semantic_output_sha256"] = "0" * 64
         candidate_report["summary"]["strict_prompt_passed"] -= 1
+        candidate_report["summary"]["strict_instruction_passed"] -= 1
+        candidate_report["summary"]["by_instruction_id"][
+            "keywords:existence"]["strict_passed"] -= 1
+        candidate_report["summary"]["by_family"][
+            "keywords"]["strict_passed"] -= 1
     if paired_regression:
         for case in candidate_report["cases"][:10]:
             case["strict"] = [False]
+            case["semantic_output_sha256"] = "0" * 64
         candidate_report["summary"]["strict_prompt_passed"] -= 10
         candidate_report["summary"]["strict_instruction_passed"] -= 10
         candidate_report["summary"]["by_instruction_id"][
@@ -354,11 +362,12 @@ class M1122IFEvalComparatorTest(unittest.TestCase):
         self.assertFalse(value["strict_exact_output_qualified"])
         self.assertEqual(value["strict_exact_output_mismatch_count"], 64)
 
-    def test_zero_stratum_regression_is_diagnostic(self) -> None:
-        value = invoke(score_regression=True)
+    def test_one_paired_regression_passes_five_point_screen(self) -> None:
+        value = invoke(single_paired_regression=True)
         self.assertTrue(value["qualified"], value)
         self.assertFalse(value["strict_zero_stratum_qualified"])
-        self.assertTrue(value["strict_exact_output_qualified"])
+        self.assertFalse(value["strict_exact_output_qualified"])
+        self.assertEqual(value["strict_exact_output_mismatch_count"], 1)
 
     def test_statistically_clear_paired_regression_fails(self) -> None:
         value = invoke(paired_regression=True)

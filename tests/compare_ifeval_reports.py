@@ -30,6 +30,73 @@ SWITCH_ENVIRONMENT = {
 Json = dict[str, Any]
 
 
+def _is_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _summarize_cases(cases: list[Json]) -> Json:
+    by_id: dict[str, Json] = {}
+    by_family: dict[str, Json] = {}
+    strict_prompts = 0
+    loose_prompts = 0
+    strict_instructions = 0
+    loose_instructions = 0
+    instruction_total = 0
+    for case in cases:
+        instruction_ids = case.get("instruction_id_list")
+        strict = case.get("strict")
+        loose = case.get("loose")
+        if (
+            case.get("status") != "pass"
+            or not isinstance(instruction_ids, list)
+            or not instruction_ids
+            or any(not isinstance(value, str) or not value
+                   for value in instruction_ids)
+            or not isinstance(strict, list)
+            or not isinstance(loose, list)
+            or len(strict) != len(instruction_ids)
+            or len(loose) != len(instruction_ids)
+            or any(type(value) is not bool for value in strict + loose)
+            or not _is_sha256(case.get("semantic_output_sha256"))
+        ):
+            raise ValueError("case outcome structure is incomplete")
+        strict_prompts += int(all(strict))
+        loose_prompts += int(all(loose))
+        strict_instructions += sum(strict)
+        loose_instructions += sum(loose)
+        instruction_total += len(instruction_ids)
+        for instruction_id, strict_value, loose_value in zip(
+            instruction_ids, strict, loose
+        ):
+            family = instruction_id.split(":", 1)[0]
+            for group, name in (
+                (by_id, instruction_id),
+                (by_family, family),
+            ):
+                counts = group.setdefault(name, {
+                    "total": 0,
+                    "strict_passed": 0,
+                    "loose_passed": 0,
+                })
+                counts["total"] += 1
+                counts["strict_passed"] += int(strict_value)
+                counts["loose_passed"] += int(loose_value)
+    return {
+        "prompt_total": len(cases),
+        "instruction_total": instruction_total,
+        "strict_prompt_passed": strict_prompts,
+        "loose_prompt_passed": loose_prompts,
+        "strict_instruction_passed": strict_instructions,
+        "loose_instruction_passed": loose_instructions,
+        "by_instruction_id": dict(sorted(by_id.items())),
+        "by_family": dict(sorted(by_family.items())),
+    }
+
+
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -128,6 +195,24 @@ def validate_report(value: Any, label: str) -> list[str]:
         )
     ):
         reasons.append(f"{label}: cases are incomplete")
+    else:
+        selected_keys = manifest["selected_keys"]
+        if [case["key"] for case in cases] != selected_keys:
+            reasons.append(f"{label}: selected case order differs")
+        try:
+            derived = _summarize_cases(cases)
+        except ValueError:
+            reasons.append(f"{label}: case outcomes are incomplete")
+        else:
+            for name in (
+                "prompt_total", "instruction_total",
+                "strict_prompt_passed", "loose_prompt_passed",
+                "strict_instruction_passed", "loose_instruction_passed",
+                "by_instruction_id", "by_family",
+            ):
+                if summary.get(name) != derived[name]:
+                    reasons.append(
+                        f"{label}: summary differs from cases in {name}")
     privacy = value.get("privacy") or {}
     if any(privacy.get(key) is not False for key in (
             "contains_credentials", "contains_raw_prompts",

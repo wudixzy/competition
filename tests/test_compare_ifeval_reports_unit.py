@@ -74,7 +74,14 @@ def report(policy: str) -> dict:
             "by_family": {"keywords": dict(counts)},
         },
         "cases": [
-            {"key": key, "semantic_output_sha256": "f" * 64}
+            {
+                "key": key,
+                "status": "pass",
+                "instruction_id_list": ["keywords:existence"],
+                "strict": [key < 50],
+                "loose": [key < 55],
+                "semantic_output_sha256": "f" * 64,
+            }
             for key in range(64)
         ],
         "privacy": {
@@ -98,8 +105,12 @@ class CompareIFEvalReportsTest(unittest.TestCase):
         baseline = report("fine32")
         candidate = report("admission64")
         candidate["summary"]["strict_prompt_passed"] -= 1
+        candidate["summary"]["strict_instruction_passed"] -= 1
         candidate["summary"]["by_instruction_id"][
             "keywords:existence"]["strict_passed"] -= 1
+        candidate["summary"]["by_family"][
+            "keywords"]["strict_passed"] -= 1
+        candidate["cases"][0]["strict"] = [False]
         reasons = MODULE.comparison_reasons(
             baseline, candidate, {"gdn_cache_policy"}, False)
         self.assertIn(
@@ -107,6 +118,18 @@ class CompareIFEvalReportsTest(unittest.TestCase):
         self.assertIn(
             "candidate regressed by_instruction_id keywords:existence "
             "strict_passed", reasons)
+
+    def test_summary_case_mismatch_is_invalid(self):
+        baseline = report("fine32")
+        candidate = report("admission64")
+        candidate["summary"]["strict_prompt_passed"] -= 1
+        reasons = MODULE.comparison_reasons(
+            baseline, candidate, {"gdn_cache_policy"}, False)
+        self.assertIn(
+            "candidate: summary differs from cases in "
+            "strict_prompt_passed",
+            reasons,
+        )
 
     def test_undeclared_environment_difference_fails(self):
         baseline = report("fine32")
