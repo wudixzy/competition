@@ -2,8 +2,9 @@
 
 Date: 2026-07-29
 
-Status: source implementation and local static verification in progress.
-CoreX compilation and fixed four-shape component A/B are pending.
+Status: the first CoreX component candidate improved all four fixed shapes but
+failed the output relative-L2 gate. It is not authorized for TP4 service,
+runtime overlay, YAML, or `main`.
 
 ## Scope
 
@@ -39,3 +40,30 @@ against the original extension:
 
 Only that result may authorize an experimental TP4 service overlay. It cannot
 authorize `main`, YAML, or submission changes.
+
+## First component result
+
+Source commit `2135cb276ffa678c6474aacbcc669e2806b2391b` compiled on
+CoreX 3.2.3 for `ivcore10`. The 247,240-byte candidate extension has SHA-256
+`acc89f2cbadb99dbe73dbb0af397ebfe9885e55e6505fa361a798bab92b345cd`.
+The control was the qualified M1-109 extension with SHA-256
+`ad4ea7707bb2f2bfe04e07a7ad5fd58a647232be70a3056937a0d738c8254bff`.
+
+| Case | M1-109 ms | M1-128 ms | Speedup | Output rel-L2 | LSE rel-L2 | Max abs |
+|---|---:|---:|---:|---:|---:|---:|
+| Dense q8176 | 39.805 | 35.070 | 1.135x | 1.470e-5 | 3.933e-8 | 2.441e-4 |
+| 65K q8176 | 293.955 | 251.879 | 1.167x | 1.965e-5 | 3.196e-8 | 1.526e-5 |
+| 128K q8176 | 516.080 | 441.167 | 1.170x | 1.988e-5 | 3.653e-8 | 1.526e-5 |
+| 235K q5616 | 658.571 | 568.041 | 1.159x | 2.168e-5 | 4.286e-8 | 7.629e-6 |
+
+All four shapes improved and median M1-109/M1-128 speedup was `1.163x`.
+Finite, LSE, and maximum-absolute-error checks passed, but every output
+relative-L2 exceeded the fixed `1e-5` limit. The gate therefore failed
+closed. Preflight, postflight, cleanup, fatal scan, and GPU state comparison
+all passed.
+
+One second implementation is allowed before closing this route: retain FP16
+Q/K inputs and FP32 output/accumulation, but use the default GemmEx algorithm
+instead of explicitly selecting the Tensor-Op algorithm. This is a bounded
+accuracy-path comparison, not an algorithm or tile scan. It must still meet
+the same numerical limits and at least `1.10x` median component speedup.
