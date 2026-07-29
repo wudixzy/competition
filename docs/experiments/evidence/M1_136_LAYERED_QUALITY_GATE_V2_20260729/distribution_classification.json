@@ -1,0 +1,34 @@
+{
+  "candidate_drift_reasons": [
+    "top-1 agreement is outside the envelope",
+    "teacher-token p99 drift is outside the envelope",
+    "shared-top-k p99 drift is outside the envelope",
+    "mutually uncovered top-1 choices exceed the envelope",
+    "teacher-token maximum drift is outside the envelope",
+    "mean teacher-token NLL regression exceeds the envelope"
+  ],
+  "candidate_source_revision": "03e22126c94a2cc61719d41fe15ea33e5d0d0207",
+  "capability_noninferiority_decided": false,
+  "case_count": 5,
+  "classification": "distribution-drift-requires-adjudication",
+  "control_repeat_reasons": [],
+  "control_repeat_source_revision": "00c83bc86ca6aa95f5d9b0e01cd5327cbd3b2341",
+  "next_required_evidence": [
+    "same-real-activation-operator-shadow-reference",
+    "paired-powered-task-capability-noninferiority"
+  ],
+  "operator_numerics_decided": false,
+  "privacy": {
+    "contains_credentials": false,
+    "contains_model_outputs": false,
+    "contains_private_token_identity": false,
+    "contains_prompts": false,
+    "contains_token_ids": false
+  },
+  "promotion_authorized": false,
+  "sampled_positions": 320,
+  "schema": "bi100-teacher-forced-distribution-classification-v2",
+  "status": "escalate",
+  "validation_reasons": [],
+  "version": 2
+}

@@ -1,0 +1,93 @@
+{
+  "schema": "bi100-m1-134-control-repeat-evidence-v1",
+  "version": 1,
+  "date": "2026-07-29",
+  "status": "valid-exact-control-repeat",
+  "source_revision": "00c83bc86ca6aa95f5d9b0e01cd5327cbd3b2341",
+  "source_branch": "exp/M1-132-layered-quality-gate-20260729",
+  "instance": "ssh-73ca29ba",
+  "gpu_count": 4,
+  "tensor_parallel_size": 4,
+  "max_model_len": 262144,
+  "runtime_tree_sha256": "7aa66761e8dc3409828cb3d5b226b573eb40caafc4bb434b938a99493a02b2ff",
+  "fixed_order": [
+    "fused-off-a",
+    "fused-off-b"
+  ],
+  "case_count": 5,
+  "sampled_positions": 320,
+  "top_k": 5,
+  "metrics": {
+    "top1_agreement": 1.0,
+    "top1_mismatch_count": 0,
+    "mutually_uncovered_top1_mismatches": 0,
+    "teacher_token_logprob_absolute_delta_max": 0.0,
+    "teacher_token_logprob_absolute_delta_p99": 0.0,
+    "shared_topk_logprob_absolute_delta_p99": 0.0,
+    "mean_teacher_token_nll_regression": 0.0,
+    "high_margin_guard_nats": 0.05,
+    "high_margin_top1_mismatches": 0
+  },
+  "cases": [
+    {
+      "prompt_tokens": 4096,
+      "sampled_positions": 64,
+      "top1_agreement": 1.0,
+      "mutually_uncovered_top1_mismatches": 0
+    },
+    {
+      "prompt_tokens": 32768,
+      "sampled_positions": 64,
+      "top1_agreement": 1.0,
+      "mutually_uncovered_top1_mismatches": 0
+    },
+    {
+      "prompt_tokens": 65536,
+      "sampled_positions": 64,
+      "top1_agreement": 1.0,
+      "mutually_uncovered_top1_mismatches": 0
+    },
+    {
+      "prompt_tokens": 131072,
+      "sampled_positions": 64,
+      "top1_agreement": 1.0,
+      "mutually_uncovered_top1_mismatches": 0
+    },
+    {
+      "prompt_tokens": 235000,
+      "sampled_positions": 64,
+      "top1_agreement": 1.0,
+      "mutually_uncovered_top1_mismatches": 0
+    }
+  ],
+  "runner": {
+    "returncode": 0,
+    "all_present_integer_gates_zero": true,
+    "private_observations_present_after_run": false,
+    "external_detached_launcher_unreaped": true
+  },
+  "v2_interpretation": {
+    "control_repeatability_qualified": true,
+    "m1_132_distribution_drift_attributable": true,
+    "m1_109_operator_numerics_decided": false,
+    "m1_109_capability_noninferiority_decided": false,
+    "next_required_evidence": [
+      "same-real-activation-operator-shadow-reference",
+      "paired-powered-task-capability-noninferiority"
+    ]
+  },
+  "privacy": {
+    "contains_prompts": false,
+    "contains_model_outputs": false,
+    "contains_tensor_values": false,
+    "contains_token_ids": false,
+    "contains_private_token_identity": false,
+    "contains_credentials": false
+  },
+  "authorization": {
+    "default_policy_change_authorized": false,
+    "yaml_change_authorized": false,
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "schema": "bi100-layered-quality-gate-contract-v2",
+  "version": 2,
+  "evidence_roles": {
+    "identity_and_protocol": "hard_exact",
+    "cache_transparency": "hard_exact",
+    "operator_shadow_reference": "hard_numeric",
+    "teacher_forced_distribution": "equivalence_or_escalation",
+    "autoregressive_trajectory": "contract_or_diagnostic",
+    "paired_task_capability": "hard_statistical",
+    "performance_and_lifecycle": "hard_operational"
+  },
+  "identity_and_protocol": {
+    "request_semantics_must_match": true,
+    "tokenizer_and_chat_template_must_match": true,
+    "response_schema_and_streaming_must_match": true,
+    "tool_reasoning_multimodal_and_structured_output_are_hard": true
+  },
+  "cache_transparency": {
+    "same_arm_cold_warm_exact_required": true,
+    "compare_generated_tokens_and_response_structure": true,
+    "compare_tool_calls_reasoning_content_finish_reason_and_usage": true,
+    "missing_or_mismatched_state_action": "fail_fast",
+    "physical_block_identity_is_not_logical_content_identity": true
+  },
+  "operator_shadow_reference": {
+    "reference": "same-real-activation-pytorch-fallback",
+    "require_finite_candidate": true,
+    "require_finite_reference": true,
+    "maximum_relative_l2": 1e-05,
+    "maximum_absolute_error": 0.001,
+    "required_ranks": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "required_minimum_context_tokens": [
+      49152,
+      114688
+    ],
+    "minimum_observations_per_context_per_rank": 2,
+    "failure_action": "fail_fast",
+    "semantic_evidence_may_waive_failure": false
+  },
+  "teacher_forced_distribution": {
+    "role": "distribution-equivalence-screen-and-escalation-trigger",
+    "top_k": 5,
+    "required_prompt_tokens": [
+      4096,
+      32768,
+      65536,
+      131072,
+      235000
+    ],
+    "minimum_positions_per_case": 64,
+    "sampling_unit_for_inference": "prompt-case-cluster",
+    "positions_must_not_be_treated_as_independent_samples": true,
+    "control_repeat": {
+      "minimum_top1_agreement": 0.99,
+      "maximum_actual_logprob_absolute_delta_p99": 0.02,
+      "maximum_shared_logprob_absolute_delta_p99": 0.02,
+      "maximum_absolute_mean_teacher_nll_delta": 0.005,
+      "maximum_mutually_uncovered_top1_mismatches": 0
+    },
+    "tight_equivalence": {
+      "minimum_top1_agreement": 0.98,
+      "maximum_actual_logprob_absolute_delta": 0.1,
+      "maximum_actual_logprob_absolute_delta_p99": 0.02,
+      "maximum_shared_logprob_absolute_delta_p99": 0.02,
+      "maximum_mean_actual_nll_regression": 0.005,
+      "maximum_high_margin_top1_mismatches": 0,
+      "maximum_mutually_uncovered_top1_mismatches": 0
+    },
+    "candidate_exceeds_tight_equivalence_action": "escalate",
+    "candidate_exceedance_is_operator_failure": false,
+    "candidate_exceedance_is_capability_failure": false,
+    "candidate_tight_equivalence_authorizes_promotion": false
+  },
+  "autoregressive_trajectory": {
+    "same_arm_repeat_exact_required": true,
+    "cache_cold_warm_exact_required": true,
+    "cross_arm_greedy_token_exact_required": false,
+    "cross_arm_greedy_token_exact_is_diagnostic": true,
+    "cross_arm_suffix_divergence_is_capability_failure": false
+  },
+  "paired_task_capability": {
+    "confidence": 0.95,
+    "comparison_unit": "paired-request-or-task-item",
+    "default_noninferiority_margin": 0.02,
+    "default_zero_regression_minimum_pairs": 149,
+    "small_stratum_noninferiority_margin": 0.05,
+    "small_stratum_zero_regression_minimum_pairs": 59,
+    "binary_rule": "one-sided-exact-or-paired-bootstrap-upper-bound",
+    "continuous_rule": "paired-cluster-bootstrap-upper-bound",
+    "bootstrap_samples": 20000,
+    "bootstrap_seed": 20260729,
+    "critical_contract_baseline_only_failures": 0,
+    "required_strata": [
+      "tool-calling",
+      "reasoning",
+      "structured-output",
+      "code-and-math",
+      "multimodal",
+      "long-context-recall"
+    ],
+    "post_hoc_margin_or_sample_selection_forbidden": true
+  },
+  "promotion": {
+    "required_hard_layers": [
+      "identity_and_protocol",
+      "cache_transparency",
+      "operator_shadow_reference",
+      "paired_task_capability",
+      "performance_and_lifecycle"
+    ],
+    "teacher_forced_drift_requires_operator_and_capability_evidence": true,
+    "cross_arm_token_identity_alone_can_reject": false,
+    "semantic_evidence_can_hide_operator_failure": false,
+    "production_promotion_authorized": false,
+    "main_or_yaml_change_authorized": false
+  }
+}

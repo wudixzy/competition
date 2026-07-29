@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
+import json
 import os
+from pathlib import Path
+import re
 import sys
+import tempfile
 import torch
 import traceback
 from vllm import _custom_ops as ops
@@ -40,6 +44,11 @@ _ENABLE_COREX_FUSED_PAGED_PREFILL = env_bool(
     "BI100_ATTN_COREX_FUSED_PREFILL", False)
 _FUSED_PREFILL_DIAGNOSTICS = env_bool(
     "BI100_ATTN_COREX_FUSED_PREFILL_DIAGNOSTICS", False)
+_FUSED_PREFILL_SHADOW = env_bool(
+    "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW", False)
+_FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT = env_int(
+    "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT",
+    2, 1, 8)
 _USE_COREX_FUSED_PAGED_PREFILL = (
     _corex_fused_paged_prefill is not None
     and _ENABLE_COREX_FUSED_PAGED_PREFILL)
@@ -48,6 +57,105 @@ _DECODE_DISPATCH_LOGGED = set()
 _PREFIX_DISPATCH_LOGGED = set()
 _FUSED_PREFILL_DIAGNOSTICS_LOGGED = set()
 _CACHE_WRITE_LOGGED = False
+_FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT = 1.0e-5
+_FUSED_PREFILL_SHADOW_MAX_ABS_LIMIT = 1.0e-3
+_FUSED_PREFILL_SHADOW_STATE = {
+    "pid": None,
+    "records": [],
+}
+
+
+def _parse_fused_prefill_shadow_contexts(raw: str) -> Tuple[int, ...]:
+    """Parse fixed lower-bound buckets used by the diagnostic shadow."""
+    values = []
+    for field in raw.split(","):
+        field = field.strip()
+        if not field:
+            raise RuntimeError(
+                "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_CONTEXTS "
+                "contains an empty field")
+        try:
+            value = int(field)
+        except ValueError as exc:
+            raise RuntimeError(
+                "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_CONTEXTS must "
+                "contain integers") from exc
+        if value < 0 or value > 262144:
+            raise RuntimeError(
+                "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_CONTEXTS value "
+                "is outside [0, 262144]")
+        values.append(value)
+    if not values or values != sorted(set(values)):
+        raise RuntimeError(
+            "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_CONTEXTS must be "
+            "strictly increasing and unique")
+    return tuple(values)
+
+
+_FUSED_PREFILL_SHADOW_CONTEXTS = _parse_fused_prefill_shadow_contexts(
+    os.environ.get(
+        "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_CONTEXTS",
+        "49152,114688"))
+
+
+def _validate_fused_prefill_shadow_configuration(
+    enabled: bool,
+    fused_enabled: bool,
+    report_dir: Optional[str],
+    run_id: Optional[str],
+) -> Optional[Path]:
+    """Validate that the diagnostic cannot silently write ambiguous data."""
+    if not enabled:
+        return None
+    if not fused_enabled:
+        raise RuntimeError(
+            "fused-prefill shadow requires the fused-prefill path")
+    if not report_dir:
+        raise RuntimeError(
+            "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_REPORT_DIR is required")
+    path = Path(report_dir).expanduser()
+    tmp_root = Path("/tmp").resolve()
+    try:
+        path = path.resolve(strict=False)
+    except OSError as exc:
+        raise RuntimeError(
+            "fused-prefill shadow report directory cannot be resolved") \
+            from exc
+    if (
+        not path.is_absolute()
+        or path == tmp_root
+        or not path.is_relative_to(tmp_root)
+    ):
+        raise RuntimeError(
+            "fused-prefill shadow report directory must be under /tmp")
+    if (
+        not run_id
+        or len(run_id) > 96
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", run_id) is None
+    ):
+        raise RuntimeError(
+            "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_RUN_ID is invalid")
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not path.resolve(strict=True).is_relative_to(tmp_root):
+        raise RuntimeError(
+            "fused-prefill shadow report directory escaped /tmp")
+    try:
+        path.chmod(0o700)
+    except OSError:
+        pass
+    return path
+
+
+_FUSED_PREFILL_SHADOW_RUN_ID = os.environ.get(
+    "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_RUN_ID")
+_FUSED_PREFILL_SHADOW_REPORT_DIR = (
+    _validate_fused_prefill_shadow_configuration(
+        _FUSED_PREFILL_SHADOW,
+        _USE_COREX_FUSED_PAGED_PREFILL,
+        os.environ.get(
+            "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_REPORT_DIR"),
+        _FUSED_PREFILL_SHADOW_RUN_ID,
+    ))
 
 
 def _log_corex_fused_prefill_diagnostic(stage: str, **fields) -> None:
@@ -67,6 +175,245 @@ def _log_corex_fused_prefill_diagnostic(stage: str, **fields) -> None:
         flush=True,
     )
     _FUSED_PREFILL_DIAGNOSTICS_LOGGED.add(key)
+
+
+def _fused_prefill_shadow_rank() -> int:
+    for name in ("RANK", "LOCAL_RANK"):
+        raw = os.environ.get(name)
+        if raw is None:
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            continue
+        if value >= 0:
+            return value
+    return -1
+
+
+def _fused_prefill_shadow_process_state() -> dict:
+    pid = os.getpid()
+    if _FUSED_PREFILL_SHADOW_STATE["pid"] != pid:
+        _FUSED_PREFILL_SHADOW_STATE["pid"] = pid
+        _FUSED_PREFILL_SHADOW_STATE["records"] = []
+    return _FUSED_PREFILL_SHADOW_STATE
+
+
+def _fused_prefill_shadow_report_path() -> Path:
+    if _FUSED_PREFILL_SHADOW_REPORT_DIR is None:
+        raise RuntimeError("fused-prefill shadow report directory is unset")
+    rank = _fused_prefill_shadow_rank()
+    rank_label = str(rank) if rank >= 0 else "unknown"
+    return _FUSED_PREFILL_SHADOW_REPORT_DIR / (
+        f"rank-{rank_label}-pid-{os.getpid()}.json")
+
+
+def _atomic_write_fused_prefill_shadow_report(value: dict) -> None:
+    path = _fused_prefill_shadow_report_path()
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, ensure_ascii=True, indent=2,
+                      sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def _build_fused_prefill_shadow_report(records: list) -> dict:
+    expected = (
+        len(_FUSED_PREFILL_SHADOW_CONTEXTS)
+        * _FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT)
+    completed = [
+        record for record in records
+        if record["status"] in {"pass", "fail", "invalid"}
+    ]
+    failures = [record for record in completed if record["status"] == "fail"]
+    invalid = [record for record in completed if record["status"] == "invalid"]
+    pending = [record for record in records if record["status"] == "pending"]
+    relative_l2_values = [
+        record["relative_l2"] for record in completed
+        if isinstance(record.get("relative_l2"), float)
+    ]
+    max_abs_values = [
+        record["max_abs"] for record in completed
+        if isinstance(record.get("max_abs"), float)
+    ]
+    if invalid:
+        status = "invalid"
+    elif failures:
+        status = "fail"
+    elif len(completed) == expected and not pending:
+        status = "pass"
+    else:
+        status = "collecting"
+    return {
+        "schema": "bi100-fused-prefill-real-activation-shadow-v1",
+        "version": 1,
+        "run_id": _FUSED_PREFILL_SHADOW_RUN_ID,
+        "pid": os.getpid(),
+        "rank": _fused_prefill_shadow_rank(),
+        "status": status,
+        "selection": {
+            "minimum_context_tokens": list(
+                _FUSED_PREFILL_SHADOW_CONTEXTS),
+            "max_calls_per_context": (
+                _FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT),
+        },
+        "thresholds": {
+            "require_finite_candidate": True,
+            "require_finite_reference": True,
+            "maximum_relative_l2": (
+                _FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT),
+            "maximum_absolute_error": (
+                _FUSED_PREFILL_SHADOW_MAX_ABS_LIMIT),
+        },
+        "observations": {
+            "expected": expected,
+            "reserved": len(records),
+            "completed": len(completed),
+            "passed": sum(record["status"] == "pass" for record in records),
+            "failed": len(failures),
+            "invalid": len(invalid),
+            "pending": len(pending),
+            "maximum_relative_l2": (
+                max(relative_l2_values) if relative_l2_values else None),
+            "maximum_absolute_error": (
+                max(max_abs_values) if max_abs_values else None),
+        },
+        "records": records,
+        "privacy": {
+            "contains_prompts": False,
+            "contains_model_outputs": False,
+            "contains_tensor_values": False,
+            "contains_token_ids": False,
+            "contains_credentials": False,
+        },
+    }
+
+
+def _reserve_fused_prefill_shadow(
+    query: torch.Tensor,
+    block_context_len: int,
+    num_q_heads: int,
+    num_kv_heads: int,
+    head_dim: int,
+    block_size: int,
+) -> Optional[int]:
+    if not _FUSED_PREFILL_SHADOW:
+        return None
+    state = _fused_prefill_shadow_process_state()
+    records = state["records"]
+    selected_bucket = None
+    for bucket_index, bucket in enumerate(_FUSED_PREFILL_SHADOW_CONTEXTS):
+        upper_bound = (
+            _FUSED_PREFILL_SHADOW_CONTEXTS[bucket_index + 1]
+            if bucket_index + 1 < len(_FUSED_PREFILL_SHADOW_CONTEXTS)
+            else None)
+        used = sum(
+            record["bucket_min_context_tokens"] == bucket
+            for record in records)
+        if (
+            block_context_len >= bucket
+            and (upper_bound is None or block_context_len < upper_bound)
+            and used < _FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT
+        ):
+            selected_bucket = bucket
+            break
+    if selected_bucket is None:
+        return None
+    record = {
+        "index": len(records),
+        "status": "pending",
+        "bucket_min_context_tokens": selected_bucket,
+        "context_tokens": block_context_len,
+        "query_shape": list(query.shape),
+        "query_heads": num_q_heads,
+        "kv_heads": num_kv_heads,
+        "head_dim": head_dim,
+        "block_size": block_size,
+        "candidate_finite": None,
+        "reference_finite": None,
+        "relative_l2": None,
+        "max_abs": None,
+        "error_stage": None,
+        "error_type": None,
+    }
+    records.append(record)
+    _atomic_write_fused_prefill_shadow_report(
+        _build_fused_prefill_shadow_report(records))
+    return record["index"]
+
+
+def _finish_fused_prefill_shadow(
+    index: int,
+    *,
+    status: str,
+    candidate_finite: Optional[bool] = None,
+    reference_finite: Optional[bool] = None,
+    relative_l2: Optional[float] = None,
+    max_abs: Optional[float] = None,
+    error_stage: Optional[str] = None,
+    error_type: Optional[str] = None,
+) -> None:
+    state = _fused_prefill_shadow_process_state()
+    records = state["records"]
+    if index < 0 or index >= len(records):
+        raise RuntimeError("fused-prefill shadow record index is invalid")
+    if status not in {"pass", "fail", "invalid"}:
+        raise RuntimeError("fused-prefill shadow status is invalid")
+    record = records[index]
+    record.update({
+        "status": status,
+        "candidate_finite": candidate_finite,
+        "reference_finite": reference_finite,
+        "relative_l2": relative_l2,
+        "max_abs": max_abs,
+        "error_stage": error_stage,
+        "error_type": error_type,
+    })
+    _atomic_write_fused_prefill_shadow_report(
+        _build_fused_prefill_shadow_report(records))
+
+
+def _compare_fused_prefill_shadow_outputs(
+    candidate: torch.Tensor,
+    reference: torch.Tensor,
+) -> dict:
+    candidate_float = candidate.float()
+    reference_float = reference.float()
+    candidate_finite = bool(torch.isfinite(candidate_float).all().item())
+    reference_finite = bool(torch.isfinite(reference_float).all().item())
+    if not candidate_finite or not reference_finite:
+        return {
+            "status": "fail" if not candidate_finite else "invalid",
+            "candidate_finite": candidate_finite,
+            "reference_finite": reference_finite,
+            "relative_l2": None,
+            "max_abs": None,
+        }
+    difference = candidate_float - reference_float
+    max_abs = float(difference.abs().max().item())
+    denominator = max(float(torch.norm(reference_float).item()), 1.0e-12)
+    relative_l2 = float(torch.norm(difference).item()) / denominator
+    qualified = (
+        relative_l2 <= _FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT
+        and max_abs <= _FUSED_PREFILL_SHADOW_MAX_ABS_LIMIT)
+    return {
+        "status": "pass" if qualified else "fail",
+        "candidate_finite": True,
+        "reference_finite": True,
+        "relative_l2": relative_l2,
+        "max_abs": max_abs,
+    }
 
 
 def _validate_decode_layout(
@@ -990,20 +1337,45 @@ class PagedAttention:
             required_blocks = block_context_len // block_size
             active_block_table = block_tables[
                 seq_index, :required_blocks].contiguous()
-            fused_result = _corex_fused_paged_prefill.forward(
+            shadow_index = _reserve_fused_prefill_shadow(
                 query,
-                key,
-                value,
-                key_cache,
-                value_cache,
-                active_block_table,
                 block_context_len,
-                scale,
+                num_q_heads,
+                num_kv_heads,
+                head_dim,
+                block_size,
             )
+            try:
+                fused_result = _corex_fused_paged_prefill.forward(
+                    query,
+                    key,
+                    value,
+                    key_cache,
+                    value_cache,
+                    active_block_table,
+                    block_context_len,
+                    scale,
+                )
+            except Exception as exc:
+                if shadow_index is not None:
+                    _finish_fused_prefill_shadow(
+                        shadow_index,
+                        status="invalid",
+                        error_stage="candidate-execution",
+                        error_type=type(exc).__name__,
+                    )
+                raise
             if (
                 not isinstance(fused_result, (list, tuple))
                 or len(fused_result) != 2
             ):
+                if shadow_index is not None:
+                    _finish_fused_prefill_shadow(
+                        shadow_index,
+                        status="invalid",
+                        error_stage="candidate-contract",
+                        error_type="InvalidResult",
+                    )
                 raise RuntimeError(
                     "corex fused paged-prefill returned an invalid result")
             fused_output = fused_result[0]
@@ -1012,8 +1384,57 @@ class PagedAttention:
                 or fused_output.dtype != query.dtype
                 or fused_output.device != query.device
             ):
+                if shadow_index is not None:
+                    _finish_fused_prefill_shadow(
+                        shadow_index,
+                        status="invalid",
+                        error_stage="candidate-contract",
+                        error_type="InvalidOutput",
+                    )
                 raise RuntimeError(
                     "corex fused paged-prefill returned an invalid output")
+            if shadow_index is not None:
+                try:
+                    reference_output = (
+                        PagedAttention._forward_prefix_segment_pytorch(
+                            query,
+                            key,
+                            value,
+                            prefix_key,
+                            prefix_value,
+                            key_cache,
+                            value_cache,
+                            block_tables,
+                            seq_index,
+                            block_context_len,
+                            num_q_heads,
+                            num_kv_heads,
+                            head_dim,
+                            gqa_ratio,
+                            block_size,
+                            tile_sz,
+                            scale,
+                            orig_dtype,
+                            False,
+                        ))
+                    shadow_metrics = _compare_fused_prefill_shadow_outputs(
+                        fused_output, reference_output)
+                except Exception as exc:
+                    _finish_fused_prefill_shadow(
+                        shadow_index,
+                        status="invalid",
+                        error_stage="reference-execution",
+                        error_type=type(exc).__name__,
+                    )
+                    raise
+                _finish_fused_prefill_shadow(
+                    shadow_index,
+                    **shadow_metrics,
+                )
+                if shadow_metrics["status"] != "pass":
+                    raise RuntimeError(
+                        "corex fused paged-prefill failed the real-activation "
+                        "shadow-reference numerical gate")
             log_key = "corex_split4"
             if log_key not in _PREFIX_DISPATCH_LOGGED:
                 print(

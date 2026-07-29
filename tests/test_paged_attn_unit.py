@@ -101,6 +101,15 @@ def _load_paged_attn(**env):
             BI100_FORCE_PAGED_ATTN_V2=env.get("force_v2"),
             BI100_PAGED_ATTN_DIAGNOSTICS=env.get("diagnostics"),
             BI100_ATTN_COREX_FUSED_PREFILL=env.get("fused_prefill"),
+            BI100_ATTN_COREX_FUSED_PREFILL_SHADOW=env.get("shadow"),
+            BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_REPORT_DIR=(
+                env.get("shadow_report_dir")),
+            BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_RUN_ID=(
+                env.get("shadow_run_id")),
+            BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_CONTEXTS=(
+                env.get("shadow_contexts")),
+            BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT=(
+                env.get("shadow_max_calls")),
     ):
         old_modules = {
             name: sys.modules.get(name)
@@ -184,6 +193,11 @@ class PagedAttentionUnitTest(unittest.TestCase):
         self.assertEqual(module._PREFIX_BLOCKS_PER_TILE, 32)
         self.assertFalse(module.PagedAttention._FORCE_PAGED_ATTN_V2)
         self.assertFalse(module._PAGED_ATTN_DIAGNOSTICS)
+        self.assertFalse(module._FUSED_PREFILL_SHADOW)
+        self.assertEqual(
+            module._FUSED_PREFILL_SHADOW_CONTEXTS, (49152, 114688))
+        self.assertEqual(
+            module._FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT, 2)
         self.assertEqual(module._DECODE_LOG_INTERVAL, 0)
         self.assertTrue(module.PagedAttention._should_use_paged_attention_v1(
             max_seq_len=100000,
@@ -214,6 +228,102 @@ class PagedAttentionUnitTest(unittest.TestCase):
     def test_attention_env_rejects_invalid_values(self):
         with self.assertRaises(RuntimeError):
             _load_paged_attn(threshold="0")
+
+    def test_shadow_context_parser_rejects_ambiguous_buckets(self):
+        module = _load_paged_attn()
+        self.assertEqual(
+            module._parse_fused_prefill_shadow_contexts("0,49152,114688"),
+            (0, 49152, 114688),
+        )
+        for value in ("", "49152,", "49152,49152", "114688,49152", "x"):
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                module._parse_fused_prefill_shadow_contexts(value)
+
+    def test_shadow_configuration_requires_private_bound_identity(self):
+        module = _load_paged_attn()
+        with tempfile.TemporaryDirectory(prefix="bi100-shadow-") as directory:
+            path = module._validate_fused_prefill_shadow_configuration(
+                True, True, directory, "m1-136-unit")
+            self.assertEqual(path, pathlib.Path(directory))
+        with self.assertRaisesRegex(RuntimeError, "requires the fused"):
+            module._validate_fused_prefill_shadow_configuration(
+                True, False, "/tmp/m1-136", "m1-136-unit")
+        with self.assertRaisesRegex(RuntimeError, "under /tmp"):
+            module._validate_fused_prefill_shadow_configuration(
+                True, True, "/var/tmp/m1-136", "m1-136-unit")
+        with self.assertRaisesRegex(RuntimeError, "under /tmp"):
+            module._validate_fused_prefill_shadow_configuration(
+                True, True, "/tmp/../var/tmp/m1-136", "m1-136-unit")
+        with tempfile.TemporaryDirectory(prefix="bi100-shadow-link-") as root:
+            escaped = pathlib.Path(root) / "escaped"
+            escaped.symlink_to("/var/tmp", target_is_directory=True)
+            with self.assertRaisesRegex(RuntimeError, "under /tmp"):
+                module._validate_fused_prefill_shadow_configuration(
+                    True, True, str(escaped / "m1-136"), "m1-136-unit")
+        with self.assertRaisesRegex(RuntimeError, "RUN_ID is invalid"):
+            module._validate_fused_prefill_shadow_configuration(
+                True, True, "/tmp/m1-136", "bad run id")
+
+    def test_shadow_report_contains_only_aggregate_shape_metrics(self):
+        module = _load_paged_attn()
+        record = {
+            "index": 0,
+            "status": "pass",
+            "bucket_min_context_tokens": 49152,
+            "context_tokens": 57344,
+            "query_shape": [8192, 4, 256],
+            "query_heads": 4,
+            "kv_heads": 1,
+            "head_dim": 256,
+            "block_size": 16,
+            "candidate_finite": True,
+            "reference_finite": True,
+            "relative_l2": 2.5e-6,
+            "max_abs": 0.00048828125,
+            "error_stage": None,
+            "error_type": None,
+        }
+        report = module._build_fused_prefill_shadow_report([record])
+        self.assertEqual(report["status"], "collecting")
+        self.assertEqual(report["observations"]["passed"], 1)
+        self.assertEqual(report["observations"]["maximum_relative_l2"], 2.5e-6)
+        serialized = repr(report).lower()
+        for forbidden in ("prompt_text", "actual_token_key", "tensor_payload"):
+            self.assertNotIn(forbidden, serialized)
+        self.assertTrue(all(
+            value is False for value in report["privacy"].values()))
+
+    def test_enabling_shadow_without_native_extension_fails_startup(self):
+        with self.assertRaisesRegex(RuntimeError, "requires the fused"):
+            _load_paged_attn(
+                fused_prefill="1",
+                shadow="1",
+                shadow_report_dir="/tmp/m1-136-unit",
+                shadow_run_id="m1-136-unit",
+            )
+
+    def test_shadow_context_buckets_are_disjoint(self):
+        module = _load_paged_attn()
+        with tempfile.TemporaryDirectory(prefix="bi100-shadow-buckets-") as root:
+            module._FUSED_PREFILL_SHADOW = True
+            module._FUSED_PREFILL_SHADOW_REPORT_DIR = pathlib.Path(root)
+            module._FUSED_PREFILL_SHADOW_RUN_ID = "m1-136-unit"
+            module._FUSED_PREFILL_SHADOW_CONTEXTS = (49152, 114688)
+            module._FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT = 2
+            module._FUSED_PREFILL_SHADOW_STATE = {"pid": None, "records": []}
+            query = types.SimpleNamespace(shape=(8176, 4, 256))
+            with _EnvPatch(RANK="0"):
+                self.assertEqual(module._reserve_fused_prefill_shadow(
+                    query, 122880, 4, 1, 256, 16), 0)
+                self.assertEqual(module._reserve_fused_prefill_shadow(
+                    query, 122880, 4, 1, 256, 16), 1)
+                self.assertIsNone(module._reserve_fused_prefill_shadow(
+                    query, 122880, 4, 1, 256, 16))
+            buckets = [
+                record["bucket_min_context_tokens"]
+                for record in module._FUSED_PREFILL_SHADOW_STATE["records"]
+            ]
+            self.assertEqual(buckets, [114688, 114688])
 
     def test_decode_layout_accepts_exact_block_table_boundary(self):
         module = _load_paged_attn()

@@ -6,6 +6,14 @@ Status: valid TP4 observation with a failed teacher-forced numerical screen.
 Attribution to M1-109 remains pending one fresh fused-off/fused-off repeat in
 M1-134. This result does not authorize a default, YAML, or `main` change.
 
+Superseded interpretation (2026-07-29): M1-134 subsequently produced exact
+control/control repeatability. The observed candidate distribution drift is
+therefore real, but the v2 layered gate no longer labels teacher-forced
+full-model drift as an operator numeric failure or a capability failure by
+itself. M1-132 is now an escalation trigger requiring real-activation operator
+shadow comparison plus powered task noninferiority. The table below preserves
+the original v1 result and thresholds for auditability.
+
 ## Contract
 
 Both arms used source `03e22126c94a2cc61719d41fe15ea33e5d0d0207`,
@@ -41,8 +49,9 @@ was structurally valid but failed the frozen numerical contract:
 
 Top-1 agreement by prompt length was 0.953125 at 4K, 0.9375 at 32K, 1.0 at
 65K, 0.921875 at 131K, and 0.890625 at 235K. The large logprob deltas make
-this more than an autoregressive suffix-divergence observation. A semantic
-task score cannot waive it.
+this more than an autoregressive suffix-divergence observation. Under v2 it
+does not waive a true operator failure, but it also does not establish one;
+the operator and task-capability layers are adjudicated independently.
 
 ## Cleanup incident
 
