@@ -62,6 +62,8 @@ EXPECTED_4XX_FIELDS = {
     "by_attributed_code",
     "by_endpoint",
     "by_reason",
+    "by_validation_field",
+    "by_validation_type",
     "request_shapes",
     "privacy",
 }
@@ -71,6 +73,8 @@ EXPECTED_4XX_PRIVACY = {
     "contains_response_content": False,
     "contains_tool_schema": False,
     "contains_multimodal_url_or_bytes": False,
+    "contains_validation_error_message": False,
+    "contains_validation_input_value": False,
 }
 EXPECTED_QUALITY_COMPARISON_PRIVACY = {
     "contains_raw_requests": False,

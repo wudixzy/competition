@@ -210,6 +210,8 @@ def api_4xx_report() -> dict:
             "empty_messages": 1,
             "request_validation_sampling": 7,
         },
+        "by_validation_field": {"sampling": 7},
+        "by_validation_type": {"value_error": 7},
         "request_shapes": [],
         "privacy": COMPARE.EXPECTED_4XX_PRIVACY.copy(),
     }
@@ -253,6 +255,18 @@ def write_json(path: Path, value: dict) -> str:
 
 
 class Admission64QualityServiceAbTest(unittest.TestCase):
+
+    def test_4xx_contract_matches_current_summarizer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "server.log"
+            log.write_text("", encoding="utf-8")
+            report, qualified = COMPARE.api_4xx.summarize(log)
+        self.assertTrue(qualified)
+        self.assertEqual(set(report), COMPARE.EXPECTED_4XX_FIELDS)
+        self.assertEqual(
+            report["privacy"],
+            COMPARE.EXPECTED_4XX_PRIVACY,
+        )
 
     def test_exact_policy_only_quality_ab_qualifies(self):
         result = compare_fixture()
