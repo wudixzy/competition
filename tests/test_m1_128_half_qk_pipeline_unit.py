@@ -49,6 +49,7 @@ class M1128HalfQkPipelineTest(unittest.TestCase):
             "prepared[index] = query[source];",
             "key_value = key_cache[key_index];",
             "key_value = key_new[source];",
+            "reinterpret_cast<__half*>(key_tiles.data_ptr<at::Half>())",
             "cublasGemmStridedBatchedEx(",
             "key_tile, CUDA_R_16F",
             "query, CUDA_R_16F",

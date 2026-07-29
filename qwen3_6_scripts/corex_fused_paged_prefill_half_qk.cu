@@ -479,7 +479,12 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
         reinterpret_cast<const __half*>(value_new.data_ptr<at::Half>()),
         reinterpret_cast<const __half*>(key_cache.data_ptr<at::Half>()),
         reinterpret_cast<const __half*>(value_cache.data_ptr<at::Half>()),
-        block_table.data_ptr<int>(), key_tiles.data_ptr<float>(),
+        block_table.data_ptr<int>(),
+#if BI100_HALF_INPUT_QK
+        reinterpret_cast<__half*>(key_tiles.data_ptr<at::Half>()),
+#else
+        key_tiles.data_ptr<float>(),
+#endif
         value_tiles.data_ptr<float>(), context_len, query_len, group_start,
         group_tokens, active_splits);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
