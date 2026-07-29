@@ -32,22 +32,28 @@ LRU eviction. The only runtime environment delta is:
 BI100_ATTN_COREX_FUSED_PREFILL=0 -> 1
 ```
 
-The hard quality comparator requires:
+The hard experiment-integrity comparator requires:
 
 - 64/64 HTTP-200, normalized responses and zero request errors;
 - zero chat 4xx responses;
-- no regression in strict or loose prompt pass counts;
-- no regression in strict or loose instruction pass counts;
-- no regression for any instruction ID or instruction family;
 - exact runtime, request, evaluator, manifest, and topology identities;
 - clean service and outer lifecycle evidence.
 
-A second comparator records exact semantic-output identity for every request.
-Exact drift does not get relabeled as equality. A run may pass the independent
-IFEval capability gate with deterministic output drift only when all score
-non-regression checks pass and every exact-comparison rejection is exclusively
-an output-identity difference. This does not relax the separate M1-116
-next-token and numerical gates.
+Capability is evaluated on paired prompts under the layered gate. Strict and
+loose prompt outcomes each use the predeclared one-sided paired-bootstrap
+screen at 95% confidence and a five-percentage-point non-inferiority margin.
+The 64 prompts exceed the zero-regression power floor of 59 for this screen.
+They do not meet the 149-prompt floor required for the final two-point
+promotion claim, so M1-122 cannot establish production non-inferiority alone.
+
+The previous zero-stratum policy remains a sensitive diagnostic: aggregate,
+instruction-level, instruction-ID, and family regressions are still recorded,
+but one small stratum no longer overrules the paired prompt result without
+statistical power. A separate comparator records exact semantic-output
+identity for every request. Exact drift does not get relabeled as equality,
+but it is trajectory evidence rather than an automatic capability failure.
+Neither semantic screen can waive the independent operator-numerical,
+teacher-forced, cache-transparency, protocol, or lifecycle gates.
 
 ## Privacy And Lifecycle
 
@@ -82,7 +88,8 @@ The run is intentionally long because each frozen request permits the official
 
 ## Authorization
 
-M1-122 is a quality gate only. It cannot authorize performance claims,
+M1-122 is a five-point capability screen only. It cannot authorize a final
+two-point non-inferiority claim, performance claims,
 `computility-run.yaml`, a default selector, `main`, repository visibility, or
 production promotion. Those remain blocked on the complete M1-109 component,
 M1-114 performance, M1-116 functional/Agent/output, M1-117 long-context,

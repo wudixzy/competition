@@ -10,12 +10,13 @@ from typing import Any
 
 import compare_admission64_quality_service_ab as service
 import compare_ifeval_reports as ifeval
+import compare_ifeval_paired_noninferiority as paired_ifeval
 import summarize_api_4xx_log as api_4xx
 
 
 Json = dict[str, Any]
-SCHEMA = "bi100-m1-122-ifeval-fused-prefill-ab-v1"
-VERSION = 1
+SCHEMA = "bi100-m1-122-ifeval-fused-prefill-ab-v2"
+VERSION = 2
 EXPECTED_GATES = {
     "runtime_identity",
     "runtime_contract",
@@ -59,6 +60,11 @@ EXPECTED_PRIVACY = {
     "contains_credentials": False,
     "raw_checkpoint_absent_after_lifecycle": True,
 }
+LAYERED_CONTRACT = (
+    Path(__file__).resolve().parents[1]
+    / "quality/layered_quality_gate.v1.json"
+)
+EXPECTED_LAYERED_CONTRACT_SHA256 = service._file_sha256(LAYERED_CONTRACT)
 
 
 def _arm_paths(root: Path) -> dict[str, Path]:
@@ -240,6 +246,71 @@ def _comparison_reasons(
     return reasons
 
 
+def _paired_noninferiority_reasons(
+    report: Any,
+    *,
+    baseline_sha256: str,
+    candidate_sha256: str,
+) -> list[str]:
+    if not isinstance(report, dict):
+        return ["paired non-inferiority report root must be an object"]
+    reasons = []
+    if (
+        report.get("schema") != paired_ifeval.SCHEMA
+        or report.get("version") != paired_ifeval.VERSION
+        or report.get("status") != "pass"
+        or report.get("qualified") is not True
+        or report.get("baseline_sha256") != baseline_sha256
+        or report.get("candidate_sha256") != candidate_sha256
+        or report.get("contract_sha256")
+        != EXPECTED_LAYERED_CONTRACT_SHA256
+        or report.get("allowed_switches") != ["fused_prefill"]
+        or report.get("sample_count") != 64
+        or report.get("reasons") != []
+    ):
+        reasons.append("paired non-inferiority screen did not qualify")
+    screen = report.get("screen") or {}
+    checks = screen.get("checks") or {}
+    if (
+        screen.get("confidence") != 0.95
+        or screen.get("noninferiority_margin") != 0.05
+        or screen.get("bootstrap_samples") != 20000
+        or set(checks) != {"strict_prompt", "loose_prompt"}
+        or any(
+            value.get("status") != "pass"
+            or value.get("qualified") is not True
+            or value.get("sample_count") != 64
+            for value in checks.values()
+            if isinstance(value, dict)
+        )
+        or any(not isinstance(value, dict) for value in checks.values())
+    ):
+        reasons.append("paired strict/loose prompt checks differ")
+    power = report.get("promotion_power") or {}
+    if (
+        power.get("noninferiority_margin") != 0.02
+        or power.get("minimum_zero_regression_samples") != 149
+        or power.get("sufficient") is not False
+    ):
+        reasons.append("paired promotion power declaration differs")
+    if report.get("authorization") != {
+        "five_point_screen_authorized": True,
+        "two_point_promotion_authorized": False,
+        "overall_promotion_authorized": False,
+    }:
+        reasons.append("paired authorization boundary differs")
+    expected_privacy = {
+        "contains_sample_outcomes": False,
+        "contains_prompts": False,
+        "contains_model_outputs": False,
+        "contains_token_ids": False,
+        "contains_credentials": False,
+    }
+    if report.get("privacy") != expected_privacy:
+        reasons.append("paired non-inferiority privacy contract differs")
+    return reasons
+
+
 def compare(
     *,
     control_status: Any,
@@ -256,6 +327,7 @@ def compare(
     candidate_identity: Any,
     score_comparison: Any,
     exact_comparison: Any,
+    paired_noninferiority: Any,
     file_sha256s: dict[str, dict[str, str]],
 ) -> Json:
     reasons = _status_reasons(
@@ -303,7 +375,11 @@ def compare(
         {"fused_prefill"},
         True,
     )
-    reasons.extend(score_reasons)
+    exact_output_reasons = [
+        reason
+        for reason in exact_reasons
+        if reason.startswith("candidate output differs for key ")
+    ]
     reasons.extend(_comparison_reasons(
         score_comparison,
         baseline_sha256=file_sha256s["control"]["ifeval_report"],
@@ -320,14 +396,11 @@ def compare(
         expected_reasons=exact_reasons,
         label="exact-output diagnostic",
     ))
-    non_output_exact_reasons = [
-        reason
-        for reason in exact_reasons
-        if not reason.startswith("candidate output differs for key ")
-    ]
-    if non_output_exact_reasons:
-        reasons.append("exact-output diagnostic contains non-output failures")
-
+    reasons.extend(_paired_noninferiority_reasons(
+        paired_noninferiority,
+        baseline_sha256=file_sha256s["control"]["ifeval_report"],
+        candidate_sha256=file_sha256s["candidate"]["ifeval_report"],
+    ))
     if isinstance(control_report, dict):
         reasons.extend(_progress_reasons(
             control_progress,
@@ -371,9 +444,12 @@ def compare(
         "schema": SCHEMA,
         "version": VERSION,
         "qualified": qualified,
-        "ifeval_quality_non_regression_authorized": qualified,
-        "strict_exact_output_qualified": not exact_reasons,
-        "strict_exact_output_mismatch_count": len(exact_reasons),
+        "ifeval_five_point_screen_authorized": qualified,
+        "ifeval_two_point_promotion_authorized": False,
+        "strict_zero_stratum_qualified": not score_reasons,
+        "strict_zero_stratum_reason_count": len(score_reasons),
+        "strict_exact_output_qualified": not exact_output_reasons,
+        "strict_exact_output_mismatch_count": len(exact_output_reasons),
         "score_delta": (
             score_comparison.get("score_delta")
             if isinstance(score_comparison, dict) else None
@@ -396,6 +472,7 @@ def main() -> int:
     parser.add_argument("--candidate-root", type=Path, required=True)
     parser.add_argument("--score-comparison", type=Path, required=True)
     parser.add_argument("--exact-comparison", type=Path, required=True)
+    parser.add_argument("--paired-noninferiority", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -430,6 +507,7 @@ def main() -> int:
         candidate_identity=values["candidate"]["process_group_identity"],
         score_comparison=service._load(args.score_comparison),
         exact_comparison=service._load(args.exact_comparison),
+        paired_noninferiority=service._load(args.paired_noninferiority),
         file_sha256s=file_sha256s,
     )
     result["inputs"] = {
@@ -446,6 +524,8 @@ def main() -> int:
             args.score_comparison),
         "exact_comparison_sha256": service._file_sha256(
             args.exact_comparison),
+        "paired_noninferiority_sha256": service._file_sha256(
+            args.paired_noninferiority),
     })
     service._atomic_write(args.out, result)
     print(json.dumps({

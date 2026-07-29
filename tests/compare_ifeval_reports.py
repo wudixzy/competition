@@ -66,7 +66,11 @@ def validate_report(value: Any, label: str) -> list[str]:
     manifest = value.get("manifest") or {}
     if (manifest.get("sha256") != EXPECTED_MANIFEST_SHA256
             or manifest.get("full_selection") is not True
-            or len(manifest.get("selected_keys") or []) != 64):
+            or len(manifest.get("selected_keys") or []) != 64
+            or any(
+                not isinstance(key, (str, int)) or isinstance(key, bool)
+                for key in (manifest.get("selected_keys") or [])
+            )):
         reasons.append(f"{label}: manifest identity or selection differs")
     runtime = value.get("runtime") or {}
     if (runtime.get("gpu_count") != 4
@@ -86,6 +90,44 @@ def validate_report(value: Any, label: str) -> list[str]:
             or not isinstance(summary.get("instruction_total"), int)
             or summary.get("instruction_total", 0) <= 0):
         reasons.append(f"{label}: score summary is incomplete")
+    count_fields = (
+        "strict_prompt_passed", "loose_prompt_passed",
+        "strict_instruction_passed", "loose_instruction_passed",
+    )
+    if any(
+        not isinstance(summary.get(name), int)
+        or isinstance(summary.get(name), bool)
+        for name in count_fields
+    ):
+        reasons.append(f"{label}: score totals are incomplete")
+    for group_name in ("by_instruction_id", "by_family"):
+        group = summary.get(group_name)
+        if (
+            not isinstance(group, dict)
+            or not group
+            or any(
+                not isinstance(counts, dict)
+                or any(
+                    not isinstance(counts.get(name), int)
+                    or isinstance(counts.get(name), bool)
+                    for name in ("total", "strict_passed", "loose_passed")
+                )
+                for counts in group.values()
+            )
+        ):
+            reasons.append(f"{label}: {group_name} summary is incomplete")
+    cases = value.get("cases")
+    if (
+        not isinstance(cases, list)
+        or len(cases) != 64
+        or any(
+            not isinstance(case, dict)
+            or not isinstance(case.get("key"), (str, int))
+            or isinstance(case.get("key"), bool)
+            for case in cases
+        )
+    ):
+        reasons.append(f"{label}: cases are incomplete")
     privacy = value.get("privacy") or {}
     if any(privacy.get(key) is not False for key in (
             "contains_credentials", "contains_raw_prompts",
@@ -118,12 +160,12 @@ def no_regression_reasons(baseline: Json, candidate: Json) -> list[str]:
     return reasons
 
 
-def comparison_reasons(
+def pair_identity_reasons(
     baseline: Json,
     candidate: Json,
     allowed_switches: set[str],
-    require_exact_output: bool,
 ) -> list[str]:
+    """Validate that two reports form one controlled paired experiment."""
     reasons = validate_report(baseline, "baseline")
     reasons.extend(validate_report(candidate, "candidate"))
     if reasons:
@@ -165,13 +207,39 @@ def comparison_reasons(
         if (baseline_environment.get(name) != candidate_environment.get(name)
                 and name not in allowed_environment):
             reasons.append(f"candidate runtime environment differs: {name}")
-    reasons.extend(no_regression_reasons(baseline, candidate))
 
     baseline_cases = {case["key"]: case for case in baseline["cases"]}
     candidate_cases = {case["key"]: case for case in candidate["cases"]}
+    if len(baseline_cases) != len(baseline["cases"]):
+        reasons.append("baseline case identities are not unique")
+    if len(candidate_cases) != len(candidate["cases"]):
+        reasons.append("candidate case identities are not unique")
     if set(candidate_cases) != set(baseline_cases):
         reasons.append("candidate case identities differ")
-    elif require_exact_output:
+    else:
+        for key in sorted(baseline_cases):
+            if (candidate_cases[key].get("instruction_id_list")
+                    != baseline_cases[key].get("instruction_id_list")):
+                reasons.append(
+                    f"candidate instruction identities differ for key {key}")
+    return reasons
+
+
+def comparison_reasons(
+    baseline: Json,
+    candidate: Json,
+    allowed_switches: set[str],
+    require_exact_output: bool,
+) -> list[str]:
+    reasons = pair_identity_reasons(
+        baseline, candidate, allowed_switches)
+    if reasons:
+        return reasons
+    reasons.extend(no_regression_reasons(baseline, candidate))
+
+    if require_exact_output:
+        baseline_cases = {case["key"]: case for case in baseline["cases"]}
+        candidate_cases = {case["key"]: case for case in candidate["cases"]}
         for key in sorted(baseline_cases):
             if (candidate_cases[key].get("semantic_output_sha256")
                     != baseline_cases[key].get("semantic_output_sha256")):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -72,7 +73,7 @@ def contract(label: str, fused: str) -> dict:
 
 def report(label: str, fused: str, output: str = "d" * 64) -> dict:
     runtime_contract = contract(label, fused)
-    counts = {"total": 4, "strict_passed": 3, "loose_passed": 4}
+    counts = {"total": 64, "strict_passed": 64, "loose_passed": 64}
     return {
         "schema": "bi100-ifeval-result-v1",
         "version": 1,
@@ -122,11 +123,11 @@ def report(label: str, fused: str, output: str = "d" * 64) -> dict:
         },
         "summary": {
             "prompt_total": 64,
-            "instruction_total": 4,
-            "strict_prompt_passed": 3,
-            "loose_prompt_passed": 4,
-            "strict_instruction_passed": 3,
-            "loose_instruction_passed": 4,
+            "instruction_total": 64,
+            "strict_prompt_passed": 64,
+            "loose_prompt_passed": 64,
+            "strict_instruction_passed": 64,
+            "loose_instruction_passed": 64,
             "by_instruction_id": {
                 "keywords:existence": dict(counts),
             },
@@ -139,6 +140,9 @@ def report(label: str, fused: str, output: str = "d" * 64) -> dict:
             {
                 "key": key,
                 "status": "pass",
+                "instruction_id_list": ["keywords:existence"],
+                "strict": [True],
+                "loose": [True],
                 "semantic_output_sha256": output,
             }
             for key in range(64)
@@ -263,10 +267,29 @@ def comparison(
     }
 
 
+def paired_comparison(control: dict, candidate: dict) -> dict:
+    quality_contract = json.loads(
+        (ROOT / "quality/layered_quality_gate.v1.json").read_text(
+            encoding="utf-8"))
+    value = M.paired_ifeval.compare(
+        control,
+        candidate,
+        quality_contract,
+        allowed_switches={"fused_prefill"},
+    )
+    value.update({
+        "baseline_sha256": SHA,
+        "candidate_sha256": SHA,
+        "contract_sha256": M.EXPECTED_LAYERED_CONTRACT_SHA256,
+    })
+    return value
+
+
 def invoke(
     *,
     output_drift: bool = False,
     score_regression: bool = False,
+    paired_regression: bool = False,
     failed_gate: bool = False,
 ) -> dict:
     control_report = report("m1-122-control-fused-off", "0")
@@ -277,6 +300,15 @@ def invoke(
     )
     if score_regression:
         candidate_report["summary"]["strict_prompt_passed"] -= 1
+    if paired_regression:
+        for case in candidate_report["cases"][:10]:
+            case["strict"] = [False]
+        candidate_report["summary"]["strict_prompt_passed"] -= 10
+        candidate_report["summary"]["strict_instruction_passed"] -= 10
+        candidate_report["summary"]["by_instruction_id"][
+            "keywords:existence"]["strict_passed"] -= 10
+        candidate_report["summary"]["by_family"][
+            "keywords"]["strict_passed"] -= 10
     arm_hashes = {"control": hashes(), "candidate": hashes()}
     control_status = status(
         "m1-122-control-fused-off", "0", arm_hashes["control"])
@@ -301,6 +333,8 @@ def invoke(
             control_report, candidate_report, exact=False),
         exact_comparison=comparison(
             control_report, candidate_report, exact=True),
+        paired_noninferiority=paired_comparison(
+            control_report, candidate_report),
         file_sha256s=arm_hashes,
     )
 
@@ -320,11 +354,17 @@ class M1122IFEvalComparatorTest(unittest.TestCase):
         self.assertFalse(value["strict_exact_output_qualified"])
         self.assertEqual(value["strict_exact_output_mismatch_count"], 64)
 
-    def test_score_regression_fails(self) -> None:
+    def test_zero_stratum_regression_is_diagnostic(self) -> None:
         value = invoke(score_regression=True)
+        self.assertTrue(value["qualified"], value)
+        self.assertFalse(value["strict_zero_stratum_qualified"])
+        self.assertTrue(value["strict_exact_output_qualified"])
+
+    def test_statistically_clear_paired_regression_fails(self) -> None:
+        value = invoke(paired_regression=True)
         self.assertFalse(value["qualified"])
         self.assertTrue(any(
-            "candidate regressed aggregate strict_prompt_passed" in reason
+            "paired non-inferiority screen did not qualify" in reason
             for reason in value["reasons"]
         ))
 
@@ -373,6 +413,9 @@ class M1122IFEvalRunnerStaticTest(unittest.TestCase):
         self.assertIn("m1-122-candidate-fused-on", self.outer)
         self.assertIn("--allowed-switch fused_prefill", self.outer)
         self.assertIn("--require-exact-output", self.outer)
+        self.assertIn(
+            "compare_ifeval_paired_noninferiority.py", self.outer)
+        self.assertIn("--paired-noninferiority", self.outer)
         self.assertIn("compare_m1_122_ifeval_service_ab.py", self.outer)
         self.assertIn("m1-122-fused-prefill-ifeval", self.wrapper)
         self.assertNotIn("computility-run.yaml", self.wrapper)

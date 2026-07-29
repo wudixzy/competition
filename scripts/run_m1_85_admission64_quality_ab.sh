@@ -181,10 +181,12 @@ report = {
 }
 if variant == "m1-122-fused-prefill-ifeval":
     report["gates"].update({
-        "ifeval_score_comparison": read_rc(
-            root / "ifeval_score_comparison.rc"),
+        "ifeval_paired_noninferiority": read_rc(
+            root / "ifeval_paired_noninferiority.rc"),
     })
     report["diagnostics"] = {
+        "ifeval_score_comparison": read_rc(
+            root / "ifeval_score_comparison.rc"),
         "ifeval_exact_comparison": read_rc(
             root / "ifeval_exact_comparison.rc"),
     }
@@ -215,6 +217,7 @@ if variant == "m1-122-fused-prefill-ifeval":
     for name in (
         "ifeval_score_comparison",
         "ifeval_exact_comparison",
+        "ifeval_paired_noninferiority",
         "aggregate",
     ):
         path = root / f"{name}.json"
@@ -700,6 +703,7 @@ aggregate_rc=0
 long_context_comparison_rc=0
 ifeval_score_comparison_rc=0
 ifeval_exact_comparison_rc=0
+ifeval_paired_noninferiority_rc=0
 teacher_forced_comparison_rc=0
 if [[ "$QUALITY_AB_VARIANT" == \
         m1-117-fused-prefill-long-context ]]; then
@@ -754,11 +758,25 @@ elif [[ "$QUALITY_AB_VARIANT" == \
     printf '%s\n' "$ifeval_exact_comparison_rc" \
         > "$RUN_ROOT/ifeval_exact_comparison.rc"
 
+    python3 "$ROOT/tests/compare_ifeval_paired_noninferiority.py" \
+        --baseline "$RUN_ROOT/control/ifeval_report.json" \
+        --candidate "$RUN_ROOT/candidate/ifeval_report.json" \
+        --contract "$ROOT/quality/layered_quality_gate.v1.json" \
+        --allowed-switch fused_prefill \
+        --out "$RUN_ROOT/ifeval_paired_noninferiority.json" \
+        > "$RUN_ROOT/ifeval_paired_noninferiority.stdout" \
+        2> "$RUN_ROOT/ifeval_paired_noninferiority.stderr"
+    ifeval_paired_noninferiority_rc=$?
+    printf '%s\n' "$ifeval_paired_noninferiority_rc" \
+        > "$RUN_ROOT/ifeval_paired_noninferiority.rc"
+
     python3 "$ROOT/tests/compare_m1_122_ifeval_service_ab.py" \
         --control-root "$RUN_ROOT/control" \
         --candidate-root "$RUN_ROOT/candidate" \
         --score-comparison "$RUN_ROOT/ifeval_score_comparison.json" \
         --exact-comparison "$RUN_ROOT/ifeval_exact_comparison.json" \
+        --paired-noninferiority \
+            "$RUN_ROOT/ifeval_paired_noninferiority.json" \
         --out "$RUN_ROOT/aggregate.json" \
         > "$RUN_ROOT/aggregate.stdout" \
         2> "$RUN_ROOT/aggregate.stderr"
@@ -833,7 +851,7 @@ if [[ "$QUALITY_AB_VARIANT" == \
 fi
 
 if [[ "$QUALITY_AB_VARIANT" == m1-122-fused-prefill-ifeval ]]; then
-    [[ $ifeval_score_comparison_rc -eq 0 ]]
+    [[ $ifeval_paired_noninferiority_rc -eq 0 ]]
     [[ $aggregate_rc -eq 0 ]]
 elif [[ "$QUALITY_AB_VARIANT" == \
         m1-132-fused-prefill-teacher-forced ]]; then
