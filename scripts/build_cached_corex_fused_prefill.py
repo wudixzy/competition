@@ -18,7 +18,7 @@ from typing import Any
 
 
 SCHEMA = "bi100-corex-extension-build-cache-v1"
-ARTIFACT_NAME = "corex_fused_paged_prefill.so"
+ARTIFACT_NAME = "corex_fused_paged_prefill_split4.so"
 
 
 def sha256_file(path: Path) -> str:

@@ -31,6 +31,20 @@ class CachedCorexBuildTest(unittest.TestCase):
             SCRIPT.read_text(encoding="ascii"),
         )
 
+    def test_cached_artifact_name_matches_build_script_contract(self):
+        build_script = (
+            ROOT / "qwen3_6_scripts"
+            / "build_corex_fused_paged_prefill_split4.sh"
+        ).read_text(encoding="ascii")
+        self.assertEqual(
+            MODULE.ARTIFACT_NAME,
+            "corex_fused_paged_prefill_split4.so",
+        )
+        self.assertIn(
+            f"OUTPUT=${{VLLM_ROOT}}/{MODULE.ARTIFACT_NAME}",
+            build_script,
+        )
+
     def test_cache_key_changes_with_source_build_or_toolchain(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
