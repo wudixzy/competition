@@ -1,0 +1,89 @@
+{
+  "schema": "bi100-layered-historical-reassessment-v1",
+  "version": 1,
+  "date": "2026-07-29",
+  "candidates": [
+    {
+      "id": "M1-109",
+      "classification": "pending-control-repeat-attribution",
+      "operator_numeric": "pass",
+      "teacher_forced_full_model": "fail-pending-aa-attribution",
+      "end_to_end_benefit": "material",
+      "rerun": "M1-134-control-repeat-only"
+    },
+    {
+      "id": "M1-108",
+      "classification": "conservative-exact-output-fallback",
+      "operator_numeric": "pass",
+      "tested_output_identity": "pass",
+      "end_to_end_benefit": "positive-below-final-target",
+      "rerun": "only-if-m1-109-attribution-fails"
+    },
+    {
+      "id": "M1-47/M1-99",
+      "classification": "superseded-positive-lineage",
+      "operator_numeric": "pass",
+      "historical_gate": "overstrict-continuation-threshold",
+      "rerun": "no"
+    },
+    {
+      "id": "M1-91/M1-96",
+      "classification": "operator-qualified-under-high-precision-oracle",
+      "operator_numeric": "pass",
+      "rerun": "no"
+    },
+    {
+      "id": "M1-98",
+      "classification": "closed-end-to-end-benefit",
+      "operator_numeric": "pass",
+      "integrated_speedup_percent": 1.102,
+      "rerun": "no"
+    },
+    {
+      "id": "E-PREFIX-08",
+      "classification": "unresolved-operator-oracle",
+      "operator_numeric": "fail-current-reference",
+      "relative_l2_range": [
+        0.0000349,
+        0.0000355
+      ],
+      "rerun": "one-high-precision-oracle-only"
+    },
+    {
+      "id": "E-ATTN-06",
+      "classification": "hard-operator-reject",
+      "operator_numeric": "fail",
+      "maximum_absolute_error": 0.05937195,
+      "rerun": "no"
+    },
+    {
+      "id": "E-MOE-04",
+      "classification": "closed-dominated-low-integrated-benefit",
+      "trajectory_identity": "different-diagnostic-only",
+      "end_to_end_benefit": "about-1.05x-to-1.09x-routed-boundary",
+      "superseded_by": [
+        "E-MOE-10",
+        "E-MOE-20"
+      ],
+      "rerun": "no"
+    },
+    {
+      "id": "admission64/direct-stale-state",
+      "classification": "hard-cache-transparency-reject",
+      "cache_transparency": "fail",
+      "rerun": "no"
+    },
+    {
+      "id": "admission64/hybrid64",
+      "classification": "cache-correctness-baseline",
+      "cache_transparency": "pass-current-matrix",
+      "rerun": "as-control-for-new-performance-candidates"
+    }
+  ],
+  "authorization": {
+    "default_policy_change_authorized": false,
+    "yaml_change_authorized": false,
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false
+  }
+}
