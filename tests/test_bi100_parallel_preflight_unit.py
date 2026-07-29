@@ -74,6 +74,15 @@ class ParallelBi100PreflightTest(unittest.TestCase):
         self.assertIn("signal.SIGKILL", source)
         self.assertIn("start_new_session=True", source)
 
+    def test_funnel_runners_do_not_cross_python_abis(self):
+        for relative in (
+            "scripts/run_m1_140_activation_capture.py",
+            "scripts/run_m1_141_short_tp4_screen.py",
+        ):
+            source = (ROOT / relative).read_text(encoding="ascii")
+            self.assertNotIn('"/usr/bin/python3"', source)
+            self.assertIn("sys.executable", source)
+
 
 if __name__ == "__main__":
     unittest.main()

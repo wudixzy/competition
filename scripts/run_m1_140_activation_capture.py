@@ -276,7 +276,7 @@ class CaptureRunner:
     def run_postflight(self, label: str) -> None:
         rc = _run_to_files(
             [
-                "/usr/bin/python3",
+                sys.executable,
                 str(self.root / "tests" / "service_postflight_gate.py"),
                 "--gpus", "0,1,2,3",
                 "--settle-timeout-s", "90",
@@ -295,7 +295,7 @@ class CaptureRunner:
     def run_preflight(self, label: str) -> None:
         rc = _run_to_files(
             [
-                "/usr/bin/python3",
+                sys.executable,
                 str(self.root / "tests" / "bi100_parallel_preflight.py"),
                 "--gpus", "0,1,2,3",
                 "--timeout-s", "25",
@@ -316,7 +316,7 @@ class CaptureRunner:
         output = self.run_root / "runtime_identity.json"
         rc = _run_to_files(
             [
-                "/usr/bin/python3",
+                sys.executable,
                 str(self.root / "tests"
                     / "verify_bare_host_runtime_identity.py"),
                 "--source-root", str(self.root),
@@ -389,7 +389,7 @@ class CaptureRunner:
         self.server_log = (self.run_root / "server.log").open("wb")
         self.process = subprocess.Popen(
             [
-                "/usr/bin/python3",
+                sys.executable,
                 str(self.root / "scripts" / "exec_bi100_session.py"),
                 str(identity),
                 "--",
@@ -412,7 +412,7 @@ class CaptureRunner:
     def run_capture_requests(self) -> None:
         rc = _run_to_files(
             [
-                "/usr/bin/python3",
+                sys.executable,
                 str(self.root / "tests"
                     / "capture_fused_prefill_activation_service.py"),
                 "--base", "http://127.0.0.1:8000",
@@ -437,7 +437,7 @@ class CaptureRunner:
             for rank in range(4)
         ]
         command = [
-            "/usr/bin/python3",
+            sys.executable,
             str(self.root / "tests"
                 / "qualify_fused_prefill_activation_bank.py"),
         ]
@@ -467,7 +467,7 @@ class CaptureRunner:
         if identity.is_file():
             rc = _run_to_files(
                 [
-                    "/usr/bin/python3",
+                    sys.executable,
                     str(self.root / "scripts"
                         / "cleanup_recorded_bi100_sessions.py"),
                     "--identity", str(identity),
@@ -526,7 +526,7 @@ class CaptureRunner:
     def compare_preflights(self) -> None:
         rc = _run_to_files(
             [
-                "/usr/bin/python3",
+                sys.executable,
                 str(self.root / "tests" / "compare_bi100_preflights.py"),
                 "--preflight",
                 f"before={self.run_root / 'preflight_before.json'}",

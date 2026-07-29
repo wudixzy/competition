@@ -116,7 +116,7 @@ class ShortTp4Runner(CaptureRunner):
 
         rc = _run_to_files(
             [
-                "/usr/bin/python3",
+                sys.executable,
                 str(self.root / "tests" / "short_tp4_funnel_service.py"),
                 "--base", "http://127.0.0.1:8000",
                 "--model-path", str(self.model_path.resolve()),

@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Any
@@ -65,7 +66,7 @@ def _verify(
     output: Path,
 ) -> dict[str, Any]:
     command = [
-        "/usr/bin/python3",
+        sys.executable,
         str(root / "tests" / "verify_bare_host_runtime_identity.py"),
         "--source-root",
         str(root),

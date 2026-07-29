@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -16,6 +17,16 @@ SPEC.loader.exec_module(MODULE)
 
 
 class OverlayCacheTest(unittest.TestCase):
+
+    def test_verifier_uses_the_active_python_interpreter(self):
+        self.assertEqual(
+            Path(MODULE.sys.executable).resolve(),
+            Path(sys.executable).resolve(),
+        )
+        self.assertNotIn(
+            '"/usr/bin/python3"',
+            SCRIPT.read_text(encoding="ascii"),
+        )
 
     def test_source_identity_is_exact_commit_and_clean_state(self):
         with tempfile.TemporaryDirectory() as directory:
