@@ -53,7 +53,10 @@
     "operator builds had no content-addressed toolchain cache",
     "historical runners usually lacked stage-level monotonic wall-time evidence",
     "M1-136 and M1-138 recomputed the real-activation PyTorch reference inside every fresh model run",
-    "the first shadow observations sampled early full-attention calls rather than fixed layer-spanning ordinals"
+    "the first shadow observations sampled early full-attention calls rather than fixed layer-spanning ordinals",
+    "the serial four-GPU preflight multiplied CoreX startup and timeout cost and delayed per-GPU diagnostics",
+    "new runners crossed from the active CoreX Python 3.10 into the host Python 3.8",
+    "the first compile-cache wrapper expected a different artifact name than the build script produced"
   ],
   "new_funnel": {
     "contract": "quality/experiment_funnel.v1.json",
@@ -74,13 +77,77 @@
     "full_tp4_and_capability_gates_removed": false
   },
   "pilot": {
-    "status": "pending_bi100_execution",
+    "status": "cache_layers_verified_tp4_blocked_by_gpu_runtime",
+    "instance": "ssh-73ca29ba",
+    "harness_revision_before_evidence_commit": "874e297243db46f5a20b0a76f439689d6e08642b",
     "actual_capture_wall_s": null,
     "actual_replay_wall_s": null,
-    "actual_compile_cache_miss_s": null,
-    "actual_compile_cache_hit_s": null,
-    "actual_overlay_cache_miss_s": null,
-    "actual_overlay_cache_hit_s": null
+    "actual_compile_cache_miss_s": 24.64697516337037,
+    "actual_compile_cache_hit_s": 1.6773449704051018,
+    "actual_compile_cache_speedup": 14.694040640559342,
+    "compile_cache": {
+      "source_revision": "508eb90547a42ddd52cc0aa3cce57ba71954138e",
+      "cache_key": "b1b59cc15c8f3f57852b1a8abb7d3e0cb3a3ae5fc0cb233799bc8720671cc73a",
+      "artifact_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+      "artifact_size_bytes": 247176,
+      "miss_cache_hit": false,
+      "hit_cache_hit": true
+    },
+    "actual_overlay_cache_miss_s": 8.823915600776672,
+    "actual_overlay_cache_hit_s": 0.3034588694572449,
+    "actual_overlay_cache_speedup": 29.077797648685625,
+    "overlay_cache": {
+      "source_revision": "9f9fbad1285c4829b3e3dd3a2db268da1b7cbf55",
+      "runtime_tree_sha256": "8eadda8dc05cb46d917fb574da13be441b736e5ec57b86ef70a4defc29b0f60b",
+      "miss_cache_hit": false,
+      "hit_cache_hit": true,
+      "miss_qualified": true,
+      "hit_qualified": true
+    },
+    "gpu_preflight": {
+      "legacy_serial": {
+        "external_timeout_s": 180,
+        "completed": false
+      },
+      "parallel": {
+        "source_revision": "9f9fbad1285c4829b3e3dd3a2db268da1b7cbf55",
+        "wall_s": 89.4115850776434,
+        "completed": true,
+        "qualified": false,
+        "cleanup_reaped": true,
+        "runner_timed_out": false,
+        "gpu_results": [
+          {
+            "gpu": 0,
+            "ok": false,
+            "stage": "timeout",
+            "last_progress_stage": "mem_get_info",
+            "termination": "sigkill"
+          },
+          {
+            "gpu": 1,
+            "ok": false,
+            "stage": "timeout",
+            "last_progress_stage": "mem_get_info",
+            "termination": "sigkill"
+          },
+          {
+            "gpu": 2,
+            "ok": true,
+            "stage": "done"
+          },
+          {
+            "gpu": 3,
+            "ok": true,
+            "stage": "done"
+          }
+        ]
+      },
+      "speedup_lower_bound": 2.0131619391792603,
+      "time_saved_lower_bound_s": 90.5884149223566
+    },
+    "capture_status": "not_started_gpus_0_and_1_failed_preflight",
+    "tp4_conclusions_authorized": false
   },
   "privacy": {
     "contains_prompts": false,

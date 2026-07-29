@@ -3,9 +3,10 @@
 Date: 2026-07-30
 
 Status: the funnel contract, capture/replay harness and runners are implemented
-on the private experiment branch. Local validation passes. BI100 pilot timing
-is pending. No formal YAML, default selector, `main`, or repository visibility
-change is authorized.
+on the private experiment branch. Local validation passes. BI100 compile,
+overlay and parallel-preflight pilots are complete. L2 capture/replay was not
+started because only GPUs 2 and 3 passed the hardware preflight. No formal
+YAML, default selector, `main`, or repository visibility change is authorized.
 
 ## Audit result
 
@@ -28,6 +29,15 @@ Other repeated work was also avoidable:
   fresh service run;
 - first-observation shadow sampling did not span fixed full-attention layer
   ordinals.
+
+The pilot also exposed four harness defects before a model startup was spent:
+
+- the CoreX builder used the system Python instead of the active CoreX Python;
+- its expected artifact name differed from the build script's output;
+- overlay verification and several new runner subprocesses were pinned to the
+  host's Python 3.8 instead of the active Python 3.10;
+- the original four-GPU preflight was serial and emitted no result until all
+  probes had finished.
 
 The structured audit is
 `evidence/M1_139_EXPERIMENT_FUNNEL_AUDIT_20260730.json`.
@@ -83,15 +93,60 @@ and reports wall span, summed stage time and effective parallelism. The new
 capture, replay and short TP4 runners retain scoped TERM-first cleanup,
 postflight, repeated four-card preflight and fatal-category scans.
 
+## Actual BI100 pilot
+
+The pilot ran on `ssh-73ca29ba` without starting the model:
+
+| Reusable step | First run | Reuse | Measured improvement |
+|---|---:|---:|---:|
+| CoreX extension compile | 24.647 s | 1.677 s | 14.69x |
+| Exact-commit runtime overlay | 8.824 s | 0.303 s | 29.08x |
+| Four-card preflight | legacy serial did not finish within 180 s | parallel 89.412 s | at least 2.01x |
+
+The compile miss and hit produced the same 247,176-byte artifact with SHA-256
+`f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236`.
+The overlay miss and hit both verified runtime-tree SHA-256
+`8eadda8dc05cb46d917fb574da13be441b736e5ec57b86ef70a4defc29b0f60b`.
+Reuse still performs artifact rehashing or full runtime-tree verification.
+
+The parallel preflight completed and reaped all four scoped process groups.
+GPUs 2 and 3 passed allocation and matmul. GPUs 0 and 1 both timed out at
+`torch.cuda.mem_get_info()` and required SIGKILL after the full TERM grace
+period. Compared with the observed serial external timeout, parallel diagnosis
+saved at least 90.588 seconds and returned per-GPU failure stages instead of an
+undifferentiated timeout.
+
+This is infrastructure evidence, not candidate performance evidence. The
+activation bank, rank replay, short TP4 screen, long-context confirmation and
+capability gates remain pending until all four GPUs pass preflight.
+
+## Evidence boundaries
+
+Fast stages retain source revision, build/toolchain key, artifact digest,
+runtime-tree digest, input tensor shapes and digests, calibrated numerical
+metrics, stage wall time, cleanup status and fatal-category counts. Raw
+activations stay mode 0600 under `/tmp` and are not committed.
+
+Only full TP4 runs can establish:
+
+- collective and multiprocess stability on the production topology;
+- dispatch correctness inside the complete model;
+- cold/warm output and cache transparency;
+- 4K through 262K end-to-end TTFT and throughput;
+- tool calling, reasoning, multimodal and long-context capability;
+- eligibility for L4/L5 promotion, YAML changes or `main`.
+
 ## Validation
 
-Local validation before the BI100 pilot:
+Current local validation:
 
-- complete unit discovery: 1399 passed, 26 skipped;
+- complete unit discovery: 1409 passed, 26 skipped;
 - Python syntax checks: pass;
 - shell syntax checks: pass;
 - Git diff whitespace check: pass.
 
-The BI100 pilot must add actual cache miss/hit, capture and four-way replay wall
-times to the structured audit. Only a full-profile L2 pass may authorize L3.
-L4 and L5 remain mandatory before any production proposal.
+The BI100 pilot added actual compile/overlay cache and parallel-preflight wall
+times to the structured audit. Capture and four-way replay wall times remain
+unset rather than being inferred from synthetic or two-card data. Only a
+full-profile L2 pass may authorize L3. L4 and L5 remain mandatory before any
+production proposal.
