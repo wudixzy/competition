@@ -5,7 +5,7 @@ umask 077
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 COMPONENT_AB_VARIANT=${BI100_COMPONENT_AB_VARIANT:-m1-109-fused-softmax}
 case "$COMPONENT_AB_VARIANT" in
-    m1-109-fused-softmax|m1-113-group2048) ;;
+    m1-109-fused-softmax|m1-113-group2048|m1-126-grouped-qk-split512) ;;
     *)
         echo "BI100_COMPONENT_AB_VARIANT is invalid" >&2
         exit 2
@@ -500,11 +500,14 @@ else:
         reasons.append("a production case regressed by more than 2%")
 
 report = {
-    "schema": (
-        "bi100-m1-113-group2048-component-ab-v1"
-        if variant == "m1-113-group2048"
-        else "bi100-m1-109-fused-softmax-component-ab-v1"
-    ),
+    "schema": {
+        "m1-109-fused-softmax":
+            "bi100-m1-109-fused-softmax-component-ab-v1",
+        "m1-113-group2048":
+            "bi100-m1-113-group2048-component-ab-v1",
+        "m1-126-grouped-qk-split512":
+            "bi100-m1-126-grouped-qk-split512-component-ab-v1",
+    }[variant],
     "qualified": not reasons,
     "thresholds": {
         "maximum_relative_l2": 1e-5,
