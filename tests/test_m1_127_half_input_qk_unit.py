@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tests/corex_half_input_qk_gemm_ext.cu"
 BUILD = ROOT / "tests/build_corex_half_input_qk_gemm.sh"
 BENCH = ROOT / "tests/bench_m1_127_half_input_qk.py"
+RUNNER = ROOT / "scripts/run_m1_127_half_input_qk.sh"
 
 
 class M1127HalfInputQkUnitTest(unittest.TestCase):
@@ -66,6 +67,34 @@ class M1127HalfInputQkUnitTest(unittest.TestCase):
         self.assertIn("corex_half_input_qk_gemm_ext.cu", source)
         completed = subprocess.run(
             ["bash", "-n", str(BUILD)],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_runner_freezes_two_cells_and_scoped_lifecycle(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        for marker in (
+            "CASES=(q8176 q5616)",
+            "GPUS=(0 1)",
+            "exec_bi100_session.py",
+            "bi100_stop_process_group",
+            '"$pgid" "$leader" 60 20',
+            "bench_m1_127_half_input_qk.py",
+            "--gpus 0,1,2,3",
+            "service_postflight_gate.py",
+            "compare_bi100_preflights.py",
+            "fatal_scan.rc",
+            "timeout_scan.rc",
+            '"full_pipeline_integration_authorized": qualified',
+            '"tp4_service_authorized": False',
+        ):
+            self.assertIn(marker, source)
+        self.assertNotIn("pkill", source)
+        completed = subprocess.run(
+            ["bash", "-n", str(RUNNER)],
             cwd=ROOT,
             check=False,
             capture_output=True,

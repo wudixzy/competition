@@ -47,3 +47,21 @@ output and TP4 gates must be rerun.
 This capability source does not alter the runtime selector, prebuilt
 extension, model, tokenizer, request semantics, `computility-run.yaml`,
 defaults, `main`, or repository visibility.
+
+## Fixed runner
+
+`scripts/run_m1_127_half_input_qk.sh` assigns `q8176` to physical GPU 0 and
+`q5616` to physical GPU 1, then runs both fixed cells concurrently. Each cell
+uses a private verified process session. The runner sends SIGTERM to only its
+recorded process groups, waits 60 seconds before any SIGKILL fallback, reaps
+children, scans fatal/timeout classes, and repeats four-card process and
+compute preflight after completion. Its comparison can authorize only
+experimental full-pipeline integration; it cannot authorize TP4 service,
+`main`, YAML, or submission changes.
+
+Local verification before remote execution:
+
+- focused M1-127 tests: 5 passed;
+- complete unit suite: 1104 passed, 13 skipped;
+- submission preflight: 9/9 passed;
+- shell/Python syntax and `git diff --check`: passed.
