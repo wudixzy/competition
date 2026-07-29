@@ -108,7 +108,7 @@ timeline_mark() {
 
 run_preflight() {
     local label=$1
-    timeout --foreground --signal=TERM --kill-after=70s 480s \
+    timeout --foreground --signal=TERM --kill-after=90s 480s \
         env PYTHONPATH="$ROOT/tests:$SYSTEM_PYTHONPATH" \
         LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \
         python3 "$ROOT/tests/bi100_parallel_preflight.py" \
@@ -120,7 +120,7 @@ run_preflight() {
 
 run_postflight() {
     local label=$1
-    timeout --foreground --signal=TERM --kill-after=70s 300s \
+    timeout --foreground --signal=TERM --kill-after=90s 300s \
         env PYTHONPATH="$ROOT/tests" \
         python3 "$ROOT/tests/service_postflight_gate.py" \
         --gpus 0,1,2,3 --settle-timeout-s 90 \
@@ -298,7 +298,7 @@ BEFORE_PREFLIGHT_PASSED=1
 CURRENT_STAGE=parallel_replay
 timeline_mark parallel_replay start
 for rank in 0 1 2 3; do
-    setsid timeout --foreground --signal=TERM --kill-after=70s 7200s \
+    setsid timeout --foreground --signal=TERM --kill-after=90s 7200s \
         env CUDA_VISIBLE_DEVICES="$rank" \
         PYTHONPATH="$ROOT/tests:$SYSTEM_PYTHONPATH" \
         LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \

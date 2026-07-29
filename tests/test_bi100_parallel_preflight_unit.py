@@ -102,6 +102,18 @@ class ParallelBi100PreflightTest(unittest.TestCase):
             self.assertNotIn('"/usr/bin/python3"', source)
             self.assertIn("sys.executable", source)
 
+    def test_outer_timeouts_allow_inner_cleanup_to_finish(self):
+        capture = (
+            ROOT / "scripts" / "run_m1_140_activation_capture.py"
+        ).read_text(encoding="ascii")
+        replay = (
+            ROOT / "scripts" / "run_m1_140_activation_replay.sh"
+        ).read_text(encoding="ascii")
+        self.assertIn('"--kill-after=90s"', capture)
+        self.assertNotIn("--kill-after=70s", capture)
+        self.assertNotIn("--kill-after=70s", replay)
+        self.assertGreaterEqual(replay.count("--kill-after=90s"), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

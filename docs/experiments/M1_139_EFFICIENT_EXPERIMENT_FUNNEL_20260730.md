@@ -140,7 +140,7 @@ Only full TP4 runs can establish:
 
 Current local validation:
 
-- complete unit discovery: 1409 passed, 26 skipped;
+- complete unit discovery: 1410 passed, 26 skipped;
 - Python syntax checks: pass;
 - shell syntax checks: pass;
 - Git diff whitespace check: pass.

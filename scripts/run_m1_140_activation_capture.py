@@ -101,7 +101,7 @@ def _run_to_files(
         "timeout",
         "--foreground",
         "--signal=TERM",
-        "--kill-after=70s",
+        "--kill-after=90s",
         f"{timeout_s}s",
         *command,
     ]
