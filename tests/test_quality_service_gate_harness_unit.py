@@ -38,12 +38,14 @@ class QualityServiceGateHarnessTest(unittest.TestCase):
 
     def test_contract_smoke_runs_only_the_two_regression_cases(self):
         self.assertIn(
-            "functional|long-context|decode|contract-smoke", self.source)
+            "functional|long-context|decode|contract-smoke|ifeval",
+            self.source,
+        )
         self.assertIn("--case max_tokens_1", self.source)
         self.assertIn("--case stream_forced_terminal", self.source)
         self.assertIn(
             "SUITE must be functional, long-context, decode, "
-            "or contract-smoke",
+            "contract-smoke, or ifeval",
             self.source,
         )
 

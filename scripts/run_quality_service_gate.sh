@@ -23,9 +23,11 @@ KERNEL_PROFILE=${BI100_QUALITY_KERNEL_PROFILE:-submission}
 RUN_FUSED_OUTPUT_DIAGNOSTIC=${BI100_RUN_FUSED_OUTPUT_DIAGNOSTIC:-0}
 FUSED_OUTPUT_DIAGNOSTIC_RUN_ID=${BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID:-}
 FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY=${BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY:-}
+IFEVAL_ENV=${BI100_IFEVAL_ENV:-}
 unset BI100_RUN_FUSED_OUTPUT_DIAGNOSTIC
 unset BI100_FUSED_OUTPUT_DIAGNOSTIC_RUN_ID
 unset BI100_FUSED_OUTPUT_DIAGNOSTIC_HMAC_KEY
+unset BI100_IFEVAL_ENV
 ACTIVE_PID=""
 ACTIVE_PGID=""
 ACTIVE_STARTTIME=""
@@ -34,9 +36,9 @@ SERVICE_STARTED=0
 BEFORE_PREFLIGHT_PASSED=0
 
 case "$SUITE" in
-    functional|long-context|decode|contract-smoke) ;;
+    functional|long-context|decode|contract-smoke|ifeval) ;;
     *)
-        echo "SUITE must be functional, long-context, decode, or contract-smoke" \
+        echo "SUITE must be functional, long-context, decode, contract-smoke, or ifeval" \
             >&2
         exit 2
         ;;
@@ -111,6 +113,25 @@ if [[ "$RUN_FUSED_OUTPUT_DIAGNOSTIC" == 1 ]]; then
         exit 2
     fi
 fi
+if [[ "$SUITE" == ifeval ]]; then
+    if [[ -z "$IFEVAL_ENV" ]]; then
+        echo "BI100_IFEVAL_ENV is required for the IFEval suite" >&2
+        exit 2
+    fi
+    IFEVAL_ENV=$(python3 - "$IFEVAL_ENV" <<'PY'
+from pathlib import Path
+import sys
+
+print(Path(sys.argv[1]).resolve(strict=True))
+PY
+    )
+    if [[ ! -f "$IFEVAL_ENV/install.json" \
+            || ! -d "$IFEVAL_ENV/site-packages" \
+            || ! -d "$IFEVAL_ENV/nltk_data" ]]; then
+        echo "offline IFEval environment is incomplete" >&2
+        exit 3
+    fi
+fi
 
 RUN_ROOT=$(python3 - "$RUN_ROOT" <<'PY'
 from pathlib import Path
@@ -177,6 +198,10 @@ fi
 
 SYSTEM_PYTHONPATH=/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages
 export PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH"
+IFEVAL_PYTHONPATH="$ROOT/tests:$ROOT/quality/external/google_ifeval"
+if [[ "$SUITE" == ifeval ]]; then
+    IFEVAL_PYTHONPATH="$IFEVAL_PYTHONPATH:$IFEVAL_ENV/site-packages:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH"
+fi
 export LD_LIBRARY_PATH=/usr/local/corex/lib:/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib
 export HOST=0.0.0.0
 export PORT=8000
@@ -417,6 +442,7 @@ from pathlib import Path
 import sys
 
 root = Path(sys.argv[1])
+suite = sys.argv[2]
 
 def read_rc(name):
     path = root / name
@@ -425,10 +451,52 @@ def read_rc(name):
     value = path.read_text(encoding="utf-8").strip()
     return int(value) if value.isdigit() else None
 
+gates = {
+    "runtime_identity": read_rc("runtime_identity.rc"),
+    "runtime_contract": read_rc("runtime_contract.rc"),
+    "prefix_allocator": read_rc("prefix_allocator.rc"),
+    "gdn_action_broadcast": read_rc("gdn_action_broadcast.rc"),
+    "preflight_before": read_rc("preflight_before.rc"),
+    "process_group": read_rc("process_group.rc"),
+    "startup": read_rc("startup.rc"),
+    "startup_contract": read_rc("startup_contract.rc"),
+    "api_4xx_attribution": read_rc("api_4xx_attribution.rc"),
+    "cleanup": read_rc("cleanup.rc"),
+    "service_recovery": read_rc("service_recovery.rc"),
+    "service_recovery_clean": read_rc("service_recovery_clean.rc"),
+    "service_postflight": read_rc("service_postflight.rc"),
+    "fatal_scan": read_rc("fatal_scan.rc"),
+    "timeout_scan": read_rc("timeout_scan.rc"),
+    "preflight_after": read_rc("preflight_after.rc"),
+    "preflight_comparison": read_rc("preflight_comparison.rc"),
+}
+if suite == "ifeval":
+    gates.update({
+        "ifeval_environment": read_rc("ifeval_environment.rc"),
+        "ifeval": read_rc("ifeval.rc"),
+        "checkpoint_cleanup": read_rc("checkpoint_cleanup.rc"),
+    })
+else:
+    gates.update({
+        "quality": read_rc("quality.rc"),
+        "agent_workload": read_rc("agent_workload.rc"),
+        "fused_output_diagnostic": read_rc(
+            "fused_output_diagnostic.rc"),
+    })
+
+privacy = {
+    "raw_service_log_outside_repository": True,
+    "contains_credentials": False,
+}
+if suite == "ifeval":
+    privacy["raw_checkpoint_absent_after_lifecycle"] = not (
+        root / "ifeval.checkpoint.json"
+    ).exists()
+
 report = {
     "schema": "bi100-quality-service-gate-status-v2",
     "version": 2,
-    "suite": sys.argv[2],
+    "suite": suite,
     "optimization": {
         "gdn_cache_policy": sys.argv[3],
         "gdn_restore_mode": sys.argv[4],
@@ -443,33 +511,8 @@ report = {
         encoding="utf-8").strip(),
     "source_branch": (root / "source_branch.txt").read_text(
         encoding="utf-8").strip(),
-    "gates": {
-        "runtime_identity": read_rc("runtime_identity.rc"),
-        "runtime_contract": read_rc("runtime_contract.rc"),
-        "prefix_allocator": read_rc("prefix_allocator.rc"),
-        "gdn_action_broadcast": read_rc("gdn_action_broadcast.rc"),
-        "preflight_before": read_rc("preflight_before.rc"),
-        "process_group": read_rc("process_group.rc"),
-        "startup": read_rc("startup.rc"),
-        "startup_contract": read_rc("startup_contract.rc"),
-        "quality": read_rc("quality.rc"),
-        "agent_workload": read_rc("agent_workload.rc"),
-        "fused_output_diagnostic": read_rc(
-            "fused_output_diagnostic.rc"),
-        "api_4xx_attribution": read_rc("api_4xx_attribution.rc"),
-        "cleanup": read_rc("cleanup.rc"),
-        "service_recovery": read_rc("service_recovery.rc"),
-        "service_recovery_clean": read_rc("service_recovery_clean.rc"),
-        "service_postflight": read_rc("service_postflight.rc"),
-        "fatal_scan": read_rc("fatal_scan.rc"),
-        "timeout_scan": read_rc("timeout_scan.rc"),
-        "preflight_after": read_rc("preflight_after.rc"),
-        "preflight_comparison": read_rc("preflight_comparison.rc"),
-    },
-    "privacy": {
-        "raw_service_log_outside_repository": True,
-        "contains_credentials": False,
-    },
+    "gates": gates,
+    "privacy": privacy,
 }
 contract = root / "runtime_contract.json"
 quality = root / "quality_report.json"
@@ -479,19 +522,10 @@ api_4xx = root / "api_4xx_attribution.json"
 process_group = root / "process_group_identity.json"
 service_recovery = root / "service_recovery.json"
 service_recovery_clean = root / "service_recovery_clean.json"
-report["artifacts"] = {
+artifacts = {
     "runtime_contract_sha256": (
         hashlib.sha256(contract.read_bytes()).hexdigest()
         if contract.is_file() else None),
-    "quality_report_sha256": (
-        hashlib.sha256(quality.read_bytes()).hexdigest()
-        if quality.is_file() else None),
-    "agent_workload_sha256": (
-        hashlib.sha256(agent.read_bytes()).hexdigest()
-        if agent.is_file() else None),
-    "fused_output_diagnostic_sha256": (
-        hashlib.sha256(fused_output.read_bytes()).hexdigest()
-        if fused_output.is_file() else None),
     "api_4xx_attribution_sha256": (
         hashlib.sha256(api_4xx.read_bytes()).hexdigest()
         if api_4xx.is_file() else None),
@@ -505,6 +539,26 @@ report["artifacts"] = {
         hashlib.sha256(service_recovery_clean.read_bytes()).hexdigest()
         if service_recovery_clean.is_file() else None),
 }
+if suite == "ifeval":
+    for name in ("ifeval_install", "ifeval_report", "ifeval_progress"):
+        path = root / f"{name}.json"
+        artifacts[f"{name}_sha256"] = (
+            hashlib.sha256(path.read_bytes()).hexdigest()
+            if path.is_file() else None
+        )
+else:
+    artifacts.update({
+        "quality_report_sha256": (
+            hashlib.sha256(quality.read_bytes()).hexdigest()
+            if quality.is_file() else None),
+        "agent_workload_sha256": (
+            hashlib.sha256(agent.read_bytes()).hexdigest()
+            if agent.is_file() else None),
+        "fused_output_diagnostic_sha256": (
+            hashlib.sha256(fused_output.read_bytes()).hexdigest()
+            if fused_output.is_file() else None),
+    })
+report["artifacts"] = artifacts
 (root / "status.json").write_text(
     json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
@@ -518,6 +572,7 @@ finish() {
     local service_postflight_rc=0
     local fatal_rc=0
     local api_4xx_rc=0
+    local checkpoint_cleanup_rc=0
     local timeout_rc=0
     local after_rc=0
     local comparison_rc=0
@@ -561,6 +616,14 @@ finish() {
         > "$RUN_ROOT/service_recovery_clean.rc"
     run_service_postflight
     service_postflight_rc=$?
+    if [[ "$SUITE" == ifeval ]]; then
+        if [[ -e "$RUN_ROOT/ifeval.checkpoint.json" ]]; then
+            rm -- "$RUN_ROOT/ifeval.checkpoint.json"
+            checkpoint_cleanup_rc=$?
+        fi
+        printf '%s\n' "$checkpoint_cleanup_rc" \
+            > "$RUN_ROOT/checkpoint_cleanup.rc"
+    fi
     scan_runner_timeouts
     timeout_rc=$?
 
@@ -586,6 +649,7 @@ finish() {
             || $recovery_clean_rc -ne 0 \
             || $service_postflight_rc -ne 0 \
             || $fatal_rc -ne 0 || $api_4xx_rc -ne 0 \
+            || $checkpoint_cleanup_rc -ne 0 \
             || $timeout_rc -ne 0 \
             || $after_rc -ne 0 || $comparison_rc -ne 0 ]]; then
         final_rc=1
@@ -597,6 +661,48 @@ finish() {
 trap 'exit 143' TERM
 trap 'exit 130' INT
 trap finish EXIT
+
+if [[ "$SUITE" == ifeval ]]; then
+    ifeval_environment_rc=0
+    cp -- "$IFEVAL_ENV/install.json" \
+        "$RUN_ROOT/ifeval_install.json" || ifeval_environment_rc=$?
+    if [[ $ifeval_environment_rc -eq 0 ]]; then
+        set +e
+        python3 - "$RUN_ROOT/ifeval_install.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if (
+    value.get("schema") != "bi100-ifeval-offline-environment-v1"
+    or value.get("version") != 1
+    or value.get("qualified") is not True
+    or value.get("manifest_sha256")
+    != "07ec4efb5fe7afaacb55723c1d53be4c2f58c840bbd6a54bf944e15cfbca1855"
+    or not str(value.get("python", "")).startswith("3.10.")
+    or value.get("system_site_packages_modified") is not False
+    or not isinstance(value.get("distribution_sha256"), dict)
+    or not value["distribution_sha256"]
+):
+    raise SystemExit("offline IFEval install attestation differs")
+PY
+        ifeval_environment_rc=$?
+        set -e
+    fi
+    if [[ $ifeval_environment_rc -eq 0 ]]; then
+        set +e
+        env PYTHONPATH="$IFEVAL_PYTHONPATH" \
+            NLTK_DATA="$IFEVAL_ENV/nltk_data" \
+            python3 -c \
+            'import langdetect; from instruction_following_eval import instructions_util as u; assert u.count_sentences("One. Two.") == 2'
+        ifeval_environment_rc=$?
+        set -e
+    fi
+    printf '%s\n' "$ifeval_environment_rc" \
+        > "$RUN_ROOT/ifeval_environment.rc"
+    [[ $ifeval_environment_rc -eq 0 ]]
+fi
 
 set +e
 python3 "$ROOT/tests/verify_bare_host_runtime_identity.py" \
@@ -861,6 +967,33 @@ elif [[ "$SUITE" == contract-smoke ]]; then
     if [[ $quality_rc -ne 0 || $agent_rc -ne 0 ]]; then
         rc=1
     fi
+elif [[ "$SUITE" == ifeval ]]; then
+    timeout --signal=TERM --kill-after=30s 43200s \
+        env PYTHONPATH="$IFEVAL_PYTHONPATH" \
+            NLTK_DATA="$IFEVAL_ENV/nltk_data" \
+        python3 "$ROOT/tests/ifeval_quality_api.py" \
+        --base http://127.0.0.1:8000 \
+        --model llm \
+        --out "$RUN_ROOT/ifeval_report.json" \
+        --checkpoint "$RUN_ROOT/ifeval.checkpoint.json" \
+        --progress "$RUN_ROOT/ifeval_progress.json" \
+        --timeout-s 900 \
+        --source-revision "$(git -C "$ROOT" rev-parse HEAD)" \
+        --runtime-identity "$RUNTIME_IDENTITY" \
+        --runtime-overlay-sha256 "$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["runtime_overlay_sha256"])' \
+            "$RUN_ROOT/runtime_contract.json")" \
+        --runtime-contract "$RUN_ROOT/runtime_contract.json" \
+        --instance "$INSTANCE" \
+        --model-path "$MODEL_PATH" \
+        --tokenizer-path "$MODEL_PATH" \
+        --gdn-cache-policy "$POLICY" \
+        --gdn-restore-mode "$RESTORE_MODE" \
+        --fused-prefill "$FUSED_PREFILL" \
+        --kv-eviction-policy "$KV_EVICTION" \
+        > "$RUN_ROOT/ifeval.stdout" 2> "$RUN_ROOT/ifeval.stderr"
+    rc=$?
+    printf '%s\n' "$rc" > "$RUN_ROOT/ifeval.rc"
 elif [[ "$SUITE" == long-context ]]; then
     timeout --signal=TERM --kill-after=30s 43200s \
         "$ROOT/scripts/run_quality_long_context_gate.sh" \

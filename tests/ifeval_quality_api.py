@@ -311,8 +311,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tokenizer-path", required=True)
     parser.add_argument("--gdn-cache-policy", choices=("fine32", "admission64"),
                         required=True)
-    parser.add_argument("--gdn-restore-mode", choices=("direct", "aligned"),
-                        required=True)
+    parser.add_argument(
+        "--gdn-restore-mode",
+        choices=("direct", "hybrid64", "aligned"),
+        required=True,
+    )
     parser.add_argument("--fused-prefill", choices=(0, 1), type=int,
                         required=True)
     parser.add_argument("--kv-eviction-policy", choices=("lru", "frequency"),
