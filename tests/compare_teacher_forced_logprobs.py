@@ -57,9 +57,13 @@ def _is_digest(value: Any) -> bool:
     )
 
 
-def _validate_arm(value: Any, mode: str) -> list[str]:
+def _validate_arm(
+    value: Any,
+    expected_mode: str,
+    label: str,
+) -> list[str]:
     if not isinstance(value, dict):
-        return [f"{mode}: report root must be an object"]
+        return [f"{label}: report root must be an object"]
     reasons = []
     expected = {
         "schema",
@@ -78,19 +82,19 @@ def _validate_arm(value: Any, mode: str) -> list[str]:
         "privacy",
     }
     if set(value) != expected:
-        reasons.append(f"{mode}: report fields are invalid")
+        reasons.append(f"{label}: report fields are invalid")
         return reasons
     if (
         value.get("schema") != OBSERVATION_SCHEMA
         or value.get("version") != VERSION
-        or value.get("mode") != mode
+        or value.get("mode") != expected_mode
         or value.get("gpu_count") != 4
         or value.get("tensor_parallel_size") != 4
         or value.get("max_model_len") != 262144
         or not isinstance(value.get("top_k"), int)
         or value["top_k"] < 2
     ):
-        reasons.append(f"{mode}: report identity is invalid")
+        reasons.append(f"{label}: report identity is invalid")
     privacy = value.get("privacy")
     if (
         not isinstance(privacy, dict)
@@ -103,10 +107,10 @@ def _validate_arm(value: Any, mode: str) -> list[str]:
             "contains_credentials",
         ))
     ):
-        reasons.append(f"{mode}: privacy contract is invalid")
+        reasons.append(f"{label}: privacy contract is invalid")
     cases = value.get("cases")
     if not isinstance(cases, list) or not cases:
-        reasons.append(f"{mode}: cases are missing")
+        reasons.append(f"{label}: cases are missing")
         return reasons
     seen_ids = set()
     for case in cases:
@@ -122,7 +126,7 @@ def _validate_arm(value: Any, mode: str) -> list[str]:
             or not isinstance(case.get("positions"), list)
             or not case["positions"]
         ):
-            reasons.append(f"{mode}: case structure is invalid")
+            reasons.append(f"{label}: case structure is invalid")
             continue
         seen_ids.add(case["id"])
         seen_positions = set()
@@ -140,7 +144,7 @@ def _validate_arm(value: Any, mode: str) -> list[str]:
                 or len(position["top_logprobs"]) < 2
                 or len(position["top_logprobs"]) > value["top_k"] + 1
             ):
-                reasons.append(f"{mode}: position structure is invalid")
+                reasons.append(f"{label}: position structure is invalid")
                 continue
             seen_positions.add(position["position"])
             keys = []
@@ -156,15 +160,15 @@ def _validate_arm(value: Any, mode: str) -> list[str]:
                     or item["logprob"] > previous
                 ):
                     reasons.append(
-                        f"{mode}: top-logprob structure is invalid")
+                        f"{label}: top-logprob structure is invalid")
                     break
                 keys.append(item["token_key"])
                 previous = item["logprob"]
             if len(keys) != len(set(keys)):
-                reasons.append(f"{mode}: top-logprob token keys repeat")
+                reasons.append(f"{label}: top-logprob token keys repeat")
             if position["actual_token_key"] not in keys:
                 reasons.append(
-                    f"{mode}: actual token is absent from top-logprobs")
+                    f"{label}: actual token is absent from top-logprobs")
     return reasons
 
 
@@ -183,7 +187,11 @@ def _logprob_map(position: Json) -> dict[str, float]:
     }
 
 
-def _identity_reasons(control: Json, candidate: Json) -> list[str]:
+def _identity_reasons(
+    control: Json,
+    candidate: Json,
+    comparison_mode: str,
+) -> list[str]:
     reasons = []
     for field in (
         "source_revision",
@@ -199,11 +207,18 @@ def _identity_reasons(control: Json, candidate: Json) -> list[str]:
             reasons.append(f"A/B identity differs in {field}")
     control_optimization = control.get("optimization")
     candidate_optimization = candidate.get("optimization")
+    expected_selectors = (
+        ("0", "0")
+        if comparison_mode == "control-repeat"
+        else ("0", "1")
+    )
     if (
         not isinstance(control_optimization, dict)
         or not isinstance(candidate_optimization, dict)
-        or control_optimization.get("fused_prefill") != "0"
-        or candidate_optimization.get("fused_prefill") != "1"
+        or control_optimization.get("fused_prefill")
+        != expected_selectors[0]
+        or candidate_optimization.get("fused_prefill")
+        != expected_selectors[1]
     ):
         reasons.append("A/B fused-prefill selectors are invalid")
     elif {
@@ -219,12 +234,13 @@ def _identity_reasons(control: Json, candidate: Json) -> list[str]:
     return reasons
 
 
-def _invalid_result(reasons: list[str]) -> Json:
+def _invalid_result(reasons: list[str], comparison_mode: str) -> Json:
     return {
         "schema": REPORT_SCHEMA,
         "version": VERSION,
         "status": "invalid",
         "qualified": False,
+        "comparison_mode": comparison_mode,
         "validation_reasons": reasons,
         "reasons": [],
         "authorization": {
@@ -241,9 +257,22 @@ def _invalid_result(reasons: list[str]) -> Json:
     }
 
 
-def compare(control: Any, candidate: Any, contract: Any) -> Json:
-    validation_reasons = _validate_arm(control, "control")
-    validation_reasons.extend(_validate_arm(candidate, "candidate"))
+def compare(
+    control: Any,
+    candidate: Any,
+    contract: Any,
+    *,
+    comparison_mode: str = "candidate",
+) -> Json:
+    validation_reasons = []
+    if comparison_mode not in {"candidate", "control-repeat"}:
+        validation_reasons.append("comparison mode is invalid")
+    candidate_mode = (
+        "control" if comparison_mode == "control-repeat" else "candidate")
+    validation_reasons.extend(_validate_arm(
+        control, "control", "control"))
+    validation_reasons.extend(_validate_arm(
+        candidate, candidate_mode, "candidate"))
     if not isinstance(contract, dict):
         validation_reasons.append("contract root must be an object")
     else:
@@ -255,9 +284,10 @@ def compare(control: Any, candidate: Any, contract: Any) -> Json:
         ):
             validation_reasons.append("contract identity is invalid")
     if not validation_reasons:
-        validation_reasons.extend(_identity_reasons(control, candidate))
+        validation_reasons.extend(_identity_reasons(
+            control, candidate, comparison_mode))
     if validation_reasons:
-        return _invalid_result(validation_reasons)
+        return _invalid_result(validation_reasons, comparison_mode)
 
     thresholds = contract["teacher_forced_topk"]
     required_lengths = thresholds["required_prompt_tokens"]
@@ -363,7 +393,7 @@ def compare(control: Any, candidate: Any, contract: Any) -> Json:
         invalidation_reasons.append(
             "no comparable teacher-forced positions")
     if invalidation_reasons:
-        return _invalid_result(invalidation_reasons)
+        return _invalid_result(invalidation_reasons, comparison_mode)
 
     actual_max = max(actual_deltas)
     actual_p99 = _percentile(actual_deltas, 0.99)
@@ -415,6 +445,7 @@ def compare(control: Any, candidate: Any, contract: Any) -> Json:
         "version": VERSION,
         "status": "pass" if qualified else "fail",
         "qualified": qualified,
+        "comparison_mode": comparison_mode,
         "validation_reasons": [],
         "reasons": reasons,
         "source_revision": control["source_revision"],
@@ -462,11 +493,21 @@ def main() -> int:
         default=Path("quality/layered_quality_gate.v1.json"),
     )
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--comparison-mode",
+        choices=("candidate", "control-repeat"),
+        default="candidate",
+    )
     args = parser.parse_args()
     control = json.loads(args.control.read_text(encoding="utf-8"))
     candidate = json.loads(args.candidate.read_text(encoding="utf-8"))
     contract = json.loads(args.contract.read_text(encoding="utf-8"))
-    report = compare(control, candidate, contract)
+    report = compare(
+        control,
+        candidate,
+        contract,
+        comparison_mode=args.comparison_mode,
+    )
     _atomic_write(args.out, report)
     return exit_code(report["status"])
 

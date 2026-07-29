@@ -104,6 +104,17 @@ class TeacherForcedLogprobComparisonTests(unittest.TestCase):
         self.assertFalse(result["authorization"][
             "overall_promotion_authorized"])
 
+    def test_fresh_control_repeat_passes_same_numerical_gate(self) -> None:
+        result = comparison.compare(
+            _report("control"),
+            _report("control"),
+            CONTRACT,
+            comparison_mode="control-repeat",
+        )
+        self.assertTrue(result["qualified"], result)
+        self.assertEqual(result["comparison_mode"], "control-repeat")
+        self.assertEqual(result["metrics"]["top1_agreement"], 1.0)
+
     def test_low_margin_mutually_covered_flip_is_diagnostic(self) -> None:
         control = _report("control")
         candidate = _report("candidate")

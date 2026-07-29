@@ -163,10 +163,16 @@ Existing evidence supports reopening M1-109:
 - cross-arm output first diverged at token budget eight for the focused 65K
   request.
 
-Under the layered gate, the final item is trajectory evidence requiring
-teacher-forced and task adjudication, not an automatic rejection. M1-109 is
-therefore `reopened-pending-evidence`, not promoted. M1-122 IFEval and the new
-teacher-forced TP4 run remain required.
+Under the layered gate, the final item was trajectory evidence requiring
+teacher-forced adjudication rather than an automatic rejection. M1-132 has now
+completed a valid 320-position TP4 screen. It found 0.940625 top-1 agreement,
+large teacher-token and shared top-k logprob deltas, mean NLL regression, and
+three mutually uncovered flips. This is an independent numerical failure that
+task semantics cannot waive. M1-109 is now
+`pending-control-repeat-attribution`, not promoted: M1-134 must first show that
+two fresh fused-off services satisfy the same numerical screen. A failed A/A
+would invalidate attribution and require a repeatability or collector repair;
+a passing A/A would classify the fused full-model path as a layer-4 failure.
 
 ## Primary references
 

@@ -4,6 +4,7 @@ umask 077
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/scripts/lib/process_group.sh"
+source "$ROOT/scripts/lib/private_artifacts.sh"
 
 if [[ $# -ne 2 ]]; then
     echo "usage: $0 INSTANCE RUN_ROOT" >&2
@@ -17,7 +18,8 @@ case "$QUALITY_AB_VARIANT" in
 m1-116-fused-prefill-adjudication|\
 m1-117-fused-prefill-long-context|\
 m1-122-fused-prefill-ifeval|\
-m1-132-fused-prefill-teacher-forced) ;;
+m1-132-fused-prefill-teacher-forced|\
+m1-134-teacher-forced-control-repeat) ;;
     *)
         echo "BI100_QUALITY_AB_VARIANT is invalid" \
             >&2
@@ -32,7 +34,9 @@ if [[ "$QUALITY_AB_VARIANT" == \
         python3 -c 'import secrets; print(secrets.token_hex(32))')
 fi
 if [[ "$QUALITY_AB_VARIANT" == \
-        m1-132-fused-prefill-teacher-forced ]]; then
+        m1-132-fused-prefill-teacher-forced \
+        || "$QUALITY_AB_VARIANT" == \
+        m1-134-teacher-forced-control-repeat ]]; then
     TEACHER_FORCED_HMAC_KEY=$(
         python3 -c 'import secrets; print(secrets.token_hex(32))')
 fi
@@ -116,28 +120,22 @@ def read_rc(path):
     value = path.read_text(encoding="utf-8").strip()
     return int(value) if value.isdigit() else None
 
+schemas = {
+    "admission64-policy": "bi100-admission64-quality-ab-runner-v2",
+    "m1-112-fused-prefill": "bi100-fused-prefill-quality-ab-runner-v1",
+    "m1-116-fused-prefill-adjudication": (
+        "bi100-fused-prefill-quality-adjudication-ab-runner-v1"),
+    "m1-117-fused-prefill-long-context": (
+        "bi100-fused-prefill-long-context-ab-runner-v1"),
+    "m1-122-fused-prefill-ifeval": (
+        "bi100-m1-122-ifeval-fused-prefill-ab-runner-v1"),
+    "m1-132-fused-prefill-teacher-forced": (
+        "bi100-m1-132-teacher-forced-fused-prefill-ab-runner-v1"),
+    "m1-134-teacher-forced-control-repeat": (
+        "bi100-m1-134-teacher-forced-control-repeat-runner-v1"),
+}
 report = {
-    "schema": (
-        "bi100-m1-122-ifeval-fused-prefill-ab-runner-v1"
-        if variant == "m1-122-fused-prefill-ifeval"
-        else (
-            "bi100-m1-132-teacher-forced-fused-prefill-ab-runner-v1"
-            if variant == "m1-132-fused-prefill-teacher-forced"
-            else (
-            "bi100-fused-prefill-long-context-ab-runner-v1"
-            if variant == "m1-117-fused-prefill-long-context"
-            else (
-                "bi100-fused-prefill-quality-adjudication-ab-runner-v1"
-                if variant == "m1-116-fused-prefill-adjudication"
-                else (
-                    "bi100-fused-prefill-quality-ab-runner-v1"
-                    if variant == "m1-112-fused-prefill"
-                    else "bi100-admission64-quality-ab-runner-v2"
-                )
-            )
-            )
-        )
-    ),
+    "schema": schemas[variant],
     "version": 2 if variant == "admission64-policy" else 1,
     "source_revision": (root / "source_revision.txt").read_text(
         encoding="utf-8").strip(),
@@ -146,9 +144,13 @@ report = {
     "instance": sys.argv[2],
     "returncode": int(sys.argv[3]),
     "fixed_order": (
-        ["fused-off", "fused-on"]
-        if variant != "admission64-policy"
-        else ["fine32", "admission64"]
+        ["fused-off-a", "fused-off-b"]
+        if variant == "m1-134-teacher-forced-control-repeat"
+        else (
+            ["fine32", "admission64"]
+            if variant == "admission64-policy"
+            else ["fused-off", "fused-on"]
+        )
     ),
     "gates": {
         "control": read_rc(root / "control.rc"),
@@ -190,7 +192,10 @@ if variant == "m1-122-fused-prefill-ifeval":
         "ifeval_exact_comparison": read_rc(
             root / "ifeval_exact_comparison.rc"),
     }
-elif variant == "m1-132-fused-prefill-teacher-forced":
+elif variant in {
+    "m1-132-fused-prefill-teacher-forced",
+    "m1-134-teacher-forced-control-repeat",
+}:
     report["gates"].update({
         "teacher_forced_comparison": read_rc(
             root / "teacher_forced_comparison.rc"),
@@ -225,7 +230,10 @@ if variant == "m1-122-fused-prefill-ifeval":
             hashlib.sha256(path.read_bytes()).hexdigest()
             if path.is_file() else None
         )
-elif variant == "m1-132-fused-prefill-teacher-forced":
+elif variant in {
+    "m1-132-fused-prefill-teacher-forced",
+    "m1-134-teacher-forced-control-repeat",
+}:
     path = root / "teacher_forced_comparison.json"
     artifacts["teacher_forced_comparison_sha256"] = (
         hashlib.sha256(path.read_bytes()).hexdigest()
@@ -416,7 +424,6 @@ finish() {
     local fatal_rc=0
     local timeout_rc=0
     local private_observation_cleanup_rc=0
-    local -a private_observation_files=()
     trap - EXIT
     trap '' TERM INT
     set +e
@@ -445,27 +452,11 @@ finish() {
     timeout_rc=$?
     printf '%s\n' "$timeout_rc" > "$RUN_ROOT/orchestrator_timeout_scan.rc"
     if [[ "$QUALITY_AB_VARIANT" == \
-            m1-132-fused-prefill-teacher-forced ]]; then
-        shopt -s nullglob
-        private_observation_files=(
-            "$RUN_ROOT/control/teacher_forced_observation.json"
-            "$RUN_ROOT/candidate/teacher_forced_observation.json"
-            "$RUN_ROOT/control"/.teacher_forced_observation.json.*.tmp
-            "$RUN_ROOT/candidate"/.teacher_forced_observation.json.*.tmp
-        )
-        shopt -u nullglob
-        rm -f -- "${private_observation_files[@]}"
-        shopt -s nullglob
-        private_observation_files=(
-            "$RUN_ROOT/control/teacher_forced_observation.json"
-            "$RUN_ROOT/candidate/teacher_forced_observation.json"
-            "$RUN_ROOT/control"/.teacher_forced_observation.json.*.tmp
-            "$RUN_ROOT/candidate"/.teacher_forced_observation.json.*.tmp
-        )
-        shopt -u nullglob
-        if [[ ${#private_observation_files[@]} -ne 0 ]]; then
-            private_observation_cleanup_rc=1
-        fi
+            m1-132-fused-prefill-teacher-forced \
+            || "$QUALITY_AB_VARIANT" == \
+            m1-134-teacher-forced-control-repeat ]]; then
+        remove_teacher_forced_observations "$RUN_ROOT"
+        private_observation_cleanup_rc=$?
         printf '%s\n' "$private_observation_cleanup_rc" \
             > "$RUN_ROOT/private_observation_cleanup.rc"
     fi
@@ -495,7 +486,9 @@ run_arm() {
     if [[ "$QUALITY_AB_VARIANT" != admission64-policy ]]; then
         restore_mode=hybrid64
         runner_name=$arm
-        if [[ "$arm" == candidate ]]; then
+        if [[ "$arm" == candidate \
+                && "$QUALITY_AB_VARIANT" != \
+                m1-134-teacher-forced-control-repeat ]]; then
             fused_prefill=1
         fi
     fi
@@ -506,7 +499,9 @@ run_arm() {
             m1-122-fused-prefill-ifeval ]]; then
         suite=ifeval
     elif [[ "$QUALITY_AB_VARIANT" == \
-            m1-132-fused-prefill-teacher-forced ]]; then
+            m1-132-fused-prefill-teacher-forced \
+            || "$QUALITY_AB_VARIANT" == \
+            m1-134-teacher-forced-control-repeat ]]; then
         suite=teacher-forced
     fi
     local identity="$RUN_ROOT/${arm}_child_identity.json"
@@ -528,7 +523,9 @@ run_arm() {
     fi
     (
         if [[ "$QUALITY_AB_VARIANT" == \
-                m1-132-fused-prefill-teacher-forced ]]; then
+                m1-132-fused-prefill-teacher-forced \
+                || "$QUALITY_AB_VARIANT" == \
+                m1-134-teacher-forced-control-repeat ]]; then
             export BI100_TEACHER_FORCED_HMAC_KEY="$TEACHER_FORCED_HMAC_KEY"
         fi
         if [[ "$suite" == long-context ]]; then
@@ -660,6 +657,10 @@ elif [[ "$QUALITY_AB_VARIANT" == \
         m1-132-fused-prefill-teacher-forced ]]; then
     run_arm control admission64 m1-132-control-fused-off \
         "$RUN_ROOT/control"
+elif [[ "$QUALITY_AB_VARIANT" == \
+        m1-134-teacher-forced-control-repeat ]]; then
+    run_arm control admission64 m1-134-control-a-fused-off \
+        "$RUN_ROOT/control"
 else
     run_arm control fine32 m1-85-control-fine32 "$RUN_ROOT/control"
 fi
@@ -687,6 +688,10 @@ elif [[ "$QUALITY_AB_VARIANT" == \
 elif [[ "$QUALITY_AB_VARIANT" == \
         m1-132-fused-prefill-teacher-forced ]]; then
     run_arm candidate admission64 m1-132-candidate-fused-on \
+        "$RUN_ROOT/candidate"
+elif [[ "$QUALITY_AB_VARIANT" == \
+        m1-134-teacher-forced-control-repeat ]]; then
+    run_arm candidate admission64 m1-134-control-b-fused-off \
         "$RUN_ROOT/candidate"
 else
     run_arm candidate admission64 m1-85-candidate-admission64 \
@@ -719,12 +724,20 @@ if [[ "$QUALITY_AB_VARIANT" == \
     printf '%s\n' "$long_context_comparison_rc" \
         > "$RUN_ROOT/long_context_comparison.rc"
 elif [[ "$QUALITY_AB_VARIANT" == \
-        m1-132-fused-prefill-teacher-forced ]]; then
+        m1-132-fused-prefill-teacher-forced \
+        || "$QUALITY_AB_VARIANT" == \
+        m1-134-teacher-forced-control-repeat ]]; then
     set +e
+    teacher_forced_comparison_mode=candidate
+    if [[ "$QUALITY_AB_VARIANT" == \
+            m1-134-teacher-forced-control-repeat ]]; then
+        teacher_forced_comparison_mode=control-repeat
+    fi
     python3 "$ROOT/tests/compare_teacher_forced_logprobs.py" \
         "$RUN_ROOT/control/teacher_forced_observation.json" \
         "$RUN_ROOT/candidate/teacher_forced_observation.json" \
         --contract "$ROOT/quality/layered_quality_gate.v1.json" \
+        --comparison-mode "$teacher_forced_comparison_mode" \
         --out "$RUN_ROOT/teacher_forced_comparison.json" \
         > "$RUN_ROOT/teacher_forced_comparison.stdout" \
         2> "$RUN_ROOT/teacher_forced_comparison.stderr"
@@ -854,7 +867,9 @@ if [[ "$QUALITY_AB_VARIANT" == m1-122-fused-prefill-ifeval ]]; then
     [[ $ifeval_paired_noninferiority_rc -eq 0 ]]
     [[ $aggregate_rc -eq 0 ]]
 elif [[ "$QUALITY_AB_VARIANT" == \
-        m1-132-fused-prefill-teacher-forced ]]; then
+        m1-132-fused-prefill-teacher-forced \
+        || "$QUALITY_AB_VARIANT" == \
+        m1-134-teacher-forced-control-repeat ]]; then
     [[ $teacher_forced_comparison_rc -eq 0 ]]
 else
     [[ $quality_comparison_rc -eq 0 ]]

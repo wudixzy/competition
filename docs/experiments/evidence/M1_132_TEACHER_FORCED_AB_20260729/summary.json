@@ -1,0 +1,96 @@
+{
+  "schema": "bi100-m1-132-teacher-forced-evidence-v1",
+  "version": 1,
+  "date": "2026-07-29",
+  "status": "numerical-fail-pending-control-repeat-attribution",
+  "source_revision": "03e22126c94a2cc61719d41fe15ea33e5d0d0207",
+  "source_branch": "exp/M1-132-layered-quality-gate-20260729",
+  "instance": "ssh-73ca29ba",
+  "gpu_count": 4,
+  "tensor_parallel_size": 4,
+  "max_model_len": 262144,
+  "runtime_tree_sha256": "7aa66761e8dc3409828cb3d5b226b573eb40caafc4bb434b938a99493a02b2ff",
+  "fixed_order": [
+    "fused-off",
+    "fused-on"
+  ],
+  "case_count": 5,
+  "sampled_positions": 320,
+  "top_k": 5,
+  "metrics": {
+    "top1_agreement": 0.940625,
+    "top1_mismatch_count": 19,
+    "mutually_uncovered_top1_mismatches": 3,
+    "teacher_token_logprob_absolute_delta_max": 9.797846794128418,
+    "teacher_token_logprob_absolute_delta_p99": 7.684062480926514,
+    "shared_topk_logprob_absolute_delta_p99": 4.8989996910095215,
+    "mean_teacher_token_nll_regression": 0.10350425119105325,
+    "high_margin_guard_nats": 19.595998764038086,
+    "high_margin_top1_mismatches": 0
+  },
+  "cases": [
+    {
+      "prompt_tokens": 4096,
+      "sampled_positions": 64,
+      "top1_agreement": 0.953125,
+      "mutually_uncovered_top1_mismatches": 0
+    },
+    {
+      "prompt_tokens": 32768,
+      "sampled_positions": 64,
+      "top1_agreement": 0.9375,
+      "mutually_uncovered_top1_mismatches": 1
+    },
+    {
+      "prompt_tokens": 65536,
+      "sampled_positions": 64,
+      "top1_agreement": 1.0,
+      "mutually_uncovered_top1_mismatches": 0
+    },
+    {
+      "prompt_tokens": 131072,
+      "sampled_positions": 64,
+      "top1_agreement": 0.921875,
+      "mutually_uncovered_top1_mismatches": 2
+    },
+    {
+      "prompt_tokens": 235000,
+      "sampled_positions": 64,
+      "top1_agreement": 0.890625,
+      "mutually_uncovered_top1_mismatches": 0
+    }
+  ],
+  "gates": {
+    "control_service": 0,
+    "candidate_service": 0,
+    "teacher_forced_comparison": 1,
+    "orchestrator_cleanup": 0,
+    "orchestrator_recovery": 0,
+    "orchestrator_recovery_clean": 0,
+    "orchestrator_postflight": 0,
+    "orchestrator_gpu_preflight_after": 0,
+    "orchestrator_fatal_scan": 0,
+    "orchestrator_timeout_scan": 0,
+    "private_observation_cleanup": 1
+  },
+  "cleanup_diagnosis": {
+    "classification": "false-failure-in-old-verification-array",
+    "private_observations_present_after_run": false,
+    "fixed_in_m1_134_runner": true
+  },
+  "privacy": {
+    "contains_prompts": false,
+    "contains_model_outputs": false,
+    "contains_token_ids": false,
+    "contains_private_token_identity": false,
+    "contains_credentials": false
+  },
+  "authorization": {
+    "m1_109_numerical_attribution_complete": false,
+    "semantic_waiver_authorized": false,
+    "default_policy_change_authorized": false,
+    "yaml_change_authorized": false,
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false
+  }
+}

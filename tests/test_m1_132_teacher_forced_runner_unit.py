@@ -32,6 +32,12 @@ COLLECTOR = (
 WRAPPER = (
     ROOT / "scripts/run_m1_132_teacher_forced_ab.sh"
 ).read_text(encoding="utf-8")
+REPEAT_WRAPPER = (
+    ROOT / "scripts/run_m1_134_teacher_forced_control_repeat.sh"
+).read_text(encoding="utf-8")
+PRIVATE_ARTIFACTS = (
+    ROOT / "scripts/lib/private_artifacts.sh"
+).read_text(encoding="utf-8")
 
 
 class M1132TeacherForcedRunnerTests(unittest.TestCase):
@@ -45,6 +51,19 @@ class M1132TeacherForcedRunnerTests(unittest.TestCase):
         self.assertIn(
             'exec "$ROOT/scripts/run_m1_85_admission64_quality_ab.sh" "$@"',
             WRAPPER,
+        )
+
+    def test_control_repeat_wrapper_keeps_both_arms_fused_off(self) -> None:
+        self.assertIn(
+            "BI100_QUALITY_AB_VARIANT="
+            "m1-134-teacher-forced-control-repeat",
+            REPEAT_WRAPPER,
+        )
+        self.assertIn("m1-134-control-a-fused-off", OUTER)
+        self.assertIn("m1-134-control-b-fused-off", OUTER)
+        self.assertIn(
+            "teacher_forced_comparison_mode=control-repeat",
+            OUTER,
         )
 
     def test_service_runs_fixed_collector(self) -> None:
@@ -90,16 +109,19 @@ class M1132TeacherForcedRunnerTests(unittest.TestCase):
 
     def test_outer_trap_deletes_private_observations(self) -> None:
         finish_index = OUTER.index("finish() {")
-        cleanup_index = OUTER.index("private_observation_files=(", finish_index)
+        cleanup_index = OUTER.index(
+            'remove_teacher_forced_observations "$RUN_ROOT"', finish_index)
         status_index = OUTER.index('write_status "$rc"', finish_index)
         self.assertLess(finish_index, cleanup_index)
         self.assertLess(cleanup_index, status_index)
         self.assertIn(
-            '"$RUN_ROOT/control"/'
+            '"$run_root/control"/'
             '.teacher_forced_observation.json.*.tmp',
-            OUTER,
+            PRIVATE_ARTIFACTS,
         )
         self.assertIn("private_observation_cleanup.rc", OUTER)
+        self.assertIn(
+            'source "$ROOT/scripts/lib/private_artifacts.sh"', OUTER)
 
     def test_server_token_identity_path_is_installed_and_used(self) -> None:
         self.assertIn(
