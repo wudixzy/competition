@@ -36,6 +36,17 @@ class M1136FusedPrefillShadowRunnerTests(unittest.TestCase):
         )
         self.assertIn("qualify_fused_prefill_shadow.py", self.source)
 
+    def test_runtime_identity_uses_verified_tree_digest_contract(self) -> None:
+        self.assertIn('value.get("runtime_tree_sha256")', self.source)
+        self.assertIn(
+            'print(f"bare-host-overlay-v1:{tree_sha[:20]}")',
+            self.source,
+        )
+        self.assertNotIn(
+            'json.load(open(sys.argv[1]))["runtime_identity"]',
+            self.source,
+        )
+
     def test_cleanup_uses_term_grace_and_recorded_identity(self) -> None:
         for fragment in (
             '"$ACTIVE_PGID" "$ACTIVE_PID" 60 20',

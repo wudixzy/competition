@@ -510,9 +510,23 @@ timeout --signal=TERM --kill-after=70s 240s \
     > "$RUN_ROOT/runtime_identity.stdout" \
     2> "$RUN_ROOT/runtime_identity.stderr"
 printf '0\n' > "$RUN_ROOT/runtime_identity.rc"
-RUNTIME_IDENTITY=$(python3 -c \
-    'import json,sys; print(json.load(open(sys.argv[1]))["runtime_identity"])' \
-    "$RUN_ROOT/runtime_identity.json")
+RUNTIME_IDENTITY=$(python3 - "$RUN_ROOT/runtime_identity.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+tree_sha = value.get("runtime_tree_sha256")
+if (
+    value.get("qualified") is not True
+    or not isinstance(tree_sha, str)
+    or len(tree_sha) != 64
+    or any(character not in "0123456789abcdef" for character in tree_sha)
+):
+    raise SystemExit("qualified runtime identity lacks a valid tree SHA-256")
+print(f"bare-host-overlay-v1:{tree_sha[:20]}")
+PY
+)
 
 CURRENT_STAGE=startup
 start_service
