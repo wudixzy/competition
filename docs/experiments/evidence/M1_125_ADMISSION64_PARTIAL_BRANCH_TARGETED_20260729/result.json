@@ -1,0 +1,118 @@
+{
+  "schema": "bi100-m1-125-admission64-partial-branch-targeted-v1",
+  "version": 1,
+  "date": "2026-07-29",
+  "source_revision": "e59ebb654722d2e1de19a45633f460bbc0df27b3",
+  "comparator_revision": "42c1b03db0393097915810b6c7eb962836401f9d",
+  "instance": "ssh-73ca29ba",
+  "gpu_count": 4,
+  "tensor_parallel_size": 4,
+  "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+  "max_model_len": 262144,
+  "case": "32k_partial_branch",
+  "arms": {
+    "control": {
+      "fused_prefill": false,
+      "qualified": true,
+      "http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "cached_tokens": [
+        0,
+        32752,
+        0,
+        32704
+      ],
+      "facts": {
+        "branch_markers_correct": true,
+        "cache_trace_session_attested": true,
+        "cold_warm_exact": true,
+        "first_sibling_effective_miss": true,
+        "repeated_branch_admitted": true,
+        "strict_partial_hit": true,
+        "subsequent_sibling_restored": true,
+        "subsequent_sibling_strict_partial_hit": true
+      }
+    },
+    "candidate": {
+      "fused_prefill": true,
+      "qualified": true,
+      "http_statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "cached_tokens": [
+        0,
+        32752,
+        0,
+        32704
+      ],
+      "facts": {
+        "branch_markers_correct": true,
+        "cache_trace_session_attested": true,
+        "cold_warm_exact": true,
+        "first_sibling_effective_miss": true,
+        "repeated_branch_admitted": true,
+        "strict_partial_hit": true,
+        "subsequent_sibling_restored": true,
+        "subsequent_sibling_strict_partial_hit": true
+      }
+    }
+  },
+  "arm_gate_returncodes": {
+    "overall": 0,
+    "cleanup": 0,
+    "process_group": 0,
+    "fatal_scan": 0,
+    "timeout_scan": 0,
+    "preflight_before": 0,
+    "preflight_after": 0,
+    "preflight_comparison": 0,
+    "service_postflight": 0,
+    "gdn_action_broadcast": 0,
+    "prefix_allocator": 0,
+    "api_4xx_attribution": 0
+  },
+  "orchestrator_returncodes": {
+    "control": 0,
+    "candidate": 0,
+    "targeted_comparison": 0,
+    "legacy_complete_comparison": 1,
+    "cleanup": 0,
+    "recovery": 0,
+    "recovery_clean": 0,
+    "postflight": 0,
+    "preflight_after": 0,
+    "fatal_scan": 0,
+    "timeout_scan": 0
+  },
+  "targeted_comparison": {
+    "qualified": true,
+    "targeted_diagnostic_qualified": true,
+    "compared_cases": 1,
+    "qualified_cases": 1,
+    "failed_cases": 0,
+    "reason_count": 0,
+    "long_context_quality_non_regression_authorized": false,
+    "overall_promotion_authorized": false
+  },
+  "adjudication": {
+    "legacy_complete_comparison_failure_expected": true,
+    "legacy_failure_reason": "The strict complete comparator requires all twelve cases.",
+    "targeted_partial_branch_contract_passed": true,
+    "complete_long_context_matrix_required": true,
+    "main_or_yaml_change_authorized": false
+  },
+  "privacy": {
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_token_ids": false,
+    "contains_cache_digests": false,
+    "contains_credentials": false
+  }
+}

@@ -42,7 +42,7 @@ digests.
 ## Local verification
 
 - Focused manifest, runner, and comparator tests: 52 passed.
-- Complete unit suite: 1104 passed, 13 skipped.
+- Complete unit suite after targeted evidence capture: 1109 passed, 13 skipped.
 - Quality-data manifest validation: qualified.
 - Submission preflight: 9/9 passed.
 - `git diff --check`: passed.
@@ -65,3 +65,21 @@ This mode exists only to adjudicate a focused runtime question before paying
 the cost of the complete twelve-case TP4 matrix. Omitting `--case` preserves
 the complete-matrix contract and is the only mode that can authorize the
 long-context non-regression gate.
+
+## TP4 targeted result
+
+The fixed `32k_partial_branch` A/B ran on four BI100 cards at source
+`e59ebb6`, with fused prefill disabled for control and enabled for candidate.
+Both arms passed all four requests and produced the same sparse admission
+sequence: cold miss, exact warm hit, first sibling effective miss with
+`repeated_branch` admission, then a restored strict hit for the subsequent
+sibling. All per-arm and orchestrator cleanup, preflight, postflight, fatal,
+timeout, allocator, broadcast, and 4xx-attribution gates passed.
+
+The comparator at `42c1b03` qualified the one-case diagnostic with no
+reasons. It explicitly did not authorize the complete long-context quality
+gate or overall promotion. The older complete comparator returned nonzero
+because only one of twelve cases was present; this is expected and is not a
+runtime failure. The privacy-safe structured evidence is stored in
+`docs/experiments/evidence/M1_125_ADMISSION64_PARTIAL_BRANCH_TARGETED_20260729`.
+A fresh complete twelve-case TP4 A/B remains required.
