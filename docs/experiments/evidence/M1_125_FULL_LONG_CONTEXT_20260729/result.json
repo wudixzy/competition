@@ -1,0 +1,144 @@
+{
+  "schema": "bi100-m1-125-full-long-context-v1",
+  "version": 1,
+  "date": "2026-07-29",
+  "source_revision": "e59ebb654722d2e1de19a45633f460bbc0df27b3",
+  "branch": "fix/M1-125-admission64-partial-branch-quality-20260729",
+  "instance": "ssh-73ca29ba",
+  "run_label": "m1-125-full12-e59ebb6-20260729-v1",
+  "gpu_count": 4,
+  "tensor_parallel_size": 4,
+  "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+  "runtime_overlay": "/root/m1-125-runtime-e59ebb6/site-packages",
+  "max_model_len": 262144,
+  "arms": {
+    "control": {
+      "fused_prefill": false,
+      "lifecycle_qualified": true,
+      "quality_qualified": true
+    },
+    "candidate": {
+      "fused_prefill": true,
+      "lifecycle_qualified": true,
+      "quality_qualified": true
+    }
+  },
+  "comparison": {
+    "schema": "bi100-long-context-quality-comparison-v5",
+    "qualified": true,
+    "compared_cases": 12,
+    "qualified_cases": 12,
+    "failed_cases": 0,
+    "reason_count": 0,
+    "cases": [
+      {
+        "ordinal": 1,
+        "id": "short_basic_recall",
+        "mode": "exact",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 2,
+        "id": "4k_cold_warm_recall",
+        "mode": "exact",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 3,
+        "id": "32k_partial_branch",
+        "mode": "exact",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 4,
+        "id": "32k_multimodal_isolation",
+        "mode": "exact",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 5,
+        "id": "65k_multiturn_large_tools",
+        "mode": "exact",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 6,
+        "id": "65k_long_tool_result",
+        "mode": "exact",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 7,
+        "id": "65k_interleaved_sessions",
+        "mode": "exact",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 8,
+        "id": "131k_cold_warm_recall",
+        "mode": "next_token",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 9,
+        "id": "131k_reasoning_recall",
+        "mode": "semantic",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 10,
+        "id": "235k_agent_large_output_budget",
+        "mode": "semantic",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 11,
+        "id": "235k_partial_branch",
+        "mode": "semantic",
+        "qualified": true,
+        "reason_count": 0
+      },
+      {
+        "ordinal": 12,
+        "id": "near_262k_capacity",
+        "mode": "next_token",
+        "qualified": true,
+        "reason_count": 0
+      }
+    ]
+  },
+  "lifecycle": {
+    "returncode_file_count": 48,
+    "all_returncodes_zero": true,
+    "fatal_timeout_scan_file_count": 6,
+    "all_fatal_timeout_scans_empty": true,
+    "active_run_process_count_after_completion": 0,
+    "fatal_detected": false,
+    "timeout_detected": false,
+    "gloo_reset_detected": false,
+    "worker_loss_detected": false
+  },
+  "authorization": {
+    "long_context_quality_non_regression_authorized": true,
+    "overall_promotion_authorized": false,
+    "main_or_yaml_change_authorized": false
+  },
+  "privacy": {
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_token_ids": false,
+    "contains_output_or_cache_digests": false,
+    "contains_request_or_session_identity": false,
+    "contains_credentials": false
+  }
+}

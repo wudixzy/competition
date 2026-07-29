@@ -83,3 +83,22 @@ because only one of twelve cases was present; this is expected and is not a
 runtime failure. The privacy-safe structured evidence is stored in
 `docs/experiments/evidence/M1_125_ADMISSION64_PARTIAL_BRANCH_TARGETED_20260729`.
 A fresh complete twelve-case TP4 A/B remains required.
+
+## Complete TP4 result
+
+The complete twelve-case control/candidate A/B subsequently ran from source
+`e59ebb6` on four BI100 cards with `max_model_len=262144`. All twelve cases
+qualified: seven exact cases, two next-token cases, and three semantic cases
+covering cache branches, multimodal isolation, tools, reasoning, 131K and
+235K inputs, and the near-262K capacity boundary.
+
+All 48 recorded return codes were zero, all six fatal/timeout scans were
+empty, and no run-owned process remained after cleanup. No fatal, timeout,
+Gloo reset, or worker loss was detected. This authorizes the scoped
+long-context quality non-regression result only. It does not authorize
+overall promotion, a `main` merge, or a production YAML change.
+
+The privacy-safe structured result is stored in
+`docs/experiments/evidence/M1_125_FULL_LONG_CONTEXT_20260729`. Raw requests,
+outputs, token IDs, cache digests, and request/session identities are not
+retained.
