@@ -4,12 +4,18 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import tempfile
 import textwrap
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+
+import compare_bi100_preflights
+
+
 SCRIPT = ROOT / "tests" / "bi100_parallel_preflight.py"
 SPEC = importlib.util.spec_from_file_location(
     "bi100_parallel_preflight", SCRIPT)
@@ -47,6 +53,12 @@ class ParallelBi100PreflightTest(unittest.TestCase):
                         "gpu": args.gpus,
                         "ok": True,
                         "stage": "done",
+                        "returncode": 0,
+                        "device_name": "BI100",
+                        "device_capability": [10, 0],
+                        "free": 1024,
+                        "total": 2048,
+                        "checksum": 512,
                     }]
                 }
                 args.json_out.write_text(json.dumps(value))
@@ -61,6 +73,13 @@ class ParallelBi100PreflightTest(unittest.TestCase):
 
         self.assertTrue(summary["ok"])
         self.assertTrue(summary["parallel"])
+        self.assertEqual(summary["schema"], "bi100-gpu-preflight-v1")
+        self.assertEqual(summary["runner"], "parallel-single-gpu")
+        comparison = compare_bi100_preflights.compare(
+            [("before", summary), ("after", summary)],
+            expected_gpus=(0, 2),
+        )
+        self.assertTrue(comparison["qualified"], comparison["reasons"])
         self.assertEqual(
             [result["gpu"] for result in summary["results"]],
             [0, 2],

@@ -15,7 +15,7 @@ import time
 from typing import Any
 
 
-SCHEMA = "bi100-parallel-gpu-preflight-v1"
+SCHEMA = "bi100-gpu-preflight-v1"
 TERM_GRACE_S = 60.0
 KILL_GRACE_S = 20.0
 _ACTIVE_PROCESSES: list[subprocess.Popen[Any]] = []
@@ -208,6 +208,7 @@ def run_parallel(
     return {
         "schema": SCHEMA,
         "version": 1,
+        "runner": "parallel-single-gpu",
         "ok": (
             not timed_out
             and cleanup_reaped
