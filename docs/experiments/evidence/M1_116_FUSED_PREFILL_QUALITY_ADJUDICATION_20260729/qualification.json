@@ -1,0 +1,135 @@
+{
+  "schema": "bi100-m1-116-fused-prefill-quality-adjudication-v1",
+  "version": 1,
+  "source_revision": "6eeb65a25ed5475ab0b9f2f6a965a21d707ff89f",
+  "instance": "ssh-73ca29ba",
+  "run_root": "/tmp/m1-116-fused-quality-6eeb65a-20260729-v3",
+  "runtime_overlay": "/root/m1-123-runtime-6eeb65a/site-packages",
+  "fixed_order": [
+    "fused-off",
+    "fused-on"
+  ],
+  "control": {
+    "fused_prefill": false,
+    "quality": {
+      "passed": 53,
+      "failed": 0,
+      "total": 53,
+      "wall_s": 1714.4288143478334
+    },
+    "agent": {
+      "passed": 11,
+      "failed": 0,
+      "total": 11
+    },
+    "exact_output_truncation": {
+      "max_tokens": 32768,
+      "elapsed_s": 1494.6671893894672,
+      "derived_output_tps": 21.923275116104527
+    },
+    "output_diagnostic": {
+      "qualified": true,
+      "prefix_65k_cold_warm_exact": true,
+      "prefix_235k_cold_warm_exact": true,
+      "ladder_steps": 6
+    },
+    "expected_4xx": {
+      "qualified": true,
+      "attributed": 8,
+      "attribution_delta": 0,
+      "by_validation_field": {
+        "multiple": 2,
+        "root": 1
+      },
+      "by_validation_type": {
+        "multiple": 2,
+        "value_error": 1
+      }
+    },
+    "arm_returncode": 0,
+    "all_lifecycle_gates_passed": true
+  },
+  "candidate": {
+    "fused_prefill": true,
+    "quality": {
+      "passed": 53,
+      "failed": 0,
+      "total": 53,
+      "wall_s": 1720.0283025838435
+    },
+    "agent": {
+      "passed": 11,
+      "failed": 0,
+      "total": 11
+    },
+    "exact_output_truncation": {
+      "max_tokens": 32768,
+      "elapsed_s": 1501.907036524266,
+      "derived_output_tps": 21.817595365843786,
+      "relative_tps_delta_percent": -0.4820436257861438
+    },
+    "output_diagnostic": {
+      "qualified": true,
+      "prefix_65k_cold_warm_exact": true,
+      "prefix_235k_cold_warm_exact": true,
+      "ladder_steps": 6
+    },
+    "expected_4xx": {
+      "qualified": true,
+      "attributed": 8,
+      "attribution_delta": 0,
+      "by_validation_field": {
+        "multiple": 2,
+        "root": 1
+      },
+      "by_validation_type": {
+        "multiple": 2,
+        "value_error": 1
+      }
+    },
+    "arm_returncode": 0,
+    "all_lifecycle_gates_passed": true
+  },
+  "comparison": {
+    "quality_cases_compared": 53,
+    "quality_cases_qualified": 52,
+    "quality_cases_failed": 1,
+    "failed_quality_case": "multimodal_input",
+    "failed_quality_facts": [
+      "deterministic normalized output differs",
+      "deterministic completion usage differs"
+    ],
+    "agent_cases_compared": 11,
+    "agent_cases_qualified": 11,
+    "diagnostic_valid": true,
+    "next_token_exact": true,
+    "strict_output_exact": false,
+    "first_divergent_max_tokens": 8,
+    "quality_adjudication_required": true,
+    "runner_returncode": 1
+  },
+  "verification": {
+    "local_unit_tests_passed": 1092,
+    "local_unit_tests_skipped": 13,
+    "submission_preflight_passed": 9,
+    "submission_preflight_total": 9
+  },
+  "authorization": {
+    "m1_117_long_context_adjudication": true,
+    "performance_authorized": false,
+    "default_policy_change_authorized": false,
+    "yaml_change_authorized": false,
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false,
+    "next_required_gate": "M1-117 fixed long-context TP4 A/B"
+  },
+  "privacy": {
+    "contains_request_content": false,
+    "contains_generated_output": false,
+    "contains_token_ids": false,
+    "contains_output_identities": false,
+    "contains_hmac_material": false,
+    "contains_cache_hashes": false,
+    "contains_credentials": false
+  }
+}
