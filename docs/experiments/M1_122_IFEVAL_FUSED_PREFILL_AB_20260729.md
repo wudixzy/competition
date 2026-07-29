@@ -80,6 +80,27 @@ scripts/run_m1_122_ifeval_fused_prefill_ab.sh \
 The run is intentionally long because each frozen request permits the official
 8192-token completion budget.
 
+## Remote Evaluator Preparation
+
+The private `ssh-73ca29ba` instance cannot fetch the pinned NLTK archive
+directly. The archive was therefore downloaded locally from revision
+`4f15a3d89eefe9748ec1c05be495d91289197155`, verified against manifest
+SHA-256
+`e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106`,
+and only the four English `punkt_tab` files consumed by
+`prepare_ifeval_env.py` were transferred over the private instance channel.
+The English-only transfer bundle SHA-256 is
+`c2608c30f9bb7f342f3b7794bbc0e9f4ef3e626a9eef326825fb50ce2f68d418`.
+
+The resulting private evaluator directory is
+`/root/ifeval-env-m1-123-6eeb65a`. Every committed wheel or source
+distribution was rechecked against the manifest before installation, the
+sentence/word-count import smoke passed, and `install.json` has SHA-256
+`4168d1df55339e67b4e15a981aa543dbf06b85acd422a286b329357bcd586d59`.
+Neither the NLTK files nor the environment are committed or added to the
+model-service path. This preparation is not an IFEval result and grants no
+promotion authorization.
+
 ## Authorization
 
 M1-122 is a quality gate only. It cannot authorize performance claims,
