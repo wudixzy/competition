@@ -964,6 +964,82 @@ def _metrics(raw: Dict[str, Any], total_prompt_tokens: int) -> Dict[str, Any]:
     return metrics
 
 
+def _prompt_length_bucket(prompt_tokens: int) -> str:
+    for upper, name in (
+            (6000, "lt_6k"),
+            (16000, "6k_16k"),
+            (32000, "16k_32k"),
+            (64000, "32k_64k"),
+            (128000, "64k_128k"),
+            (256000, "128k_256k")):
+        if prompt_tokens < upper:
+            return name
+    return "ge_256k"
+
+
+def _tail64_pair_breakdown(
+        records: Sequence[Dict[str, Any]],
+        admission_results: Sequence[Dict[str, Any]],
+        tail_results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    buckets: Dict[str, list[tuple]] = defaultdict(list)
+    for record, admission, tail in zip(
+            records, admission_results, tail_results):
+        buckets[_prompt_length_bucket(record["prompt_tokens"])].append(
+            (record, admission, tail))
+
+    report = {}
+    for name, items in buckets.items():
+        prompt_tokens = sum(item[0]["prompt_tokens"] for item in items)
+        admission_avoided = sum(
+            item[1]["effective_hit_tokens"] for item in items)
+        tail_avoided = sum(item[2]["effective_hit_tokens"] for item in items)
+        admission_ttfts = [
+            item[1]["projected_ttft_s"] for item in items
+            if "projected_ttft_s" in item[1]
+        ]
+        tail_ttfts = [
+            item[2]["projected_ttft_s"] for item in items
+            if "projected_ttft_s" in item[2]
+        ]
+        timing_complete = (
+            len(admission_ttfts) == len(items)
+            and len(tail_ttfts) == len(items))
+        report[name] = {
+            "requests": len(items),
+            "prompt_tokens": prompt_tokens,
+            "improved_requests": sum(
+                item[2]["effective_hit_tokens"]
+                > item[1]["effective_hit_tokens"]
+                for item in items),
+            "unchanged_requests": sum(
+                item[2]["effective_hit_tokens"]
+                == item[1]["effective_hit_tokens"]
+                for item in items),
+            "regressed_requests": sum(
+                item[2]["effective_hit_tokens"]
+                < item[1]["effective_hit_tokens"]
+                for item in items),
+            "additional_usable_gdn_state_avoided_tokens": (
+                tail_avoided - admission_avoided),
+            "effective_hit_gain_percentage_points": (
+                100 * (tail_avoided - admission_avoided) / prompt_tokens
+                if prompt_tokens else 0.0),
+            "admission64_residual_prefill_tokens_p90": _percentile([
+                item[1]["residual_prefill_tokens"] for item in items
+            ], 90),
+            "tail64_residual_prefill_tokens_p90": _percentile([
+                item[2]["residual_prefill_tokens"] for item in items
+            ], 90),
+            "admission64_projected_ttft_p90_s": (
+                _percentile(admission_ttfts, 90)
+                if timing_complete else None),
+            "tail64_projected_ttft_p90_s": (
+                _percentile(tail_ttfts, 90)
+                if timing_complete else None),
+        }
+    return report
+
+
 def _write_tail64_pair_report(
         records: Sequence[Dict[str, Any]], logs: Sequence[str], capacity: int,
         cpu_capacity: int, gdn_chunk_tokens: int, restore_mode: str,
@@ -982,6 +1058,8 @@ def _write_tail64_pair_report(
     }
     admission = metrics["admission64"]
     tail = metrics["tail64"]
+    admission_results = results["admission64"]["request_results"]
+    tail_results = results["tail64"]["request_results"]
     admission_ttft = admission["projected_ttft_p90_s"]
     tail_ttft = tail["projected_ttft_p90_s"]
     timing_complete = (
@@ -1002,6 +1080,25 @@ def _write_tail64_pair_report(
         "trace_session_sha256": records[0]["trace_session_sha256"],
         "source_logs": [_file_provenance(path) for path in logs],
         "policy_metrics": metrics,
+        "request_delta_counts": {
+            "improved": sum(
+                tail_item["effective_hit_tokens"]
+                > admission_item["effective_hit_tokens"]
+                for admission_item, tail_item in zip(
+                    admission_results, tail_results)),
+            "unchanged": sum(
+                tail_item["effective_hit_tokens"]
+                == admission_item["effective_hit_tokens"]
+                for admission_item, tail_item in zip(
+                    admission_results, tail_results)),
+            "regressed": sum(
+                tail_item["effective_hit_tokens"]
+                < admission_item["effective_hit_tokens"]
+                for admission_item, tail_item in zip(
+                    admission_results, tail_results)),
+        },
+        "length_bucket_metrics": _tail64_pair_breakdown(
+            records, admission_results, tail_results),
         "delta": {
             "additional_usable_gdn_state_avoided_tokens": (
                 tail["usable_gdn_state_avoided_tokens"]

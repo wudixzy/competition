@@ -153,6 +153,25 @@ def decoded(values, capacity=4, ordinal=1, prompt_tokens=None, total_tokens=None
 
 
 class AnalyzerTest(unittest.TestCase):
+    def test_prompt_length_buckets_match_platform_boundaries(self):
+        cases = {
+            5999: "lt_6k",
+            6000: "6k_16k",
+            15999: "6k_16k",
+            16000: "16k_32k",
+            31999: "16k_32k",
+            32000: "32k_64k",
+            63999: "32k_64k",
+            64000: "64k_128k",
+            127999: "64k_128k",
+            128000: "128k_256k",
+            255999: "128k_256k",
+            256000: "ge_256k",
+        }
+        for prompt_tokens, expected in cases.items():
+            self.assertEqual(
+                sim._prompt_length_bucket(prompt_tokens), expected)
+
     def test_heap_eviction_matches_scan_order_with_stale_entries(self):
         blocks = [digest(value) for value in range(1, 9)]
         for candidate in (False, True):
@@ -429,6 +448,10 @@ class AnalyzerTest(unittest.TestCase):
             self.assertEqual(
                 set(pair_report["policy_metrics"]),
                 {"admission64", "tail64"})
+            self.assertEqual(
+                sum(pair_report["request_delta_counts"].values()), 2)
+            self.assertEqual(
+                pair_report["length_bucket_metrics"]["lt_6k"]["requests"], 2)
             self.assertFalse(
                 pair_report["promotion"]["main_or_yaml_change_authorized"])
 
