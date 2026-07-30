@@ -1,0 +1,100 @@
+{
+  "authorization": {
+    "main_or_yaml_change_authorized": false,
+    "operator_screen_only": true,
+    "tp4_service_authorized": false
+  },
+  "baseline_extension": {
+    "module_name": "corex_fused_paged_prefill",
+    "path": "/tmp/m1-155-f94ad8-fused-prefill.so",
+    "sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+    "size_bytes": 247176
+  },
+  "candidate_extension": {
+    "module_name": "corex_fused_paged_prefill_fp16_qk",
+    "path": "/tmp/m1-157-build/output/corex_fused_paged_prefill_fp16_qk.so",
+    "sha256": "9d7a9da47d540e58ade3fb2d1ce44ecf50d6a057ab55afade9700ec09679e9df",
+    "size_bytes": 247256
+  },
+  "case": "p90_total_32k_q8176",
+  "context_len": 24576,
+  "device_name": "Iluvatar BI-V100",
+  "evaluation": {
+    "qualified": false,
+    "reasons": [
+      "candidate_vs_reference.output_relative_l2 exceeds 1e-05",
+      "candidate_vs_baseline.output_relative_l2 exceeds 1e-05"
+    ]
+  },
+  "instance": "ssh-73ca29ba",
+  "numerical": {
+    "baseline_vs_reference": {
+      "finite": true,
+      "lse_relative_l2": 1.6157898470756615e-08,
+      "output_max_abs": 3.0517578125e-05,
+      "output_relative_l2": 5.770278815806771e-06
+    },
+    "candidate_vs_baseline": {
+      "finite": true,
+      "lse_relative_l2": 3.4014051994852904e-08,
+      "output_max_abs": 3.0517578125e-05,
+      "output_relative_l2": 1.8735592608580256e-05
+    },
+    "candidate_vs_reference": {
+      "finite": true,
+      "lse_relative_l2": 3.424277870705738e-08,
+      "output_max_abs": 3.0517578125e-05,
+      "output_relative_l2": 1.875580009024733e-05
+    }
+  },
+  "query_len": 8176,
+  "runtime_identity": "corex-3.2.3-m1-157",
+  "schema": "bi100-m1-157-fp16-qk-ab-cell-v1",
+  "seed": 20260725,
+  "source_revision": "1e9104ede5d7a62260ca60d643827dea66228fe4",
+  "timings": {
+    "baseline": {
+      "cuda_median_ms": 135.9931182861328,
+      "cuda_trials_ms": [
+        135.94122314453125,
+        136.28131103515625,
+        136.02333068847656,
+        135.9931182861328,
+        135.94122314453125
+      ],
+      "host_median_ms": 136.08450815081596,
+      "host_trials_ms": [
+        136.090487241745,
+        136.69874519109726,
+        136.08450815081596,
+        136.0498145222664,
+        136.01556420326233
+      ]
+    },
+    "candidate": {
+      "cuda_median_ms": 116.76676940917969,
+      "cuda_trials_ms": [
+        116.81788635253906,
+        116.78813934326172,
+        116.64947509765625,
+        116.76676940917969,
+        116.6754379272461
+      ],
+      "host_median_ms": 116.82714521884918,
+      "host_trials_ms": [
+        116.87855049967766,
+        117.0770563185215,
+        116.7154610157013,
+        116.82714521884918,
+        116.73251911997795
+      ]
+    },
+    "speedup": 1.1646559973718142
+  },
+  "torch_version": "2.1.0",
+  "total_kv_len": 32752,
+  "trials": 5,
+  "version": 1,
+  "visible_physical_gpu": 2,
+  "warmups": 1
+}

@@ -1,0 +1,112 @@
+{
+  "expected_gpus": [
+    1,
+    2,
+    3
+  ],
+  "max_free_memory_drop_bytes": 1073741824,
+  "qualified": true,
+  "reasons": [],
+  "schema": "bi100-gpu-preflight-comparison-v1",
+  "stages": [
+    {
+      "free_memory_drop_from_first_bytes": {
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "label": "before",
+      "matmul_size": 1024,
+      "qualified": true,
+      "results": [
+        {
+          "checksum": 1073741824.0,
+          "device_capability": [
+            7,
+            0
+          ],
+          "device_name": "Iluvatar BI-V100",
+          "free": 34057748480,
+          "gpu": 1,
+          "ok": true,
+          "total": 34057748480
+        },
+        {
+          "checksum": 1073741824.0,
+          "device_capability": [
+            7,
+            0
+          ],
+          "device_name": "Iluvatar BI-V100",
+          "free": 34057748480,
+          "gpu": 2,
+          "ok": true,
+          "total": 34057748480
+        },
+        {
+          "checksum": 1073741824.0,
+          "device_capability": [
+            7,
+            0
+          ],
+          "device_name": "Iluvatar BI-V100",
+          "free": 34057748480,
+          "gpu": 3,
+          "ok": true,
+          "total": 34057748480
+        }
+      ],
+      "timeout_s": 25.0
+    },
+    {
+      "free_memory_drop_from_first_bytes": {
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "label": "after",
+      "matmul_size": 1024,
+      "qualified": true,
+      "results": [
+        {
+          "checksum": 1073741824.0,
+          "device_capability": [
+            7,
+            0
+          ],
+          "device_name": "Iluvatar BI-V100",
+          "free": 34057748480,
+          "gpu": 1,
+          "ok": true,
+          "total": 34057748480
+        },
+        {
+          "checksum": 1073741824.0,
+          "device_capability": [
+            7,
+            0
+          ],
+          "device_name": "Iluvatar BI-V100",
+          "free": 34057748480,
+          "gpu": 2,
+          "ok": true,
+          "total": 34057748480
+        },
+        {
+          "checksum": 1073741824.0,
+          "device_capability": [
+            7,
+            0
+          ],
+          "device_name": "Iluvatar BI-V100",
+          "free": 34057748480,
+          "gpu": 3,
+          "ok": true,
+          "total": 34057748480
+        }
+      ],
+      "timeout_s": 25.0
+    }
+  ],
+  "version": 1
+}

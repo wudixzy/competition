@@ -1,0 +1,52 @@
+{
+  "authorization": {
+    "long_context_or_quality_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "short_tp4_screen_authorized": false
+  },
+  "median_speedup": 1.1646559973718142,
+  "minimum_speedup": 1.152648132033854,
+  "qualified": false,
+  "reasons": [
+    "p90_total_16k_q8176: cell gate failed",
+    "p90_total_32k_q8176: cell gate failed",
+    "p90_total_64k_q8176: cell gate failed"
+  ],
+  "rows": [
+    {
+      "baseline_cuda_median_ms": 72.08650970458984,
+      "candidate_baseline_output_l2": 1.8176344106334515e-05,
+      "candidate_cuda_median_ms": 62.53990936279297,
+      "candidate_reference_lse_l2": 3.6596636901939214e-08,
+      "candidate_reference_output_l2": 1.811127636679007e-05,
+      "case": "p90_total_16k_q8176",
+      "gpu": 1,
+      "qualified": false,
+      "speedup": 1.152648132033854
+    },
+    {
+      "baseline_cuda_median_ms": 135.9931182861328,
+      "candidate_baseline_output_l2": 1.8735592608580256e-05,
+      "candidate_cuda_median_ms": 116.76676940917969,
+      "candidate_reference_lse_l2": 3.424277870705738e-08,
+      "candidate_reference_output_l2": 1.875580009024733e-05,
+      "case": "p90_total_32k_q8176",
+      "gpu": 2,
+      "qualified": false,
+      "speedup": 1.1646559973718142
+    },
+    {
+      "baseline_cuda_median_ms": 263.88824462890625,
+      "candidate_baseline_output_l2": 1.930454162769422e-05,
+      "candidate_cuda_median_ms": 225.0940399169922,
+      "candidate_reference_lse_l2": 3.2496497975939535e-08,
+      "candidate_reference_output_l2": 1.9296238181328853e-05,
+      "case": "p90_total_64k_q8176",
+      "gpu": 3,
+      "qualified": false,
+      "speedup": 1.172346654430389
+    }
+  ],
+  "schema": "bi100-m1-157-fp16-qk-ab-screen-v1",
+  "version": 1
+}

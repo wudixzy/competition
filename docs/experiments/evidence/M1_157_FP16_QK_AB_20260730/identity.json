@@ -1,0 +1,14 @@
+{
+  "baseline_extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+  "baseline_source_sha256": "11c387e6012834fe634ffa8d038f7a4bf4ec19fa13ec23779ee1f414037e564b",
+  "candidate_extension_sha256": "9d7a9da47d540e58ade3fb2d1ce44ecf50d6a057ab55afade9700ec09679e9df",
+  "candidate_source_sha256": "5c6086799c0d4d3044f241b08edcae5e3e7d662e1ab5723d8ccbbe40967aeefa",
+  "gpus": [
+    1,
+    2,
+    3
+  ],
+  "instance": "ssh-73ca29ba",
+  "source_branch": "",
+  "source_revision": "1e9104ede5d7a62260ca60d643827dea66228fe4"
+}
