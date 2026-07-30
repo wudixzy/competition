@@ -19,6 +19,8 @@ INSTALL_SCHEMA = "bi100-bare-host-runtime-install-v2"
 DIRECT_SOURCE_FILES = {
     "api_server": Path("qwen3_6_scripts/api_server.py"),
     "bi100_env": Path("qwen3_6_scripts/bi100_env.py"),
+    "bi100_external_extension": Path(
+        "qwen3_6_scripts/bi100_external_extension.py"),
     "vllm_model": Path("qwen3_6_scripts/qwen3_5.py"),
     "bi100_profile": Path("qwen3_6_scripts/bi100_profile.py"),
     "block_major_kv_cache": Path(
