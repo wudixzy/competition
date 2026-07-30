@@ -1,0 +1,103 @@
+{
+  "cold": [
+    {
+      "actual_prompt_tokens": 8192,
+      "prompt_sha256": "8cf1bb6bf6c500fdd4b65809abf248ea7e7433f016b041ad54b8a285da63c7fb",
+      "target_prompt_tokens": 8192
+    },
+    {
+      "actual_prompt_tokens": 16384,
+      "prompt_sha256": "064d0681031c6d78d7a801862a554e4f03cf10404f28d613681bb62022979863",
+      "target_prompt_tokens": 16384
+    },
+    {
+      "actual_prompt_tokens": 24576,
+      "prompt_sha256": "2ace0ac673f0769781a13d93cdc8c98e3739f72e8d80800873b86d81542910d2",
+      "target_prompt_tokens": 24576
+    },
+    {
+      "actual_prompt_tokens": 32768,
+      "prompt_sha256": "4df92095b114c59cc4f982d23287d22c551a63775a42062db17f1196fc06fddd",
+      "target_prompt_tokens": 32768
+    },
+    {
+      "actual_prompt_tokens": 49152,
+      "prompt_sha256": "fe2f42a32cb5947a9c1a2afbc682f4aeb6337359a2728adfa75d52eca67b4e1e",
+      "target_prompt_tokens": 49152
+    },
+    {
+      "actual_prompt_tokens": 65536,
+      "prompt_sha256": "90ebf85b6b4c36993c4b4e90b08453145e16b50d0e0a38dac3220675c516c66a",
+      "target_prompt_tokens": 65536
+    }
+  ],
+  "evaluation": {
+    "qualified": true,
+    "reasons": []
+  },
+  "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+  "partial": [
+    {
+      "actual_prompt_tokens": 16384,
+      "block_context_tokens": 8192,
+      "cached_prefix_tokens": 8192,
+      "first_sibling_prompt_sha256": "897bddf6ce08f63517d7992b63b575247c52ce0239e9e36bc6ba0316468f3357",
+      "first_sibling_prompt_tokens": 16384,
+      "partial_prompt_sha256": "f1c5c463ac5a2d1c2166c9b1b68ca86a278cb17d76be6343bdb0fb54fff538aa",
+      "primer_prompt_sha256": "d6ac422439e5be87d7aefc2e8d8e34e56fac3cbbc0d1d977b25adc1197b09a7c",
+      "primer_prompt_tokens": 8594,
+      "residual_prefill_tokens": 8192,
+      "shared_tokens_before_rounding": 8199,
+      "target_prompt_tokens": 16384
+    },
+    {
+      "actual_prompt_tokens": 32768,
+      "block_context_tokens": 24576,
+      "cached_prefix_tokens": 24576,
+      "first_sibling_prompt_sha256": "e3722de39bbd8d83729472737edbb6be383e95747cb979af8f73c3a3356af3d3",
+      "first_sibling_prompt_tokens": 32768,
+      "partial_prompt_sha256": "888c7afcd983ffce6177ae913e5079c4406485d7c08f2fc268f9a316725a9c15",
+      "primer_prompt_sha256": "1a105ea7e65d25f9a756382b07fae087b0f5531970065f2841a6744f55057887",
+      "primer_prompt_tokens": 24978,
+      "residual_prefill_tokens": 8192,
+      "shared_tokens_before_rounding": 24583,
+      "target_prompt_tokens": 32768
+    },
+    {
+      "actual_prompt_tokens": 49152,
+      "block_context_tokens": 40960,
+      "cached_prefix_tokens": 40960,
+      "first_sibling_prompt_sha256": "606ebdf99d7b599a9554478df08fcd8a08bb394a88eb4493ed8e828622c7eacc",
+      "first_sibling_prompt_tokens": 49152,
+      "partial_prompt_sha256": "a1d44a980041bcb3517da2af3db4e1058f8393ce76448f710b11021583e4581e",
+      "primer_prompt_sha256": "35c8b0ed079d5b4f4341ed9a2ea9eb92a79c5615c18c09860b00e15aa79d9765",
+      "primer_prompt_tokens": 41362,
+      "residual_prefill_tokens": 8192,
+      "shared_tokens_before_rounding": 40967,
+      "target_prompt_tokens": 49152
+    },
+    {
+      "actual_prompt_tokens": 65536,
+      "block_context_tokens": 57344,
+      "cached_prefix_tokens": 57344,
+      "first_sibling_prompt_sha256": "b4743641382d14806db39f81ad53aa4ce98f366656a7b4f94abc46cf0b853742",
+      "first_sibling_prompt_tokens": 65536,
+      "partial_prompt_sha256": "0a0b82dbbefd30625bbfaca95f3f2dc968d47a1e46149eb9a8d8024fb4671368",
+      "primer_prompt_sha256": "a2bba33a84485baf3dc93137a888ad45e27f82a82811ccc53d47ae468271b081",
+      "primer_prompt_tokens": 57746,
+      "residual_prefill_tokens": 8192,
+      "shared_tokens_before_rounding": 57351,
+      "target_prompt_tokens": 65536
+    }
+  ],
+  "privacy": {
+    "credentials_recorded": false,
+    "prompts_recorded": false,
+    "token_ids_recorded": false
+  },
+  "prompt_set_id": "m1-154-admission-v3-1d2a7b6",
+  "qualified": true,
+  "reasons": [],
+  "schema": "bi100-m1-152-tokenizer-construction-smoke-v2",
+  "version": 2
+}
