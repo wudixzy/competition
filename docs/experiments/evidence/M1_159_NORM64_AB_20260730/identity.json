@@ -1,0 +1,16 @@
+{
+  "baseline_extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+  "baseline_source_sha256": "11c387e6012834fe634ffa8d038f7a4bf4ec19fa13ec23779ee1f414037e564b",
+  "candidate_extension_sha256": "e144f47637435eabdbc9701b5dbf0abfe4a5b1dad6ce548840dea52dfa6be9f6",
+  "candidate_module_name": "corex_fused_paged_prefill_norm64",
+  "candidate_source": "qwen3_6_scripts/corex_fused_paged_prefill_norm64.cu",
+  "candidate_source_sha256": "5d5f80ba24946a7d68b1291156009b914d616df442ce24381b2074105c7aee67",
+  "gpus": [
+    1,
+    2,
+    3
+  ],
+  "instance": "ssh-73ca29ba",
+  "source_branch": "",
+  "source_revision": "0b44754787e3deecb1dacd112c91a2eba8dc1c33"
+}

@@ -1,0 +1,50 @@
+{
+  "authorization": {
+    "long_context_or_quality_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "short_tp4_screen_authorized": false
+  },
+  "median_speedup": 1.0113745783299237,
+  "minimum_speedup": 1.0109656685539663,
+  "qualified": false,
+  "reasons": [
+    "median speedup is below 1.08x"
+  ],
+  "rows": [
+    {
+      "baseline_cuda_median_ms": 72.084716796875,
+      "candidate_baseline_output_l2": 0.0,
+      "candidate_cuda_median_ms": 71.3028335571289,
+      "candidate_reference_lse_l2": 1.803468330847825e-08,
+      "candidate_reference_output_l2": 5.517152491215517e-06,
+      "case": "p90_total_16k_q8176",
+      "gpu": 1,
+      "qualified": true,
+      "speedup": 1.0109656685539663
+    },
+    {
+      "baseline_cuda_median_ms": 135.95761108398438,
+      "candidate_baseline_output_l2": 0.0,
+      "candidate_cuda_median_ms": 134.4285430908203,
+      "candidate_reference_lse_l2": 1.6157898470756615e-08,
+      "candidate_reference_output_l2": 5.770278815806771e-06,
+      "case": "p90_total_32k_q8176",
+      "gpu": 2,
+      "qualified": true,
+      "speedup": 1.0113745783299237
+    },
+    {
+      "baseline_cuda_median_ms": 263.9078369140625,
+      "candidate_baseline_output_l2": 0.0,
+      "candidate_cuda_median_ms": 260.69842529296875,
+      "candidate_reference_lse_l2": 1.5196263849392368e-08,
+      "candidate_reference_output_l2": 6.192972124886493e-06,
+      "case": "p90_total_64k_q8176",
+      "gpu": 3,
+      "qualified": true,
+      "speedup": 1.0123108208938625
+    }
+  ],
+  "schema": "bi100-m1-157-fp16-qk-ab-screen-v1",
+  "version": 1
+}
