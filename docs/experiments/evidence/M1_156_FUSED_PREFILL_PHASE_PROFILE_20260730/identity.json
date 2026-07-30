@@ -1,0 +1,13 @@
+{
+  "extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+  "gpus": [
+    1,
+    2,
+    3
+  ],
+  "instance": "ssh-73ca29ba",
+  "ixprof_path": "/usr/local/corex-3.2.3/bin/ixprof",
+  "kernel_source_sha256": "11c387e6012834fe634ffa8d038f7a4bf4ec19fa13ec23779ee1f414037e564b",
+  "source_branch": "",
+  "source_revision": "4caffefba14aa5d9d519a7226d6fe71e0999893a"
+}

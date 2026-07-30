@@ -1,0 +1,75 @@
+{
+  "attributed_candidate_ratio": 0.9870458623534848,
+  "attributed_candidate_time_ms": 408.14985,
+  "authorization": {
+    "implementation_direction_authorized": true,
+    "main_or_yaml_change_authorized": false,
+    "official_score_claim_authorized": false,
+    "tp4_service_authorized": false
+  },
+  "case": "p90_total_32k_q8176",
+  "extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+  "instance": "ssh-73ca29ba",
+  "ixprof_candidate_trials": 4,
+  "phase_time_scale": 0.75,
+  "phases": {
+    "candidate_unattributed": {
+      "calls": null,
+      "percent": 1.2954137646515258,
+      "time_ms": 5.356619726562485
+    },
+    "convert_query": {
+      "calls": 4,
+      "percent": 0.28992895825614884,
+      "time_ms": 1.1988750000000001
+    },
+    "gather": {
+      "calls": 64,
+      "percent": 0.5028276828110863,
+      "time_ms": 2.079225
+    },
+    "mask": {
+      "calls": 16,
+      "percent": 5.291090128400609,
+      "time_ms": 21.879
+    },
+    "merge": {
+      "calls": 64,
+      "percent": 4.98003090825091,
+      "time_ms": 20.592750000000002
+    },
+    "normalize": {
+      "calls": 64,
+      "percent": 19.713718156309547,
+      "time_ms": 81.5175
+    },
+    "pv": {
+      "calls": 256,
+      "percent": 33.90998938728156,
+      "time_ms": 140.22
+    },
+    "qk": {
+      "calls": 256,
+      "percent": 34.01700101403861,
+      "time_ms": 140.66250000000002
+    }
+  },
+  "privacy": {
+    "credentials_recorded": false,
+    "model_outputs_recorded": false,
+    "prompts_recorded": false,
+    "raw_tensors_recorded": false
+  },
+  "process_gpu_activity_time_ms": 547.2099139999999,
+  "profile_event_time_ms": 413.5064697265625,
+  "profile_trials": 3,
+  "qualified": true,
+  "raw_kernel_rows": 22,
+  "reasons": [],
+  "schema": "bi100-m1-155-ixprof-phase-attribution-v1",
+  "source_revision": "4caffefba14aa5d9d519a7226d6fe71e0999893a",
+  "unclassified_process_gpu_activity_time_ms": 3.010114,
+  "version": 1,
+  "visible_physical_gpu": 2,
+  "warmup_trials": 1
+}

@@ -1,0 +1,62 @@
+{
+  "authorization": {
+    "implementation_direction_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "official_score_claim_authorized": false,
+    "tp4_service_authorized": false
+  },
+  "candidate_finite": true,
+  "case": "p90_total_64k_q8176",
+  "context_len": 57344,
+  "evaluation": {
+    "qualified": true,
+    "reasons": []
+  },
+  "expected_launches": {
+    "convert_query": 4,
+    "gather": 128,
+    "mask": 16,
+    "merge": 128,
+    "normalize": 128,
+    "pv": 512,
+    "qk": 512
+  },
+  "extension": {
+    "path": "/tmp/m1-155-f94ad8-fused-prefill.so",
+    "sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+    "size_bytes": 247176
+  },
+  "instance": "ssh-73ca29ba",
+  "ixprof_candidate_trials": 4,
+  "numeric_lineage": {
+    "case": "p90_total_64k_q8176",
+    "evidence_path": "docs/experiments/evidence/M1_151_TTFT_P90_PREFILL_GRID_20260730/runner_status.json",
+    "evidence_sha256": "4ad1c41ffb2d54ef86eb1bf0444012ccda7f0f9495969b273e26a364964cf9aa",
+    "evidence_source_revision": "634dd45f7fd6f62804e9ab0d31b3f2c8baf2bbb6",
+    "extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+    "finite": true,
+    "lse_relative_l2": 1.5196263849392368e-08,
+    "output_max_abs": 1.52587890625e-05,
+    "output_relative_l2": 6.192972124886493e-06,
+    "qualified": true,
+    "role": "same_artifact_fixed_tensor_reference"
+  },
+  "phase_time_scale": 0.75,
+  "privacy": {
+    "credentials_recorded": false,
+    "model_outputs_recorded": false,
+    "prompts_recorded": false,
+    "raw_tensors_recorded": false
+  },
+  "profile_cuda_ms": 801.5505981445312,
+  "profile_trials": 3,
+  "profiler_start_rc": 0,
+  "profiler_stop_rc": 0,
+  "query_len": 8176,
+  "schema": "bi100-m1-155-fused-prefill-phase-cell-v1",
+  "source_revision": "4caffefba14aa5d9d519a7226d6fe71e0999893a",
+  "total_kv_len": 65520,
+  "version": 1,
+  "visible_physical_gpu": 3,
+  "warmup_trials": 1
+}

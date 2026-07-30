@@ -1,0 +1,75 @@
+{
+  "attributed_candidate_ratio": 0.9902731366396842,
+  "attributed_candidate_time_ms": 793.754025,
+  "authorization": {
+    "implementation_direction_authorized": true,
+    "main_or_yaml_change_authorized": false,
+    "official_score_claim_authorized": false,
+    "tp4_service_authorized": false
+  },
+  "case": "p90_total_64k_q8176",
+  "extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+  "instance": "ssh-73ca29ba",
+  "ixprof_candidate_trials": 4,
+  "phase_time_scale": 0.75,
+  "phases": {
+    "candidate_unattributed": {
+      "calls": null,
+      "percent": 0.9726863360315849,
+      "time_ms": 7.796573144531294
+    },
+    "convert_query": {
+      "calls": 4,
+      "percent": 0.14959754290942276,
+      "time_ms": 1.1991
+    },
+    "gather": {
+      "calls": 128,
+      "percent": 0.5617767624930468,
+      "time_ms": 4.502924999999999
+    },
+    "mask": {
+      "calls": 16,
+      "percent": 2.7301458012328856,
+      "time_ms": 21.8835
+    },
+    "merge": {
+      "calls": 128,
+      "percent": 5.1591877163746265,
+      "time_ms": 41.3535
+    },
+    "normalize": {
+      "calls": 128,
+      "percent": 20.31000917182844,
+      "time_ms": 162.79500000000002
+    },
+    "pv": {
+      "calls": 512,
+      "percent": 34.91420262773456,
+      "time_ms": 279.855
+    },
+    "qk": {
+      "calls": 512,
+      "percent": 35.20239404139544,
+      "time_ms": 282.165
+    }
+  },
+  "privacy": {
+    "credentials_recorded": false,
+    "model_outputs_recorded": false,
+    "prompts_recorded": false,
+    "raw_tensors_recorded": false
+  },
+  "process_gpu_activity_time_ms": 1061.52321,
+  "profile_event_time_ms": 801.5505981445312,
+  "profile_trials": 3,
+  "qualified": true,
+  "raw_kernel_rows": 22,
+  "reasons": [],
+  "schema": "bi100-m1-155-ixprof-phase-attribution-v1",
+  "source_revision": "4caffefba14aa5d9d519a7226d6fe71e0999893a",
+  "unclassified_process_gpu_activity_time_ms": 3.1845100000000004,
+  "version": 1,
+  "visible_physical_gpu": 3,
+  "warmup_trials": 1
+}

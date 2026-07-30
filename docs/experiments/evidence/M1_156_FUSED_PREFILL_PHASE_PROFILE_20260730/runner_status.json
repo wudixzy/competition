@@ -1,0 +1,300 @@
+{
+  "authorization": {
+    "implementation_direction_authorized": true,
+    "main_or_yaml_change_authorized": false,
+    "official_score_claim_authorized": false,
+    "tp4_service_authorized": false
+  },
+  "cell_processes": [
+    {
+      "case": "p90_total_16k_q8176",
+      "elapsed_s": 3.105218827724457,
+      "gpu": 1,
+      "returncode": 0
+    },
+    {
+      "case": "p90_total_32k_q8176",
+      "elapsed_s": 3.1046329513192177,
+      "gpu": 2,
+      "returncode": 0
+    },
+    {
+      "case": "p90_total_64k_q8176",
+      "elapsed_s": 3.104044534265995,
+      "gpu": 3,
+      "returncode": 0
+    }
+  ],
+  "extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+  "fixed_cases": [
+    "p90_total_16k_q8176",
+    "p90_total_32k_q8176",
+    "p90_total_64k_q8176"
+  ],
+  "gpu_count": 3,
+  "gpus": [
+    1,
+    2,
+    3
+  ],
+  "instance": "ssh-73ca29ba",
+  "lifecycle": {
+    "after_preflight_qualified": true,
+    "cleanup_reaped": true,
+    "fatal_scan_qualified": true,
+    "postflight_qualified": true,
+    "preflight_comparison_qualified": true,
+    "source_unchanged": true
+  },
+  "privacy": {
+    "credentials_recorded": false,
+    "model_outputs_recorded": false,
+    "prompts_recorded": false,
+    "raw_tensors_recorded": false
+  },
+  "qualified": true,
+  "schema": "bi100-m1-155-fused-prefill-phase-runner-v1",
+  "screen": {
+    "authorization": {
+      "implementation_direction_authorized": true,
+      "main_or_yaml_change_authorized": false,
+      "official_score_claim_authorized": false,
+      "tp4_service_authorized": false
+    },
+    "qualified": true,
+    "reasons": [],
+    "rows": [
+      {
+        "attributed_candidate_ratio": 0.9804542370869119,
+        "attributed_candidate_time_ms": 215.23057500000002,
+        "authorization": {
+          "implementation_direction_authorized": true,
+          "main_or_yaml_change_authorized": false,
+          "official_score_claim_authorized": false,
+          "tp4_service_authorized": false
+        },
+        "case": "p90_total_16k_q8176",
+        "extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+        "instance": "ssh-73ca29ba",
+        "ixprof_candidate_trials": 4,
+        "phase_time_scale": 0.75,
+        "phases": {
+          "candidate_unattributed": {
+            "calls": null,
+            "percent": 1.9545762913088107,
+            "time_ms": 4.2907110107421715
+          },
+          "convert_query": {
+            "calls": 4,
+            "percent": 0.546199879651455,
+            "time_ms": 1.199025
+          },
+          "gather": {
+            "calls": 32,
+            "percent": 0.3991868013916057,
+            "time_ms": 0.8763000000000001
+          },
+          "mask": {
+            "calls": 16,
+            "percent": 9.968395501714205,
+            "time_ms": 21.88275
+          },
+          "merge": {
+            "calls": 32,
+            "percent": 4.6919140221764115,
+            "time_ms": 10.29975
+          },
+          "normalize": {
+            "calls": 32,
+            "percent": 18.57906389907182,
+            "time_ms": 40.785000000000004
+          },
+          "pv": {
+            "calls": 128,
+            "percent": 31.940410551607695,
+            "time_ms": 70.116
+          },
+          "qk": {
+            "calls": 128,
+            "percent": 31.920253053077996,
+            "time_ms": 70.07175000000001
+          }
+        },
+        "privacy": {
+          "credentials_recorded": false,
+          "model_outputs_recorded": false,
+          "prompts_recorded": false,
+          "raw_tensors_recorded": false
+        },
+        "process_gpu_activity_time_ms": 289.93156200000004,
+        "profile_event_time_ms": 219.5212860107422,
+        "profile_trials": 3,
+        "qualified": true,
+        "raw_kernel_rows": 22,
+        "reasons": [],
+        "schema": "bi100-m1-155-ixprof-phase-attribution-v1",
+        "source_revision": "4caffefba14aa5d9d519a7226d6fe71e0999893a",
+        "unclassified_process_gpu_activity_time_ms": 2.957461999999999,
+        "version": 1,
+        "visible_physical_gpu": 1,
+        "warmup_trials": 1
+      },
+      {
+        "attributed_candidate_ratio": 0.9870458623534848,
+        "attributed_candidate_time_ms": 408.14985,
+        "authorization": {
+          "implementation_direction_authorized": true,
+          "main_or_yaml_change_authorized": false,
+          "official_score_claim_authorized": false,
+          "tp4_service_authorized": false
+        },
+        "case": "p90_total_32k_q8176",
+        "extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+        "instance": "ssh-73ca29ba",
+        "ixprof_candidate_trials": 4,
+        "phase_time_scale": 0.75,
+        "phases": {
+          "candidate_unattributed": {
+            "calls": null,
+            "percent": 1.2954137646515258,
+            "time_ms": 5.356619726562485
+          },
+          "convert_query": {
+            "calls": 4,
+            "percent": 0.28992895825614884,
+            "time_ms": 1.1988750000000001
+          },
+          "gather": {
+            "calls": 64,
+            "percent": 0.5028276828110863,
+            "time_ms": 2.079225
+          },
+          "mask": {
+            "calls": 16,
+            "percent": 5.291090128400609,
+            "time_ms": 21.879
+          },
+          "merge": {
+            "calls": 64,
+            "percent": 4.98003090825091,
+            "time_ms": 20.592750000000002
+          },
+          "normalize": {
+            "calls": 64,
+            "percent": 19.713718156309547,
+            "time_ms": 81.5175
+          },
+          "pv": {
+            "calls": 256,
+            "percent": 33.90998938728156,
+            "time_ms": 140.22
+          },
+          "qk": {
+            "calls": 256,
+            "percent": 34.01700101403861,
+            "time_ms": 140.66250000000002
+          }
+        },
+        "privacy": {
+          "credentials_recorded": false,
+          "model_outputs_recorded": false,
+          "prompts_recorded": false,
+          "raw_tensors_recorded": false
+        },
+        "process_gpu_activity_time_ms": 547.2099139999999,
+        "profile_event_time_ms": 413.5064697265625,
+        "profile_trials": 3,
+        "qualified": true,
+        "raw_kernel_rows": 22,
+        "reasons": [],
+        "schema": "bi100-m1-155-ixprof-phase-attribution-v1",
+        "source_revision": "4caffefba14aa5d9d519a7226d6fe71e0999893a",
+        "unclassified_process_gpu_activity_time_ms": 3.010114,
+        "version": 1,
+        "visible_physical_gpu": 2,
+        "warmup_trials": 1
+      },
+      {
+        "attributed_candidate_ratio": 0.9902731366396842,
+        "attributed_candidate_time_ms": 793.754025,
+        "authorization": {
+          "implementation_direction_authorized": true,
+          "main_or_yaml_change_authorized": false,
+          "official_score_claim_authorized": false,
+          "tp4_service_authorized": false
+        },
+        "case": "p90_total_64k_q8176",
+        "extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+        "instance": "ssh-73ca29ba",
+        "ixprof_candidate_trials": 4,
+        "phase_time_scale": 0.75,
+        "phases": {
+          "candidate_unattributed": {
+            "calls": null,
+            "percent": 0.9726863360315849,
+            "time_ms": 7.796573144531294
+          },
+          "convert_query": {
+            "calls": 4,
+            "percent": 0.14959754290942276,
+            "time_ms": 1.1991
+          },
+          "gather": {
+            "calls": 128,
+            "percent": 0.5617767624930468,
+            "time_ms": 4.502924999999999
+          },
+          "mask": {
+            "calls": 16,
+            "percent": 2.7301458012328856,
+            "time_ms": 21.8835
+          },
+          "merge": {
+            "calls": 128,
+            "percent": 5.1591877163746265,
+            "time_ms": 41.3535
+          },
+          "normalize": {
+            "calls": 128,
+            "percent": 20.31000917182844,
+            "time_ms": 162.79500000000002
+          },
+          "pv": {
+            "calls": 512,
+            "percent": 34.91420262773456,
+            "time_ms": 279.855
+          },
+          "qk": {
+            "calls": 512,
+            "percent": 35.20239404139544,
+            "time_ms": 282.165
+          }
+        },
+        "privacy": {
+          "credentials_recorded": false,
+          "model_outputs_recorded": false,
+          "prompts_recorded": false,
+          "raw_tensors_recorded": false
+        },
+        "process_gpu_activity_time_ms": 1061.52321,
+        "profile_event_time_ms": 801.5505981445312,
+        "profile_trials": 3,
+        "qualified": true,
+        "raw_kernel_rows": 22,
+        "reasons": [],
+        "schema": "bi100-m1-155-ixprof-phase-attribution-v1",
+        "source_revision": "4caffefba14aa5d9d519a7226d6fe71e0999893a",
+        "unclassified_process_gpu_activity_time_ms": 3.1845100000000004,
+        "version": 1,
+        "visible_physical_gpu": 3,
+        "warmup_trials": 1
+      }
+    ],
+    "schema": "bi100-m1-155-fused-prefill-phase-screen-v1",
+    "version": 1
+  },
+  "source_revision": "4caffefba14aa5d9d519a7226d6fe71e0999893a",
+  "terminal_stage": "phase_qualification",
+  "version": 1,
+  "wall_s": 15.680027406662703
+}
