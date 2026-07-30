@@ -4,6 +4,7 @@ import json
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "scripts"))
@@ -373,6 +374,38 @@ class AnalyzerTest(unittest.TestCase):
             self.assertEqual(
                 chunk64_report["policy_metrics"]["tail64"]
                 ["gdn_restore_mode"], "chunk64")
+
+            pair_out = root / "tail64-pair.json"
+            with mock.patch.object(
+                    sim, "_simulate", wraps=sim._simulate) as replay:
+                sim.main([
+                    str(path),
+                    "--expected-requests", "2",
+                    "--expected-block-size", "16",
+                    "--gdn-restore-mode", "hybrid64",
+                    "--tail64-pair-only",
+                    "--out", str(pair_out),
+                ])
+            pair_report = json.loads(pair_out.read_text())
+            self.assertEqual(replay.call_count, 2)
+            self.assertEqual(
+                pair_report["schema"],
+                "bi100-tail64-trace-diagnostic-v1")
+            self.assertEqual(
+                set(pair_report["policy_metrics"]),
+                {"admission64", "tail64"})
+            self.assertFalse(
+                pair_report["promotion"]["main_or_yaml_change_authorized"])
+
+            with self.assertRaisesRegex(
+                    ValueError, "does not accept qualification"):
+                sim.main([
+                    str(path),
+                    "--expected-requests", "2",
+                    "--tail64-pair-only",
+                    "--qualification-trace",
+                    "--out", str(root / "invalid-pair.json"),
+                ])
 
             with self.assertRaisesRegex(
                     ValueError, "aggregate hit-rate scaling is disabled"):

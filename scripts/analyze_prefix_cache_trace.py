@@ -942,6 +942,80 @@ def _metrics(raw: Dict[str, Any], total_prompt_tokens: int) -> Dict[str, Any]:
     return metrics
 
 
+def _write_tail64_pair_report(
+        records: Sequence[Dict[str, Any]], logs: Sequence[str], capacity: int,
+        cpu_capacity: int, gdn_chunk_tokens: int, restore_mode: str,
+        h2d_ms_per_block: float, d2h_ms_per_block: float,
+        out: str) -> None:
+    total_prompt_tokens = sum(record["prompt_tokens"] for record in records)
+    results = {
+        policy: _simulate(
+            records, capacity, False, policy, gdn_chunk_tokens,
+            restore_mode, cpu_capacity, h2d_ms_per_block, d2h_ms_per_block)
+        for policy in ("admission64", "tail64")
+    }
+    metrics = {
+        policy: _metrics(result, total_prompt_tokens)
+        for policy, result in results.items()
+    }
+    admission = metrics["admission64"]
+    tail = metrics["tail64"]
+    admission_ttft = admission["projected_ttft_p90_s"]
+    tail_ttft = tail["projected_ttft_p90_s"]
+    timing_complete = (
+        admission_ttft is not None and admission_ttft > 0
+        and tail_ttft is not None
+    )
+    report = {
+        "schema": "bi100-tail64-trace-diagnostic-v1",
+        "version": 1,
+        "analysis_mode": "tail64_pair_only",
+        "requests": len(records),
+        "prompt_tokens": total_prompt_tokens,
+        "capacity_blocks": capacity,
+        "cpu_capacity_blocks": cpu_capacity,
+        "gdn_chunk_tokens": gdn_chunk_tokens,
+        "gdn_restore_mode": restore_mode,
+        "trace_version": 4,
+        "trace_session_sha256": records[0]["trace_session_sha256"],
+        "source_logs": [_file_provenance(path) for path in logs],
+        "policy_metrics": metrics,
+        "delta": {
+            "additional_usable_gdn_state_avoided_tokens": (
+                tail["usable_gdn_state_avoided_tokens"]
+                - admission["usable_gdn_state_avoided_tokens"]),
+            "effective_hit_gain_percentage_points": (
+                100 * (
+                    tail["usable_gdn_state_avoided_token_rate"]
+                    - admission["usable_gdn_state_avoided_token_rate"])),
+            "residual_prefill_tokens_p90_reduction_fraction": (
+                1.0
+                - tail["residual_prefill_tokens_p90"]
+                / admission["residual_prefill_tokens_p90"]
+                if admission["residual_prefill_tokens_p90"] else None),
+            "projected_ttft_p90_reduction_fraction": (
+                1.0 - tail_ttft / admission_ttft
+                if timing_complete else None),
+        },
+        "promotion": {
+            "scope": "directional_offline_tail64_diagnostic_only",
+            "main_or_yaml_change_authorized": False,
+            "default_policy_change_authorized": False,
+            "official_score_claim_authorized": False,
+            "requires_tp4_same_generation_service_ab": True,
+            "requires_quality_non_regression_gates": True,
+        },
+        "projection_assumptions": [
+            "non-queue TTFT is scaled by per-request residual prefill tokens",
+            "additional GDN checkpoint capture cost is not modeled",
+            "fixed frontend and scheduler intercept is not measured",
+            "the report is not an official workload or service result",
+        ],
+    }
+    with open(out, "w", encoding="utf-8") as stream:
+        json.dump(report, stream, indent=2, sort_keys=True)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("logs", nargs="+")
@@ -960,6 +1034,13 @@ def main(argv: list[str] | None = None) -> None:
         "--gdn-restore-mode",
         choices=("direct", "hybrid64", "chunk64", "aligned"),
         default="direct")
+    parser.add_argument(
+        "--tail64-pair-only",
+        action="store_true",
+        help=(
+            "Run only admission64 and tail64 for a directional diagnostic. "
+            "This mode cannot produce qualification evidence."
+        ))
     parser.add_argument("--out", required=True)
     parser.add_argument("--baseline-cache-tps", type=float)
     parser.add_argument("--baseline-weighted-score", type=float)
@@ -978,6 +1059,15 @@ def main(argv: list[str] | None = None) -> None:
         "--d2h-ms-per-block", type=float,
         default=M1_44_D2H_MS_PER_BLOCK)
     args = parser.parse_args(argv)
+
+    if (args.tail64_pair_only
+            and (args.qualification_trace
+                 or args.baseline_metrics is not None
+                 or args.baseline_cache_tps is not None
+                 or args.baseline_weighted_score is not None)):
+        raise ValueError(
+            "--tail64-pair-only does not accept qualification or baseline "
+            "arguments")
 
     records = read(args.logs)
 
@@ -1050,6 +1140,13 @@ def main(argv: list[str] | None = None) -> None:
         if (not math.isfinite(value) or value < 0):
             raise ValueError(f"{name} must be finite and non-negative")
 
+    if args.tail64_pair_only:
+        _write_tail64_pair_report(
+            records, args.logs, capacity, args.cpu_capacity_blocks,
+            args.gdn_chunk_tokens, args.gdn_restore_mode,
+            args.h2d_ms_per_block, args.d2h_ms_per_block, args.out)
+        return
+
     total_prompt_tokens = sum(record["prompt_tokens"] for record in records)
     control_policy_results = {}
     policy_results = {}
@@ -1060,10 +1157,13 @@ def main(argv: list[str] | None = None) -> None:
         control_policy_results[policy] = _simulate(
             records, capacity, False, policy, args.gdn_chunk_tokens,
             restore_mode, 0, args.h2d_ms_per_block, args.d2h_ms_per_block)
-        policy_results[policy] = _simulate(
-            records, capacity, False, policy, args.gdn_chunk_tokens,
-            restore_mode, args.cpu_capacity_blocks,
-            args.h2d_ms_per_block, args.d2h_ms_per_block)
+        if args.cpu_capacity_blocks == 0:
+            policy_results[policy] = control_policy_results[policy]
+        else:
+            policy_results[policy] = _simulate(
+                records, capacity, False, policy, args.gdn_chunk_tokens,
+                restore_mode, args.cpu_capacity_blocks,
+                args.h2d_ms_per_block, args.d2h_ms_per_block)
     policy_results["admission64_m1_29"] = _simulate(
         records, capacity, True, "admission64", args.gdn_chunk_tokens,
         args.gdn_restore_mode, args.cpu_capacity_blocks,
