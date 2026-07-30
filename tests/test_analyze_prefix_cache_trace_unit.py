@@ -240,6 +240,29 @@ class AnalyzerTest(unittest.TestCase):
         self.assertEqual(admission["residual_prefill_tokens"], 64)
         self.assertEqual(len(admission["request_results"]), 3)
 
+    def test_tail64_restores_first_sibling_at_previous_chunk_boundary(self):
+        records = [
+            decoded(list(range(1, 9)), capacity=16, ordinal=1,
+                    prompt_tokens=128),
+            decoded([1, 2, 3, 4, 9, 10, 11, 12], capacity=16, ordinal=2,
+                    prompt_tokens=128),
+        ]
+
+        admission = sim.simulate(
+            records, 16, policy="admission64", gdn_chunk_tokens=64)
+        tail = sim.simulate(
+            records, 16, policy="tail64", gdn_chunk_tokens=64)
+
+        self.assertEqual(
+            admission["request_results"][1]["effective_hit_tokens"], 0)
+        self.assertEqual(
+            admission["request_results"][1]["residual_prefill_tokens"], 128)
+        self.assertEqual(
+            tail["request_results"][1]["effective_hit_tokens"], 64)
+        self.assertEqual(
+            tail["request_results"][1]["residual_prefill_tokens"], 64)
+        self.assertLessEqual(tail["gdn_policy_cache_size"], 64)
+
     def test_gdn_state_without_live_kv_cannot_avoid_tokens(self):
         records = [
             decoded([1, 2], capacity=2, ordinal=1),
@@ -322,7 +345,9 @@ class AnalyzerTest(unittest.TestCase):
             self.assertIn("off", report["policy_metrics"])
             self.assertIn("fine32", report["policy_metrics"])
             self.assertIn("admission64", report["policy_metrics"])
+            self.assertIn("tail64", report["policy_metrics"])
             self.assertIn("admission64_m1_29", report["policy_metrics"])
+            self.assertEqual(report["tail64"]["policy"], "tail64")
             self.assertFalse(
                 report["policy_metrics"]["admission64"]
                 ["per_request_timing_projection_complete"])
@@ -341,6 +366,9 @@ class AnalyzerTest(unittest.TestCase):
                 ["gdn_restore_mode"], "direct")
             self.assertEqual(
                 chunk64_report["policy_metrics"]["admission64"]
+                ["gdn_restore_mode"], "chunk64")
+            self.assertEqual(
+                chunk64_report["policy_metrics"]["tail64"]
                 ["gdn_restore_mode"], "chunk64")
 
             with self.assertRaisesRegex(

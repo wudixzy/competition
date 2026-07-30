@@ -51,6 +51,7 @@ try:
         keys_from_block_hashes,
         gdn_restore_alignment,
         strict_prefix_block_count,
+        tail_capture_key,
     )
 except (ModuleNotFoundError, ImportError, OSError):
     # Fallback implementations for environments where the script is imported
@@ -76,7 +77,7 @@ except (ModuleNotFoundError, ImportError, OSError):
     def final_capture_key(block_hashes: Sequence[bytes], prompt_tokens: int,
                          block_size: int, restore_mode: str,
                          replay_alignment: int) -> GdnPrefixKey | None:
-        if restore_mode == "direct":
+        if restore_mode in {"direct", "hybrid64"}:
             block_count = min(
                 len(block_hashes),
                 strict_prefix_block_count(prompt_tokens, block_size),
@@ -105,7 +106,7 @@ except (ModuleNotFoundError, ImportError, OSError):
                               scheduler_chunk_tokens: int) -> int:
         if restore_mode == "direct":
             return block_size
-        if restore_mode == "chunk64":
+        if restore_mode in {"hybrid64", "chunk64"}:
             alignment = 64
         elif restore_mode == "aligned":
             alignment = scheduler_chunk_tokens
@@ -114,6 +115,26 @@ except (ModuleNotFoundError, ImportError, OSError):
         if alignment <= 0 or alignment % block_size != 0:
             raise ValueError("restore alignment must be divisible by block size")
         return alignment
+
+    def tail_capture_key(block_hashes: Sequence[bytes], prompt_tokens: int,
+                         block_size: int,
+                         scheduler_chunk_tokens: int) -> GdnPrefixKey | None:
+        if block_size <= 0 or scheduler_chunk_tokens <= 0:
+            raise ValueError("block and scheduler chunk sizes must be positive")
+        if scheduler_chunk_tokens % block_size != 0:
+            raise ValueError(
+                "scheduler chunk size must be divisible by block size")
+        if prompt_tokens <= scheduler_chunk_tokens:
+            return None
+        boundary_tokens = (
+            (prompt_tokens - 1) // scheduler_chunk_tokens
+            * scheduler_chunk_tokens
+        )
+        block_count = min(
+            len(block_hashes), boundary_tokens // block_size)
+        if block_count <= 0:
+            return None
+        return (block_count, block_hashes[block_count - 1])
 
     def capture_points_for_step(targets: Iterable[GdnPrefixKey],
                                physical_context_tokens: int,
@@ -143,10 +164,15 @@ except (ModuleNotFoundError, ImportError, OSError):
 
     class GdnPrefixStatePolicy:
         def __init__(self, policy: str) -> None:
-            if policy not in {"fine32", "admission64", "off"}:
+            if policy not in {"fine32", "admission64", "tail64", "off"}:
                 raise ValueError(f"unknown GDN cache policy: {policy}")
             self.policy = policy
-            self.capacity = {"fine32": 32, "admission64": 64, "off": 0}[policy]
+            self.capacity = {
+                "fine32": 32,
+                "admission64": 64,
+                "tail64": 64,
+                "off": 0,
+            }[policy]
             self._resident: OrderedDict[GdnPrefixKey, None] = OrderedDict()
 
         def __len__(self) -> int:
@@ -166,12 +192,51 @@ except (ModuleNotFoundError, ImportError, OSError):
 
         def repeated_branch_candidate(self, live_prefix_keys: Sequence[GdnPrefixKey],
                                     max_blocks: int) -> GdnPrefixKey | None:
-            if self.policy != "admission64" or max_blocks <= 0:
+            if (self.policy not in {"admission64", "tail64"}
+                    or max_blocks <= 0 or not live_prefix_keys):
                 return None
             candidate = live_prefix_keys[min(len(live_prefix_keys), max_blocks) - 1]
             if candidate in self._resident:
                 return None
             return candidate
+
+        def should_capture_final(self, key: GdnPrefixKey) -> bool:
+            if self.policy == "off":
+                return False
+            if self.policy in {"admission64", "tail64"}:
+                return key not in self._resident
+            return True
+
+        def select_sparse_capture_actions(
+                self, live_prefix_keys: Sequence[GdnPrefixKey],
+                block_hashes: Sequence[bytes], prompt_tokens: int,
+                block_size: int, restore_mode: str, replay_alignment: int,
+                scheduler_chunk_tokens: int
+                ) -> Tuple[Tuple[GdnPrefixKey, str], ...]:
+            if self.policy not in {"admission64", "tail64"}:
+                return ()
+            actions: list[Tuple[GdnPrefixKey, str]] = []
+            branch_key = self.repeated_branch_candidate(
+                live_prefix_keys, len(live_prefix_keys))
+            if branch_key is not None:
+                actions.append((branch_key, "repeated_branch"))
+            elif self.policy == "tail64":
+                tail_key = tail_capture_key(
+                    block_hashes, prompt_tokens, block_size,
+                    scheduler_chunk_tokens)
+                if tail_key is not None and tail_key not in self._resident:
+                    actions.append((tail_key, "tail_checkpoint"))
+            final_key = final_capture_key(
+                block_hashes, prompt_tokens, block_size, restore_mode,
+                replay_alignment)
+            if (final_key is not None
+                    and all(key != final_key for key, _ in actions)
+                    and self.should_capture_final(final_key)):
+                actions.append((final_key, "final_prefill"))
+            if len(actions) > 2:
+                raise RuntimeError(
+                    "GDN policy selected more than two capture targets")
+            return tuple(actions)
 
         def admit(self, keys: Iterable[GdnPrefixKey]) -> Tuple[GdnPrefixKey, ...]:
             if self.capacity == 0:
@@ -475,8 +540,9 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
               cpu_capacity: int = 0,
               h2d_ms_per_block: float = M1_44_H2D_MS_PER_BLOCK,
               d2h_ms_per_block: float = M1_44_D2H_MS_PER_BLOCK) -> Dict[str, Any]:
-    if policy not in {"off", "fine32", "admission64"}:
-        raise ValueError("policy must be one of off, fine32, admission64")
+    if policy not in {"off", "fine32", "admission64", "tail64"}:
+        raise ValueError(
+            "policy must be one of off, fine32, admission64, tail64")
     if gdn_chunk_tokens <= 0:
         raise ValueError("gdn_chunk_tokens must be positive")
     if cpu_capacity < 0:
@@ -653,16 +719,11 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
                     break
                 logical_end = min(prompt_tokens,
                                   logical_end + gdn_chunk_tokens)
-        elif policy == "admission64":
-            branch_key = gdn_policy.repeated_branch_candidate(
-                live_keys, len(live_keys))
-            if branch_key is not None:
-                capture_targets.append(branch_key)
-            final_key = final_capture_key(
-                hashes, prompt_tokens, block_size, restore_mode,
-                restore_alignment)
-            if final_key is not None:
-                capture_targets.append(final_key)
+        elif policy in {"admission64", "tail64"}:
+            capture_targets.extend(
+                key for key, _ in gdn_policy.select_sparse_capture_actions(
+                    live_keys, hashes, prompt_tokens, block_size,
+                    restore_mode, restore_alignment, gdn_chunk_tokens))
         gdn_policy.admit(dict.fromkeys(capture_targets))
 
         mutable_tail = prompt_tokens % block_size != 0
@@ -866,7 +927,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--gdn-chunk-tokens", type=int, default=8192)
     parser.add_argument(
         "--gdn-restore-mode",
-        choices=("direct", "chunk64", "aligned"),
+        choices=("direct", "hybrid64", "chunk64", "aligned"),
         default="direct")
     parser.add_argument("--out", required=True)
     parser.add_argument("--baseline-cache-tps", type=float)
@@ -961,9 +1022,10 @@ def main(argv: list[str] | None = None) -> None:
     total_prompt_tokens = sum(record["prompt_tokens"] for record in records)
     control_policy_results = {}
     policy_results = {}
-    for policy in ("off", "fine32", "admission64"):
+    for policy in ("off", "fine32", "admission64", "tail64"):
         restore_mode = (
-            args.gdn_restore_mode if policy == "admission64" else "direct")
+            args.gdn_restore_mode
+            if policy in {"admission64", "tail64"} else "direct")
         control_policy_results[policy] = _simulate(
             records, capacity, False, policy, args.gdn_chunk_tokens,
             restore_mode, 0, args.h2d_ms_per_block, args.d2h_ms_per_block)
@@ -982,6 +1044,8 @@ def main(argv: list[str] | None = None) -> None:
         control_policy_results["admission64"], total_prompt_tokens)
     admission64 = _metrics(
         policy_results["admission64"], total_prompt_tokens)
+    tail64 = _metrics(
+        policy_results["tail64"], total_prompt_tokens)
     frequency_aware = _metrics(
         policy_results["admission64_m1_29"], total_prompt_tokens)
 
@@ -1067,7 +1131,11 @@ def main(argv: list[str] | None = None) -> None:
         "vllm_lru": vllm_lru,
         "admission64_control": admission64_control,
         "admission64": admission64,
+        "tail64": tail64,
         "frequency_aware": frequency_aware,
+        "tail64_effective_hit_gain_percentage_points": (
+            100 * (tail64["usable_gdn_state_avoided_token_rate"]
+                   - admission64["usable_gdn_state_avoided_token_rate"])),
         "cpu_tier_admission64_effective_hit_gain_percentage_points": (
             100 * (admission64["usable_gdn_state_avoided_token_rate"]
                    - admission64_control[
@@ -1084,7 +1152,7 @@ def main(argv: list[str] | None = None) -> None:
 
     if baseline is not None:
         qualifications = {}
-        for name in ("admission64", "admission64_m1_29"):
+        for name in ("admission64", "tail64", "admission64_m1_29"):
             candidate_metrics = report["policy_metrics"][name]
             wall_s = candidate_metrics["projected_sequential_wall_s"]
             timing_complete = wall_s is not None and wall_s > 0
