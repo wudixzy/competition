@@ -48,6 +48,7 @@ def _spawn_cell(
     baseline_sha: str,
     candidate: Path,
     candidate_sha: str,
+    candidate_module_name: str,
     revision: str,
     instance: str,
     run_root: Path,
@@ -78,6 +79,8 @@ def _spawn_cell(
                 baseline_sha,
                 "--expected-candidate-sha256",
                 candidate_sha,
+                "--candidate-module-name",
+                candidate_module_name,
                 "--source-revision",
                 revision,
                 "--runtime-identity",
@@ -105,6 +108,7 @@ def _run_cells(
     baseline_sha: str,
     candidate: Path,
     candidate_sha: str,
+    candidate_module_name: str,
     revision: str,
     instance: str,
     run_root: Path,
@@ -117,6 +121,7 @@ def _run_cells(
             baseline_sha=baseline_sha,
             candidate=candidate,
             candidate_sha=candidate_sha,
+            candidate_module_name=candidate_module_name,
             revision=revision,
             instance=instance,
             run_root=run_root,
@@ -154,6 +159,7 @@ def aggregate(
     revision: str,
     baseline_sha: str,
     candidate_sha: str,
+    candidate_module_name: str = "corex_fused_paged_prefill_fp16_qk",
 ) -> dict[str, Any]:
     reasons: list[str] = []
     rows = []
@@ -212,6 +218,11 @@ def aggregate(
             != candidate_sha
         ):
             reasons.append(f"{case}: candidate identity differs")
+        if (
+            (report.get("candidate_extension") or {}).get("module_name")
+            != candidate_module_name
+        ):
+            reasons.append(f"{case}: candidate module name differs")
         if (report.get("evaluation") or {}).get("qualified") is not True:
             reasons.append(f"{case}: cell gate failed")
     missing = [case for case in CASES if case not in observed]
@@ -265,6 +276,9 @@ def run(args: argparse.Namespace) -> int:
         raise ValueError("M1-157 requires the fixed physical GPUs 1,2,3")
     baseline, baseline_sha = _validate_artifact(args.baseline_extension)
     candidate, candidate_sha = _validate_artifact(args.candidate_extension)
+    candidate_source = args.candidate_source.resolve(strict=True)
+    if not candidate_source.is_relative_to(ROOT):
+        raise ValueError("candidate source must be inside the repository")
     revision = lifecycle._git("rev-parse", "HEAD")
     run_root = args.run_root.resolve()
     run_root.mkdir(mode=0o700, parents=True)
@@ -296,15 +310,15 @@ def run(args: argparse.Namespace) -> int:
                 "gpus": args.gpus,
                 "baseline_extension_sha256": baseline_sha,
                 "candidate_extension_sha256": candidate_sha,
+                "candidate_module_name": args.candidate_module_name,
+                "candidate_source": str(candidate_source.relative_to(ROOT)),
                 "baseline_source_sha256": lifecycle._sha256(
                     ROOT
                     / "qwen3_6_scripts"
                     / "corex_fused_paged_prefill_split4.cu"
                 ),
                 "candidate_source_sha256": lifecycle._sha256(
-                    ROOT
-                    / "qwen3_6_scripts"
-                    / "corex_fused_paged_prefill_fp16_qk.cu"
+                    candidate_source
                 ),
             },
         )
@@ -322,6 +336,7 @@ def run(args: argparse.Namespace) -> int:
             baseline_sha=baseline_sha,
             candidate=candidate,
             candidate_sha=candidate_sha,
+            candidate_module_name=args.candidate_module_name,
             revision=revision,
             instance=args.instance,
             run_root=run_root,
@@ -331,6 +346,7 @@ def run(args: argparse.Namespace) -> int:
             revision=revision,
             baseline_sha=baseline_sha,
             candidate_sha=candidate_sha,
+            candidate_module_name=args.candidate_module_name,
         )
         lifecycle._atomic_json(run_root / "screen.json", screen)
         if (
@@ -433,6 +449,8 @@ def run(args: argparse.Namespace) -> int:
                 "wall_s": time.monotonic() - started,
                 "baseline_extension_sha256": baseline_sha,
                 "candidate_extension_sha256": candidate_sha,
+                "candidate_module_name": args.candidate_module_name,
+                "candidate_source": str(candidate_source.relative_to(ROOT)),
                 "cell_processes": cell_rows,
                 "screen": screen,
                 "lifecycle": {
@@ -467,6 +485,19 @@ def main() -> int:
     parser.add_argument("baseline_extension", type=Path)
     parser.add_argument("candidate_extension", type=Path)
     parser.add_argument("run_root", type=Path)
+    parser.add_argument(
+        "--candidate-module-name",
+        default="corex_fused_paged_prefill_fp16_qk",
+    )
+    parser.add_argument(
+        "--candidate-source",
+        type=Path,
+        default=(
+            ROOT
+            / "qwen3_6_scripts"
+            / "corex_fused_paged_prefill_fp16_qk.cu"
+        ),
+    )
     parser.add_argument(
         "--gpus",
         type=lifecycle.parse_gpus,

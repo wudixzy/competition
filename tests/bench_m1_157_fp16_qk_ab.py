@@ -240,7 +240,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     candidate, candidate_artifact = _load_extension(
         args.candidate_extension,
         args.expected_candidate_sha256,
-        "corex_fused_paged_prefill_fp16_qk",
+        args.candidate_module_name,
     )
     inputs = production._make_inputs(context_len, query_len)
     scale = production.HEAD_DIM**-0.5
@@ -303,6 +303,10 @@ def main() -> int:
     parser.add_argument("--candidate-extension", required=True, type=Path)
     parser.add_argument("--expected-baseline-sha256", required=True)
     parser.add_argument("--expected-candidate-sha256", required=True)
+    parser.add_argument(
+        "--candidate-module-name",
+        default="corex_fused_paged_prefill_fp16_qk",
+    )
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--runtime-identity", required=True)
     parser.add_argument("--instance", required=True)

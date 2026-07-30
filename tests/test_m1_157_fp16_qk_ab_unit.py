@@ -55,7 +55,10 @@ def report(case: str, gpu: int, speedup: float = 1.10) -> dict:
         "trials": CELL.TRIALS,
         "visible_physical_gpu": gpu,
         "baseline_extension": {"sha256": "a" * 64},
-        "candidate_extension": {"sha256": "c" * 64},
+        "candidate_extension": {
+            "sha256": "c" * 64,
+            "module_name": "corex_fused_paged_prefill_fp16_qk",
+        },
         "timings": {
             "baseline": {
                 "cuda_trials_ms": trials,
