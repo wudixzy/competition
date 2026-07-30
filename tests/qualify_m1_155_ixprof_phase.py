@@ -53,7 +53,7 @@ def parse_gpu_rows(lines: Iterable[str]) -> list[dict[str, Any]]:
     return rows
 
 
-def classify(name: str) -> str:
+def classify(name: str) -> str | None:
     if "convert_query_kernel" in name:
         return "convert_query"
     if "gather_kv_group_kernel" in name:
@@ -68,7 +68,7 @@ def classify(name: str) -> str:
         return "qk"
     if "Gemm_tcu_bi_kernel" in name and "false, false>" in name:
         return "pv"
-    return "finalize_and_other"
+    return None
 
 
 def qualify(
@@ -86,23 +86,34 @@ def qualify(
 
     phase_names = (
         "convert_query", "gather", "qk", "mask", "normalize", "pv",
-        "merge", "finalize_and_other",
+        "merge",
     )
     phases = {
         phase: {"time_ms": 0.0, "calls": 0, "percent": 0.0}
         for phase in phase_names
     }
-    total_ms = 0.0
+    phase_time_scale = cell.get("phase_time_scale")
+    if (
+        not isinstance(phase_time_scale, (int, float))
+        or isinstance(phase_time_scale, bool)
+        or not math.isfinite(float(phase_time_scale))
+        or not 0.0 < float(phase_time_scale) <= 1.0
+    ):
+        reasons.append("phase time scale is invalid")
+        phase_time_scale = 1.0
+    process_total_ms = 0.0
+    unclassified_process_ms = 0.0
     for row in profile_rows:
         phase = classify(str(row["name"]))
-        phases[phase]["time_ms"] += float(row["time_ms"])
+        row_ms = float(row["time_ms"])
+        process_total_ms += row_ms
+        if phase is None:
+            unclassified_process_ms += row_ms
+            continue
+        phases[phase]["time_ms"] += (
+            float(row["time_ms"]) * float(phase_time_scale))
         phases[phase]["calls"] += int(row["calls"])
-        total_ms += float(row["time_ms"])
-    if not math.isfinite(total_ms) or total_ms <= 0.0:
-        reasons.append("ixprof total GPU time is invalid")
-    else:
-        for value in phases.values():
-            value["percent"] = value["time_ms"] / total_ms * 100.0
+    attributed_ms = sum(value["time_ms"] for value in phases.values())
 
     expected = cell.get("expected_launches")
     if isinstance(expected, dict):
@@ -116,8 +127,8 @@ def qualify(
         reasons.append("expected launch counts are missing")
 
     event_ms = cell.get("profile_cuda_ms")
-    coverage_ratio = (
-        total_ms / float(event_ms)
+    attributed_ratio = (
+        attributed_ms / float(event_ms)
         if (
             isinstance(event_ms, (int, float))
             and not isinstance(event_ms, bool)
@@ -127,11 +138,27 @@ def qualify(
         else None
     )
     if (
-        coverage_ratio is None
-        or coverage_ratio < 0.9
-        or coverage_ratio > 1.1
+        attributed_ratio is None
+        or attributed_ratio < 0.75
+        or attributed_ratio > 1.05
     ):
-        reasons.append("ixprof/event timing coverage differs")
+        reasons.append("candidate phase attribution coverage differs")
+    candidate_unattributed_ms = (
+        max(0.0, float(event_ms) - attributed_ms)
+        if attributed_ratio is not None else None
+    )
+    if attributed_ratio is not None:
+        for value in phases.values():
+            value["percent"] = (
+                value["time_ms"] / float(event_ms) * 100.0)
+    phases["candidate_unattributed"] = {
+        "time_ms": candidate_unattributed_ms,
+        "calls": None,
+        "percent": (
+            candidate_unattributed_ms / float(event_ms) * 100.0
+            if candidate_unattributed_ms is not None else None
+        ),
+    }
 
     qualified = not reasons
     return {
@@ -148,9 +175,15 @@ def qualify(
             if isinstance(cell.get("extension"), dict) else None
         ),
         "profile_trials": cell.get("profile_trials"),
+        "warmup_trials": cell.get("warmup_trials"),
+        "ixprof_candidate_trials": cell.get("ixprof_candidate_trials"),
+        "phase_time_scale": cell.get("phase_time_scale"),
         "profile_event_time_ms": event_ms,
-        "profile_gpu_activity_time_ms": total_ms,
-        "profile_coverage_ratio": coverage_ratio,
+        "attributed_candidate_time_ms": attributed_ms,
+        "attributed_candidate_ratio": attributed_ratio,
+        "process_gpu_activity_time_ms": process_total_ms,
+        "unclassified_process_gpu_activity_time_ms": (
+            unclassified_process_ms),
         "phases": phases,
         "raw_kernel_rows": len(profile_rows),
         "authorization": {

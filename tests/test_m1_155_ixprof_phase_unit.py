@@ -29,18 +29,28 @@ def cell() -> dict:
         "context_len": context_len,
         "query_len": query_len,
         "profile_trials": workload.PROFILE_TRIALS,
-        "profile_cuda_ms": 100.0,
+        "warmup_trials": workload.WARMUP_TRIALS,
+        "ixprof_candidate_trials": workload.IXPROF_CANDIDATE_TRIALS,
+        "phase_time_scale": (
+            workload.PROFILE_TRIALS / workload.IXPROF_CANDIDATE_TRIALS),
+        "profile_cuda_ms": 60.0,
         "profiler_start_rc": 0,
         "profiler_stop_rc": 0,
         "expected_launches": workload.expected_launches(
             context_len, query_len),
         "extension": {"sha256": "b" * 64},
-        "numerical": {
+        "numeric_lineage": {
+            "qualified": True,
+            "role": "same_artifact_fixed_tensor_reference",
+            "evidence_sha256": workload.NUMERIC_EVIDENCE_SHA256,
+            "extension_sha256": "b" * 64,
+            "case": "p90_total_16k_q8176",
             "finite": True,
             "output_relative_l2": 6e-6,
             "lse_relative_l2": 2e-8,
             "output_max_abs": 2e-4,
         },
+        "candidate_finite": True,
         "authorization": {
             "implementation_direction_authorized": False,
             "tp4_service_authorized": False,
@@ -99,13 +109,13 @@ class M1155IxprofPhaseUnitTest(unittest.TestCase):
         self.assertEqual(
             workload.expected_launches(8192, 8176),
             {
-                "convert_query": 3,
-                "gather": 24,
-                "qk": 96,
-                "mask": 12,
-                "normalize": 24,
-                "pv": 96,
-                "merge": 24,
+                "convert_query": 4,
+                "gather": 32,
+                "qk": 128,
+                "mask": 16,
+                "normalize": 32,
+                "pv": 128,
+                "merge": 32,
             },
         )
 
@@ -114,17 +124,17 @@ class M1155IxprofPhaseUnitTest(unittest.TestCase):
         rows = qualification.parse_gpu_rows(profile_log(value))
         result = qualification.qualify(value, rows)
         self.assertTrue(result["qualified"], result)
-        self.assertAlmostEqual(result["profile_coverage_ratio"], 1.0)
-        self.assertEqual(result["phases"]["qk"]["calls"], 96)
-        self.assertEqual(result["phases"]["pv"]["calls"], 96)
+        self.assertAlmostEqual(result["attributed_candidate_ratio"], 0.875)
+        self.assertEqual(result["phases"]["qk"]["calls"], 128)
+        self.assertEqual(result["phases"]["pv"]["calls"], 128)
         self.assertAlmostEqual(
-            result["phases"]["finalize_and_other"]["percent"], 30.0)
+            result["phases"]["candidate_unattributed"]["percent"], 12.5)
 
     def test_missing_launch_or_numeric_failure_fails_closed(self):
         value = cell()
-        value["numerical"]["output_relative_l2"] = 2e-5
+        value["numeric_lineage"]["output_relative_l2"] = 2e-5
         lines = profile_log(value)
-        lines[1] = lines[1].replace("  24  ", "  23  ")
+        lines[1] = lines[1].replace("  32  ", "  31  ", 1)
         result = qualification.qualify(
             value, qualification.parse_gpu_rows(lines))
         self.assertFalse(result["qualified"])
