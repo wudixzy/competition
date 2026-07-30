@@ -264,6 +264,31 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
             raise ValueError("model registry patch lacks static AST verification")
         return "base image and offline patch entrypoint match"
 
+    def chat_request_compatibility() -> str:
+        audit_path = root / "tests" / "audit_chat_request_compat_fields.py"
+        completed = subprocess.run(
+            [sys.executable, str(audit_path), "--root", str(root)],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if completed.returncode:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise ValueError(
+                f"chat request compatibility audit failed: {detail}")
+        report = json.loads(completed.stdout)
+        if not report.get("qualified"):
+            raise ValueError(
+                "chat request compatibility audit did not qualify")
+        return (
+            f"{report['local_field_count']} local fields; "
+            f"{len(report['classified_upstream_only_fields'])} vLLM-only "
+            "and "
+            f"{len(report['classified_openai_only_fields'])} OpenAI-only "
+            "fields explicitly classified"
+        )
+
     def wheel_asset() -> str:
         path = root / WHEEL
         if not path.is_file():
@@ -362,6 +387,7 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
     check("root_manifest", root_manifest)
     check("run_contract", run_contract)
     check("docker_contract", docker_contract)
+    check("chat_request_compatibility", chat_request_compatibility)
     check("offline_transformers_wheel", wheel_asset)
     check("prebuilt_corex_extensions", prebuilt_corex_assets)
     check("line_endings", line_endings)

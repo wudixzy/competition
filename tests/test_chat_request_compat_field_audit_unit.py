@@ -40,6 +40,18 @@ class ChatRequestCompatFieldAuditUnitTest(unittest.TestCase):
             report["review_required_non_alias_fields"],
         )
 
+    def test_pinned_openai_fields_are_exhaustively_classified(self):
+        report = self.audit_module.audit(ROOT)
+        self.assertTrue(report["qualified"], report["reasons"])
+        for field in (
+            "functions",
+            "reasoning_effort",
+            "service_tier",
+            "prompt_cache_key",
+            "web_search_options",
+        ):
+            self.assertIn(field, report["classified_openai_only_fields"])
+
 
 if __name__ == "__main__":
     unittest.main()

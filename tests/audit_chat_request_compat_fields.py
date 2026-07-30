@@ -68,6 +68,17 @@ def audit(root: Path) -> dict[str, Any]:
             f"actual={sorted(upstream_only)} "
             f"classified={sorted(classified_upstream_only)}")
 
+    openai_fields = set(
+        contract.get("openai_reference_top_level_fields", []))
+    openai_only = openai_fields - fields
+    classified_openai_only = set(
+        contract.get("classified_openai_only_fields", {}))
+    if openai_only != classified_openai_only:
+        reasons.append(
+            "OpenAI-only field classification differs: "
+            f"actual={sorted(openai_only)} "
+            f"classified={sorted(classified_openai_only)}")
+
     review_required = set(
         contract.get("review_required_non_alias_fields", {}))
     unexpectedly_accepted = sorted(review_required.intersection(fields))
@@ -88,6 +99,7 @@ def audit(root: Path) -> dict[str, Any]:
         "local_field_count": len(fields),
         "lossless_alias_fields": sorted(alias_fields),
         "classified_upstream_only_fields": sorted(classified_upstream_only),
+        "classified_openai_only_fields": sorted(classified_openai_only),
         "review_required_non_alias_fields": sorted(review_required),
     }
 
