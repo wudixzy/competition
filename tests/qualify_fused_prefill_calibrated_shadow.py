@@ -15,11 +15,20 @@ from typing import Any
 
 REPORT_SCHEMA = (
     "bi100-fused-prefill-real-activation-calibrated-shadow-v1")
+REPORT_SCHEMA_V2 = (
+    "bi100-fused-prefill-real-activation-calibrated-shadow-v2")
 RESULT_SCHEMA = (
     "bi100-fused-prefill-calibrated-shadow-qualification-v1")
+RESULT_SCHEMA_V2 = (
+    "bi100-fused-prefill-calibrated-shadow-qualification-v2")
 CONTRACT_SCHEMA = "bi100-fused-prefill-numeric-adjudication-v1"
+CONTRACT_SCHEMA_V2 = (
+    "bi100-fused-prefill-real-activation-adjudication-v2")
 CONTRACT_SHA256 = (
     "131e2ed8e0b34cc28a45486b9a9096d66c556759677b8bbd31024a33933d86b1"
+)
+CONTRACT_SHA256_V2 = (
+    "ba37338f4d4112a1bd90e3e700334652a66ebb048f3cea7379ed21cdd3f3aceb"
 )
 Json = dict[str, Any]
 METRIC_NAMES = (
@@ -65,7 +74,12 @@ def _atomic_write(path: Path, value: Json) -> None:
             pass
 
 
-def _contract_values(contract: Any) -> tuple[Json, list[str]]:
+def _contract_values(
+    contract: Any,
+    contract_version: int = 1,
+) -> tuple[Json, list[str]]:
+    if contract_version not in {1, 2}:
+        raise ValueError("contract version must be 1 or 2")
     source = contract if isinstance(contract, dict) else {}
     hard = source.get("hard_gates") or {}
     sampling = source.get("sampling") or {}
@@ -75,14 +89,25 @@ def _contract_values(contract: Any) -> tuple[Json, list[str]]:
         "rounded_baseline": "float32-reference-cast-to-float16",
         "same_input_tensors_required": True,
     }
-    expected_hard = {
-        "candidate_and_reference_finite": True,
-        "maximum_candidate_vs_rounded_relative_l2": 1.0e-5,
-        "maximum_error_multiple_over_fp16_rounding": 2.0,
-        "ratio_denominator_floor": 1.0e-12,
-        "max_abs_fixed_threshold_role": "diagnostic_only",
-        "semantic_evidence_may_waive_failure": False,
-    }
+    expected_hard = (
+        {
+            "candidate_and_reference_finite": True,
+            "maximum_candidate_vs_rounded_relative_l2": 1.0e-5,
+            "maximum_error_multiple_over_fp16_rounding": 2.0,
+            "ratio_denominator_floor": 1.0e-12,
+            "max_abs_fixed_threshold_role": "diagnostic_only",
+            "semantic_evidence_may_waive_failure": False,
+        }
+        if contract_version == 1
+        else {
+            "candidate_and_reference_finite": True,
+            "candidate_vs_rounded_relative_l2_role": "diagnostic_only",
+            "maximum_error_multiple_over_fp16_rounding": 2.0,
+            "ratio_denominator_floor": 1.0e-12,
+            "max_abs_fixed_threshold_role": "diagnostic_only",
+            "semantic_evidence_may_waive_failure": False,
+        }
+    )
     expected_sampling = {
         "required_ranks": [0, 1, 2, 3],
         "required_minimum_context_tokens": [49152, 114688],
@@ -95,10 +120,12 @@ def _contract_values(contract: Any) -> tuple[Json, list[str]]:
         "block_size": 16,
     }
     reasons = []
+    expected_schema = (
+        CONTRACT_SCHEMA if contract_version == 1 else CONTRACT_SCHEMA_V2)
     if (
         not isinstance(contract, dict)
-        or contract.get("schema") != CONTRACT_SCHEMA
-        or contract.get("version") != 1
+        or contract.get("schema") != expected_schema
+        or contract.get("version") != contract_version
         or set(contract) != {
             "schema", "version", "candidate_dtype", "reference",
             "hard_gates", "sampling", "execution", "promotion",
@@ -107,6 +134,7 @@ def _contract_values(contract: Any) -> tuple[Json, list[str]]:
         return {
             "hard": expected_hard,
             "sampling": expected_sampling,
+            "contract_version": contract_version,
         }, ["numeric adjudication contract identity is invalid"]
     if (
         contract.get("candidate_dtype") != "float16"
@@ -145,6 +173,7 @@ def _contract_values(contract: Any) -> tuple[Json, list[str]]:
     return {
         "hard": expected_hard,
         "sampling": expected_sampling,
+        "contract_version": contract_version,
     }, reasons
 
 
@@ -215,17 +244,22 @@ def _expected_report_status(records: list[Any], expected: int) -> str:
 
 def _expected_thresholds(values: Json) -> Json:
     hard = values["hard"]
-    return {
+    thresholds = {
         "require_finite_candidate": True,
         "require_finite_reference": True,
-        "maximum_candidate_vs_rounded_relative_l2": (
-            hard["maximum_candidate_vs_rounded_relative_l2"]),
         "maximum_error_multiple_over_fp16_rounding": (
             hard["maximum_error_multiple_over_fp16_rounding"]),
         "ratio_denominator_floor": hard["ratio_denominator_floor"],
         "fixed_max_abs_role": "diagnostic_only",
         "finite_failure_action": "record",
     }
+    if values["contract_version"] == 1:
+        thresholds["maximum_candidate_vs_rounded_relative_l2"] = (
+            hard["maximum_candidate_vs_rounded_relative_l2"])
+    else:
+        thresholds["candidate_vs_rounded_relative_l2_role"] = (
+            "diagnostic_only")
+    return thresholds
 
 
 def _record_qualified(record: Json, values: Json) -> bool:
@@ -233,8 +267,11 @@ def _record_qualified(record: Json, values: Json) -> bool:
     return (
         record["candidate_finite"] is True
         and record["reference_finite"] is True
-        and record["relative_l2"]
-        <= hard["maximum_candidate_vs_rounded_relative_l2"]
+        and (
+            values["contract_version"] == 2
+            or record["relative_l2"]
+            <= hard["maximum_candidate_vs_rounded_relative_l2"]
+        )
         and record["candidate_to_fp32_relative_l2"]
         <= (
             hard["maximum_error_multiple_over_fp16_rounding"]
@@ -257,8 +294,10 @@ def qualify(
     run_id: str,
     source_revision: str,
     runtime_identity: str,
+    contract_version: int = 1,
 ) -> Json:
-    values, invalid_reasons = _contract_values(contract)
+    values, invalid_reasons = _contract_values(
+        contract, contract_version)
     numeric_failures = []
     rank_reports: dict[int, Json] = {}
     accepted_records: list[Json] = []
@@ -291,6 +330,8 @@ def qualify(
     minimum = sampling.get(
         "minimum_observations_per_context_per_rank")
     expected_observations = len(contexts) * minimum
+    expected_report_schema = (
+        REPORT_SCHEMA if contract_version == 1 else REPORT_SCHEMA_V2)
     for ordinal, report in enumerate(reports):
         label = f"report[{ordinal}]"
         if not isinstance(report, dict) or set(report) != expected_report_fields:
@@ -298,8 +339,8 @@ def qualify(
             continue
         rank = report.get("rank")
         if (
-            report.get("schema") != REPORT_SCHEMA
-            or report.get("version") != 1
+            report.get("schema") != expected_report_schema
+            or report.get("version") != contract_version
             or report.get("run_id") != run_id
             or not isinstance(report.get("pid"), int)
             or isinstance(report["pid"], bool)
@@ -472,8 +513,9 @@ def qualify(
     else:
         status = "pass"
     return {
-        "schema": RESULT_SCHEMA,
-        "version": 1,
+        "schema": (
+            RESULT_SCHEMA if contract_version == 1 else RESULT_SCHEMA_V2),
+        "version": contract_version,
         "source_revision": source_revision,
         "runtime_identity": runtime_identity,
         "run_id": run_id,
@@ -496,7 +538,10 @@ def qualify(
             )
             for name in METRIC_NAMES
         },
-        "contract_sha256": CONTRACT_SHA256,
+        "contract_sha256": (
+            CONTRACT_SHA256
+            if contract_version == 1
+            else CONTRACT_SHA256_V2),
         "privacy": privacy_contract,
     }
 
@@ -508,9 +553,15 @@ def main() -> int:
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--runtime-identity", required=True)
     parser.add_argument("--contract", type=Path, required=True)
+    parser.add_argument(
+        "--contract-version", type=int, choices=(1, 2), default=1)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
-    if sha256(args.contract) != CONTRACT_SHA256:
+    expected_contract_sha256 = (
+        CONTRACT_SHA256
+        if args.contract_version == 1
+        else CONTRACT_SHA256_V2)
+    if sha256(args.contract) != expected_contract_sha256:
         raise SystemExit("numeric adjudication contract SHA-256 differs")
     reports = [
         json.loads(path.read_text(encoding="utf-8"))
@@ -522,6 +573,7 @@ def main() -> int:
         run_id=args.run_id,
         source_revision=args.source_revision,
         runtime_identity=args.runtime_identity,
+        contract_version=args.contract_version,
     )
     _atomic_write(args.out, result)
     return {"pass": 0, "fail": 1, "invalid": 2}[result["status"]]

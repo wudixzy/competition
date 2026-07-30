@@ -20,6 +20,8 @@ case "$SHADOW_VARIANT" in
         FAILURE_ACTION=raise
         QUALIFIER="$ROOT/tests/qualify_fused_prefill_shadow.py"
         CONTRACT="$ROOT/quality/layered_quality_gate.v2.json"
+        QUALIFIER_VERSION=0
+        REQUIRE_EXTERNAL_EXTENSION=0
         RUNNER_SCHEMA=bi100-m1-136-fused-prefill-shadow-runner-v1
         ;;
     calibrated)
@@ -29,7 +31,20 @@ case "$SHADOW_VARIANT" in
         FAILURE_ACTION=record
         QUALIFIER="$ROOT/tests/qualify_fused_prefill_calibrated_shadow.py"
         CONTRACT="$ROOT/quality/fused_prefill_numeric_adjudication.v1.json"
+        QUALIFIER_VERSION=1
+        REQUIRE_EXTERNAL_EXTENSION=0
         RUNNER_SCHEMA=bi100-m1-138-fused-prefill-calibrated-shadow-runner-v1
+        ;;
+    calibrated_v2)
+        EXPERIMENT_LABEL=M1-163
+        RUN_ID_PREFIX=m1-163-fp16-qk-calibrated-shadow
+        NUMERIC_MODE=calibrated_v2
+        FAILURE_ACTION=record
+        QUALIFIER="$ROOT/tests/qualify_fused_prefill_calibrated_shadow.py"
+        CONTRACT="$ROOT/quality/fused_prefill_real_activation_adjudication.v2.json"
+        QUALIFIER_VERSION=2
+        REQUIRE_EXTERNAL_EXTENSION=1
+        RUNNER_SCHEMA=bi100-m1-163-fp16-qk-calibrated-shadow-runner-v1
         ;;
     *)
         echo "BI100_FUSED_PREFILL_SHADOW_VARIANT is invalid" >&2
@@ -61,6 +76,40 @@ MODEL_PATH=${MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
 SYSTEM_PYTHONPATH=/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages
 COREX_LD_LIBRARY_PATH=/usr/local/corex/lib:/usr/local/corex/lib64:/usr/local/corex-3.2.3/lib:/usr/local/corex-3.2.3/lib64:/usr/local/openmpi/lib
 COREX_PATH=/usr/local/corex/bin:/usr/local/corex-3.2.3/bin:/usr/local/openmpi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+CANDIDATE_EXTENSION=""
+CANDIDATE_EXTENSION_SHA256=""
+QUALIFIER_VERSION_ARGUMENTS=()
+
+if [[ "$QUALIFIER_VERSION" != 0 ]]; then
+    QUALIFIER_VERSION_ARGUMENTS=(
+        --contract-version "$QUALIFIER_VERSION")
+fi
+
+if [[ "$REQUIRE_EXTERNAL_EXTENSION" == 1 ]]; then
+    if [[ -z "${BI100_FUSED_PREFILL_SHADOW_EXTENSION:-}" ]]; then
+        echo "$EXPERIMENT_LABEL requires a private candidate extension" >&2
+        exit 3
+    fi
+    CANDIDATE_EXTENSION=$(python3 - \
+            "$BI100_FUSED_PREFILL_SHADOW_EXTENSION" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1]).resolve(strict=True)
+if (
+    not path.is_file()
+    or not path.is_relative_to(Path("/tmp"))
+    or path.stat().st_size <= 0
+    or path.stat().st_mode & 0o022
+):
+    raise SystemExit(
+        "candidate extension must be a non-writable file under /tmp")
+print(path)
+PY
+    )
+    CANDIDATE_EXTENSION_SHA256=$(
+        sha256sum "$CANDIDATE_EXTENSION" | cut -d' ' -f1)
+fi
 
 if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all -- \
         . ':(exclude)bench_runs/**')" ]]; then
@@ -116,6 +165,12 @@ printf '%s\n' "$INSTANCE" > "$RUN_ROOT/instance.txt"
 printf '%s\n' "$MODEL_PATH" > "$RUN_ROOT/model_path.txt"
 printf '%s\n' "$BI100_RUNTIME_SITE_PACKAGES" \
     > "$RUN_ROOT/runtime_site_packages.txt"
+if [[ -n "$CANDIDATE_EXTENSION" ]]; then
+    printf '%s\n' "$CANDIDATE_EXTENSION" \
+        > "$RUN_ROOT/candidate_extension_path.txt"
+    printf '%s\n' "$CANDIDATE_EXTENSION_SHA256" \
+        > "$RUN_ROOT/candidate_extension_sha256.txt"
+fi
 
 ACTIVE_PID=""
 ACTIVE_PGID=""
@@ -257,8 +312,16 @@ run_postflight() {
 start_service() {
     local identity=$RUN_ROOT/service_identity.json
     local observed=""
+    local extension_environment=()
+    if [[ -n "$CANDIDATE_EXTENSION" ]]; then
+        extension_environment+=(
+            BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION="$CANDIDATE_EXTENSION"
+            BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256="$CANDIDATE_EXTENSION_SHA256"
+        )
+    fi
     (
         exec env \
+            "${extension_environment[@]}" \
             BI100_RUNTIME_SITE_PACKAGES="$BI100_RUNTIME_SITE_PACKAGES" \
             BI100_RUNTIME_INSTALL_REPORT="$RUNTIME_INSTALL" \
             BI100_RUNTIME_WORKDIR="$RUN_ROOT/runtime-workdir" \
@@ -346,7 +409,8 @@ write_runner_status() {
     local final_rc=$1
     python3 - "$RUN_ROOT" "$INSTANCE" "$SOURCE_REVISION" \
             "$SOURCE_BRANCH" "$CURRENT_STAGE" "$final_rc" \
-            "$RUNNER_SCHEMA" "$NUMERIC_MODE" <<'PY'
+            "$RUNNER_SCHEMA" "$NUMERIC_MODE" \
+            "$CANDIDATE_EXTENSION" "$CANDIDATE_EXTENSION_SHA256" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -376,6 +440,10 @@ report = {
     "terminal_stage": sys.argv[5],
     "returncode": int(sys.argv[6]),
     "numeric_mode": sys.argv[8],
+    "candidate_extension": {
+        "path": sys.argv[9] or None,
+        "sha256": sys.argv[10] or None,
+    },
     "gpu_count": 4,
     "tensor_parallel_size": 4,
     "max_model_len": 262144,
@@ -622,6 +690,7 @@ python3 "$QUALIFIER" \
     --source-revision "$SOURCE_REVISION" \
     --runtime-identity "$RUNTIME_IDENTITY" \
     --contract "$CONTRACT" \
+    "${QUALIFIER_VERSION_ARGUMENTS[@]}" \
     --out "$RUN_ROOT/shadow_qualification.json"
 printf '0\n' > "$RUN_ROOT/shadow_qualification.rc"
 

@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = (
     ROOT / "quality/fused_prefill_numeric_adjudication.v1.json")
 CONTRACT = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+CONTRACT_V2_PATH = (
+    ROOT / "quality/fused_prefill_real_activation_adjudication.v2.json")
+CONTRACT_V2 = json.loads(CONTRACT_V2_PATH.read_text(encoding="utf-8"))
 RUN_ID = "m1-138-unit"
 METRIC_NAMES = (
     "relative_l2",
@@ -143,10 +146,64 @@ def qualify(reports: list[dict]) -> dict:
     )
 
 
+def report_v2(rank: int) -> dict:
+    value = report(rank)
+    value["schema"] = M.REPORT_SCHEMA_V2
+    value["version"] = 2
+    value["thresholds"] = {
+        "require_finite_candidate": True,
+        "require_finite_reference": True,
+        "candidate_vs_rounded_relative_l2_role": "diagnostic_only",
+        "maximum_error_multiple_over_fp16_rounding": 2.0,
+        "ratio_denominator_floor": 1.0e-12,
+        "fixed_max_abs_role": "diagnostic_only",
+        "finite_failure_action": "record",
+    }
+    for item in value["records"]:
+        item["relative_l2"] = 1.9e-5
+    refresh_report(value)
+    return value
+
+
+def qualify_v2(reports: list[dict]) -> dict:
+    return M.qualify(
+        reports,
+        CONTRACT_V2,
+        run_id=RUN_ID,
+        source_revision="a" * 40,
+        runtime_identity="bare-host-overlay-v1:" + "b" * 20,
+        contract_version=2,
+    )
+
+
 class CalibratedFusedPrefillShadowQualificationTest(unittest.TestCase):
 
     def test_contract_digest_is_frozen(self) -> None:
         self.assertEqual(M.sha256(CONTRACT_PATH), M.CONTRACT_SHA256)
+        self.assertEqual(
+            M.sha256(CONTRACT_V2_PATH), M.CONTRACT_SHA256_V2)
+
+    def test_v2_treats_rounded_output_difference_as_diagnostic(self) -> None:
+        value = qualify_v2([report_v2(rank) for rank in range(4)])
+        self.assertEqual(value["status"], "pass", value)
+        self.assertEqual(value["schema"], M.RESULT_SCHEMA_V2)
+        self.assertEqual(value["version"], 2)
+        self.assertTrue(value["operator_surface_authorized"])
+        self.assertGreater(value["maxima"]["relative_l2"], 1e-5)
+        self.assertFalse(value["capability_evaluated"])
+        self.assertFalse(value["production_promotion_authorized"])
+
+    def test_v2_still_rejects_error_beyond_rounding_envelope(self) -> None:
+        reports = [report_v2(rank) for rank in range(4)]
+        changed = reports[2]["records"][1]
+        changed["candidate_to_fp32_max_abs"] = 0.0017
+        changed["max_abs_baseline_ratio"] = 0.0017 / 0.0008
+        changed["status"] = "fail"
+        refresh_report(reports[2])
+        value = qualify_v2(reports)
+        self.assertEqual(value["status"], "fail", value)
+        self.assertFalse(value["operator_surface_authorized"])
+        self.assertTrue(value["numeric_failures"])
 
     def test_scale_aware_records_qualify_despite_fixed_max_abs(self) -> None:
         value = qualify([report(rank) for rank in range(4)])

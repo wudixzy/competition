@@ -77,7 +77,7 @@ _FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT = env_int(
 _FUSED_PREFILL_SHADOW_NUMERIC_MODE = _env_choice(
     "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_NUMERIC_MODE",
     "legacy",
-    ("legacy", "calibrated"),
+    ("legacy", "calibrated", "calibrated_v2"),
 )
 _FUSED_PREFILL_SHADOW_FAILURE_ACTION = _env_choice(
     "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_FAILURE_ACTION",
@@ -109,6 +109,13 @@ _ACTIVATION_CAPTURE_STATE = {
     "seen_by_bucket": {},
     "records": [],
 }
+
+
+def _fused_prefill_shadow_is_calibrated() -> bool:
+    return _FUSED_PREFILL_SHADOW_NUMERIC_MODE in {
+        "calibrated",
+        "calibrated_v2",
+    }
 
 
 def _parse_fused_prefill_shadow_contexts(raw: str) -> Tuple[int, ...]:
@@ -158,7 +165,7 @@ def _validate_fused_prefill_shadow_configuration(
             "fused-prefill shadow requires the fused-prefill path")
     if (
         _FUSED_PREFILL_SHADOW_FAILURE_ACTION == "record"
-        and _FUSED_PREFILL_SHADOW_NUMERIC_MODE != "calibrated"
+        and not _fused_prefill_shadow_is_calibrated()
     ):
         raise RuntimeError(
             "record-only shadow failures require calibrated numeric mode")
@@ -713,22 +720,39 @@ def _build_fused_prefill_shadow_report(records: list) -> dict:
             "contains_credentials": False,
         },
     }
-    if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
-        report["schema"] = (
-            "bi100-fused-prefill-real-activation-calibrated-shadow-v1")
-        report["thresholds"] = {
-            "require_finite_candidate": True,
-            "require_finite_reference": True,
-            "maximum_candidate_vs_rounded_relative_l2": (
-                _FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT),
-            "maximum_error_multiple_over_fp16_rounding": (
-                _FUSED_PREFILL_SHADOW_ERROR_MULTIPLIER),
-            "ratio_denominator_floor": (
-                _FUSED_PREFILL_SHADOW_RATIO_FLOOR),
-            "fixed_max_abs_role": "diagnostic_only",
-            "finite_failure_action": (
-                _FUSED_PREFILL_SHADOW_FAILURE_ACTION),
-        }
+    if _fused_prefill_shadow_is_calibrated():
+        if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated_v2":
+            report["schema"] = (
+                "bi100-fused-prefill-real-activation-calibrated-shadow-v2")
+            report["version"] = 2
+            report["thresholds"] = {
+                "require_finite_candidate": True,
+                "require_finite_reference": True,
+                "candidate_vs_rounded_relative_l2_role": "diagnostic_only",
+                "maximum_error_multiple_over_fp16_rounding": (
+                    _FUSED_PREFILL_SHADOW_ERROR_MULTIPLIER),
+                "ratio_denominator_floor": (
+                    _FUSED_PREFILL_SHADOW_RATIO_FLOOR),
+                "fixed_max_abs_role": "diagnostic_only",
+                "finite_failure_action": (
+                    _FUSED_PREFILL_SHADOW_FAILURE_ACTION),
+            }
+        else:
+            report["schema"] = (
+                "bi100-fused-prefill-real-activation-calibrated-shadow-v1")
+            report["thresholds"] = {
+                "require_finite_candidate": True,
+                "require_finite_reference": True,
+                "maximum_candidate_vs_rounded_relative_l2": (
+                    _FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT),
+                "maximum_error_multiple_over_fp16_rounding": (
+                    _FUSED_PREFILL_SHADOW_ERROR_MULTIPLIER),
+                "ratio_denominator_floor": (
+                    _FUSED_PREFILL_SHADOW_RATIO_FLOOR),
+                "fixed_max_abs_role": "diagnostic_only",
+                "finite_failure_action": (
+                    _FUSED_PREFILL_SHADOW_FAILURE_ACTION),
+            }
         calibrated_metrics = (
             "candidate_to_fp32_relative_l2",
             "candidate_to_fp32_max_abs",
@@ -794,7 +818,7 @@ def _reserve_fused_prefill_shadow(
         "error_stage": None,
         "error_type": None,
     }
-    if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+    if _fused_prefill_shadow_is_calibrated():
         record.update({
             "candidate_to_fp32_relative_l2": None,
             "candidate_to_fp32_max_abs": None,
@@ -842,7 +866,7 @@ def _finish_fused_prefill_shadow(
         "error_stage": error_stage,
         "error_type": error_type,
     }
-    if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+    if _fused_prefill_shadow_is_calibrated():
         updates.update({
             "candidate_to_fp32_relative_l2": (
                 candidate_to_fp32_relative_l2),
@@ -860,8 +884,11 @@ def _finish_fused_prefill_shadow(
 
 def _calibrated_shadow_metrics_qualified(metrics: dict) -> bool:
     return (
-        metrics["relative_l2"]
-        <= _FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT
+        (
+            _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated_v2"
+            or metrics["relative_l2"]
+            <= _FUSED_PREFILL_SHADOW_RELATIVE_L2_LIMIT
+        )
         and metrics["candidate_to_fp32_relative_l2"]
         <= (
             _FUSED_PREFILL_SHADOW_ERROR_MULTIPLIER
@@ -897,7 +924,7 @@ def _compare_fused_prefill_shadow_outputs(
     reference_float = reference.float()
     candidate_finite = bool(torch.isfinite(candidate_float).all().item())
     reference_finite = bool(torch.isfinite(reference_float).all().item())
-    if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+    if _fused_prefill_shadow_is_calibrated():
         if reference_fp32 is None:
             raise RuntimeError(
                 "calibrated fused-prefill shadow requires FP32 reference")
@@ -914,7 +941,7 @@ def _compare_fused_prefill_shadow_outputs(
             "relative_l2": None,
             "max_abs": None,
         }
-        if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+        if _fused_prefill_shadow_is_calibrated():
             result.update({
                 "candidate_to_fp32_relative_l2": None,
                 "candidate_to_fp32_max_abs": None,
@@ -927,7 +954,7 @@ def _compare_fused_prefill_shadow_outputs(
     denominator = max(float(torch.norm(reference_float).item()), 1.0e-12)
     relative_l2, max_abs = _error_metrics(
         candidate_float, reference_float, denominator)
-    if _FUSED_PREFILL_SHADOW_NUMERIC_MODE == "calibrated":
+    if _fused_prefill_shadow_is_calibrated():
         if reference_fp32 is None:
             raise RuntimeError(
                 "calibrated fused-prefill shadow lost its FP32 reference")
@@ -2087,13 +2114,11 @@ class PagedAttention:
                             fused_request_eligible=False,
                             capture_request_eligible=False,
                             return_fp32=(
-                                _FUSED_PREFILL_SHADOW_NUMERIC_MODE
-                                == "calibrated"),
+                                _fused_prefill_shadow_is_calibrated()),
                         ))
                     reference_fp32 = (
                         reference_result
-                        if _FUSED_PREFILL_SHADOW_NUMERIC_MODE
-                        == "calibrated"
+                        if _fused_prefill_shadow_is_calibrated()
                         else None
                     )
                     reference_output = (

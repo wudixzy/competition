@@ -310,6 +310,13 @@ class PagedAttentionUnitTest(unittest.TestCase):
                     True, True, directory, "m1-138-unit"),
                 pathlib.Path(directory),
             )
+        module._FUSED_PREFILL_SHADOW_NUMERIC_MODE = "calibrated_v2"
+        with tempfile.TemporaryDirectory(prefix="bi100-shadow-") as directory:
+            self.assertEqual(
+                module._validate_fused_prefill_shadow_configuration(
+                    True, True, directory, "m1-163-unit"),
+                pathlib.Path(directory),
+            )
 
     def test_shadow_report_contains_only_aggregate_shape_metrics(self):
         module = _load_paged_attn()
@@ -405,6 +412,54 @@ class PagedAttentionUnitTest(unittest.TestCase):
         changed["relative_l2"] = 1.1e-5
         self.assertFalse(
             module._calibrated_shadow_metrics_qualified(changed))
+        module._FUSED_PREFILL_SHADOW_NUMERIC_MODE = "calibrated_v2"
+        self.assertTrue(
+            module._calibrated_shadow_metrics_qualified(changed))
+        changed["candidate_to_fp32_max_abs"] = 0.0017
+        self.assertFalse(
+            module._calibrated_shadow_metrics_qualified(changed))
+
+    def test_calibrated_v2_marks_rounded_difference_diagnostic(self):
+        module = _load_paged_attn(shadow_numeric_mode="calibrated_v2")
+        module._FUSED_PREFILL_SHADOW_FAILURE_ACTION = "record"
+        record = {
+            "index": 0,
+            "status": "pass",
+            "bucket_min_context_tokens": 49152,
+            "context_tokens": 57344,
+            "query_shape": [8192, 4, 256],
+            "query_heads": 4,
+            "kv_heads": 1,
+            "head_dim": 256,
+            "block_size": 16,
+            "candidate_finite": True,
+            "reference_finite": True,
+            "relative_l2": 1.9e-5,
+            "max_abs": 0.001953125,
+            "candidate_to_fp32_relative_l2": 3.00002e-4,
+            "candidate_to_fp32_max_abs": 0.0009,
+            "rounded_to_fp32_relative_l2": 3.0e-4,
+            "rounded_to_fp32_max_abs": 0.0009,
+            "relative_l2_baseline_ratio": 1.0000066666666667,
+            "max_abs_baseline_ratio": 1.0,
+            "error_stage": None,
+            "error_type": None,
+        }
+        report = module._build_fused_prefill_shadow_report([record])
+        self.assertEqual(
+            report["schema"],
+            "bi100-fused-prefill-real-activation-calibrated-shadow-v2",
+        )
+        self.assertEqual(report["version"], 2)
+        self.assertEqual(
+            report["thresholds"][
+                "candidate_vs_rounded_relative_l2_role"],
+            "diagnostic_only",
+        )
+        self.assertNotIn(
+            "maximum_candidate_vs_rounded_relative_l2",
+            report["thresholds"],
+        )
 
     def test_shadow_rank_prefers_initialized_distributed_rank(self):
         module = _load_paged_attn()
