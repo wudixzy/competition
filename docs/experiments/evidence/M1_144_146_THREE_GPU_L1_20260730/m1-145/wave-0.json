@@ -1,0 +1,24 @@
+{
+  "cells": [
+    {
+      "case": "production_dense_q8176",
+      "elapsed_s": 9.112383849918842,
+      "gpu": 2,
+      "returncode": 0
+    },
+    {
+      "case": "production_65k_q8176",
+      "elapsed_s": 9.111764058470726,
+      "gpu": 3,
+      "returncode": 0
+    },
+    {
+      "case": "production_128k_q8176",
+      "elapsed_s": 9.111172202974558,
+      "gpu": 1,
+      "returncode": 0
+    }
+  ],
+  "wall_s": 9.113269086927176,
+  "wave": 0
+}

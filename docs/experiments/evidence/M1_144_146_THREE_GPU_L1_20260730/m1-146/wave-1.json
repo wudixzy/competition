@@ -1,0 +1,12 @@
+{
+  "cells": [
+    {
+      "case": "production_235k_q5616",
+      "elapsed_s": 10.712472286075354,
+      "gpu": 3,
+      "returncode": 0
+    }
+  ],
+  "wall_s": 10.713293127715588,
+  "wave": 1
+}

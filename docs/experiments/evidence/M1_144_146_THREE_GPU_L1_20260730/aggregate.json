@@ -1,0 +1,94 @@
+{
+  "schema": "bi100-m1-144-146-three-gpu-l1-replication-v1",
+  "version": 1,
+  "date": "2026-07-30",
+  "source_revision": "fb0084fc778e62c26d6a6e108b87dc027ae2ed79",
+  "instance": "ssh-73ca29ba",
+  "physical_gpus": [
+    1,
+    2,
+    3
+  ],
+  "kernel_source_sha256": "11c387e6012834fe634ffa8d038f7a4bf4ec19fa13ec23779ee1f414037e564b",
+  "candidate_extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+  "runs": [
+    {
+      "id": "m1-144",
+      "gpu_order": [
+        1,
+        2,
+        3
+      ],
+      "qualified": true,
+      "runner_status_sha256": "845bee56c8f03775eaa6b14b92adf68cb4275127601424c54c2e5695e95e2b31",
+      "screen_sha256": "3d6818f4de3425212378f1b912f40f145e3b363afb0c6faa8ec350384ee0e519"
+    },
+    {
+      "id": "m1-145",
+      "gpu_order": [
+        2,
+        3,
+        1
+      ],
+      "qualified": true,
+      "runner_status_sha256": "6fc99e62a54a230ff08ff675553f8d0b1cc88a1b6b8af32141c85c9fddff3c3c",
+      "screen_sha256": "aa1ed0f0c325817c6c789124150729a63590929ab2681d8462d87dbd1a151622"
+    },
+    {
+      "id": "m1-146",
+      "gpu_order": [
+        3,
+        1,
+        2
+      ],
+      "qualified": true,
+      "runner_status_sha256": "8ce528c5971859a85ca9ea39ffbfadd239611de5fb996fccb9d5de4c9d06fdea",
+      "screen_sha256": "11c920812eeb650a41b1514e02dfe38bd332b84dea6e1b1b9d1afdfd517c8e7f"
+    }
+  ],
+  "cases": {
+    "production_dense_q8176": {
+      "speedup_min": 1.9797124380676276,
+      "speedup_max": 1.9819094024993114,
+      "cross_card_spread_fraction": 0.001109,
+      "output_relative_l2": 4.723024988143917e-06,
+      "lse_relative_l2": 1.910052362195105e-08
+    },
+    "production_65k_q8176": {
+      "speedup_min": 2.293395942070381,
+      "speedup_max": 2.3215097099529407,
+      "cross_card_spread_fraction": 0.012184,
+      "output_relative_l2": 6.174115866839858e-06,
+      "lse_relative_l2": 1.5329777279468642e-08
+    },
+    "production_128k_q8176": {
+      "speedup_min": 2.3071082681685526,
+      "speedup_max": 2.3448727018446553,
+      "cross_card_spread_fraction": 0.016236,
+      "output_relative_l2": 6.054228405228515e-06,
+      "lse_relative_l2": 1.508350105065074e-08
+    },
+    "production_235k_q5616": {
+      "speedup_min": 2.2955019277637487,
+      "speedup_max": 2.29631950537599,
+      "cross_card_spread_fraction": 0.000356,
+      "output_relative_l2": 6.62467828867105e-06,
+      "lse_relative_l2": 1.6631244573011175e-08
+    }
+  },
+  "all_finite": true,
+  "all_runs_lifecycle_qualified": true,
+  "full_four_gpu_l1_contract_satisfied": false,
+  "authorization": {
+    "four_gpu_l1_rerun_authorized": true,
+    "l2_capture_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "official_score_claim_authorized": false
+  },
+  "privacy": {
+    "contains_prompts": false,
+    "contains_model_outputs": false,
+    "contains_token_ids": false,
+    "contains_credentials": false
+  }
+}
