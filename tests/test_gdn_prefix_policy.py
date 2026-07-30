@@ -19,6 +19,7 @@ from qwen3_6_scripts.gdn_prefix import (
     keys_from_block_hashes,
     make_prefix_key,
     restore_key_is_eligible,
+    tail_capture_key,
 )
 
 
@@ -190,6 +191,70 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         self.assertTrue(fine.should_capture_final(key))
         self.assertFalse(GdnPrefixStatePolicy("off").should_capture_final(key))
 
+    def test_tail64_captures_one_canonical_boundary_before_final(self):
+        hashes = [digest(i % 255) for i in range(4096)]
+        expected = {
+            16384: 512,
+            32768: 1536,
+            49152: 2560,
+            65536: 3584,
+        }
+        for prompt_tokens, block_count in expected.items():
+            with self.subTest(prompt_tokens=prompt_tokens):
+                key = tail_capture_key(
+                    hashes, prompt_tokens, 16, 8192)
+                self.assertIsNotNone(key)
+                self.assertEqual(key[0], block_count)
+                self.assertEqual(
+                    prompt_tokens - key[0] * 16, 8192)
+        self.assertIsNone(tail_capture_key(hashes, 8192, 16, 8192))
+        with self.assertRaises(ValueError):
+            tail_capture_key(hashes, 16384, 24, 8192)
+
+    def test_tail64_first_sibling_can_restore_tail_checkpoint(self):
+        shared_blocks = 1536
+        first_hashes = [
+            digest(index % 251) for index in range(2048)
+        ]
+        sibling_hashes = (
+            first_hashes[:shared_blocks]
+            + [digest((index + 73) % 251) for index in range(512)]
+        )
+        policy = GdnPrefixStatePolicy("tail64")
+        actions = policy.select_sparse_capture_actions(
+            [], first_hashes, 32768, 16, "hybrid64", 64, 8192)
+        self.assertEqual(
+            [reason for _, reason in actions],
+            ["tail_checkpoint", "final_prefill"],
+        )
+        tail, final = (key for key, _ in actions)
+        self.assertIsNotNone(tail)
+        self.assertIsNotNone(final)
+        self.assertEqual(policy.admit([tail, final]), ())
+        sibling_live = keys_from_block_hashes(
+            sibling_hashes[:shared_blocks])
+        restored = policy.select_restore(
+            sibling_live, len(sibling_live))
+        self.assertEqual(restored, tail)
+        self.assertEqual(32768 - restored[0] * 16, 8192)
+
+    def test_sparse_capture_prioritizes_observed_branch_over_tail(self):
+        hashes = [digest(index % 251) for index in range(2048)]
+        branch = (1024, hashes[1023])
+        policy = GdnPrefixStatePolicy("tail64")
+        actions = policy.select_sparse_capture_actions(
+            keys_from_block_hashes(hashes[:1024]),
+            hashes,
+            32768,
+            16,
+            "hybrid64",
+            64,
+            8192,
+        )
+        self.assertEqual(actions[0], (branch, "repeated_branch"))
+        self.assertEqual(actions[1][1], "final_prefill")
+        self.assertEqual(len(actions), 2)
+
     def test_capacity_emits_explicit_oldest_evictions(self):
         policy = GdnPrefixStatePolicy("fine32")
         keys = [make_prefix_key(i + 1, digest(i % 255)) for i in range(34)]
@@ -216,7 +281,7 @@ class GdnPrefixPolicyTest(unittest.TestCase):
                         clear=False):
             with self.assertRaises(RuntimeError):
                 gdn_cache_policy_from_env()
-        for policy in ("fine32", "admission64", "off"):
+        for policy in ("fine32", "admission64", "tail64", "off"):
             with self.subTest(policy=policy), patch.dict(os.environ, {
                     "BI100_GDN_CACHE_POLICY": policy,
                     "BI100_GDN_RESTORE_MODE": "typo",
@@ -238,7 +303,8 @@ class GdnPrefixPolicyTest(unittest.TestCase):
                 for i in range(96)]
         rng = random.Random(20260728)
         for policy_name, capacity in (
-                ("fine32", 32), ("admission64", 64), ("off", 0)):
+                ("fine32", 32), ("admission64", 64),
+                ("tail64", 64), ("off", 0)):
             with self.subTest(policy=policy_name):
                 policy = GdnPrefixStatePolicy(policy_name)
                 reference = OrderedDict()
@@ -279,7 +345,8 @@ class GdnPrefixPolicyTest(unittest.TestCase):
                         expected = (
                             False if policy_name == "off"
                             else key not in reference
-                            if policy_name == "admission64" else True)
+                            if policy_name in {"admission64", "tail64"}
+                            else True)
                         self.assertEqual(
                             policy.should_capture_final(key), expected)
                     self.assertEqual(

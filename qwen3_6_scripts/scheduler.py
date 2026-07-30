@@ -443,6 +443,8 @@ class Scheduler:
             str, Optional[GdnPrefixKey]] = {}
         self._gdn_request_capture_targets: Dict[
             str, Tuple[GdnPrefixKey, ...]] = {}
+        self._gdn_request_capture_reasons: Dict[
+            str, Dict[GdnPrefixKey, str]] = {}
         # Time at previous scheduling step
         self.prev_time = 0.0
         # Did we schedule a prompt at previous step?
@@ -521,7 +523,8 @@ class Scheduler:
         """Align admission64 capture state with a physical model forward."""
         targets = self._gdn_request_capture_targets.get(
             seq_group.request_id, ())
-        if (self._gdn_prefix_policy.policy != "admission64"
+        if (self._gdn_prefix_policy.policy
+                not in {"admission64", "tail64"}
                 or not targets):
             return token_chunk_size, physical_query_tokens
         if token_chunk_size <= 0 or physical_query_tokens <= 0:
@@ -1126,22 +1129,27 @@ class Scheduler:
                 self._gdn_request_restore_keys[
                     seq_group.request_id] = restore_key
 
-                capture_targets = []
-                branch_key = self._gdn_prefix_policy.repeated_branch_candidate(
-                    live_keys, len(live_keys))
-                if branch_key is not None:
-                    capture_targets.append(branch_key)
-                final_key = final_capture_key(
-                    block_hashes, prompt_seq.data.get_len(),
-                    self.cache_config.block_size, self._gdn_restore_mode,
-                    self._gdn_replay_alignment)
-                if (final_key is not None
-                        and final_key not in capture_targets
-                        and self._gdn_prefix_policy.should_capture_final(
-                            final_key)):
-                    capture_targets.append(final_key)
+                capture_actions = (
+                    self._gdn_prefix_policy.select_sparse_capture_actions(
+                        live_keys, block_hashes, prompt_seq.data.get_len(),
+                        self.cache_config.block_size, self._gdn_restore_mode,
+                        self._gdn_replay_alignment,
+                        self.scheduler_config.max_num_batched_tokens))
+                capture_targets = [
+                    key for key, _ in capture_actions]
+                capture_reasons = dict(capture_actions)
+                if self._gdn_prefix_policy.policy == "fine32":
+                    final_key = final_capture_key(
+                        block_hashes, prompt_seq.data.get_len(),
+                        self.cache_config.block_size, self._gdn_restore_mode,
+                        self._gdn_replay_alignment)
+                    if final_key is not None:
+                        capture_targets = [final_key]
+                        capture_reasons = {final_key: "fine32_chunk"}
                 self._gdn_request_capture_targets[seq_group.request_id] = tuple(
                     capture_targets)
+                self._gdn_request_capture_reasons[
+                    seq_group.request_id] = capture_reasons
 
                 num_new_tokens, budget_token_count = (
                     _plan_gdn_prefix_fast_forward(
@@ -1574,7 +1582,7 @@ class Scheduler:
                             else num_computed_tokens)
                         if (self._gdn_restore_mode == "hybrid64"
                                 and self._gdn_prefix_policy.policy
-                                == "admission64"):
+                                in {"admission64", "tail64"}):
                             gdn_segment_offsets = list(
                                 canonical_direct_segment_offsets(
                                     self.block_manager.get_content_hashes(
@@ -1593,14 +1601,17 @@ class Scheduler:
                         self.block_manager, "_bi100_update_cache_trace", None)
                     if callable(trace_update):
                         capture_actions = []
+                        capture_reasons = (
+                            self._gdn_request_capture_reasons.get(
+                                seq_group.request_id, {}))
                         for _, key in gdn_capture_points:
                             if self._gdn_prefix_policy.policy == "fine32":
                                 reason = "fine32_chunk"
-                            elif (capture_targets
-                                  and key == capture_targets[-1]):
-                                reason = "final_prefill"
                             else:
-                                reason = "repeated_branch"
+                                reason = capture_reasons.get(key)
+                                if reason is None:
+                                    raise RuntimeError(
+                                        "GDN capture reason is missing")
                             capture_actions.append((key, reason))
                         trace_update(
                             seqs[0], len(raw_computed_block_nums),
@@ -1620,6 +1631,8 @@ class Scheduler:
                                                        None)
                     self._gdn_request_capture_targets.pop(seq_group.request_id,
                                                           None)
+                    self._gdn_request_capture_reasons.pop(
+                        seq_group.request_id, None)
 
             # It assumes the scheduled_seq_groups is ordered by
             # prefill < decoding.
@@ -1725,6 +1738,8 @@ class Scheduler:
 
             self._gdn_request_restore_keys.pop(seq_group.request_id, None)
             self._gdn_request_capture_targets.pop(seq_group.request_id, None)
+            self._gdn_request_capture_reasons.pop(
+                seq_group.request_id, None)
 
             # Add the finished requests to the finished requests list.
             # This list will be used to update the Mamba cache in the

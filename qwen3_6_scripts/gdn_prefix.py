@@ -10,8 +10,9 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 
 GdnPrefixKey = Tuple[int, bytes]
 GdnCapturePoint = Tuple[int, GdnPrefixKey]
+GdnCaptureAction = Tuple[GdnPrefixKey, str]
 
-_VALID_POLICIES = {"fine32", "admission64", "off"}
+_VALID_POLICIES = {"fine32", "admission64", "tail64", "off"}
 GDN_KERNEL_CHUNK_TOKENS = 64
 GDN_DIRECT_MIN_REPLAY_TOKENS = 2
 
@@ -106,6 +107,26 @@ def final_capture_key(
         return None
     boundary_tokens = ((prompt_tokens - 1) // replay_alignment
                        * replay_alignment)
+    block_count = min(len(block_hashes), boundary_tokens // block_size)
+    if block_count <= 0:
+        return None
+    return make_prefix_key(block_count, block_hashes[block_count - 1])
+
+
+def tail_capture_key(
+        block_hashes: Sequence[bytes], prompt_tokens: int, block_size: int,
+        scheduler_chunk_tokens: int) -> Optional[GdnPrefixKey]:
+    """Return the last canonical chunk boundary strictly before the prompt."""
+    if block_size <= 0 or scheduler_chunk_tokens <= 0:
+        raise ValueError("block and scheduler chunk sizes must be positive")
+    if scheduler_chunk_tokens % block_size != 0:
+        raise ValueError("scheduler chunk size must be divisible by block size")
+    if prompt_tokens <= scheduler_chunk_tokens:
+        return None
+    boundary_tokens = (
+        (prompt_tokens - 1) // scheduler_chunk_tokens
+        * scheduler_chunk_tokens
+    )
     block_count = min(len(block_hashes), boundary_tokens // block_size)
     if block_count <= 0:
         return None
@@ -221,7 +242,12 @@ class GdnPrefixStatePolicy:
         if policy not in _VALID_POLICIES:
             raise ValueError(f"unknown GDN cache policy: {policy}")
         self.policy = policy
-        self.capacity = {"fine32": 32, "admission64": 64, "off": 0}[policy]
+        self.capacity = {
+            "fine32": 32,
+            "admission64": 64,
+            "tail64": 64,
+            "off": 0,
+        }[policy]
         self._resident: OrderedDict[GdnPrefixKey, None] = OrderedDict()
 
     def __len__(self) -> int:
@@ -238,7 +264,7 @@ class GdnPrefixStatePolicy:
         make_prefix_key(*key)
         if self.policy == "off":
             return False
-        if self.policy == "admission64":
+        if self.policy in {"admission64", "tail64"}:
             return key not in self._resident
         return True
 
@@ -263,13 +289,44 @@ class GdnPrefixStatePolicy:
         A live KV hit proves that the content occurred in an earlier request;
         the current request is therefore the second or later occurrence.
         """
-        if (self.policy != "admission64" or max_blocks <= 0
+        if (self.policy not in {"admission64", "tail64"} or max_blocks <= 0
                 or not live_prefix_keys):
             return None
         candidate = live_prefix_keys[min(len(live_prefix_keys), max_blocks) - 1]
         if candidate in self._resident:
             return None
         return candidate
+
+    def select_sparse_capture_actions(
+            self, live_prefix_keys: Sequence[GdnPrefixKey],
+            block_hashes: Sequence[bytes], prompt_tokens: int,
+            block_size: int, restore_mode: str, replay_alignment: int,
+            scheduler_chunk_tokens: int) -> Tuple[GdnCaptureAction, ...]:
+        """Choose at most two scheduler-owned sparse capture actions."""
+        if self.policy not in {"admission64", "tail64"}:
+            return ()
+        actions: List[GdnCaptureAction] = []
+        branch_key = self.repeated_branch_candidate(
+            live_prefix_keys, len(live_prefix_keys))
+        if branch_key is not None:
+            actions.append((branch_key, "repeated_branch"))
+        elif self.policy == "tail64":
+            tail_key = tail_capture_key(
+                block_hashes, prompt_tokens, block_size,
+                scheduler_chunk_tokens)
+            if tail_key is not None and tail_key not in self._resident:
+                actions.append((tail_key, "tail_checkpoint"))
+        final_key = final_capture_key(
+            block_hashes, prompt_tokens, block_size, restore_mode,
+            replay_alignment)
+        if (final_key is not None
+                and all(key != final_key for key, _ in actions)
+                and self.should_capture_final(final_key)):
+            actions.append((final_key, "final_prefill"))
+        if len(actions) > 2:
+            raise RuntimeError(
+                "GDN policy selected more than two capture targets")
+        return tuple(actions)
 
     def admit(self, keys: Iterable[GdnPrefixKey]) -> Tuple[GdnPrefixKey, ...]:
         evicted: List[GdnPrefixKey] = []

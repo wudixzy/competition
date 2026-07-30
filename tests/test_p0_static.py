@@ -784,10 +784,15 @@ class P0StaticCoverageTest(unittest.TestCase):
         policy_src = read("qwen3_6_scripts/gdn_prefix.py")
         scheduler_src = read("qwen3_6_scripts/scheduler.py")
         self.assertIn("def should_capture_final(", policy_src)
-        self.assertIn('if self.policy == "admission64":', policy_src)
+        self.assertIn(
+            'if self.policy in {"admission64", "tail64"}:', policy_src
+        )
         self.assertIn("key not in self._resident", policy_src)
-        self.assertIn("self._gdn_prefix_policy.should_capture_final(",
-                      scheduler_src)
+        self.assertIn("self.should_capture_final(final_key)", policy_src)
+        self.assertIn(
+            "self._gdn_prefix_policy.select_sparse_capture_actions(",
+            scheduler_src,
+        )
 
     def test_gdn_restore_copy_probe_matches_tp4_rank_state(self):
         src = read("tests/bench_gdn_restore_copy.py")
