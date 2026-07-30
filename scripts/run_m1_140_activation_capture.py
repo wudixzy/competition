@@ -14,7 +14,7 @@ import signal
 import subprocess
 import sys
 import time
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 import urllib.request
 
 from record_experiment_timeline import append_event, summarize
@@ -221,6 +221,7 @@ class CaptureRunner:
         self.process_starttime: int | None = None
         self.server_log = None
         self.current_stage = "initialization"
+        self.failed_stage: str | None = None
         self.gates: dict[str, int | None] = {}
         self.error_type: str | None = None
         self.source_revision = ""
@@ -245,6 +246,8 @@ class CaptureRunner:
             yield
         except BaseException:
             self.gates[name] = 1
+            if self.failed_stage is None:
+                self.failed_stage = name
             append_event(
                 self.timeline,
                 run_id=self.run_id,
@@ -677,6 +680,25 @@ class CaptureRunner:
         self.validate()
         self.prepare()
         primary_error: BaseException | None = None
+
+        def retain_error(exc: BaseException) -> None:
+            nonlocal primary_error
+            if primary_error is None:
+                primary_error = exc
+                self.error_type = type(exc).__name__
+
+        def run_postcondition(
+            name: str,
+            action: Callable[[], None],
+        ) -> bool:
+            try:
+                with self.stage(name):
+                    action()
+            except BaseException as exc:
+                retain_error(exc)
+                return False
+            return True
+
         try:
             with self.stage("postflight_before"):
                 self.run_postflight("postflight_before")
@@ -694,34 +716,41 @@ class CaptureRunner:
                 if not _health():
                     raise RuntimeError("service health failed after capture")
         except BaseException as exc:
-            primary_error = exc
-            self.error_type = type(exc).__name__
-        try:
-            with self.stage("scoped_cleanup"):
-                self.cleanup_service()
-        except BaseException as exc:
-            if primary_error is None:
-                primary_error = exc
-                self.error_type = type(exc).__name__
-        try:
-            with self.stage("fatal_scan"):
-                counts = self.scan_fatal()
-                if any(counts.values()):
-                    raise RuntimeError("fatal log categories were observed")
-            with self.stage("postflight_after"):
-                self.run_postflight("postflight_after")
-            with self.stage("preflight_after"):
-                self.run_preflight("preflight_after")
-            with self.stage("preflight_comparison"):
-                self.compare_preflights()
-            with self.stage("source_unchanged"):
-                self.source_unchanged()
-        except BaseException as exc:
-            if primary_error is None:
-                primary_error = exc
-                self.error_type = type(exc).__name__
+            retain_error(exc)
+
+        run_postcondition("scoped_cleanup", self.cleanup_service)
+        postflight_ok = run_postcondition(
+            "postflight_after",
+            lambda: self.run_postflight("postflight_after"),
+        )
+        preflight_ok = False
+        if postflight_ok:
+            preflight_ok = run_postcondition(
+                "preflight_after",
+                lambda: self.run_preflight("preflight_after"),
+            )
+        else:
+            self.gates["preflight_after"] = None
+        if preflight_ok:
+            run_postcondition(
+                "preflight_comparison", self.compare_preflights)
+        else:
+            self.gates["preflight_comparison"] = None
+
+        def require_clean_fatal_scan() -> None:
+            counts = self.scan_fatal()
+            if any(counts.values()):
+                raise RuntimeError("fatal log categories were observed")
+
+        run_postcondition("fatal_scan", require_clean_fatal_scan)
+        run_postcondition("source_unchanged", self.source_unchanged)
+
         returncode = 0 if primary_error is None else 1
-        self.current_stage = "complete" if returncode == 0 else self.current_stage
+        self.current_stage = (
+            "complete"
+            if returncode == 0
+            else (self.failed_stage or self.current_stage)
+        )
         self.write_status(returncode)
         return returncode
 
