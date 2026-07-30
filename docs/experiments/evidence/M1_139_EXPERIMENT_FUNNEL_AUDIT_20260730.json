@@ -144,7 +144,58 @@
         ]
       },
       "speedup_lower_bound": 2.0131619391792603,
-      "time_saved_lower_bound_s": 90.5884149223566
+      "time_saved_lower_bound_s": 90.5884149223566,
+      "stale_probe_cleanup": {
+        "process_group": 40222,
+        "held_gpu_indices_before": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "signal": "SIGTERM",
+        "exited_within_s": 5,
+        "sigkill_used": false,
+        "gpu_descriptors_held_after": false
+      },
+      "post_cleanup_parallel": {
+        "wall_s": 89.255033262074,
+        "completed": true,
+        "qualified": false,
+        "cleanup_reaped": true,
+        "runner_timed_out": false,
+        "gpu_results": [
+          {
+            "gpu": 0,
+            "ok": false,
+            "stage": "timeout",
+            "last_progress_stage": "mem_get_info",
+            "termination": "sigkill"
+          },
+          {
+            "gpu": 1,
+            "ok": false,
+            "stage": "timeout",
+            "last_progress_stage": "mem_get_info",
+            "termination": "sigkill"
+          },
+          {
+            "gpu": 2,
+            "ok": true,
+            "stage": "done",
+            "free_bytes": 34057748480,
+            "total_bytes": 34057748480
+          },
+          {
+            "gpu": 3,
+            "ok": true,
+            "stage": "done",
+            "free_bytes": 34057748480,
+            "total_bytes": 34057748480
+          }
+        ],
+        "conclusion": "stale_probe_not_root_cause"
+      }
     },
     "capture_status": "not_started_gpus_0_and_1_failed_preflight",
     "tp4_conclusions_authorized": false

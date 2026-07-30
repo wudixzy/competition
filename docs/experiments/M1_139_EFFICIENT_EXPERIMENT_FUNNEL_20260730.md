@@ -116,6 +116,14 @@ period. Compared with the observed serial external timeout, parallel diagnosis
 saved at least 90.588 seconds and returned per-GPU failure stages instead of an
 undifferentiated timeout.
 
+Follow-up inspection found an obsolete environment probe, process group 40222,
+which had held all four `/dev/iluvatar*` descriptors since the previous day.
+Scoped SIGTERM stopped it within five seconds, so SIGKILL was not used. A fresh
+parallel preflight after cleanup took 89.255 seconds and reproduced the same
+result: GPUs 0 and 1 timed out at `mem_get_info`, while GPUs 2 and 3 passed with
+34,057,748,480 free bytes each. The stale probe was real cleanup debt but was
+not the root cause of the two unhealthy GPUs.
+
 This is infrastructure evidence, not candidate performance evidence. The
 activation bank, rank replay, short TP4 screen, long-context confirmation and
 capability gates remain pending until all four GPUs pass preflight.

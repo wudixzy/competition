@@ -49,12 +49,24 @@ class M1139ExperimentFunnelEvidenceTest(unittest.TestCase):
 
     def test_partial_gpu_health_cannot_authorize_tp4_conclusions(self):
         pilot = self.report["pilot"]
-        results = pilot["gpu_preflight"]["parallel"]["gpu_results"]
+        preflight = pilot["gpu_preflight"]
+        results = preflight["parallel"]["gpu_results"]
         self.assertEqual(
             [row["gpu"] for row in results if row["ok"]],
             [2, 3],
         )
-        self.assertFalse(pilot["gpu_preflight"]["parallel"]["qualified"])
+        self.assertFalse(preflight["parallel"]["qualified"])
+        self.assertFalse(
+            preflight["stale_probe_cleanup"]["sigkill_used"])
+        after = preflight["post_cleanup_parallel"]
+        self.assertEqual(
+            [row["gpu"] for row in after["gpu_results"] if row["ok"]],
+            [2, 3],
+        )
+        self.assertEqual(
+            after["conclusion"],
+            "stale_probe_not_root_cause",
+        )
         self.assertFalse(pilot["tp4_conclusions_authorized"])
         self.assertIsNone(pilot["actual_capture_wall_s"])
         self.assertIsNone(pilot["actual_replay_wall_s"])
