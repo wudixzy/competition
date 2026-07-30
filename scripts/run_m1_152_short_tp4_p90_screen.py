@@ -194,8 +194,8 @@ class P90ShortTp4Runner(ShortTp4Runner):
             self.timeline, expected_run_id=self.run_id)
         _atomic_json(self.run_root / "timeline_report.json", timeline_report)
         status = {
-            "schema": "bi100-m1-152-short-tp4-p90-screen-runner-v2",
-            "version": 2,
+            "schema": "bi100-m1-152-short-tp4-p90-screen-runner-v3",
+            "version": 3,
             "qualified": returncode == 0,
             "returncode": returncode,
             "terminal_stage": self.current_stage,

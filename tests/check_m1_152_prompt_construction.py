@@ -14,7 +14,7 @@ from typing import Any
 import short_tp4_p90_funnel_service as contract
 
 
-SCHEMA = "bi100-m1-152-tokenizer-construction-smoke-v1"
+SCHEMA = "bi100-m1-152-tokenizer-construction-smoke-v2"
 
 
 def _sha256_text(value: str) -> str:
@@ -29,7 +29,7 @@ def validate(report: Any) -> dict[str, Any]:
     partial = report.get("partial")
     if (
         report.get("schema") != SCHEMA
-        or report.get("version") != 1
+        or report.get("version") != 2
         or not isinstance(cold, list)
         or len(cold) != len(contract.TARGETS)
         or not isinstance(partial, list)
@@ -68,7 +68,9 @@ def validate(report: Any) -> dict[str, Any]:
             )
             or not isinstance(row.get("primer_prompt_tokens"), int)
             or row["primer_prompt_tokens"] <= context
+            or row.get("first_sibling_prompt_tokens") != target
             or not _digest(row.get("primer_prompt_sha256"))
+            or not _digest(row.get("first_sibling_prompt_sha256"))
             or not _digest(row.get("partial_prompt_sha256"))
         ):
             reasons.append(f"partial/{target}: prefix boundary differs")
@@ -87,7 +89,7 @@ def run(model_path: Path, prompt_set_id: str) -> dict[str, Any]:
     from transformers import AutoTokenizer
     from long_context_api import build_exact_prompt, prompt_token_count
     from prefix_boundary_api import (
-        build_boundary_prompts,
+        build_admission_boundary_prompts,
         common_prefix_len,
         encode_chat,
     )
@@ -113,8 +115,14 @@ def run(model_path: Path, prompt_set_id: str) -> dict[str, Any]:
     partial = []
     for target in contract.PARTIAL_TARGETS:
         context = target - contract.PARTIAL_RESIDUAL_TOKENS
-        primer_content, partial_content, shared_tokens, total_tokens = (
-            build_boundary_prompts(
+        (
+            primer_content,
+            first_sibling_content,
+            partial_content,
+            shared_tokens,
+            total_tokens,
+        ) = (
+            build_admission_boundary_prompts(
                 tokenizer,
                 context,
                 contract.PARTIAL_RESIDUAL_TOKENS - 1,
@@ -123,9 +131,14 @@ def run(model_path: Path, prompt_set_id: str) -> dict[str, Any]:
             )
         )
         primer_ids = encode_chat(tokenizer, primer_content)
+        first_sibling_ids = encode_chat(tokenizer, first_sibling_content)
         partial_ids = encode_chat(tokenizer, partial_content)
         cached = (
-            common_prefix_len(primer_ids, partial_ids)
+            min(
+                common_prefix_len(primer_ids, first_sibling_ids),
+                common_prefix_len(primer_ids, partial_ids),
+                common_prefix_len(first_sibling_ids, partial_ids),
+            )
             // contract.BLOCK_SIZE
             * contract.BLOCK_SIZE
         )
@@ -137,13 +150,16 @@ def run(model_path: Path, prompt_set_id: str) -> dict[str, Any]:
             "cached_prefix_tokens": cached,
             "residual_prefill_tokens": len(partial_ids) - cached,
             "primer_prompt_tokens": len(primer_ids),
+            "first_sibling_prompt_tokens": len(first_sibling_ids),
             "primer_prompt_sha256": _sha256_text(primer_content),
+            "first_sibling_prompt_sha256": _sha256_text(
+                first_sibling_content),
             "partial_prompt_sha256": _sha256_text(partial_content),
         })
 
     report = {
         "schema": SCHEMA,
-        "version": 1,
+        "version": 2,
         "model_path": str(model_path.resolve()),
         "prompt_set_id": prompt_set_id,
         "cold": cold,

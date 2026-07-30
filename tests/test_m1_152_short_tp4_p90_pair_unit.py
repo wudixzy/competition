@@ -17,6 +17,8 @@ SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(SCRIPTS))
 
+import prefix_boundary_api as PREFIX
+
 SERVICE_PATH = TESTS / "short_tp4_p90_funnel_service.py"
 SERVICE_SPEC = importlib.util.spec_from_file_location(
     "short_tp4_p90_funnel_service", SERVICE_PATH)
@@ -49,13 +51,35 @@ assert PROMPT_CHECK_SPEC.loader is not None
 sys.modules[PROMPT_CHECK_SPEC.name] = PROMPT_CHECK
 PROMPT_CHECK_SPEC.loader.exec_module(PROMPT_CHECK)
 
-CONTRACT_PATH = ROOT / "quality" / "short_tp4_p90_pair.v2.json"
+CONTRACT_PATH = ROOT / "quality" / "short_tp4_p90_pair.v3.json"
 CONTRACT = json.loads(CONTRACT_PATH.read_text(encoding="ascii"))
 CONTRACT_SHA = hashlib.sha256(CONTRACT_PATH.read_bytes()).hexdigest()
 
 
 def digest(label: str) -> str:
     return hashlib.sha256(label.encode("ascii")).hexdigest()
+
+
+class FakeTokenizer:
+    def __init__(self) -> None:
+        self._vocabulary: dict[str, int] = {}
+
+    def apply_chat_template(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+        enable_thinking: bool,
+    ) -> list[int]:
+        assert tokenize
+        assert add_generation_prompt
+        assert not enable_thinking
+        words = ["<bos>", *messages[0]["content"].split(), "<assistant>"]
+        return [
+            self._vocabulary.setdefault(word, len(self._vocabulary) + 1)
+            for word in words
+        ]
 
 
 def response(
@@ -118,6 +142,8 @@ def measurement(selector: str, *, speedup: float = 1.0) -> dict:
             "shared_tokens_before_block_rounding": context + 7,
             "repetition": 0,
             "primer_prompt_sha256": digest(f"shared:primer:{target}"),
+            "first_sibling_prompt_sha256": digest(
+                f"shared:first-sibling:{target}"),
             "partial_prompt_sha256": digest(f"shared:partial:{target}"),
             "primer": response(
                 context + 128,
@@ -125,6 +151,13 @@ def measurement(selector: str, *, speedup: float = 1.0) -> dict:
                 completion_tokens=1,
                 ttft_s=0.5,
                 output_label=f"{selector}:primer:{target}",
+            ),
+            "first_sibling": response(
+                target,
+                cached_tokens=0,
+                completion_tokens=1,
+                ttft_s=ttft + 0.5,
+                output_label=f"{selector}:first-sibling:{target}",
             ),
             "partial": response(
                 target,
@@ -142,6 +175,8 @@ def measurement(selector: str, *, speedup: float = 1.0) -> dict:
             ),
         })
     cold_ttfts = [case["cold"]["ttft_s"] for case in cold_cases]
+    branch_admission_ttfts = [
+        case["first_sibling"]["ttft_s"] for case in partial_cases]
     partial_ttfts = [
         case["partial"]["ttft_s"] for case in partial_cases]
     warm_ttfts = (
@@ -150,7 +185,7 @@ def measurement(selector: str, *, speedup: float = 1.0) -> dict:
     )
     value = {
         "schema": SERVICE.SCHEMA,
-        "version": 2,
+        "version": 3,
         "run_id": f"run-{selector}",
         "prompt_set_id": "shared-pair",
         "selector": selector,
@@ -165,6 +200,8 @@ def measurement(selector: str, *, speedup: float = 1.0) -> dict:
         "cold_cases": cold_cases,
         "partial_cases": partial_cases,
         "cold_ttft_median_s": statistics.median(cold_ttfts),
+        "branch_admission_ttft_median_s": statistics.median(
+            branch_admission_ttfts),
         "partial_ttft_median_s": statistics.median(partial_ttfts),
         "uncached_ttft_p90_s": SERVICE._percentile(
             cold_ttfts + partial_ttfts, 90.0),
@@ -208,7 +245,7 @@ def status(selector: str, measurement_sha: str) -> dict:
     artifacts["measurement.json"] = measurement_sha
     return {
         "schema": QUALIFIER.RUNNER_SCHEMA,
-        "version": 2,
+        "version": 3,
         "qualified": True,
         "returncode": 0,
         "terminal_stage": "complete",
@@ -279,10 +316,40 @@ def qualify_pair(control: dict, candidate: dict) -> dict:
 
 class M1152ShortTp4P90PairTest(unittest.TestCase):
 
+    def test_three_sibling_builder_preserves_exact_shared_block(self):
+        tokenizer = FakeTokenizer()
+        primer, first_sibling, subsequent_sibling, shared, total = (
+            PREFIX.build_admission_boundary_prompts(
+                tokenizer,
+                block_context_len=32,
+                prefix_query_len=32,
+                block_size=16,
+                run_id="unit",
+            )
+        )
+        encoded = [
+            PREFIX.encode_chat(tokenizer, content)
+            for content in (primer, first_sibling, subsequent_sibling)
+        ]
+        self.assertEqual(len(encoded[1]), total)
+        self.assertEqual(len(encoded[2]), total)
+        self.assertEqual(shared // 16 * 16, 32)
+        self.assertEqual(
+            min(
+                PREFIX.common_prefix_len(encoded[0], encoded[1]),
+                PREFIX.common_prefix_len(encoded[0], encoded[2]),
+                PREFIX.common_prefix_len(encoded[1], encoded[2]),
+            )
+            // 16
+            * 16,
+            32,
+        )
+        self.assertNotEqual(first_sibling, subsequent_sibling)
+
     def test_cpu_prompt_construction_report_checks_exact_boundaries(self):
         value = {
             "schema": PROMPT_CHECK.SCHEMA,
-            "version": 1,
+            "version": 2,
             "cold": [
                 {
                     "target_prompt_tokens": target,
@@ -304,7 +371,10 @@ class M1152ShortTp4P90PairTest(unittest.TestCase):
                     "residual_prefill_tokens": (
                         SERVICE.PARTIAL_RESIDUAL_TOKENS),
                     "primer_prompt_tokens": target,
+                    "first_sibling_prompt_tokens": target,
                     "primer_prompt_sha256": digest(f"primer:{target}"),
+                    "first_sibling_prompt_sha256": digest(
+                        f"first-sibling:{target}"),
                     "partial_prompt_sha256": digest(f"partial:{target}"),
                 }
                 for target in SERVICE.PARTIAL_TARGETS
@@ -329,12 +399,17 @@ class M1152ShortTp4P90PairTest(unittest.TestCase):
         value = measurement("control")
         self.assertTrue(value["qualified"], value["reasons"])
 
-    def test_service_hard_gate_rejects_partial_state_or_output_mismatch(self):
+    def test_service_hard_gate_requires_admit_then_partial_restore(self):
         value = measurement("control")
+        value["partial_cases"][0]["first_sibling"]["cached_tokens"] = 16
         value["partial_cases"][0]["partial"]["cached_tokens"] = 0
         value["partial_cases"][1]["warm"]["output_sha256"] = digest("wrong")
         result = SERVICE.evaluate(value)
         self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "first sibling was incorrectly reported as reusable" in reason
+            for reason in result["reasons"]
+        ))
         self.assertTrue(any(
             "partial cached-token boundary differs" in reason
             for reason in result["reasons"]

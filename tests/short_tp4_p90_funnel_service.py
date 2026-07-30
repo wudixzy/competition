@@ -16,7 +16,7 @@ from bench_fused_prefill_service import _percentile, _post_stream
 from long_context_api import build_exact_prompt
 
 
-SCHEMA = "bi100-short-tp4-p90-funnel-service-v2"
+SCHEMA = "bi100-short-tp4-p90-funnel-service-v3"
 TARGETS = (8192, 16384, 24576, 32768, 49152, 65536)
 PARTIAL_TARGETS = (16384, 32768, 49152, 65536)
 PARTIAL_RESIDUAL_TOKENS = 8192
@@ -122,7 +122,7 @@ def evaluate(report: Any) -> dict[str, Any]:
     partial_cases = report.get("partial_cases")
     if (
         report.get("schema") != SCHEMA
-        or report.get("version") != 2
+        or report.get("version") != 3
         or report.get("targets") != list(TARGETS)
         or report.get("partial_targets") != list(PARTIAL_TARGETS)
         or report.get("partial_residual_tokens")
@@ -183,6 +183,11 @@ def evaluate(report: Any) -> dict[str, Any]:
                 completion_tokens=1,
             )
             or not _response_ok(
+                case.get("first_sibling"),
+                prompt_tokens=expected_target,
+                completion_tokens=1,
+            )
+            or not _response_ok(
                 case.get("partial"),
                 prompt_tokens=expected_target,
                 completion_tokens=MAX_TOKENS,
@@ -196,10 +201,14 @@ def evaluate(report: Any) -> dict[str, Any]:
             reasons.append(f"{label}: response contract differs")
             continue
         primer = case["primer"]
+        first_sibling = case["first_sibling"]
         partial = case["partial"]
         warm = case["warm"]
         if primer["cached_tokens"] != 0:
             reasons.append(f"{label}: primer was unexpectedly cached")
+        if first_sibling["cached_tokens"] != 0:
+            reasons.append(
+                f"{label}: first sibling was incorrectly reported as reusable")
         if not (
             context_tokens - 2 * BLOCK_SIZE
             <= partial["cached_tokens"]
@@ -216,7 +225,7 @@ def evaluate(report: Any) -> dict[str, Any]:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     from transformers import AutoTokenizer
-    from prefix_boundary_api import build_boundary_prompts
+    from prefix_boundary_api import build_admission_boundary_prompts
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_path,
@@ -247,8 +256,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     partial_cases = []
     for target in PARTIAL_TARGETS:
         context_tokens = target - PARTIAL_RESIDUAL_TOKENS
-        primer_content, partial_content, shared_tokens, total_tokens = (
-            build_boundary_prompts(
+        (
+            primer_content,
+            first_sibling_content,
+            partial_content,
+            shared_tokens,
+            total_tokens,
+        ) = (
+            build_admission_boundary_prompts(
                 tokenizer,
                 context_tokens,
                 PARTIAL_RESIDUAL_TOKENS - 1,
@@ -259,6 +274,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         primer = _post_stream(
             args.base,
             _payload(primer_content, 1),
+            args.timeout_s,
+            tokenizer,
+        )
+        first_sibling = _post_stream(
+            args.base,
+            _payload(first_sibling_content, 1),
             args.timeout_s,
             tokenizer,
         )
@@ -275,14 +296,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "repetition": 0,
             "primer_prompt_sha256": hashlib.sha256(
                 primer_content.encode("utf-8")).hexdigest(),
+            "first_sibling_prompt_sha256": hashlib.sha256(
+                first_sibling_content.encode("utf-8")).hexdigest(),
             "partial_prompt_sha256": hashlib.sha256(
                 partial_content.encode("utf-8")).hexdigest(),
             "primer": primer,
+            "first_sibling": first_sibling,
             "partial": partial,
             "warm": warm,
         })
 
     cold_ttfts = [case["cold"]["ttft_s"] for case in cold_cases]
+    branch_admission_ttfts = [
+        case["first_sibling"]["ttft_s"] for case in partial_cases]
     partial_ttfts = [
         case["partial"]["ttft_s"] for case in partial_cases]
     warm_ttfts = (
@@ -291,7 +317,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     report = {
         "schema": SCHEMA,
-        "version": 2,
+        "version": 3,
         "run_id": args.run_id,
         "prompt_set_id": args.prompt_set_id,
         "selector": args.selector,
@@ -306,6 +332,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "cold_cases": cold_cases,
         "partial_cases": partial_cases,
         "cold_ttft_median_s": statistics.median(cold_ttfts),
+        "branch_admission_ttft_median_s": statistics.median(
+            branch_admission_ttfts),
         "partial_ttft_median_s": statistics.median(partial_ttfts),
         "uncached_ttft_p90_s": _percentile(
             cold_ttfts + partial_ttfts, 90.0),
@@ -378,6 +406,8 @@ def main() -> int:
         "selector": args.selector,
         "elapsed_s": report["elapsed_s"],
         "cold_ttft_median_s": report["cold_ttft_median_s"],
+        "branch_admission_ttft_median_s": report[
+            "branch_admission_ttft_median_s"],
         "partial_ttft_median_s": report["partial_ttft_median_s"],
         "uncached_ttft_p90_s": report["uncached_ttft_p90_s"],
         "reasons": report["reasons"],

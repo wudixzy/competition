@@ -17,12 +17,12 @@ from bench_fused_prefill_service import _percentile
 import short_tp4_p90_funnel_service as service
 
 
-CONTRACT_SCHEMA = "bi100-short-tp4-p90-pair-contract-v2"
+CONTRACT_SCHEMA = "bi100-short-tp4-p90-pair-contract-v3"
 CONTRACT_SHA256 = (
-    "cc8dbf3af68a30c9192d5633767aca6a1264115915263c23917c49cb3ed60cc7"
+    "991da440f7b4f64c624fecf49f57fc4f5b38b1c0cda9539b7fcb7f2dcc51a30e"
 )
-RUNNER_SCHEMA = "bi100-m1-152-short-tp4-p90-screen-runner-v2"
-RESULT_SCHEMA = "bi100-m1-152-short-tp4-p90-pair-qualification-v2"
+RUNNER_SCHEMA = "bi100-m1-152-short-tp4-p90-screen-runner-v3"
+RESULT_SCHEMA = "bi100-m1-152-short-tp4-p90-pair-qualification-v3"
 REQUIRED_GATES = {
     "postflight_before", "preflight_before", "runtime_identity",
     "service_startup", "request_matrix", "dispatch",
@@ -117,7 +117,7 @@ def _validate_contract(
     value = _mapping(contract)
     expected = {
         "schema": CONTRACT_SCHEMA,
-        "version": 2,
+        "version": 3,
         "frozen_date": "2026-07-30",
         "scope": {
             "model": "Qwen3.6-35B-A3B",
@@ -130,6 +130,10 @@ def _validate_contract(
             "cold_target_prompt_tokens": list(service.TARGETS),
             "partial_target_prompt_tokens": list(service.PARTIAL_TARGETS),
             "partial_residual_tokens": service.PARTIAL_RESIDUAL_TOKENS,
+            "partial_sequence": (
+                "primer_cold_first_sibling_effective_miss_"
+                "subsequent_sibling_partial_hit_then_exact_warm"
+            ),
             "repetitions_per_shape": service.REPETITIONS,
             "max_tokens": service.MAX_TOKENS,
             "temperature": 0,
@@ -150,6 +154,8 @@ def _validate_contract(
             "same_arm_cold_warm_exact": True,
             "same_arm_partial_warm_exact": True,
             "cold_cached_tokens": 0,
+            "admission64_first_sibling_cached_tokens": 0,
+            "admission64_subsequent_sibling_partial_hit": True,
             "warm_cached_token_slack": 32,
             "partial_cached_token_slack": 32,
             "candidate_dispatch_required": True,
@@ -166,6 +172,7 @@ def _validate_contract(
             "maximum_individual_uncached_ttft_regression_fraction": 0.1,
             "maximum_warm_median_regression_seconds": 0.25,
             "maximum_warm_individual_regression_seconds": 0.5,
+            "branch_admission_ttft_role": "diagnostic_only",
             "cross_arm_output_identity_role": "diagnostic_only",
         },
         "authorization": {
@@ -218,7 +225,7 @@ def _validate_status(
     )
     if (
         value.get("schema") != RUNNER_SCHEMA
-        or value.get("version") != 2
+        or value.get("version") != 3
         or value.get("qualified") is not True
         or value.get("returncode") != 0
         or value.get("terminal_stage") != "complete"
@@ -302,6 +309,10 @@ def _validate_measurement(
         return value
 
     cold = [case["cold"]["ttft_s"] for case in value["cold_cases"]]
+    branch_admission = [
+        case["first_sibling"]["ttft_s"]
+        for case in value["partial_cases"]
+    ]
     partial = [
         case["partial"]["ttft_s"] for case in value["partial_cases"]]
     warm = (
@@ -310,6 +321,8 @@ def _validate_measurement(
     )
     expected_scalars = {
         "cold_ttft_median_s": statistics.median(cold),
+        "branch_admission_ttft_median_s": statistics.median(
+            branch_admission),
         "partial_ttft_median_s": statistics.median(partial),
         "uncached_ttft_p90_s": _percentile(cold + partial, 90.0),
         "warm_ttft_median_s": statistics.median(warm),
@@ -463,6 +476,8 @@ def qualify(
             if (
                 left.get("primer_prompt_sha256")
                 == right.get("primer_prompt_sha256")
+                and left.get("first_sibling_prompt_sha256")
+                == right.get("first_sibling_prompt_sha256")
                 and left.get("partial_prompt_sha256")
                 == right.get("partial_prompt_sha256")
             ):
@@ -597,7 +612,7 @@ def qualify(
     qualified = not invalid_reasons and not performance_reasons
     return {
         "schema": RESULT_SCHEMA,
-        "version": 2,
+        "version": 3,
         "qualified": qualified,
         "invalid_reasons": invalid_reasons,
         "performance_reasons": performance_reasons,

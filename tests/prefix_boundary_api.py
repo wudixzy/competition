@@ -9,8 +9,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from transformers import AutoTokenizer
-
 
 Json = dict[str, Any]
 
@@ -92,6 +90,74 @@ def build_boundary_prompts(
     return first, second, shared, len(second_ids)
 
 
+def build_admission_boundary_prompts(
+    tokenizer: Any,
+    block_context_len: int,
+    prefix_query_len: int,
+    block_size: int,
+    run_id: str,
+) -> tuple[str, str, str, int, int]:
+    """Build A/B/C siblings for sparse recurrent-state admission.
+
+    The first B sibling observes an existing raw KV branch and admits the
+    missing recurrent state. The subsequent C sibling can then restore that
+    state and execute exactly ``prefix_query_len + 1`` residual tokens.
+    """
+    primer, first_sibling, _, target_total = build_boundary_prompts(
+        tokenizer,
+        block_context_len,
+        prefix_query_len,
+        block_size,
+        run_id,
+    )
+    marker = "\nBranch B."
+    if first_sibling.count(marker) != 1:
+        raise RuntimeError("could not recover the shared branch prompt")
+    common = first_sibling.split(marker, 1)[0]
+
+    low = 0
+    high = prefix_query_len * 3 + 256
+    subsequent_sibling = ""
+    while low <= high:
+        suffix_count = (low + high) // 2
+        candidate = common + "\nBranch C." + (" c" * suffix_count)
+        count = len(encode_chat(tokenizer, candidate))
+        if count == target_total:
+            subsequent_sibling = candidate
+            break
+        if count < target_total:
+            low = suffix_count + 1
+        else:
+            high = suffix_count - 1
+    if not subsequent_sibling:
+        raise RuntimeError(
+            f"could not construct third sibling with {target_total} tokens")
+
+    encoded = [
+        encode_chat(tokenizer, content)
+        for content in (primer, first_sibling, subsequent_sibling)
+    ]
+    shared = min(
+        common_prefix_len(encoded[0], encoded[1]),
+        common_prefix_len(encoded[0], encoded[2]),
+        common_prefix_len(encoded[1], encoded[2]),
+    )
+    cached = shared // block_size * block_size
+    if cached != block_context_len:
+        raise RuntimeError(
+            f"constructed three-sibling prefix {cached}, "
+            f"expected {block_context_len}")
+    if len(encoded[1]) != target_total or len(encoded[2]) != target_total:
+        raise RuntimeError("sibling prompt lengths differ")
+    return (
+        primer,
+        first_sibling,
+        subsequent_sibling,
+        shared,
+        target_total,
+    )
+
+
 def post_chat(base: str, content: str, max_tokens: int, timeout_s: float) -> Json:
     payload = {
         "model": "llm",
@@ -147,6 +213,8 @@ def assert_equivalent(first: Json, second: Json) -> None:
 
 
 def main() -> int:
+    from transformers import AutoTokenizer
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument(
