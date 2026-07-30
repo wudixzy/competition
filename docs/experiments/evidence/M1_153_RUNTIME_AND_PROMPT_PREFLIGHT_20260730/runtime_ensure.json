@@ -1,0 +1,13 @@
+{
+  "cache_hit": false,
+  "elapsed_s": 8.740106742829084,
+  "qualified": true,
+  "runtime_install_report": "/root/bi100-runtime-cache/a0c70d480f00ea43728f2d1d9e8063f7da93ee6b/install.json",
+  "runtime_root": "/root/bi100-runtime-cache/a0c70d480f00ea43728f2d1d9e8063f7da93ee6b",
+  "runtime_site_packages": "/root/bi100-runtime-cache/a0c70d480f00ea43728f2d1d9e8063f7da93ee6b/site-packages",
+  "runtime_tree_sha256": "3a89b9eec39792ac5fb4577ab6b148b1319f5ae1a40b4ca76b869ff39cd57631",
+  "schema": "bi100-runtime-overlay-cache-v1",
+  "source_revision": "a0c70d480f00ea43728f2d1d9e8063f7da93ee6b",
+  "source_tree_clean": true,
+  "version": 1
+}

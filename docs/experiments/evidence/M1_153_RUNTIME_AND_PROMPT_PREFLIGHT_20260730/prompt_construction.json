@@ -1,0 +1,95 @@
+{
+  "cold": [
+    {
+      "actual_prompt_tokens": 8192,
+      "prompt_sha256": "5ec602372eef97fc631a237649d1aa5665ebde694619cab160e8b3e1d3791227",
+      "target_prompt_tokens": 8192
+    },
+    {
+      "actual_prompt_tokens": 16384,
+      "prompt_sha256": "c613da9926953b21e59eaf3083807acef9ba318eb3efbcf9efcd7ef0b7774129",
+      "target_prompt_tokens": 16384
+    },
+    {
+      "actual_prompt_tokens": 24576,
+      "prompt_sha256": "6d47b1cc50418d4cf090c3be6af66e7d5f4daed2a5cef400ce863d0be728f34c",
+      "target_prompt_tokens": 24576
+    },
+    {
+      "actual_prompt_tokens": 32768,
+      "prompt_sha256": "bad05ef04d3040866fd26fad820827ba66642d4fa3be9ce608c5506e5f6a3d2b",
+      "target_prompt_tokens": 32768
+    },
+    {
+      "actual_prompt_tokens": 49152,
+      "prompt_sha256": "453ba6b18c7666c07b0c5709fe90208c8d2d717f03f49b54875130e827d8fb8d",
+      "target_prompt_tokens": 49152
+    },
+    {
+      "actual_prompt_tokens": 65536,
+      "prompt_sha256": "5454ed0dbde663a9ca7b50ba10b440dbff63b054ab8523e3cfe4afab668350da",
+      "target_prompt_tokens": 65536
+    }
+  ],
+  "evaluation": {
+    "qualified": true,
+    "reasons": []
+  },
+  "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+  "partial": [
+    {
+      "actual_prompt_tokens": 16384,
+      "block_context_tokens": 8192,
+      "cached_prefix_tokens": 8192,
+      "partial_prompt_sha256": "f923ed90f92d56479505acb2b6bb1897da205fd4357de93cf02b27f659b73c5c",
+      "primer_prompt_sha256": "1d255e1758eabadf2a44dd640323396662bd68057825fd578ab97483e41eb083",
+      "primer_prompt_tokens": 8588,
+      "residual_prefill_tokens": 8192,
+      "shared_tokens_before_rounding": 8193,
+      "target_prompt_tokens": 16384
+    },
+    {
+      "actual_prompt_tokens": 32768,
+      "block_context_tokens": 24576,
+      "cached_prefix_tokens": 24576,
+      "partial_prompt_sha256": "a0c84560aed853dd5f7044b3c60ba0aab79550e0373bf028f1e76b7291b1565f",
+      "primer_prompt_sha256": "351784d9337df93b31d850fe4e363d9d1d221a02fe04db1f0a248f554bf0aa52",
+      "primer_prompt_tokens": 24972,
+      "residual_prefill_tokens": 8192,
+      "shared_tokens_before_rounding": 24577,
+      "target_prompt_tokens": 32768
+    },
+    {
+      "actual_prompt_tokens": 49152,
+      "block_context_tokens": 40960,
+      "cached_prefix_tokens": 40960,
+      "partial_prompt_sha256": "c82316125e1bd4bd385451b3b362894bb1a4afce6e1ad04898729c66dc15aaa1",
+      "primer_prompt_sha256": "159060e34b6e4ca9b9f4d942d297551f0750fae04240412f9d51f65bb972450f",
+      "primer_prompt_tokens": 41356,
+      "residual_prefill_tokens": 8192,
+      "shared_tokens_before_rounding": 40961,
+      "target_prompt_tokens": 49152
+    },
+    {
+      "actual_prompt_tokens": 65536,
+      "block_context_tokens": 57344,
+      "cached_prefix_tokens": 57344,
+      "partial_prompt_sha256": "b11c6ecc6ce0e25f49af1367f5209c922a664dbc2d1c7f24038a98ea25b278c9",
+      "primer_prompt_sha256": "e92a97f7efbc8b4db1881ffc16920acfffa5ef5227f9d7c84aac66e126b5ff75",
+      "primer_prompt_tokens": 57740,
+      "residual_prefill_tokens": 8192,
+      "shared_tokens_before_rounding": 57345,
+      "target_prompt_tokens": 65536
+    }
+  ],
+  "privacy": {
+    "credentials_recorded": false,
+    "prompts_recorded": false,
+    "token_ids_recorded": false
+  },
+  "prompt_set_id": "m1-152-tokenizer-smoke-v1",
+  "qualified": true,
+  "reasons": [],
+  "schema": "bi100-m1-152-tokenizer-construction-smoke-v1",
+  "version": 1
+}
