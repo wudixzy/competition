@@ -70,6 +70,12 @@ class M1160IxinferFmhaProbeTest(unittest.TestCase):
             "value_float.repeat_interleave(repeats, dim=2)", RUNNER
         )
         self.assertIn(
+            'choices=("bshd", "bhsd")', RUNNER
+        )
+        self.assertIn(
+            "query_bshd.permute(0, 2, 1, 3).contiguous()", RUNNER
+        )
+        self.assertIn(
             'result["numerical"]["relative_l2"] <= 1e-5', RUNNER
         )
 

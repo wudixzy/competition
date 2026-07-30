@@ -80,6 +80,12 @@ def _reference(query: Any, key: Any, value: Any, causal: bool) -> Any:
     return output.to(query.dtype)
 
 
+def _as_bshd(tensor: Any, layout: str) -> Any:
+    if layout == "bshd":
+        return tensor
+    return tensor.permute(0, 2, 1, 3).contiguous()
+
+
 def _relative_l2(actual: Any, expected: Any) -> float:
     import torch
 
@@ -113,40 +119,39 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
         raise RuntimeError("probe requires one visible healthy BI100")
-    if args.layout != "bshd":
-        raise RuntimeError("the first bounded probe supports only BSHD")
     torch.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
     extension = _load_extension(args.extension, args.expected_sha256)
-    query = (
-        torch.randn(
-            1, args.query_length, args.query_heads, args.head_size,
-            device="cuda", dtype=torch.float32,
-        )
-        .mul_(args.input_scale)
-        .half()
+    query_bshd = torch.randn(
+        1, args.query_length, args.query_heads, args.head_size,
+        device="cuda", dtype=torch.float32,
+    ).mul_(args.input_scale).half()
+    key_bshd = torch.randn(
+        1, args.key_length, args.kv_heads, args.head_size,
+        device="cuda", dtype=torch.float32,
+    ).mul_(args.input_scale).half()
+    value_bshd = torch.randn(
+        1, args.key_length, args.kv_heads, args.head_size,
+        device="cuda", dtype=torch.float32,
+    ).mul_(args.input_scale).half()
+    if args.layout == "bshd":
+        query, key, value = query_bshd, key_bshd, value_bshd
+        layout_code = 1
+    else:
+        query = query_bshd.permute(0, 2, 1, 3).contiguous()
+        key = key_bshd.permute(0, 2, 1, 3).contiguous()
+        value = value_bshd.permute(0, 2, 1, 3).contiguous()
+        layout_code = 0
+    call = lambda: extension.forward(
+        query, key, value, args.causal, layout_code
     )
-    key = (
-        torch.randn(
-            1, args.key_length, args.kv_heads, args.head_size,
-            device="cuda", dtype=torch.float32,
-        )
-        .mul_(args.input_scale)
-        .half()
-    )
-    value = (
-        torch.randn(
-            1, args.key_length, args.kv_heads, args.head_size,
-            device="cuda", dtype=torch.float32,
-        )
-        .mul_(args.input_scale)
-        .half()
-    )
-    call = lambda: extension.forward(query, key, value, args.causal, 1)
     started = time.monotonic()
     timings, actual = _timed_call(call, args.trials)
-    reference = _reference(query, key, value, args.causal)
-    difference = actual.float() - reference.float()
+    actual_bshd = _as_bshd(actual, args.layout)
+    reference = _reference(
+        query_bshd, key_bshd, value_bshd, args.causal
+    )
+    difference = actual_bshd.float() - reference.float()
     result = {
         "schema": SCHEMA,
         "version": 1,
@@ -178,10 +183,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "cuda_median_ms": statistics.median(timings),
         },
         "numerical": {
-            "finite": bool(torch.isfinite(actual).all().item()),
-            "relative_l2": _relative_l2(actual, reference),
+            "finite": bool(torch.isfinite(actual_bshd).all().item()),
+            "relative_l2": _relative_l2(actual_bshd, reference),
             "max_abs": float(difference.abs().max().item()),
-            "candidate_norm": float(actual.float().norm().item()),
+            "candidate_norm": float(actual_bshd.float().norm().item()),
             "reference_norm": float(reference.float().norm().item()),
         },
         "elapsed_s": time.monotonic() - started,
@@ -216,7 +221,9 @@ def main() -> int:
     parser.add_argument(
         "--head-size", type=int, choices=(128, 256), default=256
     )
-    parser.add_argument("--layout", choices=("bshd",), default="bshd")
+    parser.add_argument(
+        "--layout", choices=("bshd", "bhsd"), default="bshd"
+    )
     parser.add_argument("--causal", action=argparse.BooleanOptionalAction)
     parser.set_defaults(causal=True)
     parser.add_argument("--input-scale", type=float, default=0.1)
