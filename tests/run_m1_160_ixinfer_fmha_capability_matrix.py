@@ -16,6 +16,24 @@ from typing import Any
 
 SCHEMA = "bi100-m1-160-ixinfer-fmha-capability-matrix-v1"
 STATUS_PATTERN = re.compile(r"CUINFER_STATUS_[A-Z_]+")
+FATAL_PATTERNS = {
+    "cuda_error": re.compile(
+        r"CUDA error|device-side assert", re.IGNORECASE
+    ),
+    "gloo_reset": re.compile(
+        r"Gloo.*(?:reset|failed)|Connection reset by peer",
+        re.IGNORECASE,
+    ),
+    "oom": re.compile(
+        r"out of memory|CUINFER_STATUS_ALLOC_FAILED", re.IGNORECASE
+    ),
+    "segfault": re.compile(
+        r"segmentation fault|SIGSEGV", re.IGNORECASE
+    ),
+    "worker_loss": re.compile(
+        r"worker.*(?:died|lost|exited unexpectedly)", re.IGNORECASE
+    ),
+}
 CASES = (
     {
         "name": "bshd_d128_mha",
@@ -132,6 +150,11 @@ def _run_case(
         stderr = error.stderr or b""
     decoded = stderr.decode("utf-8", "replace")
     statuses = sorted(set(STATUS_PATTERN.findall(decoded)))
+    fatal_category_counts = {
+        category: len(pattern.findall(decoded))
+        for category, pattern in FATAL_PATTERNS.items()
+    }
+    fatal_category_counts["timeout"] = int(timed_out)
     result = {
         "name": case["name"],
         "shape": {
@@ -153,6 +176,7 @@ def _run_case(
         "stdout_sha256": _sha256_bytes(stdout),
         "stderr_sha256": _sha256_bytes(stderr),
         "cuinfer_statuses": statuses,
+        "fatal_category_counts": fatal_category_counts,
     }
     if output.is_file():
         result["result_sha256"] = _sha256(output)
@@ -180,6 +204,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         and row["cuinfer_statuses"] == ["CUINFER_STATUS_BAD_PARAM"]
         for row in rows
     )
+    fatal_category_counts = {
+        category: sum(
+            row["fatal_category_counts"][category] for row in rows
+        )
+        for category in (*FATAL_PATTERNS, "timeout")
+    }
     return {
         "schema": SCHEMA,
         "version": 1,
@@ -194,6 +224,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "all_dispatches_rejected_bad_param": all_bad_param,
             "documented_contract_usable": not all_bad_param,
             "continue_ixinfer_parameter_guessing": False,
+        },
+        "fatal_scan": {
+            "qualified": not any(fatal_category_counts.values()),
+            "category_counts": fatal_category_counts,
+            "raw_messages_recorded": False,
         },
         "authorization": {
             "runtime_overlay_authorized": False,

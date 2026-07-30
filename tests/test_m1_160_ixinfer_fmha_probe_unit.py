@@ -144,6 +144,7 @@ class M1160IxinferFmhaProbeTest(unittest.TestCase):
                 ]
             )
             self.assertEqual(len(result["cases"]), 4)
+            self.assertTrue(result["fatal_scan"]["qualified"])
             for row in result["cases"]:
                 self.assertEqual(
                     row["cuinfer_statuses"],
