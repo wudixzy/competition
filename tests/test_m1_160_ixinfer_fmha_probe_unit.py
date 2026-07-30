@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 from pathlib import Path
+import sys
+import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +19,10 @@ BUILD = (
 ).read_text(encoding="utf-8")
 RUNNER_PATH = ROOT / "tests" / "run_corex_ixinfer_fmha_probe.py"
 RUNNER = RUNNER_PATH.read_text(encoding="utf-8")
+MATRIX_PATH = (
+    ROOT / "tests" / "run_m1_160_ixinfer_fmha_capability_matrix.py"
+)
+MATRIX = MATRIX_PATH.read_text(encoding="utf-8")
 PATCH_OPS = (
     ROOT / "qwen3_6_scripts" / "patch_ops.sh"
 ).read_text(encoding="utf-8")
@@ -22,6 +31,7 @@ PATCH_OPS = (
 class M1160IxinferFmhaProbeTest(unittest.TestCase):
     def test_runner_syntax(self):
         ast.parse(RUNNER, filename=str(RUNNER_PATH))
+        ast.parse(MATRIX, filename=str(MATRIX_PATH))
 
     def test_probe_covers_production_shape_and_one_control(self):
         self.assertIn("head_size == 128 || head_size == 256", SOURCE)
@@ -78,6 +88,70 @@ class M1160IxinferFmhaProbeTest(unittest.TestCase):
         self.assertIn(
             'result["numerical"]["relative_l2"] <= 1e-5', RUNNER
         )
+
+    def test_capability_matrix_is_fixed_and_privacy_safe(self):
+        self.assertIn('"bshd_d128_mha"', MATRIX)
+        self.assertIn('"bshd_d256_mha"', MATRIX)
+        self.assertIn('"bhsd_d128_mha"', MATRIX)
+        self.assertIn('"bshd_d256_gqa_causal"', MATRIX)
+        self.assertIn('"full_stderr_recorded": False', MATRIX)
+        self.assertNotIn('result["stderr"]', MATRIX)
+        self.assertIn('"continue_ixinfer_parameter_guessing": False', MATRIX)
+
+    def test_capability_matrix_classifies_bad_param_without_trace(self):
+        spec = importlib.util.spec_from_file_location(
+            "m1_160_matrix_test", MATRIX_PATH
+        )
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        try:
+            with tempfile.TemporaryDirectory() as name:
+                root = Path(name)
+                probe = root / "probe.py"
+                extension = root / "probe.so"
+                probe.write_text("# probe\n", encoding="ascii")
+                extension.write_bytes(b"extension")
+                expected_sha256 = module._sha256(extension)
+                args = SimpleNamespace(
+                    python="python3",
+                    probe=probe,
+                    extension=extension,
+                    expected_sha256=expected_sha256,
+                    source_revision="a" * 40,
+                    runtime_identity="runtime",
+                    instance="instance",
+                    gpus=[1, 2, 3, 1],
+                    timeout_s=30.0,
+                )
+                failed = SimpleNamespace(
+                    returncode=1,
+                    stdout=b"",
+                    stderr=(
+                        b"cuinferFMHAForwardEx failed with cuinfer status 3 "
+                        b"(CUINFER_STATUS_BAD_PARAM)\nsecret traceback"
+                    ),
+                )
+                with mock.patch.object(
+                    module.subprocess, "run", return_value=failed
+                ):
+                    result = module.run(args)
+            self.assertTrue(
+                result["conclusion"][
+                    "all_dispatches_rejected_bad_param"
+                ]
+            )
+            self.assertEqual(len(result["cases"]), 4)
+            for row in result["cases"]:
+                self.assertEqual(
+                    row["cuinfer_statuses"],
+                    ["CUINFER_STATUS_BAD_PARAM"],
+                )
+                self.assertNotIn("stderr", row)
+        finally:
+            sys.modules.pop(spec.name, None)
 
 
 if __name__ == "__main__":
