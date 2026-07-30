@@ -200,7 +200,8 @@ finish() {
     local preflight_rc=1
     local comparison_rc=1
     local pid pgid
-    trap - EXIT INT TERM
+    trap - EXIT
+    trap '' INT TERM
     set +e
 
     CURRENT_STAGE=scoped_cleanup
@@ -337,6 +338,8 @@ done
 python3 "$ROOT/tests/qualify_fused_prefill_activation_replay.py" \
     "${args[@]}" \
     --contract "$ROOT/quality/experiment_funnel.v1.json" \
+    --numeric-contract \
+    "$ROOT/quality/fused_prefill_numeric_adjudication.v1.json" \
     --profile "$PROFILE" --out "$RUN_ROOT/qualification.json" \
     > "$RUN_ROOT/qualification.stdout" \
     2> "$RUN_ROOT/qualification.stderr"
