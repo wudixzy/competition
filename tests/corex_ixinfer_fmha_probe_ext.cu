@@ -129,8 +129,10 @@ torch::Tensor ixinfer_fmha_forward(
               "query head count must be divisible by KV head count");
   TORCH_CHECK(key.size(3) == head_size && value.size(3) == head_size,
               "head sizes must match");
-  TORCH_CHECK(head_size == 256,
-              "M1-160 probes only the production head size 256");
+  TORCH_CHECK(
+      head_size == 128 || head_size == 256,
+      "M1-160 supports head size 128 as a capability control and "
+      "production head size 256");
 
   c10::cuda::CUDAGuard device_guard(query.device());
   auto output = torch::empty_like(query);

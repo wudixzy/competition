@@ -23,8 +23,12 @@ class M1160IxinferFmhaProbeTest(unittest.TestCase):
     def test_runner_syntax(self):
         ast.parse(RUNNER, filename=str(RUNNER_PATH))
 
-    def test_probe_is_fixed_to_production_attention_shape(self):
-        self.assertIn("head_size == 256", SOURCE)
+    def test_probe_covers_production_shape_and_one_control(self):
+        self.assertIn("head_size == 128 || head_size == 256", SOURCE)
+        self.assertIn(
+            '"--head-size", type=int, choices=(128, 256), default=256',
+            RUNNER,
+        )
         self.assertIn("query_heads % kv_heads == 0", SOURCE)
         self.assertIn("config.kvHeadNum", SOURCE)
         self.assertIn("config.isCausal = causal", SOURCE)

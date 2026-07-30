@@ -213,7 +213,9 @@ def main() -> int:
     parser.add_argument("--key-length", type=int, default=32)
     parser.add_argument("--query-heads", type=int, default=4)
     parser.add_argument("--kv-heads", type=int, default=1)
-    parser.add_argument("--head-size", type=int, default=256)
+    parser.add_argument(
+        "--head-size", type=int, choices=(128, 256), default=256
+    )
     parser.add_argument("--layout", choices=("bshd",), default="bshd")
     parser.add_argument("--causal", action=argparse.BooleanOptionalAction)
     parser.set_defaults(causal=True)
