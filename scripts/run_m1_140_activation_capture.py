@@ -21,6 +21,8 @@ from record_experiment_timeline import append_event, summarize
 
 
 RUNNER_SCHEMA = "bi100-m1-140-activation-capture-runner-v1"
+TERM_GRACE_S = 60.0
+KILL_GRACE_S = 20.0
 SYSTEM_PYTHONPATH = (
     "/usr/local/corex/lib64/python3/dist-packages:"
     "/usr/local/corex/lib/python3/dist-packages"
@@ -109,14 +111,33 @@ def _run_to_files(
         stdout_path.open("wb") as stdout,
         stderr_path.open("wb") as stderr,
     ):
-        result = subprocess.run(
-            wrapped,
-            check=False,
-            stdout=stdout,
-            stderr=stderr,
-            env=environment,
-        )
-    return result.returncode
+        blocked = {signal.SIGTERM, signal.SIGINT}
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+        process: subprocess.Popen[bytes] | None = None
+        starttime: int | None = None
+        try:
+            process = subprocess.Popen(
+                wrapped,
+                stdout=stdout,
+                stderr=stderr,
+                env=environment,
+                start_new_session=True,
+            )
+            starttime = _read_starttime(process.pid)
+        except BaseException:
+            if process is not None:
+                _stop_process_group(process, starttime)
+            raise
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        try:
+            return process.wait()
+        except BaseException:
+            _stop_process_group(process, starttime)
+            raise
+        finally:
+            if process.poll() is not None:
+                process.wait()
 
 
 def _health() -> bool:
@@ -144,6 +165,49 @@ def _read_starttime(pid: int) -> int:
     value = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
     fields = value[value.rfind(")") + 2:].split()
     return int(fields[19])
+
+
+def _stop_process_group(
+    process: subprocess.Popen[Any],
+    expected_starttime: int | None,
+) -> bool:
+    if process.poll() is not None:
+        process.wait()
+        return True
+    if expected_starttime is not None:
+        try:
+            if _read_starttime(process.pid) != expected_starttime:
+                return False
+        except (FileNotFoundError, ProcessLookupError):
+            process.poll()
+            return True
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        process.poll()
+        return True
+    try:
+        process.wait(timeout=TERM_GRACE_S)
+        return True
+    except subprocess.TimeoutExpired:
+        pass
+    if expected_starttime is not None:
+        try:
+            if _read_starttime(process.pid) != expected_starttime:
+                return False
+        except (FileNotFoundError, ProcessLookupError):
+            process.poll()
+            return True
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        process.poll()
+        return True
+    try:
+        process.wait(timeout=KILL_GRACE_S)
+    except subprocess.TimeoutExpired:
+        return False
+    return True
 
 
 class CaptureRunner:
@@ -676,6 +740,8 @@ def main() -> int:
     runner = CaptureRunner(args)
 
     def _interrupt(signum, _frame):
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         raise KeyboardInterrupt(f"received signal {signum}")
 
     signal.signal(signal.SIGINT, _interrupt)

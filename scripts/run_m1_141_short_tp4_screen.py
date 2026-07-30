@@ -254,6 +254,8 @@ def main() -> int:
     runner = ShortTp4Runner(args)
 
     def _interrupt(signum, _frame):
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         raise KeyboardInterrupt(f"received signal {signum}")
 
     signal.signal(signal.SIGINT, _interrupt)
