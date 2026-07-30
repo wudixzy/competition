@@ -30,6 +30,9 @@ class M1160IxinferFmhaProbeTest(unittest.TestCase):
         self.assertIn("config.isCausal = causal", SOURCE)
         self.assertIn("CUINFER_FATTN_BSHD", SOURCE)
         self.assertIn("cuinferFMHAForwardEx(", SOURCE)
+        self.assertIn("query.stride(sequence_dimension)", SOURCE)
+        self.assertIn("key.stride(sequence_dimension)", SOURCE)
+        self.assertIn("value.stride(sequence_dimension)", SOURCE)
 
     def test_probe_checks_every_cuinfer_call_and_uses_current_stream(self):
         for operation in (

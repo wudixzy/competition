@@ -156,9 +156,12 @@ torch::Tensor ixinfer_fmha_forward(
   config.isAlibi = false;
   config.alibiMode = CUINFER_FATTN_ALIBI_MODE_SUB_KQ;
   config.slopeM = nullptr;
-  config.qStride = checked_int(query.stride(0), "query batch stride");
-  config.kStride = checked_int(key.stride(0), "key batch stride");
-  config.vStride = checked_int(value.stride(0), "value batch stride");
+  config.qStride = checked_int(
+      query.stride(sequence_dimension), "query token stride");
+  config.kStride = checked_int(
+      key.stride(sequence_dimension), "key token stride");
+  config.vStride = checked_int(
+      value.stride(sequence_dimension), "value token stride");
 
   check_cuinfer(
       cuinferFMHAForwardEx(
