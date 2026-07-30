@@ -227,16 +227,27 @@ def run_checks(root: Path = ROOT) -> list[dict[str, object]]:
         ]:
             if fragment not in text:
                 raise ValueError(f"Dockerfile missing: {fragment}")
-        api_overlay_copy = (
-            'cp ./api_server.py '
-            '"${VLLM_ROOT}/entrypoints/openai/api_server.py"'
-        )
-        if api_overlay_copy not in patch_ops:
+        overlay_copies = {
+            "protocol.py": (
+                'cp ./protocol.py '
+                '"${VLLM_ROOT}/entrypoints/openai/protocol.py"'
+            ),
+            "serving_chat.py": (
+                'cp ./serving_chat.py '
+                '"${VLLM_ROOT}/entrypoints/openai/serving_chat.py"'
+            ),
+            "api_server.py": (
+                'cp ./api_server.py '
+                '"${VLLM_ROOT}/entrypoints/openai/api_server.py"'
+            ),
+        }
+        for name, fragment in overlay_copies.items():
+            if fragment not in patch_ops:
+                raise ValueError(
+                    f"runtime patch entrypoint does not install {name}")
+        if "runtime overlay identity mismatch:" not in patch_ops:
             raise ValueError(
-                "runtime patch entrypoint does not install api_server.py")
-        if "python3 - ./api_server.py" not in patch_ops:
-            raise ValueError(
-                "runtime patch entrypoint does not verify api_server.py")
+                "runtime patch entrypoint does not verify API overlays")
         for field in ("validation_field=%s", "validation_type=%s"):
             if field not in api_server:
                 raise ValueError(

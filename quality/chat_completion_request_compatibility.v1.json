@@ -1,0 +1,109 @@
+{
+  "schema": "bi100-chat-completion-request-compatibility-v1",
+  "version": 1,
+  "strict_extra_policy": "forbid",
+  "upstream_reference": {
+    "project": "vllm-project/vllm",
+    "tag": "v0.8.5",
+    "commit": "ba41cc90e8ef7f236347b2f1599eec2cbb9e1f0d",
+    "path": "vllm/entrypoints/openai/protocol.py",
+    "sha256": "41035c9a6fb42af1e78049511008f29ff0009bf97ca94284fe774d78a9929937",
+    "url": "https://github.com/vllm-project/vllm/blob/v0.8.5/vllm/entrypoints/openai/protocol.py"
+  },
+  "upstream_reference_top_level_fields": [
+    "messages",
+    "model",
+    "frequency_penalty",
+    "logit_bias",
+    "logprobs",
+    "top_logprobs",
+    "max_tokens",
+    "max_completion_tokens",
+    "n",
+    "presence_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "stream",
+    "stream_options",
+    "temperature",
+    "top_p",
+    "tools",
+    "tool_choice",
+    "parallel_tool_calls",
+    "user",
+    "best_of",
+    "use_beam_search",
+    "top_k",
+    "min_p",
+    "repetition_penalty",
+    "length_penalty",
+    "stop_token_ids",
+    "include_stop_str_in_output",
+    "ignore_eos",
+    "min_tokens",
+    "skip_special_tokens",
+    "spaces_between_special_tokens",
+    "truncate_prompt_tokens",
+    "prompt_logprobs",
+    "echo",
+    "add_generation_prompt",
+    "continue_final_message",
+    "add_special_tokens",
+    "documents",
+    "chat_template",
+    "chat_template_kwargs",
+    "mm_processor_kwargs",
+    "guided_json",
+    "guided_regex",
+    "guided_choice",
+    "guided_grammar",
+    "structural_tag",
+    "guided_decoding_backend",
+    "guided_whitespace_pattern",
+    "priority",
+    "request_id",
+    "logits_processors",
+    "return_tokens_as_token_ids"
+  ],
+  "classified_upstream_only_fields": {
+    "logits_processors": "Arbitrary runtime code is not a lossless OpenAI alias.",
+    "mm_processor_kwargs": "Per-request processor mutation is unsupported by the CoreX 0.6.3 path.",
+    "request_id": "The local server owns request ID generation.",
+    "return_tokens_as_token_ids": "This vLLM extension changes response representation.",
+    "structural_tag": "The local guided-decoding backend has no equivalent contract."
+  },
+  "lossless_alias_groups": [
+    {
+      "name": "completion_token_budget",
+      "top_level_fields": [
+        "max_tokens",
+        "max_completion_tokens"
+      ],
+      "precedence": "max_completion_tokens_if_not_none",
+      "internal_target": "SamplingParams.max_tokens",
+      "validation": "reuse_max_tokens_type_and_sampling_boundary_validation"
+    },
+    {
+      "name": "thinking_toggle",
+      "top_level_fields": [
+        "thinking",
+        "chat_template_kwargs"
+      ],
+      "precedence": "thinking_normalizes_enable_thinking",
+      "internal_target": "chat_template_kwargs.enable_thinking",
+      "validation": "existing_explicit_boolean_or_enabled_disabled_contract"
+    }
+  ],
+  "review_required_non_alias_fields": {
+    "function_call": "Deprecated function schema needs explicit tools conversion.",
+    "functions": "Deprecated function schema needs explicit tools conversion.",
+    "max_output_tokens": "Responses API field, not a Chat Completions alias.",
+    "reasoning_effort": "Effort levels cannot be losslessly mapped to the local boolean thinking switch."
+  },
+  "observed_platform_validation": {
+    "field": "max_completion_tokens",
+    "type": "extra_forbidden",
+    "contains_request_values": false
+  }
+}

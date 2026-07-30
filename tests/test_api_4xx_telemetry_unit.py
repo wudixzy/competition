@@ -414,6 +414,39 @@ class Api4xxTelemetryTest(unittest.TestCase):
         self.assertIn("errors=1", line)
         self.assertNotIn("private", line)
 
+    def test_completion_budget_validation_diagnostic_is_bounded_and_safe(self):
+        class CapturingLogger:
+            def __init__(self):
+                self.lines = []
+
+            def warning(self, template, *args):
+                self.lines.append(template % args)
+
+        error = types.SimpleNamespace(
+            body={
+                "messages": [{"role": "user", "content": "private body"}],
+                "max_completion_tokens": "private value",
+            },
+            errors=lambda: [{
+                "loc": ("body", "max_completion_tokens"),
+                "type": "extra_forbidden",
+                "msg": "private error message",
+                "input": "private value",
+            }],
+        )
+        logger = CapturingLogger()
+        self.helper_globals["logger"] = logger
+        request = types.SimpleNamespace(
+            url=types.SimpleNamespace(path="/v1/chat/completions"))
+
+        self.log_request_validation(request, error)
+
+        self.assertEqual(len(logger.lines), 1)
+        line = logger.lines[0]
+        self.assertIn("validation_field=max_completion_tokens", line)
+        self.assertIn("validation_type=extra_forbidden", line)
+        self.assertNotIn("private", line)
+
     def test_runtime_logs_reason_without_raw_error_message(self):
         source = API_SERVER.read_text()
         self.assertIn("[BI100 4XX] endpoint=chat", source)
@@ -451,9 +484,20 @@ class Api4xxTelemetryTest(unittest.TestCase):
             '"${VLLM_ROOT}/entrypoints/openai/api_server.py"',
             patch_ops,
         )
-        self.assertIn("python3 - ./api_server.py", patch_ops)
         self.assertIn(
-            "runtime api_server overlay identity mismatch",
+            'cp ./protocol.py '
+            '"${VLLM_ROOT}/entrypoints/openai/protocol.py"',
+            patch_ops,
+        )
+        self.assertIn(
+            'cp ./serving_chat.py '
+            '"${VLLM_ROOT}/entrypoints/openai/serving_chat.py"',
+            patch_ops,
+        )
+        self.assertIn("runtime overlay identity arguments are incomplete",
+                      patch_ops)
+        self.assertIn(
+            "runtime overlay identity mismatch:",
             patch_ops,
         )
         self.assertIn(

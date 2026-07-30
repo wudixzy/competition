@@ -50,6 +50,10 @@ class _SamplingParams(_Params):
 
     @classmethod
     def from_optional(cls, **kwargs):
+        max_tokens = kwargs.get("max_tokens")
+        if max_tokens is not None and max_tokens < 1:
+            raise ValueError(
+                f"max_tokens must be at least 1, got {max_tokens}.")
         return cls(**kwargs)
 
 
@@ -154,6 +158,122 @@ class ProtocolUnitTest(unittest.TestCase):
     def assert_validation_error(self, **overrides):
         with self.assertRaises(ValidationError):
             self.request(**overrides)
+
+    def test_max_completion_tokens_only_reaches_sampling_budget(self):
+        payload = _base_request()
+        payload.pop("max_tokens")
+        payload["max_completion_tokens"] = 17
+        request = self.protocol.ChatCompletionRequest.model_validate(payload)
+
+        self.assertIsNone(request.max_tokens)
+        self.assertEqual(request.max_completion_tokens, 17)
+        sampling = request.to_sampling_params(default_max_tokens=32)
+        self.assertEqual(sampling.kwargs["max_tokens"], 17)
+
+    def test_legacy_max_tokens_and_default_budget_are_unchanged(self):
+        legacy = self.request(max_tokens=19)
+        self.assertEqual(
+            legacy.to_sampling_params(
+                default_max_tokens=32).kwargs["max_tokens"],
+            19,
+        )
+
+        payload = _base_request()
+        payload.pop("max_tokens")
+        defaulted = self.protocol.ChatCompletionRequest.model_validate(payload)
+        self.assertEqual(
+            defaulted.to_sampling_params(
+                default_max_tokens=32).kwargs["max_tokens"],
+            32,
+        )
+
+    def test_max_completion_tokens_precedes_legacy_field_when_both_exist(self):
+        request = self.request(max_tokens=31, max_completion_tokens=7)
+        sampling = request.to_sampling_params(default_max_tokens=64)
+        beam = request.to_beam_search_params(default_max_tokens=64)
+
+        self.assertEqual(sampling.kwargs["max_tokens"], 7)
+        self.assertEqual(beam.kwargs["max_tokens"], 7)
+
+    def test_completion_budget_is_shared_by_streaming_and_non_streaming(self):
+        expected_output_kinds = {
+            False: _RequestOutputKind.FINAL_ONLY,
+            True: _RequestOutputKind.DELTA,
+        }
+        for stream, expected_kind in expected_output_kinds.items():
+            with self.subTest(stream=stream):
+                request = self.request(
+                    max_tokens=None,
+                    max_completion_tokens=23,
+                    stream=stream,
+                )
+                sampling = request.to_sampling_params(default_max_tokens=64)
+                self.assertEqual(sampling.kwargs["max_tokens"], 23)
+                self.assertEqual(
+                    sampling.kwargs["output_kind"], expected_kind)
+
+    def test_completion_budget_preserves_tools_and_multimodal_messages(self):
+        cases = (
+            {
+                "tools": [_tool()],
+                "tool_choice": "auto",
+            },
+            {
+                "messages": [{
+                    "role": "user",
+                    "content": [{
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/png;base64,AA==",
+                        },
+                    }, {
+                        "type": "text",
+                        "text": "describe",
+                    }],
+                }],
+            },
+        )
+        for overrides in cases:
+            with self.subTest(overrides=tuple(overrides)):
+                request = self.request(
+                    max_tokens=None,
+                    max_completion_tokens=29,
+                    **overrides,
+                )
+                sampling = request.to_sampling_params(default_max_tokens=64)
+                self.assertEqual(sampling.kwargs["max_tokens"], 29)
+
+    def test_both_completion_fields_reuse_type_and_boundary_validation(self):
+        for field in ("max_tokens", "max_completion_tokens"):
+            for value in ("not-an-int", {"value": 8}, 1.5):
+                with self.subTest(field=field, value=value):
+                    self.assert_validation_error(**{field: value})
+            for value in (0, -1):
+                with self.subTest(field=field, value=value):
+                    overrides = {
+                        "max_tokens": None,
+                        "max_completion_tokens": None,
+                        field: value,
+                    }
+                    request = self.request(**overrides)
+                    with self.assertRaisesRegex(
+                            ValueError,
+                            rf"max_tokens must be at least 1, got {value}"):
+                        request.to_sampling_params(default_max_tokens=32)
+
+    def test_zero_max_completion_tokens_does_not_fall_back_to_max_tokens(self):
+        request = self.request(max_tokens=8, max_completion_tokens=0)
+        with self.assertRaisesRegex(
+                ValueError, "max_tokens must be at least 1, got 0"):
+            request.to_sampling_params(default_max_tokens=32)
+
+    def test_unrelated_unknown_field_remains_extra_forbidden(self):
+        with self.assertRaises(ValidationError) as raised:
+            self.request(unknown_completion_budget=8)
+        self.assertEqual(
+            raised.exception.errors(include_url=False)[0]["type"],
+            "extra_forbidden",
+        )
 
     def test_thinking_disabled_variants_normalize_to_chat_template_kwargs(self):
         for thinking in (False, "disabled", {

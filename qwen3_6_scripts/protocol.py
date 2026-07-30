@@ -180,6 +180,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
     logprobs: Optional[bool] = False
     top_logprobs: Optional[int] = 0
     max_tokens: Optional[int] = None
+    # OpenAI deprecated max_tokens in favor of max_completion_tokens. Keep
+    # both fields strict, with the newer field taking precedence when both are
+    # explicitly provided, matching newer vLLM releases.
+    max_completion_tokens: Optional[int] = None
     n: Optional[int] = 1
     presence_penalty: Optional[float] = 0.0
     response_format: Optional[ResponseFormat] = None
@@ -309,11 +313,16 @@ class ChatCompletionRequest(OpenAIBaseModel):
 
     # doc: end-chat-completion-extra-params
 
+    def _effective_max_tokens(self, default_max_tokens: int) -> int:
+        if self.max_completion_tokens is not None:
+            return self.max_completion_tokens
+        if self.max_tokens is not None:
+            return self.max_tokens
+        return default_max_tokens
+
     def to_beam_search_params(self,
                               default_max_tokens: int) -> BeamSearchParams:
-        max_tokens = self.max_tokens
-        if max_tokens is None:
-            max_tokens = default_max_tokens
+        max_tokens = self._effective_max_tokens(default_max_tokens)
 
         n = self.n if self.n is not None else 1
         temperature = self.temperature if self.temperature is not None else 0.0
@@ -327,9 +336,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
         )
 
     def to_sampling_params(self, default_max_tokens: int) -> SamplingParams:
-        max_tokens = self.max_tokens
-        if max_tokens is None:
-            max_tokens = default_max_tokens
+        max_tokens = self._effective_max_tokens(default_max_tokens)
 
         prompt_logprobs = self.prompt_logprobs
         if prompt_logprobs is None and self.echo:

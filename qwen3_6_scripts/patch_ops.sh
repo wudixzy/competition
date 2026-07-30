@@ -233,15 +233,25 @@ cp ./serving_tokenization.py \
     "${VLLM_ROOT}/entrypoints/openai/serving_tokenization.py"
 cp ./api_server.py "${VLLM_ROOT}/entrypoints/openai/api_server.py"
 cp ./chat_utils.py "${VLLM_ROOT}/entrypoints/chat_utils.py"
-python3 - ./api_server.py \
+python3 - \
+        ./protocol.py \
+        "${VLLM_ROOT}/entrypoints/openai/protocol.py" \
+        ./serving_chat.py \
+        "${VLLM_ROOT}/entrypoints/openai/serving_chat.py" \
+        ./api_server.py \
         "${VLLM_ROOT}/entrypoints/openai/api_server.py" <<'PY'
 from pathlib import Path
 import sys
 
-source = Path(sys.argv[1]).read_bytes()
-installed = Path(sys.argv[2]).read_bytes()
-if source != installed:
-    raise SystemExit("runtime api_server overlay identity mismatch")
+paths = sys.argv[1:]
+if len(paths) % 2:
+    raise SystemExit("runtime overlay identity arguments are incomplete")
+for source_name, installed_name in zip(paths[::2], paths[1::2]):
+    source = Path(source_name).read_bytes()
+    installed = Path(installed_name).read_bytes()
+    if source != installed:
+        raise SystemExit(
+            f"runtime overlay identity mismatch: {Path(source_name).name}")
 PY
 
 build_stage "compiling submission Python sources"
