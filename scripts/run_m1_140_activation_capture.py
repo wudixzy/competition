@@ -676,47 +676,32 @@ class CaptureRunner:
         }
         _atomic_json(self.run_root / "runner_status.json", status)
 
-    def run(self) -> int:
-        self.validate()
-        self.prepare()
-        primary_error: BaseException | None = None
+    def retain_error(
+        self,
+        primary_error: BaseException | None,
+        exc: BaseException,
+    ) -> BaseException:
+        if primary_error is None:
+            self.error_type = type(exc).__name__
+            return exc
+        return primary_error
 
-        def retain_error(exc: BaseException) -> None:
-            nonlocal primary_error
-            if primary_error is None:
-                primary_error = exc
-                self.error_type = type(exc).__name__
-
+    def run_postconditions(
+        self,
+        primary_error: BaseException | None,
+    ) -> BaseException | None:
         def run_postcondition(
             name: str,
             action: Callable[[], None],
         ) -> bool:
+            nonlocal primary_error
             try:
                 with self.stage(name):
                     action()
             except BaseException as exc:
-                retain_error(exc)
+                primary_error = self.retain_error(primary_error, exc)
                 return False
             return True
-
-        try:
-            with self.stage("postflight_before"):
-                self.run_postflight("postflight_before")
-            with self.stage("preflight_before"):
-                self.run_preflight("preflight_before")
-            with self.stage("runtime_identity"):
-                self.verify_runtime()
-            with self.stage("service_startup"):
-                self.start_service()
-            with self.stage("capture_requests"):
-                self.run_capture_requests()
-            with self.stage("bank_qualification"):
-                self.qualify_bank()
-            with self.stage("health_after_capture"):
-                if not _health():
-                    raise RuntimeError("service health failed after capture")
-        except BaseException as exc:
-            retain_error(exc)
 
         run_postcondition("scoped_cleanup", self.cleanup_service)
         postflight_ok = run_postcondition(
@@ -744,7 +729,33 @@ class CaptureRunner:
 
         run_postcondition("fatal_scan", require_clean_fatal_scan)
         run_postcondition("source_unchanged", self.source_unchanged)
+        return primary_error
 
+    def run(self) -> int:
+        self.validate()
+        self.prepare()
+        primary_error: BaseException | None = None
+
+        try:
+            with self.stage("postflight_before"):
+                self.run_postflight("postflight_before")
+            with self.stage("preflight_before"):
+                self.run_preflight("preflight_before")
+            with self.stage("runtime_identity"):
+                self.verify_runtime()
+            with self.stage("service_startup"):
+                self.start_service()
+            with self.stage("capture_requests"):
+                self.run_capture_requests()
+            with self.stage("bank_qualification"):
+                self.qualify_bank()
+            with self.stage("health_after_capture"):
+                if not _health():
+                    raise RuntimeError("service health failed after capture")
+        except BaseException as exc:
+            primary_error = self.retain_error(primary_error, exc)
+
+        primary_error = self.run_postconditions(primary_error)
         returncode = 0 if primary_error is None else 1
         self.current_stage = (
             "complete"

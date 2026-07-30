@@ -258,6 +258,10 @@ checks = {
         root / "qwen3_6_scripts/bi100_env.py",
         vllm_root / "bi100_env.py",
     ),
+    "bi100_external_extension": (
+        root / "qwen3_6_scripts/bi100_external_extension.py",
+        vllm_root / "bi100_external_extension.py",
+    ),
     "vllm_model": (
         root / "qwen3_6_scripts/qwen3_5.py",
         vllm_root / "model_executor/models/qwen3_5.py",

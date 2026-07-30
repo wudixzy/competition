@@ -1,0 +1,53 @@
+{
+  "schema": "bi100-short-tp4-pair-contract-v1",
+  "version": 1,
+  "frozen_date": "2026-07-30",
+  "scope": {
+    "model": "Qwen3.6-35B-A3B",
+    "device": "BI100/CoreX",
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144
+  },
+  "matrix": {
+    "target_prompt_tokens": [
+      4096,
+      32768,
+      65536
+    ],
+    "repetitions_per_target": 3,
+    "max_tokens": 8,
+    "temperature": 0,
+    "seed": 20260730,
+    "thinking": false,
+    "stream": true
+  },
+  "identity": {
+    "same_source_revision": true,
+    "same_runtime_identity": true,
+    "same_instance": true,
+    "same_prompt_set": true,
+    "candidate_artifact_must_match_l2": true
+  },
+  "hard_gates": {
+    "both_arms_qualified": true,
+    "same_arm_cold_warm_exact": true,
+    "cold_cached_tokens": 0,
+    "warm_cached_token_slack": 32,
+    "candidate_dispatch_required": true,
+    "control_dispatch_forbidden": true,
+    "finite_metrics": true,
+    "clean_lifecycle": true
+  },
+  "performance_screen": {
+    "maximum_overall_cold_ttft_regression_fraction": 0.05,
+    "maximum_per_target_cold_ttft_regression_fraction": 0.1,
+    "maximum_overall_warm_ttft_regression_fraction": 0.1,
+    "minimum_candidate_improvement_required": false,
+    "cross_arm_output_identity_role": "diagnostic_only"
+  },
+  "authorization": {
+    "long_context_confirmation_on_pass": true,
+    "full_capability_authorized": false,
+    "main_or_yaml_change_authorized": false
+  }
+}

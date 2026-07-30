@@ -605,6 +605,16 @@ def qualify(
         execution_valid
         and not performance_reasons
         and not coverage_reasons)
+    common_identity = (
+        next(iter(identities))
+        if len(identities) == 1
+        else (None, None, None, None)
+    )
+    artifact_identity = (
+        next(iter(artifact_identities))
+        if len(artifact_identities) == 1
+        else (None, None)
+    )
     return {
         "schema": RESULT_SCHEMA,
         "version": 1,
@@ -618,6 +628,19 @@ def qualify(
         "report_count": len(reports),
         "record_count": len(accepted),
         "ranks": sorted(ranks),
+        "capture_source_revision": common_identity[0],
+        "candidate_source_revision": common_identity[1],
+        "runtime_identity": common_identity[2],
+        "instance": common_identity[3],
+        "activation_run_id": (
+            next(iter(bank_run_ids))
+            if len(bank_run_ids) == 1 else None
+        ),
+        "bank_manifest_sha256s": sorted(bank_manifest_shas),
+        "candidate_extension": {
+            "sha256": artifact_identity[0],
+            "size_bytes": artifact_identity[1],
+        },
         "median_candidate_speedup": median_speedup,
         "minimum_case_speedup": minimum_case_speedup,
         "contract_sha256": None,

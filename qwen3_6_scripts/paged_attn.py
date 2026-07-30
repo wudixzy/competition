@@ -11,6 +11,9 @@ import torch
 import traceback
 from vllm import _custom_ops as ops
 from vllm.bi100_env import env_bool, env_int
+from vllm.bi100_external_extension import (
+    load_hashed_private_extension,
+)
 from vllm.bi100_profile import bi100_profile_count, bi100_timer
 
 try:
@@ -18,10 +21,21 @@ try:
 except ImportError:
     _corex_paged_kv_gather = None
 
-try:
-    from vllm import corex_fused_paged_prefill as _corex_fused_paged_prefill
-except ImportError:
-    _corex_fused_paged_prefill = None
+_corex_fused_paged_prefill = load_hashed_private_extension(
+    "corex_fused_paged_prefill",
+    path_environment=(
+        "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION"),
+    sha256_environment=(
+        "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256"),
+    required_callable="forward",
+)
+if _corex_fused_paged_prefill is None:
+    try:
+        from vllm import (
+            corex_fused_paged_prefill as _corex_fused_paged_prefill,
+        )
+    except ImportError:
+        _corex_fused_paged_prefill = None
 
 # from vllm.attention.ops.prefix_prefill import context_attention_fwd
 # NOTE: context_attention_fwd (Triton kernel from prefix_prefill.py) is NOT

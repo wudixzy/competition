@@ -124,6 +124,14 @@ class QualifyActivationReplayTest(unittest.TestCase):
         )
         self.assertTrue(result["stage_qualified"], result)
         self.assertTrue(result["authorization"]["short_tp4_authorized"])
+        self.assertEqual(
+            result["candidate_extension"],
+            {"sha256": "b" * 64, "size_bytes": 1024},
+        )
+        self.assertEqual(result["capture_source_revision"], "a" * 40)
+        self.assertEqual(result["candidate_source_revision"], "c" * 40)
+        self.assertEqual(result["activation_run_id"], "capture")
+        self.assertEqual(len(result["bank_manifest_sha256s"]), 4)
         incomplete = MODULE.qualify(
             [report(rank) for rank in range(4)],
             CONTRACT,

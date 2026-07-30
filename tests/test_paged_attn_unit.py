@@ -71,6 +71,8 @@ def _install_stubs():
 
     env_mod.env_bool = env_bool
     env_mod.env_int = env_int
+    extension_mod = types.ModuleType("vllm.bi100_external_extension")
+    extension_mod.load_hashed_private_extension = lambda *args, **kwargs: None
     profile_mod = types.ModuleType("vllm.bi100_profile")
 
     class _NoopTimer:
@@ -85,12 +87,16 @@ def _install_stubs():
     sys.modules["torch"] = torch_mod
     sys.modules["vllm"] = vllm_mod
     sys.modules["vllm.bi100_env"] = env_mod
+    sys.modules["vllm.bi100_external_extension"] = extension_mod
     sys.modules["vllm.bi100_profile"] = profile_mod
     return torch_mod, vllm_mod
 
 
 def _clear_stubs():
-    for name in ["torch", "vllm", "vllm.bi100_env", "vllm.bi100_profile"]:
+    for name in [
+        "torch", "vllm", "vllm.bi100_env",
+        "vllm.bi100_external_extension", "vllm.bi100_profile",
+    ]:
         sys.modules.pop(name, None)
 
 
@@ -101,6 +107,8 @@ def _load_paged_attn(**env):
             BI100_FORCE_PAGED_ATTN_V2=env.get("force_v2"),
             BI100_PAGED_ATTN_DIAGNOSTICS=env.get("diagnostics"),
             BI100_ATTN_COREX_FUSED_PREFILL=env.get("fused_prefill"),
+            BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION=None,
+            BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256=None,
             BI100_ATTN_COREX_FUSED_PREFILL_SHADOW=env.get("shadow"),
             BI100_ATTN_COREX_FUSED_PREFILL_SHADOW_REPORT_DIR=(
                 env.get("shadow_report_dir")),
@@ -130,7 +138,10 @@ def _load_paged_attn(**env):
     ):
         old_modules = {
             name: sys.modules.get(name)
-            for name in ["torch", "vllm", "vllm.bi100_env", "vllm.bi100_profile"]
+            for name in [
+                "torch", "vllm", "vllm.bi100_env",
+                "vllm.bi100_external_extension", "vllm.bi100_profile",
+            ]
         }
         _clear_stubs()
         _install_stubs()
