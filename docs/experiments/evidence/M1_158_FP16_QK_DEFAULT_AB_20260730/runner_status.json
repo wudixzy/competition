@@ -1,0 +1,112 @@
+{
+  "authorization": {
+    "long_context_or_quality_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "short_tp4_screen_authorized": false
+  },
+  "baseline_extension_sha256": "f94ad8abb554c6b2eb1a972ad7198cc4d57d36a166afe3e9b869985dda543236",
+  "candidate_extension_sha256": "36e043f138aa87c635178e4aa6a30af710b87c3f3d7c2a3f1838fc0e365bd368",
+  "cell_processes": [
+    {
+      "case": "p90_total_16k_q8176",
+      "elapsed_s": 5.614455971866846,
+      "gpu": 1,
+      "returncode": 1
+    },
+    {
+      "case": "p90_total_32k_q8176",
+      "elapsed_s": 5.613844469189644,
+      "gpu": 2,
+      "returncode": 1
+    },
+    {
+      "case": "p90_total_64k_q8176",
+      "elapsed_s": 5.613268941640854,
+      "gpu": 3,
+      "returncode": 1
+    }
+  ],
+  "fixed_cases": [
+    "p90_total_16k_q8176",
+    "p90_total_32k_q8176",
+    "p90_total_64k_q8176"
+  ],
+  "gpus": [
+    1,
+    2,
+    3
+  ],
+  "instance": "ssh-73ca29ba",
+  "lifecycle": {
+    "after_preflight_qualified": true,
+    "cleanup_reaped": true,
+    "fatal_scan_qualified": true,
+    "postflight_qualified": true,
+    "preflight_comparison_qualified": true,
+    "source_unchanged": true
+  },
+  "privacy": {
+    "credentials_recorded": false,
+    "model_outputs_recorded": false,
+    "prompts_recorded": false,
+    "raw_tensors_recorded": false
+  },
+  "qualified": false,
+  "schema": "bi100-m1-157-fp16-qk-ab-runner-v1",
+  "screen": {
+    "authorization": {
+      "long_context_or_quality_authorized": false,
+      "main_or_yaml_change_authorized": false,
+      "short_tp4_screen_authorized": false
+    },
+    "median_speedup": 1.165879339809783,
+    "minimum_speedup": 1.154297125750411,
+    "qualified": false,
+    "reasons": [
+      "p90_total_16k_q8176: cell gate failed",
+      "p90_total_32k_q8176: cell gate failed",
+      "p90_total_64k_q8176: cell gate failed"
+    ],
+    "rows": [
+      {
+        "baseline_cuda_median_ms": 72.12824249267578,
+        "candidate_baseline_output_l2": 1.8176344106334515e-05,
+        "candidate_cuda_median_ms": 62.48672103881836,
+        "candidate_reference_lse_l2": 3.6596636901939214e-08,
+        "candidate_reference_output_l2": 1.811127636679007e-05,
+        "case": "p90_total_16k_q8176",
+        "gpu": 1,
+        "qualified": false,
+        "speedup": 1.154297125750411
+      },
+      {
+        "baseline_cuda_median_ms": 135.98243713378906,
+        "candidate_baseline_output_l2": 1.8735592608580256e-05,
+        "candidate_cuda_median_ms": 116.63508605957031,
+        "candidate_reference_lse_l2": 3.424277870705738e-08,
+        "candidate_reference_output_l2": 1.875580009024733e-05,
+        "case": "p90_total_32k_q8176",
+        "gpu": 2,
+        "qualified": false,
+        "speedup": 1.165879339809783
+      },
+      {
+        "baseline_cuda_median_ms": 263.8150634765625,
+        "candidate_baseline_output_l2": 1.930454162769422e-05,
+        "candidate_cuda_median_ms": 225.06214904785156,
+        "candidate_reference_lse_l2": 3.2496497975939535e-08,
+        "candidate_reference_output_l2": 1.9296238181328853e-05,
+        "case": "p90_total_64k_q8176",
+        "gpu": 3,
+        "qualified": false,
+        "speedup": 1.172187613922017
+      }
+    ],
+    "schema": "bi100-m1-157-fp16-qk-ab-screen-v1",
+    "version": 1
+  },
+  "source_revision": "57effecd29d057f220bdf1e9a54175b9c04a7cba",
+  "terminal_stage": "paired_operator_cells",
+  "version": 1,
+  "wall_s": 17.984910901635885
+}

@@ -1,0 +1,13 @@
+{
+  "category_counts": {
+    "corex": 0,
+    "cuda_error": 0,
+    "gloo_reset": 0,
+    "oom": 0,
+    "segfault": 0,
+    "timeout": 0,
+    "worker_loss": 0
+  },
+  "qualified": true,
+  "raw_messages_recorded": false
+}
