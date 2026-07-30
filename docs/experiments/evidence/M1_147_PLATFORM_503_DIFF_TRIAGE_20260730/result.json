@@ -1,0 +1,126 @@
+{
+  "schema": "bi100-m1-147-platform-503-diff-triage-v1",
+  "version": 1,
+  "date": "2026-07-30",
+  "platform_result": {
+    "source_revision": "503fa7c670b6172d9a3e2912166e78317f5e289f",
+    "file_sha256": "28deb18cca59a2bbec76388871572d8c933bffe498f1f0a5284ba294b363ee06",
+    "attempted_requests": 881,
+    "successful_requests": 631,
+    "error_requests": 250,
+    "functional_passed": 50,
+    "functional_total": 52,
+    "failed_functional_ids": [
+      "n_2",
+      "multimodal_base64"
+    ],
+    "tool_request_4xx": 226,
+    "image_request_4xx": 22,
+    "multi_system_request_4xx": 7,
+    "cache_hit_rate": 0.54,
+    "output_tps_p10": 4.42,
+    "output_tps_mean": 12.90,
+    "ttft_p90_ms": 27487.67,
+    "timed_out": true
+  },
+  "comparison": {
+    "current_main_revision": "fb0084fc778e62c26d6a6e108b87dc027ae2ed79",
+    "commit_count": 61,
+    "computility_run_identical": true,
+    "computility_run_sha256": "8d67b1c4cce264429e95a1cfeeb5342a01a6a97f843094fcef552b2c79690fc4",
+    "default_fused_prefill_enabled": false,
+    "gdn_capture_boundary_fix": {
+      "commit": "2014b7e2451e10a0a4c9a51cade794d81f996901",
+      "default_path_fix": true
+    },
+    "request_validation_diagnostics": {
+      "commit": "a534a05",
+      "behavior_relaxed": false
+    },
+    "named_tool_stream_identity_fix": {
+      "commit": "f39fd69",
+      "request_validation_changed": false
+    },
+    "n2_runtime_fix_already_in_platform_revision": true,
+    "base64_post_platform_runtime_fix_found": false,
+    "tool_schema_fix_already_in_platform_revision": true
+  },
+  "current_diagnostic": {
+    "run_id": "m1-147-fb0084f-diagnostic-gpu1",
+    "source_revision": "fb0084fc778e62c26d6a6e108b87dc027ae2ed79",
+    "instance": "ssh-73ca29ba",
+    "physical_gpus": [
+      1
+    ],
+    "tensor_parallel_size": 1,
+    "full_model_evaluated": false,
+    "performance_evaluated": false,
+    "runtime_tree_sha256": "8eadda8dc05cb46d917fb574da13be441b736e5ec57b86ef70a4defc29b0f60b",
+    "overall_qualified": false,
+    "quality_contract": {
+      "passed": 10,
+      "total": 10,
+      "n2_qualified": true,
+      "n2_http_status": 200
+    },
+    "compatibility": {
+      "passed": 8,
+      "total": 8,
+      "base64_one_image_http_status": 200,
+      "base64_replay_exact": true,
+      "over_limit_image_http_status": 400,
+      "post_4xx_health_http_status": 200
+    },
+    "tool_http": {
+      "passed": 13,
+      "total": 13
+    },
+    "tool_choice": {
+      "qualified": false,
+      "valid_request_http_200_count": 6,
+      "valid_request_count": 6,
+      "failure_scope": "four-layer diagnostic model output semantics",
+      "request_validation_4xx_reproduced": false
+    },
+    "prefix_cache": {
+      "partial_cached_tokens": 8176,
+      "warm_cached_tokens": 11600
+    },
+    "lifecycle": {
+      "cleanup_qualified": true,
+      "preflight_comparison_qualified": true,
+      "fatal_scan_clean": true,
+      "timeout_scan_clean": true
+    },
+    "artifact_sha256": {
+      "status.json": "1e30706cc453f5294a84ca38d8114a0caf8276bc5cb1cfe16f077a0305769761",
+      "quality_contract_gate.json": "8b56dce43890e1669a2d0c9a4111aafb7ab9ece50fa0698be8e0c12eb89d3a41",
+      "compat_http_gate.json": "efe8d2450b0971c23c9053db414a63af73ec9fe676151ff4a9308cfc62285225",
+      "tool_http_gate.json": "a1d1eeac41d9d27cf7b4889bded2bc75d16a6afa3008f4f350973b7384c5b68c",
+      "tool_choice_http_gate.json": "45d98b50ccc6a65a491512a08df8fa6c5881bda6e0ae2374c51d93a96547f87b",
+      "prefix_boundary.json": "d733e7e0e729bb5398dbc388a2146930fdcfd1940f28001a9dbdd99927b5df59",
+      "preflight_comparison.json": "5d09848a67c056014aa0410eae6484b0cc273a9a6366e1633410244632e650c9",
+      "cleanup_status.json": "fa78ead2df50e4a0c91545d6285c47a61fe7aea7b6fe5ab904c3bdb2d2041d79"
+    }
+  },
+  "conclusions": {
+    "n2_current_shape_works": true,
+    "base64_current_shape_works": true,
+    "post_platform_fix_proven_for_n2": false,
+    "post_platform_fix_proven_for_base64": false,
+    "platform_tool_4xx_resolved": false,
+    "gdn_capture_boundary_resolved": true,
+    "fused_prefill_gain_applies_to_current_main": false
+  },
+  "authorization": {
+    "full_model_quality_authorized": false,
+    "tp4_performance_authorized": false,
+    "main_or_yaml_change_authorized": false
+  },
+  "privacy": {
+    "contains_raw_requests": false,
+    "contains_raw_model_outputs": false,
+    "contains_token_ids": false,
+    "contains_credentials": false
+  }
+}
