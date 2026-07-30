@@ -305,10 +305,13 @@ class AnalyzerTest(unittest.TestCase):
         ]
         direct = sim.simulate(
             records, 16, policy="admission64", restore_mode="direct")
+        hybrid64 = sim.simulate(
+            records, 16, policy="admission64", restore_mode="hybrid64")
         chunk64 = sim.simulate(
             records, 16, policy="admission64", restore_mode="chunk64")
 
         self.assertEqual(direct["usable_gdn_state_avoided_tokens"], 112)
+        self.assertEqual(hybrid64["usable_gdn_state_avoided_tokens"], 112)
         self.assertEqual(chunk64["usable_gdn_state_avoided_tokens"], 64)
         self.assertEqual(chunk64["gdn_restore_mode"], "chunk64")
 

@@ -50,6 +50,7 @@ try:
         key_at_strict_boundary,
         keys_from_block_hashes,
         gdn_restore_alignment,
+        restore_key_is_eligible,
         strict_prefix_block_count,
         tail_capture_key,
     )
@@ -135,6 +136,30 @@ except (ModuleNotFoundError, ImportError, OSError):
         if block_count <= 0:
             return None
         return (block_count, block_hashes[block_count - 1])
+
+    def restore_key_is_eligible(
+            key: GdnPrefixKey, prompt_tokens: int, block_size: int,
+            restore_mode: str, replay_alignment: int,
+            direct_final_key: GdnPrefixKey | None = None) -> bool:
+        boundary_tokens = key[0] * block_size
+        remaining_tokens = prompt_tokens - boundary_tokens
+        if remaining_tokens <= 0:
+            return False
+        if restore_mode == "direct":
+            return remaining_tokens >= GDN_DIRECT_MIN_REPLAY_TOKENS
+        if restore_mode == "hybrid64":
+            return (
+                remaining_tokens >= GDN_DIRECT_MIN_REPLAY_TOKENS
+                and replay_alignment > 0
+                and (boundary_tokens % replay_alignment == 0
+                     or key == direct_final_key)
+            )
+        if restore_mode not in {"chunk64", "aligned"}:
+            raise ValueError(f"unknown GDN restore mode: {restore_mode}")
+        return (
+            replay_alignment > 0
+            and boundary_tokens % replay_alignment == 0
+        )
 
     def capture_points_for_step(targets: Iterable[GdnPrefixKey],
                                physical_context_tokens: int,
@@ -677,11 +702,17 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
         live_keys = keys_from_block_hashes(prompt_hashes[:effective_hit])
         restore_alignment = gdn_restore_alignment(
             restore_mode, block_size, gdn_chunk_tokens)
-        if restore_mode != "direct":
-            live_keys = [
-                key for key in live_keys
-                if key[0] * block_size % restore_alignment == 0
-            ]
+        direct_final_key = final_capture_key(
+            hashes, prompt_tokens, block_size, "direct", block_size)
+        live_keys = [
+            key for key in live_keys
+            if restore_key_is_eligible(
+                key, prompt_tokens, block_size, restore_mode,
+                restore_alignment,
+                direct_final_key=(
+                    direct_final_key
+                    if restore_mode == "hybrid64" else None))
+        ]
         restore_key = gdn_policy.select_restore(live_keys, len(live_keys))
         request_avoided_tokens = (
             restore_key[0] * block_size if restore_key is not None else 0)
