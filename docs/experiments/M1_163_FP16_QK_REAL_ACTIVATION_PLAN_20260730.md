@@ -4,7 +4,8 @@
 
 The contract, runtime-compatible builder, external-extension binding, and
 TP4 shadow runner are frozen before observing M1-163 real-activation results.
-GPU0 on `ssh-73ca29ba` remains unhealthy, so execution is pending. No formal
+The runtime-compatible artifact passed a single-GPU loader smoke. GPU0 on
+`ssh-73ca29ba` remains unhealthy, so TP4 execution is pending. No formal
 default, YAML, `main`, or production change is authorized.
 
 ## Input evidence
@@ -44,6 +45,23 @@ passes both path and digest to the existing fail-closed external loader.
 
 The old `legacy` and `calibrated` shadow modes are unchanged. The new
 `calibrated_v2` report uses a distinct schema and contract version.
+
+## Runtime loader smoke
+
+At source `3e2ccd4dd5f2f19d998e1582efa751c8a89f6728`, the runtime-compatible
+artifact had SHA-256
+`94ea8fc3862eae7900bfe0decc913774e06a303767feb1ded16592a0b35ce0f3`.
+It loaded under the production module name on physical GPU1 and completed the
+fixed 65K-context, 8176-query shape in `251.898 ms`, `2.672x` faster than the
+PyTorch reference. Output and LSE were finite; LSE relative L2 was
+`3.196e-8`.
+
+The legacy fixed-`1e-5` evaluator reported the known
+candidate-versus-rounded-reference difference (`1.965e-5`). This smoke is
+therefore loader and execution evidence only. The M1-162 calibrated screen,
+not this legacy evaluator, provides the synthetic numeric adjudication.
+Privacy-safe evidence is in
+`docs/experiments/evidence/M1_163_FP16_QK_RUNTIME_SMOKE_20260730`.
 
 ## Pending execution
 
