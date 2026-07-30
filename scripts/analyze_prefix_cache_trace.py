@@ -4,6 +4,7 @@
 import argparse
 import base64
 import hashlib
+import heapq
 import json
 import math
 import os
@@ -529,21 +530,38 @@ def read(paths: Sequence[str]) -> list[Dict[str, Any]]:
     return records
 
 
+def _eviction_entry(
+        block: bytes, last: Dict[bytes, Tuple[int, int]],
+        frequency: Dict[bytes, int], candidate: bool) -> tuple:
+    tick, depth = last.get(block, (-1, -1))
+    if candidate:
+        return (frequency[block], tick, -depth, block)
+    return (tick, -depth, block)
+
+
+def _index_eviction_candidate(
+        heap: list[tuple], block: bytes,
+        last: Dict[bytes, Tuple[int, int]],
+        frequency: Dict[bytes, int], candidate: bool) -> None:
+    heapq.heappush(
+        heap, _eviction_entry(block, last, frequency, candidate))
+
+
 def _evict(cache, last: Dict[bytes, Tuple[int, int]], frequency: Dict[bytes, int],
-          candidate: bool) -> bytes:
+          candidate: bool, heap: list[tuple]) -> bytes:
     if not cache:
         raise ValueError("request cannot fit in cache")
-    if candidate:
-        victim = min(cache, key=lambda block: (
-            frequency[block], last.get(block, (-1, -1))[0],
-            -last.get(block, (-1, -1))[1], block))
-    else:
-        victim = min(cache, key=lambda block: (
-            last.get(block, (-1, -1))[0],
-            -last.get(block, (-1, -1))[1], block))
-    cache.remove(victim)
-    last.pop(victim, None)
-    return victim
+    while heap:
+        entry = heapq.heappop(heap)
+        victim = entry[-1]
+        if victim not in cache:
+            continue
+        if entry != _eviction_entry(victim, last, frequency, candidate):
+            continue
+        cache.remove(victim)
+        last.pop(victim, None)
+        return victim
+    raise RuntimeError("eviction index lost a resident cache block")
 
 
 def _qualification_trace(records: Sequence[Dict[str, Any]],
@@ -580,6 +598,7 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
     cache = set()
     last = {}
     frequency = defaultdict(int)
+    eviction_heap: list[tuple] = []
     cpu_cache: OrderedDict[bytes, None] = OrderedDict()
     hits = total = hit_tokens = gap_blocks = 0
     cpu_hits = h2d_blocks = d2h_blocks = d2h_skipped_blocks = 0
@@ -650,7 +669,8 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
         def allocate_slot() -> None:
             nonlocal active_blocks
             if len(cache) + active_blocks >= capacity:
-                victim = _evict(cache, last, frequency, candidate)
+                victim = _evict(
+                    cache, last, frequency, candidate, eviction_heap)
                 demote(victim)
             active_blocks += 1
 
@@ -826,6 +846,8 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
             raise ValueError("free replay exceeded cache capacity")
         for depth, block in enumerate(hashes):
             last[block] = (tick, depth)
+            _index_eviction_candidate(
+                eviction_heap, block, last, frequency, candidate)
 
     total_prompt_tokens = sum(record["prompt_tokens"] for record in records)
     return {

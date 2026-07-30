@@ -153,6 +153,41 @@ def decoded(values, capacity=4, ordinal=1, prompt_tokens=None, total_tokens=None
 
 
 class AnalyzerTest(unittest.TestCase):
+    def test_heap_eviction_matches_scan_order_with_stale_entries(self):
+        blocks = [digest(value) for value in range(1, 9)]
+        for candidate in (False, True):
+            cache = set(blocks)
+            last = {
+                block: (index // 3, index % 3)
+                for index, block in enumerate(blocks)
+            }
+            frequency = {
+                block: (index * 7) % 5
+                for index, block in enumerate(blocks)
+            }
+            heap = []
+            for block in blocks:
+                sim._index_eviction_candidate(
+                    heap, block, last, frequency, candidate)
+
+            # Leave one stale entry in the heap and index its new state.
+            last[blocks[2]] = (9, 4)
+            frequency[blocks[2]] = 11
+            sim._index_eviction_candidate(
+                heap, blocks[2], last, frequency, candidate)
+
+            while cache:
+                if candidate:
+                    expected = min(cache, key=lambda block: (
+                        frequency[block], last[block][0],
+                        -last[block][1], block))
+                else:
+                    expected = min(cache, key=lambda block: (
+                        last[block][0], -last[block][1], block))
+                self.assertEqual(
+                    sim._evict(cache, last, frequency, candidate, heap),
+                    expected)
+
     def test_version_4_and_hash_encoding_required(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
