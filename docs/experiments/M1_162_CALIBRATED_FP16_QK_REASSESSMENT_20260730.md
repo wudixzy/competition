@@ -2,10 +2,10 @@
 
 ## Status
 
-The fresh-seed synthetic gate and three-GPU runner are frozen before remote
-execution. No result is claimed yet. A pass can authorize only real-activation
-capture/replay; it cannot authorize TP4 service, quality, `main`, YAML, or
-production changes.
+The frozen fresh-seed screen passed on `ssh-73ca29ba` at source
+`eea631a68beaa66a2b4e84346cef2912d5f59e8f`. It authorizes only
+real-activation capture/replay; it does not authorize TP4 service, quality,
+`main`, YAML, or production changes.
 
 ## Why this route is reopened
 
@@ -56,6 +56,31 @@ remain fail-closed.
 The runner reuses the M1-157 lifecycle implementation but changes its cell
 script, report identities, runtime label, and next-stage authorization. The
 original M1-157 defaults and historical evidence are unchanged.
+
+## Observed result
+
+The baseline extension SHA-256 was
+`ad4ea7707bb2f2bfe04e07a7ad5fd58a647232be70a3056937a0d738c8254bff`.
+The freshly compiled FP16-QK candidate SHA-256 was
+`36e043f138aa87c635178e4aa6a30af710b87c3f3d7c2a3f1838fc0e365bd368`.
+
+| Case | Baseline ms | Candidate ms | Speedup | Relative-L2 rounding multiple | Max-abs rounding multiple |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| P90 16K | 72.086 | 62.487 | 1.154x | 1.000007 | 1.000000 |
+| P90 32K | 136.016 | 116.734 | 1.165x | 1.000007 | 1.000733 |
+| P90 64K | 263.829 | 225.356 | 1.171x | 1.000008 | 1.000000 |
+
+Candidate-versus-rounded-reference relative L2 remained
+`1.880e-5` to `1.943e-5`, reproducing the legacy rejection. Against the same
+FP32 reference, however, candidate error was within `1.000008x` of ordinary
+FP16 rounding error, and the maximum-absolute-error ratio was at most
+`1.000733x`. Candidate LSE relative L2 was at most `3.662e-8`; all repeated
+outputs and LSE values were bit-exact.
+
+The median speedup was `1.165x` and the minimum was `1.154x`. All three cells,
+scoped cleanup, postflight, repeated preflight, memory comparison, fatal scan,
+and source-identity checks passed. The complete privacy-safe evidence is in
+`docs/experiments/evidence/M1_162_CALIBRATED_FP16_QK_20260730`.
 
 ## Promotion boundary
 

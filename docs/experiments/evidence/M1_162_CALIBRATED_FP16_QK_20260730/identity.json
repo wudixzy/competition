@@ -1,0 +1,16 @@
+{
+  "baseline_extension_sha256": "ad4ea7707bb2f2bfe04e07a7ad5fd58a647232be70a3056937a0d738c8254bff",
+  "baseline_source_sha256": "11c387e6012834fe634ffa8d038f7a4bf4ec19fa13ec23779ee1f414037e564b",
+  "candidate_extension_sha256": "36e043f138aa87c635178e4aa6a30af710b87c3f3d7c2a3f1838fc0e365bd368",
+  "candidate_module_name": "corex_fused_paged_prefill_fp16_qk",
+  "candidate_source": "qwen3_6_scripts/corex_fused_paged_prefill_fp16_qk.cu",
+  "candidate_source_sha256": "e5dc6593ccf4840cbcd6115b5c6d09afa3963c0ca5eeec2afe51a0542f6ad7f0",
+  "gpus": [
+    1,
+    2,
+    3
+  ],
+  "instance": "ssh-73ca29ba",
+  "source_branch": "",
+  "source_revision": "eea631a68beaa66a2b4e84346cef2912d5f59e8f"
+}
