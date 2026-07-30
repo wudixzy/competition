@@ -24,7 +24,17 @@ CASES = (
     "p90_total_64k_q8176",
 )
 RUNNER_SCHEMA = "bi100-m1-157-fp16-qk-ab-runner-v1"
+SCREEN_SCHEMA = "bi100-m1-157-fp16-qk-ab-screen-v1"
+RUNTIME_IDENTITY = "corex-3.2.3-m1-157"
 MIN_MEDIAN_SPEEDUP = 1.08
+
+
+def screen_authorization(qualified: bool) -> dict[str, bool]:
+    return {
+        "short_tp4_screen_authorized": qualified,
+        "long_context_or_quality_authorized": False,
+        "main_or_yaml_change_authorized": False,
+    }
 
 
 def _validate_artifact(path: Path) -> tuple[Path, str]:
@@ -84,7 +94,7 @@ def _spawn_cell(
                 "--source-revision",
                 revision,
                 "--runtime-identity",
-                "corex-3.2.3-m1-157",
+                RUNTIME_IDENTITY,
                 "--instance",
                 instance,
                 "--visible-physical-gpu",
@@ -248,18 +258,14 @@ def aggregate(
         )
     qualified = not reasons
     return {
-        "schema": "bi100-m1-157-fp16-qk-ab-screen-v1",
+        "schema": SCREEN_SCHEMA,
         "version": 1,
         "qualified": qualified,
         "reasons": reasons,
         "rows": rows,
         "minimum_speedup": min(speedups) if speedups else None,
         "median_speedup": median_speedup,
-        "authorization": {
-            "short_tp4_screen_authorized": qualified,
-            "long_context_or_quality_authorized": False,
-            "main_or_yaml_change_authorized": False,
-        },
+        "authorization": screen_authorization(qualified),
     }
 
 
@@ -294,11 +300,7 @@ def run(args: argparse.Namespace) -> int:
     screen: dict[str, Any] = {
         "qualified": False,
         "reasons": ["operator screen did not run"],
-        "authorization": {
-            "short_tp4_screen_authorized": False,
-            "long_context_or_quality_authorized": False,
-            "main_or_yaml_change_authorized": False,
-        },
+        "authorization": screen_authorization(False),
     }
     try:
         lifecycle._atomic_json(

@@ -107,7 +107,7 @@ def _update_online(
     running_max.copy_(new_max)
 
 
-def reference_forward(
+def reference_forward_fp32(
     query: Any,
     key_new: Any,
     value_new: Any,
@@ -200,8 +200,6 @@ def reference_forward(
         running_output.div(running_sum.unsqueeze(-1))
         .squeeze(0)
         .permute(1, 0, 2)
-        .to(query.dtype)
-        .contiguous()
     )
     lse = (
         running_max.add(torch.log(running_sum))
@@ -210,6 +208,22 @@ def reference_forward(
         .contiguous()
     )
     return output, lse
+
+
+def reference_forward(
+    query: Any,
+    key_new: Any,
+    value_new: Any,
+    key_cache: Any,
+    value_cache: Any,
+    block_table: Any,
+    context_len: int,
+    scale: float,
+) -> tuple[Any, Any]:
+    output_fp32, lse = reference_forward_fp32(
+        query, key_new, value_new, key_cache, value_cache, block_table,
+        context_len, scale)
+    return output_fp32.to(query.dtype).contiguous(), lse
 
 
 def _load_extension(path: Path, expected_sha256: str) -> tuple[Any, dict[str, Any]]:
@@ -234,10 +248,12 @@ def _load_extension(path: Path, expected_sha256: str) -> tuple[Any, dict[str, An
     }
 
 
-def _make_inputs(context_len: int, query_len: int) -> tuple[Any, ...]:
+def _make_inputs(
+        context_len: int, query_len: int,
+        seed: int = SEED) -> tuple[Any, ...]:
     import torch
 
-    torch.manual_seed(SEED)
+    torch.manual_seed(seed)
     device = torch.device("cuda")
     query = torch.randn(
         (query_len, NUM_QUERY_HEADS, HEAD_DIM),

@@ -1,0 +1,66 @@
+{
+  "schema": "bi100-fused-prefill-numeric-adjudication-v2",
+  "version": 2,
+  "candidate_dtype": "float16",
+  "reference": {
+    "implementation": "same-activation-pytorch-online-softmax",
+    "accumulation_dtype": "float32",
+    "rounded_baseline": "float32-reference-cast-to-float16",
+    "same_input_tensors_required": true
+  },
+  "hard_gates": {
+    "candidate_and_reference_finite": true,
+    "maximum_error_multiple_over_fp16_rounding": 2.0,
+    "ratio_denominator_floor": 1e-12,
+    "maximum_lse_relative_l2": 1e-05,
+    "candidate_repeat_exact": true,
+    "semantic_evidence_may_waive_failure": false
+  },
+  "diagnostic_roles": {
+    "candidate_vs_rounded_relative_l2": "distribution_drift_characterization",
+    "candidate_vs_rounded_max_abs": "distribution_drift_characterization",
+    "cross_arm_output_identity": "autoregressive_trajectory_diagnostic",
+    "fixed_absolute_error": "scale_dependent_diagnostic"
+  },
+  "fresh_synthetic_screen": {
+    "seed_base": 20260730,
+    "context_and_query_tokens": [
+      [
+        8192,
+        8176
+      ],
+      [
+        24576,
+        8176
+      ],
+      [
+        57344,
+        8176
+      ]
+    ],
+    "physical_gpus": [
+      1,
+      2,
+      3
+    ],
+    "minimum_cell_speedup": 0.98,
+    "minimum_median_speedup": 1.08
+  },
+  "layered_decision": {
+    "synthetic_pass_authorizes": "real_activation_capture_replay_only",
+    "real_activation_replay_required": true,
+    "teacher_forced_distribution_required": true,
+    "task_capability_required": true,
+    "tp4_service_performance_required": true,
+    "cache_transparency_required": true
+  },
+  "promotion": {
+    "operator_surface_only": true,
+    "tp4_service_authorized": false,
+    "performance_authorized": false,
+    "capability_authorized": false,
+    "yaml_change_authorized": false,
+    "main_merge_authorized": false,
+    "production_promotion_authorized": false
+  }
+}
