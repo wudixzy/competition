@@ -1,0 +1,54 @@
+{
+  "authorization": {
+    "four_gpu_l1_rerun_authorized": true,
+    "l2_capture_authorized": true,
+    "main_or_yaml_change_authorized": false,
+    "official_score_claim_authorized": false
+  },
+  "full_l1_contract_satisfied": true,
+  "minimum_speedup": 1.9789249123452655,
+  "reasons": [],
+  "rows": [
+    {
+      "case": "production_dense_q8176",
+      "finite": true,
+      "gpu": 0,
+      "lse_relative_l2": 1.910052362195105e-08,
+      "output_max_abs": 0.000244140625,
+      "output_relative_l2": 4.723024988143917e-06,
+      "qualified": true,
+      "speedup": 1.9789249123452655
+    },
+    {
+      "case": "production_65k_q8176",
+      "finite": true,
+      "gpu": 1,
+      "lse_relative_l2": 1.5329777279468642e-08,
+      "output_max_abs": 1.52587890625e-05,
+      "output_relative_l2": 6.174115866839858e-06,
+      "qualified": true,
+      "speedup": 2.2961838470997313
+    },
+    {
+      "case": "production_128k_q8176",
+      "finite": true,
+      "gpu": 2,
+      "lse_relative_l2": 1.508350105065074e-08,
+      "output_max_abs": 7.62939453125e-06,
+      "output_relative_l2": 6.054228405228515e-06,
+      "qualified": true,
+      "speedup": 2.344909983435773
+    },
+    {
+      "case": "production_235k_q5616",
+      "finite": true,
+      "gpu": 3,
+      "lse_relative_l2": 1.6631244573011175e-08,
+      "output_max_abs": 7.62939453125e-06,
+      "output_relative_l2": 6.62467828867105e-06,
+      "qualified": true,
+      "speedup": 2.34907702485265
+    }
+  ],
+  "screen_qualified": true
+}
