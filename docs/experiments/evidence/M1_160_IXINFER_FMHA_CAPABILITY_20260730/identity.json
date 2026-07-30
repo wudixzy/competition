@@ -1,0 +1,17 @@
+{
+  "build_script_sha256": "b5e0f931e9a9a7c5ad0a64f83756f6b380ca12a0d040c9883af82837f3a4e846",
+  "corex_version": "3.2.3",
+  "extension_sha256": "3c83ae9c0bb35096bd41c9bc9be4481710ce234335bcdc3b0ff80589d4b39b5a",
+  "gpus": [
+    1,
+    2,
+    3
+  ],
+  "instance": "ssh-73ca29ba",
+  "libcuinfer_sha256": "465678e6811a0fc3eaf8923c62852e59a19a69f500b9af16e6529c39c36b92a2",
+  "matrix_runner_sha256": "ef2b92108f110dce6275c2c6223c432bc7f8eeb00bf10cdf7ab4ea1b44c202c9",
+  "probe_runner_sha256": "7044a013f462750e4c33c87f8c23da9db47ff2b4efacc3400beaf2681afe278e",
+  "probe_source_sha256": "c0bb78ee90d75037a2269e6a8ba525dca51bc59b39ed0379831789455cacc6da",
+  "runtime_identity": "corex-3.2.3-bare-host",
+  "source_revision": "9a2a87b88f8d450d587b82c073a055fb5742eccc"
+}

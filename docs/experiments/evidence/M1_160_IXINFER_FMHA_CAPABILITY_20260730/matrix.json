@@ -1,0 +1,156 @@
+{
+  "authorization": {
+    "main_or_yaml_change_authorized": false,
+    "runtime_overlay_authorized": false,
+    "tp4_service_authorized": false
+  },
+  "cases": [
+    {
+      "cuinfer_statuses": [
+        "CUINFER_STATUS_BAD_PARAM"
+      ],
+      "fatal_category_counts": {
+        "cuda_error": 0,
+        "gloo_reset": 0,
+        "oom": 0,
+        "segfault": 0,
+        "timeout": 0,
+        "worker_loss": 0
+      },
+      "name": "bshd_d128_mha",
+      "result_written": false,
+      "returncode": 1,
+      "shape": {
+        "causal": false,
+        "head_size": 128,
+        "key_length": 128,
+        "kv_heads": 4,
+        "layout": "bshd",
+        "query_heads": 4,
+        "query_length": 128
+      },
+      "stderr_sha256": "02951649c3a6b986316861f4c05dcbc843413625846dfb51626627e2779cb6b8",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "timed_out": false,
+      "visible_physical_gpu": 1
+    },
+    {
+      "cuinfer_statuses": [
+        "CUINFER_STATUS_BAD_PARAM"
+      ],
+      "fatal_category_counts": {
+        "cuda_error": 0,
+        "gloo_reset": 0,
+        "oom": 0,
+        "segfault": 0,
+        "timeout": 0,
+        "worker_loss": 0
+      },
+      "name": "bshd_d256_mha",
+      "result_written": false,
+      "returncode": 1,
+      "shape": {
+        "causal": false,
+        "head_size": 256,
+        "key_length": 128,
+        "kv_heads": 4,
+        "layout": "bshd",
+        "query_heads": 4,
+        "query_length": 128
+      },
+      "stderr_sha256": "dae76aea11724c13f0abb53a0882cf753d0d84ef711b43349699db2aca769c59",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "timed_out": false,
+      "visible_physical_gpu": 2
+    },
+    {
+      "cuinfer_statuses": [
+        "CUINFER_STATUS_BAD_PARAM"
+      ],
+      "fatal_category_counts": {
+        "cuda_error": 0,
+        "gloo_reset": 0,
+        "oom": 0,
+        "segfault": 0,
+        "timeout": 0,
+        "worker_loss": 0
+      },
+      "name": "bhsd_d128_mha",
+      "result_written": false,
+      "returncode": 1,
+      "shape": {
+        "causal": false,
+        "head_size": 128,
+        "key_length": 128,
+        "kv_heads": 4,
+        "layout": "bhsd",
+        "query_heads": 4,
+        "query_length": 128
+      },
+      "stderr_sha256": "789899be3093a254b03b35157ef15cfd986cfff9083ed2e89a051ec372629cf5",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "timed_out": false,
+      "visible_physical_gpu": 3
+    },
+    {
+      "cuinfer_statuses": [
+        "CUINFER_STATUS_BAD_PARAM"
+      ],
+      "fatal_category_counts": {
+        "cuda_error": 0,
+        "gloo_reset": 0,
+        "oom": 0,
+        "segfault": 0,
+        "timeout": 0,
+        "worker_loss": 0
+      },
+      "name": "bshd_d256_gqa_causal",
+      "result_written": false,
+      "returncode": 1,
+      "shape": {
+        "causal": true,
+        "head_size": 256,
+        "key_length": 32,
+        "kv_heads": 1,
+        "layout": "bshd",
+        "query_heads": 4,
+        "query_length": 16
+      },
+      "stderr_sha256": "bf48b7f2f57ee61597eb608a8572fe9f2d7485451f85daf713b6bf2bd51f9995",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "timed_out": false,
+      "visible_physical_gpu": 1
+    }
+  ],
+  "conclusion": {
+    "all_dispatches_rejected_bad_param": true,
+    "continue_ixinfer_parameter_guessing": false,
+    "documented_contract_usable": false
+  },
+  "extension_sha256": "3c83ae9c0bb35096bd41c9bc9be4481710ce234335bcdc3b0ff80589d4b39b5a",
+  "fatal_scan": {
+    "category_counts": {
+      "cuda_error": 0,
+      "gloo_reset": 0,
+      "oom": 0,
+      "segfault": 0,
+      "timeout": 0,
+      "worker_loss": 0
+    },
+    "qualified": true,
+    "raw_messages_recorded": false
+  },
+  "instance": "ssh-73ca29ba",
+  "privacy": {
+    "credentials_recorded": false,
+    "full_stderr_recorded": false,
+    "model_outputs_recorded": false,
+    "tensor_values_recorded": false
+  },
+  "probe_sha256": "7044a013f462750e4c33c87f8c23da9db47ff2b4efacc3400beaf2681afe278e",
+  "runtime_identity": "corex-3.2.3-bare-host",
+  "schema": "bi100-m1-160-ixinfer-fmha-capability-matrix-v1",
+  "source_revision": "9a2a87b88f8d450d587b82c073a055fb5742eccc",
+  "timeout_s_per_case": 30.0,
+  "version": 1
+}
