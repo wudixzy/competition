@@ -44,8 +44,66 @@ def _contains_multimodal_message(messages: Any) -> bool:
     return False
 
 
+async def _asgi_post_json(
+        app: Any, path: str, payload: dict[str, Any]) -> tuple[int, bytes]:
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    messages: list[dict[str, Any]] = []
+    request_sent = False
+    receive_blocker = asyncio.Event()
+
+    async def receive() -> dict[str, Any]:
+        nonlocal request_sent
+        if not request_sent:
+            request_sent = True
+            return {
+                "type": "http.request",
+                "body": body,
+                "more_body": False,
+            }
+        await receive_blocker.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        messages.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode("ascii"),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"runtime.local"),
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode("ascii")),
+        ],
+        "client": ("127.0.0.1", 12345),
+        "server": ("runtime.local", 80),
+        "state": {},
+        "extensions": {},
+    }
+    await app(scope, receive, send)
+
+    starts = [
+        message for message in messages
+        if message["type"] == "http.response.start"
+    ]
+    if len(starts) != 1:
+        raise RuntimeError(
+            f"expected one ASGI response start, observed {len(starts)}")
+    response_body = b"".join(
+        message.get("body", b"")
+        for message in messages
+        if message["type"] == "http.response.body"
+    )
+    return int(starts[0]["status"]), response_body
+
+
 async def run_probe() -> dict[str, Any]:
-    import httpx
     from vllm.entrypoints.openai import api_server
     from vllm.entrypoints.openai.protocol import (
         ChatCompletionRequest,
@@ -250,43 +308,40 @@ async def run_probe() -> dict[str, Any]:
     ]
 
     observations = []
-    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-    async with httpx.AsyncClient(
-            transport=transport, base_url="http://runtime.local") as client:
-        for case in cases:
-            before = len(records)
-            response = await client.post(
-                "/v1/chat/completions", json=case["payload"])
-            entered = len(records) == before + 1
-            record = records[-1] if entered else None
-            actual_budget = (
-                record.get("sampling_max_tokens")
-                if record is not None else None
-            )
-            matched = (
-                response.status_code == case["expected_status"]
-                and entered == case["expected_enters_serving"]
-                and actual_budget == case["expected_budget"]
-                and response.status_code != 500
-            )
-            observations.append({
-                "name": case["name"],
-                "status_code": response.status_code,
-                "entered_serving": entered,
-                "sampling_max_tokens": actual_budget,
-                "stream": None if record is None else record["stream"],
-                "has_tools": None if record is None else record["has_tools"],
-                "has_multimodal": (
-                    None if record is None else record["has_multimodal"]),
-                "thinking_present": (
-                    None if record is None else record["thinking_present"]),
-                "output_kind": (
-                    None if record is None else record.get("output_kind")),
-                "sampling_error_type": (
-                    None if record is None
-                    else record.get("sampling_error_type")),
-                "matched": matched,
-            })
+    for case in cases:
+        before = len(records)
+        status_code, _ = await _asgi_post_json(
+            app, "/v1/chat/completions", case["payload"])
+        entered = len(records) == before + 1
+        record = records[-1] if entered else None
+        actual_budget = (
+            record.get("sampling_max_tokens")
+            if record is not None else None
+        )
+        matched = (
+            status_code == case["expected_status"]
+            and entered == case["expected_enters_serving"]
+            and actual_budget == case["expected_budget"]
+            and status_code != 500
+        )
+        observations.append({
+            "name": case["name"],
+            "status_code": status_code,
+            "entered_serving": entered,
+            "sampling_max_tokens": actual_budget,
+            "stream": None if record is None else record["stream"],
+            "has_tools": None if record is None else record["has_tools"],
+            "has_multimodal": (
+                None if record is None else record["has_multimodal"]),
+            "thinking_present": (
+                None if record is None else record["thinking_present"]),
+            "output_kind": (
+                None if record is None else record.get("output_kind")),
+            "sampling_error_type": (
+                None if record is None
+                else record.get("sampling_error_type")),
+            "matched": matched,
+        })
 
     protocol_path = Path(
         __import__(

@@ -1,10 +1,21 @@
 import ast
+import asyncio
+import importlib.util
 import pathlib
 import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PROBE = ROOT / "tests" / "probe_max_completion_tokens_runtime.py"
+
+
+def _load_probe():
+    spec = importlib.util.spec_from_file_location(
+        "max_completion_tokens_runtime_probe_unit", PROBE)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 class MaxCompletionTokensRuntimeProbeUnitTest(unittest.TestCase):
@@ -26,7 +37,8 @@ class MaxCompletionTokensRuntimeProbeUnitTest(unittest.TestCase):
             "unrelated_unknown_field",
         ):
             self.assertIn(f'"name": "{case}"', source)
-        self.assertIn("httpx.ASGITransport", source)
+        self.assertIn("_asgi_post_json(", source)
+        self.assertNotIn("import httpx", source)
         self.assertIn("request.to_sampling_params(4096)", source)
         self.assertIn('"synthetic_only": True', source)
 
@@ -37,6 +49,29 @@ class MaxCompletionTokensRuntimeProbeUnitTest(unittest.TestCase):
                       source)
         self.assertNotIn('"messages": request.messages', source)
         self.assertNotIn('"tools": request.tools', source)
+
+    def test_stdlib_asgi_client_posts_json_and_collects_response(self):
+        probe = _load_probe()
+
+        async def app(scope, receive, send):
+            request = await receive()
+            self.assertEqual(scope["path"], "/probe")
+            self.assertIn(b'"value":7', request["body"])
+            await send({
+                "type": "http.response.start",
+                "status": 201,
+                "headers": [],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": b"ok",
+                "more_body": False,
+            })
+
+        status, body = asyncio.run(
+            probe._asgi_post_json(app, "/probe", {"value": 7}))
+        self.assertEqual(status, 201)
+        self.assertEqual(body, b"ok")
 
 
 if __name__ == "__main__":
