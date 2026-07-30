@@ -1,0 +1,67 @@
+{
+  "cleanup_reaped": true,
+  "gpus": [
+    1,
+    2,
+    3
+  ],
+  "matmul_size": 1024,
+  "ok": true,
+  "parallel": true,
+  "results": [
+    {
+      "checksum": 1073741824.0,
+      "device_capability": [
+        7,
+        0
+      ],
+      "device_name": "Iluvatar BI-V100",
+      "free": 34057748480,
+      "gpu": 1,
+      "ok": true,
+      "returncode": 0,
+      "stage": "done",
+      "stderr": "/usr/local/corex/lib64/python3/dist-packages/torch/cuda/__init__.py:51: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.\n  import pynvml  # type: ignore[import]",
+      "subrunner_returncode": 0,
+      "total": 34057748480
+    },
+    {
+      "checksum": 1073741824.0,
+      "device_capability": [
+        7,
+        0
+      ],
+      "device_name": "Iluvatar BI-V100",
+      "free": 34057748480,
+      "gpu": 2,
+      "ok": true,
+      "returncode": 0,
+      "stage": "done",
+      "stderr": "/usr/local/corex/lib64/python3/dist-packages/torch/cuda/__init__.py:51: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.\n  import pynvml  # type: ignore[import]",
+      "subrunner_returncode": 0,
+      "total": 34057748480
+    },
+    {
+      "checksum": 1073741824.0,
+      "device_capability": [
+        7,
+        0
+      ],
+      "device_name": "Iluvatar BI-V100",
+      "free": 34057748480,
+      "gpu": 3,
+      "ok": true,
+      "returncode": 0,
+      "stage": "done",
+      "stderr": "/usr/local/corex/lib64/python3/dist-packages/torch/cuda/__init__.py:51: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.\n  import pynvml  # type: ignore[import]",
+      "subrunner_returncode": 0,
+      "total": 34057748480
+    }
+  ],
+  "runner": "parallel-single-gpu",
+  "runner_timed_out": false,
+  "schema": "bi100-gpu-preflight-v1",
+  "timeout_s": 25.0,
+  "version": 1,
+  "wall_s": 2.011362314224243
+}

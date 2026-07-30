@@ -1,0 +1,24 @@
+{
+  "cells": [
+    {
+      "case": "p90_total_08k_q8176",
+      "elapsed_s": 3.4054896906018257,
+      "gpu": 1,
+      "returncode": 0
+    },
+    {
+      "case": "p90_total_16k_q8176",
+      "elapsed_s": 3.4048829153180122,
+      "gpu": 2,
+      "returncode": 0
+    },
+    {
+      "case": "p90_total_24k_q8176",
+      "elapsed_s": 3.404306508600712,
+      "gpu": 3,
+      "returncode": 0
+    }
+  ],
+  "wall_s": 3.406413607299328,
+  "wave": 0
+}

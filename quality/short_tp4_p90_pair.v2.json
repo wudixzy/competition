@@ -1,0 +1,72 @@
+{
+  "schema": "bi100-short-tp4-p90-pair-contract-v2",
+  "version": 2,
+  "frozen_date": "2026-07-30",
+  "scope": {
+    "model": "Qwen3.6-35B-A3B",
+    "device": "BI100/CoreX",
+    "tensor_parallel_size": 4,
+    "max_model_len": 262144,
+    "role": "development_continuation_screen"
+  },
+  "matrix": {
+    "cold_target_prompt_tokens": [
+      8192,
+      16384,
+      24576,
+      32768,
+      49152,
+      65536
+    ],
+    "partial_target_prompt_tokens": [
+      16384,
+      32768,
+      49152,
+      65536
+    ],
+    "partial_residual_tokens": 8192,
+    "repetitions_per_shape": 1,
+    "max_tokens": 8,
+    "temperature": 0,
+    "seed": 20260730,
+    "thinking": false,
+    "stream": true
+  },
+  "identity": {
+    "same_source_revision": true,
+    "same_runtime_identity": true,
+    "same_instance": true,
+    "same_prompt_set": true,
+    "candidate_artifact_must_match_l2": true,
+    "candidate_artifact_must_match_p90_operator_screen": true
+  },
+  "hard_gates": {
+    "both_arms_qualified": true,
+    "same_arm_cold_warm_exact": true,
+    "same_arm_partial_warm_exact": true,
+    "cold_cached_tokens": 0,
+    "warm_cached_token_slack": 32,
+    "partial_cached_token_slack": 32,
+    "candidate_dispatch_required": true,
+    "control_dispatch_forbidden": true,
+    "finite_metrics": true,
+    "clean_lifecycle": true
+  },
+  "performance_screen": {
+    "minimum_cold_shapes_improved": 4,
+    "minimum_partial_shapes_improved": 3,
+    "minimum_cold_median_speedup": 1.08,
+    "minimum_partial_median_speedup": 1.08,
+    "minimum_uncached_ttft_p90_speedup": 1.08,
+    "maximum_individual_uncached_ttft_regression_fraction": 0.1,
+    "maximum_warm_median_regression_seconds": 0.25,
+    "maximum_warm_individual_regression_seconds": 0.5,
+    "cross_arm_output_identity_role": "diagnostic_only"
+  },
+  "authorization": {
+    "long_context_confirmation_on_pass": true,
+    "full_capability_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "official_score_claim_authorized": false
+  }
+}
