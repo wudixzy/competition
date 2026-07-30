@@ -276,7 +276,7 @@ cublasStatus_t qk_batched(
       &beta,
       scores, CUDA_R_32F, kTileTokens,
       static_cast<long long>(query_len) * kTileTokens,
-      kNumQueryHeads, CUDA_R_32F, CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+      kNumQueryHeads, CUDA_R_32F, CUBLAS_GEMM_DEFAULT);
 }
 
 cublasStatus_t pv_batched(

@@ -12,7 +12,7 @@ BUILD = (
 ).read_text(encoding="utf-8")
 
 
-class M1157Fp16QkSourceTest(unittest.TestCase):
+class M1158Fp16QkDefaultSourceTest(unittest.TestCase):
     def test_qk_uses_fp16_inputs_with_fp32_accumulation(self):
         match = re.search(
             r"cublasStatus_t qk_batched\(.*?\n\}", SOURCE, re.DOTALL
@@ -22,7 +22,8 @@ class M1157Fp16QkSourceTest(unittest.TestCase):
         self.assertIn("cublasGemmStridedBatchedEx", qk)
         self.assertEqual(qk.count("CUDA_R_16F"), 2)
         self.assertEqual(qk.count("CUDA_R_32F"), 2)
-        self.assertIn("CUBLAS_GEMM_DEFAULT_TENSOR_OP", qk)
+        self.assertIn("CUBLAS_GEMM_DEFAULT", qk)
+        self.assertNotIn("CUBLAS_GEMM_DEFAULT_TENSOR_OP", qk)
         self.assertNotIn("cublasSgemmStridedBatched", qk)
 
     def test_candidate_keeps_pv_and_online_softmax_in_fp32(self):
