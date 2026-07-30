@@ -175,6 +175,7 @@ class GdnPrefixSchedulerIntegrationTest(unittest.TestCase):
         scheduler._gdn_replay_alignment = scheduler.scheduler_config.max_num_batched_tokens
         scheduler._gdn_request_restore_keys = {}
         scheduler._gdn_request_capture_targets = {}
+        scheduler._gdn_request_capture_reasons = {}
         scheduler._passed_delay = lambda now: True
         scheduler._get_num_new_tokens = lambda *args, **kwargs: 8192
         scheduler._get_prompt_limit = lambda seq_group: 262144
