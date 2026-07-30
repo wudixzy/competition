@@ -141,6 +141,8 @@ bash ./install_prebuilt_corex.sh "${VLLM_ROOT}"
 
 build_stage "installing BI100 runtime modules"
 cp ./bi100_env.py "${VLLM_ROOT}/bi100_env.py"
+cp ./bi100_external_extension.py \
+    "${VLLM_ROOT}/bi100_external_extension.py"
 cp ./bi100_profile.py "${VLLM_ROOT}/bi100_profile.py"
 cp ./block_major_kv_cache.py "${VLLM_ROOT}/block_major_kv_cache.py"
 cp ./gdn_prefix.py "${VLLM_ROOT}/gdn_prefix.py"

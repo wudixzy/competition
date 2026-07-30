@@ -70,6 +70,7 @@ required=(
     vllm/model_executor/layers/sampler.py
     qwen3_6_scripts/patch_ops.sh
     qwen3_6_scripts/patch_utils.py
+    qwen3_6_scripts/bi100_external_extension.py
     qwen3_6_scripts/block_major_kv_cache.py
     qwen3_6_scripts/serving_tokenization.py
     qwen3_6_scripts/patch_block_major_cache_engine.py

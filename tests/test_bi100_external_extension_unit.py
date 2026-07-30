@@ -23,6 +23,23 @@ SHA_ENV = "BI100_TEST_EXTERNAL_EXTENSION_SHA256"
 
 class Bi100ExternalExtensionTest(unittest.TestCase):
 
+    def test_runtime_patch_installs_the_hash_bound_loader(self):
+        patch_ops = (
+            ROOT / "qwen3_6_scripts" / "patch_ops.sh"
+        ).read_text(encoding="utf-8")
+        installer = (
+            ROOT / "scripts" / "install_bi100_bare_host_runtime.sh"
+        ).read_text(encoding="ascii")
+        self.assertIn(
+            'cp ./bi100_external_extension.py \\\n'
+            '    "${VLLM_ROOT}/bi100_external_extension.py"',
+            patch_ops,
+        )
+        self.assertIn(
+            "    qwen3_6_scripts/bi100_external_extension.py\n",
+            installer,
+        )
+
     def _load(self):
         return MODULE.load_hashed_private_extension(
             "bi100_test_external_extension",
