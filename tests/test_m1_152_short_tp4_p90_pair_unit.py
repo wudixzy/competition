@@ -41,6 +41,14 @@ assert RUNNER_SPEC.loader is not None
 sys.modules[RUNNER_SPEC.name] = RUNNER
 RUNNER_SPEC.loader.exec_module(RUNNER)
 
+PROMPT_CHECK_PATH = TESTS / "check_m1_152_prompt_construction.py"
+PROMPT_CHECK_SPEC = importlib.util.spec_from_file_location(
+    "check_m1_152_prompt_construction", PROMPT_CHECK_PATH)
+PROMPT_CHECK = importlib.util.module_from_spec(PROMPT_CHECK_SPEC)
+assert PROMPT_CHECK_SPEC.loader is not None
+sys.modules[PROMPT_CHECK_SPEC.name] = PROMPT_CHECK
+PROMPT_CHECK_SPEC.loader.exec_module(PROMPT_CHECK)
+
 CONTRACT_PATH = ROOT / "quality" / "short_tp4_p90_pair.v2.json"
 CONTRACT = json.loads(CONTRACT_PATH.read_text(encoding="ascii"))
 CONTRACT_SHA = hashlib.sha256(CONTRACT_PATH.read_bytes()).hexdigest()
@@ -270,6 +278,52 @@ def qualify_pair(control: dict, candidate: dict) -> dict:
 
 
 class M1152ShortTp4P90PairTest(unittest.TestCase):
+
+    def test_cpu_prompt_construction_report_checks_exact_boundaries(self):
+        value = {
+            "schema": PROMPT_CHECK.SCHEMA,
+            "version": 1,
+            "cold": [
+                {
+                    "target_prompt_tokens": target,
+                    "actual_prompt_tokens": target,
+                    "prompt_sha256": digest(f"cold:{target}"),
+                }
+                for target in SERVICE.TARGETS
+            ],
+            "partial": [
+                {
+                    "target_prompt_tokens": target,
+                    "actual_prompt_tokens": target,
+                    "block_context_tokens": (
+                        target - SERVICE.PARTIAL_RESIDUAL_TOKENS),
+                    "shared_tokens_before_rounding": (
+                        target - SERVICE.PARTIAL_RESIDUAL_TOKENS + 7),
+                    "cached_prefix_tokens": (
+                        target - SERVICE.PARTIAL_RESIDUAL_TOKENS),
+                    "residual_prefill_tokens": (
+                        SERVICE.PARTIAL_RESIDUAL_TOKENS),
+                    "primer_prompt_tokens": target,
+                    "primer_prompt_sha256": digest(f"primer:{target}"),
+                    "partial_prompt_sha256": digest(f"partial:{target}"),
+                }
+                for target in SERVICE.PARTIAL_TARGETS
+            ],
+            "privacy": {
+                "prompts_recorded": False,
+                "token_ids_recorded": False,
+                "credentials_recorded": False,
+            },
+        }
+        result = PROMPT_CHECK.validate(value)
+        self.assertTrue(result["qualified"], result)
+        value["partial"][0]["residual_prefill_tokens"] += 16
+        result = PROMPT_CHECK.validate(value)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any(
+            "prefix boundary differs" in reason
+            for reason in result["reasons"]
+        ))
 
     def test_service_hard_gate_accepts_valid_cold_and_partial_matrix(self):
         value = measurement("control")
