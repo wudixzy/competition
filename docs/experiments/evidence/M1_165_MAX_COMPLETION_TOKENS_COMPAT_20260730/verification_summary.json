@@ -1,0 +1,81 @@
+{
+  "schema": "bi100-max-completion-tokens-verification-summary-v1",
+  "qualified": true,
+  "date": "2026-07-30",
+  "instance": "ssh-73ca29ba",
+  "runtime_source": {
+    "commit": "5863f7ae05657181c36716dd377108d52f4d524f",
+    "worktree": "/root/m1-165-5863f7a-worktree",
+    "worktree_clean": true,
+    "runtime_root": "/tmp/m1-165-runtime-5863f7a",
+    "runtime_tree_sha256": "1c2e10ebef85d21ffb548ed027e26c1aca2d88a3d6e2f68e23445db968a7828f",
+    "install_report_sha256": "3acba288988ceaaa9176e7f2b0ccdda2126b0e2250a19a6d5f1f083e966241fc",
+    "install_exit_code": 0,
+    "install_qualified": true,
+    "system_site_packages_modified": false
+  },
+  "runtime_versions": {
+    "torch": "2.1.0+corex.3.2.3",
+    "transformers": "4.55.3",
+    "vllm": "0.6.3+corex.3.2.3"
+  },
+  "runtime_overlay_identity": {
+    "protocol.py": {
+      "sha256": "d978a66942a6abb8e2357659ad0d68817d7da805ffa920f33ae83741b5929ea3",
+      "source_equals_installed": true
+    },
+    "serving_chat.py": {
+      "sha256": "8e840b50be68cf1c09a89a949d10453ed4ce22f5d7401ba995408d8dcf259b04",
+      "source_equals_installed": true
+    },
+    "api_server.py": {
+      "sha256": "59be3588b2b694864e2bac6cc77f3b50fb5fea5973926db1d821f60e862d0450",
+      "source_equals_installed": true
+    }
+  },
+  "probe": {
+    "harness_commit": "2862d88a987790ae370e5afa6568f23c96fb5b0f",
+    "script_sha256": "f4d4a327f4931b06531e4b96c370cc9783858a12f9b99a82786516404a25ed83",
+    "final_exit_code": 0,
+    "qualified": true,
+    "case_count": 10,
+    "matched_case_count": 10,
+    "http_status_counts": {
+      "200": 7,
+      "400": 3,
+      "500": 0
+    },
+    "model_has_max_completion_tokens": true,
+    "json_sha256": "19dc498d8d75bc0e1e07811267591fe7b8ed6c479439cc69dfe2e91fdafd6a2a",
+    "stdout_sha256": "5019440a66f02b9f96b809d859e736ac9f62f25a1e1e2bd48eeb14ae8f056cca",
+    "stderr_sha256": "5a5fc3783a03d7e1ae2fd4fbaf16aa893e0f81d6e202ecc89e04744b050d3fcd",
+    "exit_code_file_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  },
+  "log_review": {
+    "fatal_pattern_matches": 0,
+    "http_500_count": 0,
+    "residual_probe_processes": 0,
+    "validation_fields_observed": [
+      {
+        "validation_field": "max_completion_tokens",
+        "validation_type": "int_parsing"
+      },
+      {
+        "validation_field": "unknown_completion_budget",
+        "validation_type": "extra_forbidden"
+      }
+    ],
+    "request_values_or_content_logged": false
+  },
+  "discarded_harness_attempt": {
+    "reason": "The first probe depended on httpx, whose optional idna dependency is absent from the immutable base runtime.",
+    "entered_request_cases": 0,
+    "used_for_qualification": false
+  },
+  "scope": {
+    "model_loaded": false,
+    "gpu_used": false,
+    "formal_yaml_modified": false,
+    "main_modified": false
+  }
+}

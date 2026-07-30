@@ -1,0 +1,155 @@
+{
+  "case_count": 10,
+  "cases": [
+    {
+      "entered_serving": true,
+      "has_multimodal": false,
+      "has_tools": false,
+      "matched": true,
+      "name": "completion_only_nonstream",
+      "output_kind": "2",
+      "sampling_error_type": null,
+      "sampling_max_tokens": 17,
+      "status_code": 200,
+      "stream": false,
+      "thinking_present": false
+    },
+    {
+      "entered_serving": true,
+      "has_multimodal": false,
+      "has_tools": false,
+      "matched": true,
+      "name": "completion_only_stream",
+      "output_kind": "1",
+      "sampling_error_type": null,
+      "sampling_max_tokens": 19,
+      "status_code": 200,
+      "stream": true,
+      "thinking_present": false
+    },
+    {
+      "entered_serving": true,
+      "has_multimodal": false,
+      "has_tools": true,
+      "matched": true,
+      "name": "completion_with_tools",
+      "output_kind": "2",
+      "sampling_error_type": null,
+      "sampling_max_tokens": 23,
+      "status_code": 200,
+      "stream": false,
+      "thinking_present": false
+    },
+    {
+      "entered_serving": true,
+      "has_multimodal": true,
+      "has_tools": false,
+      "matched": true,
+      "name": "completion_with_multimodal",
+      "output_kind": "2",
+      "sampling_error_type": null,
+      "sampling_max_tokens": 29,
+      "status_code": 200,
+      "stream": false,
+      "thinking_present": false
+    },
+    {
+      "entered_serving": true,
+      "has_multimodal": false,
+      "has_tools": false,
+      "matched": true,
+      "name": "completion_with_reasoning_switch",
+      "output_kind": "2",
+      "sampling_error_type": null,
+      "sampling_max_tokens": 31,
+      "status_code": 200,
+      "stream": false,
+      "thinking_present": true
+    },
+    {
+      "entered_serving": true,
+      "has_multimodal": false,
+      "has_tools": false,
+      "matched": true,
+      "name": "legacy_only",
+      "output_kind": "2",
+      "sampling_error_type": null,
+      "sampling_max_tokens": 37,
+      "status_code": 200,
+      "stream": false,
+      "thinking_present": false
+    },
+    {
+      "entered_serving": true,
+      "has_multimodal": false,
+      "has_tools": false,
+      "matched": true,
+      "name": "both_new_field_precedes",
+      "output_kind": "2",
+      "sampling_error_type": null,
+      "sampling_max_tokens": 7,
+      "status_code": 200,
+      "stream": false,
+      "thinking_present": false
+    },
+    {
+      "entered_serving": false,
+      "has_multimodal": null,
+      "has_tools": null,
+      "matched": true,
+      "name": "invalid_completion_type",
+      "output_kind": null,
+      "sampling_error_type": null,
+      "sampling_max_tokens": null,
+      "status_code": 400,
+      "stream": null,
+      "thinking_present": null
+    },
+    {
+      "entered_serving": true,
+      "has_multimodal": false,
+      "has_tools": false,
+      "matched": true,
+      "name": "invalid_completion_boundary",
+      "output_kind": null,
+      "sampling_error_type": "ValueError",
+      "sampling_max_tokens": null,
+      "status_code": 400,
+      "stream": false,
+      "thinking_present": false
+    },
+    {
+      "entered_serving": false,
+      "has_multimodal": null,
+      "has_tools": null,
+      "matched": true,
+      "name": "unrelated_unknown_field",
+      "output_kind": null,
+      "sampling_error_type": null,
+      "sampling_max_tokens": null,
+      "status_code": 400,
+      "stream": null,
+      "thinking_present": null
+    }
+  ],
+  "http_500_count": 0,
+  "model_has_max_completion_tokens": true,
+  "qualified": true,
+  "reasons": [],
+  "runtime_files": {
+    "api_server": {
+      "path": "/tmp/m1-165-runtime-5863f7a/site-packages/vllm/entrypoints/openai/api_server.py",
+      "sha256": "59be3588b2b694864e2bac6cc77f3b50fb5fea5973926db1d821f60e862d0450"
+    },
+    "protocol": {
+      "path": "/tmp/m1-165-runtime-5863f7a/site-packages/vllm/entrypoints/openai/protocol.py",
+      "sha256": "d978a66942a6abb8e2357659ad0d68817d7da805ffa920f33ae83741b5929ea3"
+    },
+    "serving_chat": {
+      "path": "/tmp/m1-165-runtime-5863f7a/site-packages/vllm/entrypoints/openai/serving_chat.py",
+      "sha256": "8e840b50be68cf1c09a89a949d10453ed4ce22f5d7401ba995408d8dcf259b04"
+    }
+  },
+  "schema": "bi100-max-completion-tokens-runtime-probe-v1",
+  "synthetic_only": true
+}
