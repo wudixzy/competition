@@ -18,8 +18,8 @@ GUARDED_BLOCK = """\
         torch.cuda.empty_cache()
 
         # Execute a forward pass with dummy inputs to profile the memory usage
-        # of the model. Mark this synthetic pass so BI100_PROFILE can skip
-        # timing it by default; profiling real requests is the useful signal.
+        # of the model. Mark this synthetic pass so BI100_PROFILE can exclude
+        # it without changing vLLM's normal capacity calculation.
         _bi100_prev_startup_profile = os.environ.get("BI100_IN_STARTUP_PROFILE")
         os.environ["BI100_IN_STARTUP_PROFILE"] = "1"
         try:

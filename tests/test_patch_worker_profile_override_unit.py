@@ -8,6 +8,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "qwen3_6_scripts"
 PATCH_SCRIPT = SCRIPTS / "patch_worker_profile_override.py"
+STARTUP_GUARD_SCRIPT = SCRIPTS / "patch_worker_startup_profile_guard.py"
 
 CLEAN_BLOCK = """\
         # Profile the memory usage of the model and get the maximum number of
@@ -25,8 +26,8 @@ GUARDED_BLOCK = """\
         torch.cuda.empty_cache()
 
         # Execute a forward pass with dummy inputs to profile the memory usage
-        # of the model. Mark this synthetic pass so BI100_PROFILE can skip
-        # timing it by default; profiling real requests is the useful signal.
+        # of the model. Mark this synthetic pass so BI100_PROFILE can exclude
+        # it without changing vLLM's normal capacity calculation.
         _bi100_prev_startup_profile = os.environ.get("BI100_IN_STARTUP_PROFILE")
         os.environ["BI100_IN_STARTUP_PROFILE"] = "1"
         try:
@@ -49,12 +50,15 @@ def _make_fake_vllm(root: pathlib.Path, worker_text: str) -> pathlib.Path:
     return worker / "worker.py"
 
 
-def _run_patch(fake_root: pathlib.Path) -> subprocess.CompletedProcess:
+def _run_script(
+    fake_root: pathlib.Path,
+    script: pathlib.Path,
+) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(
         [str(fake_root), str(SCRIPTS), env.get("PYTHONPATH", "")])
     return subprocess.run(
-        [sys.executable, str(PATCH_SCRIPT)],
+        [sys.executable, str(script)],
         cwd=SCRIPTS,
         env=env,
         text=True,
@@ -63,7 +67,28 @@ def _run_patch(fake_root: pathlib.Path) -> subprocess.CompletedProcess:
     )
 
 
+def _run_patch(fake_root: pathlib.Path) -> subprocess.CompletedProcess:
+    return _run_script(fake_root, PATCH_SCRIPT)
+
+
 class WorkerProfileOverridePatchUnitTest(unittest.TestCase):
+
+    def test_patch_composes_after_real_startup_guard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            worker = _make_fake_vllm(root, "class Worker:\n" + CLEAN_BLOCK)
+
+            guarded = _run_script(root, STARTUP_GUARD_SCRIPT)
+            self.assertEqual(guarded.returncode, 0, guarded.stderr)
+            patched = _run_patch(root)
+
+            self.assertEqual(patched.returncode, 0, patched.stderr)
+            text = worker.read_text(encoding="utf-8")
+            self.assertIn("[BI100] skipping worker.profile_run", text)
+            self.assertLess(
+                text.index("num_gpu_blocks_override is not None"),
+                text.index("torch.cuda.empty_cache()"),
+            )
 
     def test_patch_accepts_clean_and_guarded_vendor_blocks(self):
         for name, block in [("clean", CLEAN_BLOCK), ("guarded", GUARDED_BLOCK)]:
