@@ -346,6 +346,8 @@ scan_fatal() {
 
 verify_policy_contract() {
     local arm=$1 policy=$2
+    (
+    cd /tmp
     env BI100_GDN_CACHE_POLICY="$policy" BI100_GDN_RESTORE_MODE=hybrid64 \
         PYTHONPATH="$BI100_RUNTIME_SITE_PACKAGES:$ROOT/tests:$SYSTEM_PYTHONPATH" \
         LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \
@@ -374,6 +376,7 @@ Path(sys.argv[2]).write_text(
     json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 raise SystemExit(0 if report["qualified"] else 1)
 PY
+    )
 }
 
 run_arm() {
@@ -385,7 +388,10 @@ run_arm() {
     printf '%s\n' "$startup_rc" > "$arm/startup.rc"
     if [[ $rc -eq 0 ]]; then
         policy_rc=0
-        verify_policy_contract "$arm" "$policy" || { policy_rc=$?; rc=1; }
+        verify_policy_contract "$arm" "$policy" \
+            > "$arm/policy_contract.stdout" \
+            2> "$arm/policy_contract.stderr" \
+            || { policy_rc=$?; rc=1; }
     fi
     printf '%s\n' "$policy_rc" > "$arm/policy_contract.rc"
     if [[ $rc -eq 0 ]]; then

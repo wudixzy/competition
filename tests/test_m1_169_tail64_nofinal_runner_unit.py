@@ -64,6 +64,14 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
                       self.source)
         self.assertIn('"service_import_contract": rc(', self.source)
 
+    def test_policy_contract_cannot_import_repository_shadow_package(self) -> None:
+        start = self.source.index("verify_policy_contract()")
+        stop = self.source.index("run_arm()")
+        policy = self.source[start:stop]
+        self.assertLess(policy.index("cd /tmp"), policy.index("python3 -"))
+        self.assertIn('> "$arm/policy_contract.stdout"', self.source)
+        self.assertIn('2> "$arm/policy_contract.stderr"', self.source)
+
     def test_policy_contract_uses_runtime_overlay_introspection(self) -> None:
         self.assertIn("verify_policy_contract()", self.source)
         self.assertIn("from vllm.gdn_prefix import (", self.source)
