@@ -90,7 +90,20 @@
     "request_validation_field_type_diagnostics_present": true,
     "post_baseline_default_path_change": "admission64 capture-boundary alignment",
     "capture_boundary_performance_causality_proven": false,
-    "required_next_test": "same-runtime TP4 A/B of capture-boundary alignment with identical request order"
+    "required_next_test": "complete protocol-compatible platform replay plus request-level fixed-overhead profile; retain TP4 A/B before any capture-path causal claim"
+  },
+  "m1_170_capture_followup": {
+    "evidence_path": "docs/experiments/evidence/M1_170_COLD_CAPTURE_OVERHEAD_TP1_20260801/order_balance.json",
+    "source_revision": "70e6d318408c75265b0934bc355b64a4610dc23e",
+    "true_cold_zero_cache_both_orders": true,
+    "overall_median_geometric_overhead_percent": 2.3284,
+    "overall_p90_geometric_overhead_percent": 1.7236,
+    "4k_geometric_overhead_percent": 7.5421,
+    "7_8k_geometric_overhead_percent": 2.0285,
+    "16k_geometric_overhead_percent": 1.7203,
+    "dominant_platform_regression_explained": false,
+    "tp4_causality_proven": false,
+    "admission_disable_authorized": false
   },
   "interpretation": {
     "new_protocol_regression_proven": false,

@@ -39,6 +39,23 @@ this platform pair does not prove causality because run-to-run platform
 variance was already large. It must be tested by same-runtime TP4 A/B; the
 correctness fix must not simply be removed.
 
+## M1-170 follow-up
+
+M1-170 subsequently isolated admission64 capture work with true-cold TP1
+requests at 4K, 7.8K, and 16K. Both `admission64` and diagnostic `off` arms
+reported zero cached tokens, and the A/B was repeated in both execution
+orders. The geometric order-balanced admission64 overhead was `2.33%` for
+the overall median and `1.72%` for P90. The 4K cell retained a positive
+`7.54%` signal, while the 7.8K and 16K cells were about `2.03%` and `1.72%`.
+
+This TP1 result does not establish TP4 platform causality, but it makes GDN
+capture alone an implausible explanation for the observed `34%-39%` short
+bucket regression. Admission cannot be disabled on this evidence because the
+`off` arm is diagnostic and removes valid cache reuse. Further platform
+regression work should profile request-level fixed overhead and first obtain a
+complete, protocol-compatible 881-request population. M1-170 evidence is in
+`docs/experiments/evidence/M1_170_COLD_CAPTURE_OVERHEAD_TP1_20260801`.
+
 ## 4xx attribution
 
 The supplied excerpt contains only two 4xx markers and no matching 400 access
@@ -85,6 +102,8 @@ performance distribution can be compared with the hard targets.
   sequential fan-out cannot yet be credited with fixing that test.
 - The old run's 71.62% success rate and timeout make its performance metrics
   diagnostic only; they cannot be projected onto the current branch.
+- M1-170 narrows the GDN-capture hypothesis but does not replace a TP4
+  same-runtime causal A/B or a new platform submission.
 - No formal YAML or `main` change is authorized by this triage.
 
 Structured evidence is under

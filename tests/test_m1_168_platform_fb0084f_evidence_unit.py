@@ -55,6 +55,16 @@ class M1168PlatformFb0084fEvidenceUnitTest(unittest.TestCase):
             qualification["diagnostic_weighted_linear"], 4769.580193333333)
         self.assertFalse(qualification["official_score_comparable"])
 
+    def test_m1_170_followup_narrows_but_does_not_close_attribution(self):
+        followup = _load("comparison.json")["m1_170_capture_followup"]
+        self.assertTrue(followup["true_cold_zero_cache_both_orders"])
+        self.assertAlmostEqual(
+            followup["overall_median_geometric_overhead_percent"], 2.3284)
+        self.assertGreater(followup["4k_geometric_overhead_percent"], 0)
+        self.assertFalse(followup["dominant_platform_regression_explained"])
+        self.assertFalse(followup["tp4_causality_proven"])
+        self.assertFalse(followup["admission_disable_authorized"])
+
     def test_incomplete_excerpt_is_not_promoted_to_complete_attribution(self):
         value = _load("excerpt_4xx_summary.json")
         self.assertFalse(value["qualified"])
