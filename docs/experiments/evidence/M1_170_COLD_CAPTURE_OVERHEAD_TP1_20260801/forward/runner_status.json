@@ -1,0 +1,32 @@
+{
+  "arm_order": [
+    "admission64",
+    "off"
+  ],
+  "bench_salt_order": "identity-first",
+  "bench_tool_count": 0,
+  "candidate_policy": "off",
+  "gates": {
+    "admission64": 0,
+    "candidate": 0,
+    "cleanup": 0,
+    "comparison": 0,
+    "fatal_scan": 0,
+    "postflight_after": 0,
+    "preflight_after": 0,
+    "preflight_before": 0,
+    "service_import_contract": 0
+  },
+  "gpu_index": 1,
+  "instance": "ssh-73ca29ba",
+  "model_quality_evaluated": false,
+  "num_gpu_blocks_override": 552637,
+  "production_promotion_authorized": false,
+  "qualified_development_screen": true,
+  "returncode": 0,
+  "schema": "bi100-m1-170-cold-capture-overhead-runner-v2",
+  "source_branch": "",
+  "source_revision": "70e6d318408c75265b0934bc355b64a4610dc23e",
+  "tp4_evaluated": false,
+  "version": 2
+}

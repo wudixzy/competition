@@ -1,0 +1,284 @@
+{
+  "block_major_cache_engine_patch": true,
+  "block_major_worker_capacity_patch": true,
+  "block_manager_base_sha256": "0f8edeeb149c86377b80f9682067f4953512329b4691c5858b6997ed3328bbd7",
+  "cache_engine_sha256": "2b9c72dd954476dc5446d84a3318e6defc447f56b13c1bc60a7a02afe80ea331",
+  "cache_trace_patcher_sha256": "b2f7549e0c8bd364e7b66f481d4212968bae4998288c489859301b4705e0324e",
+  "files": {
+    "api_server": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/entrypoints/openai/api_server.py",
+      "installed_sha256": "fa6ab6a1a2e4f1e2215f068d3a969f69478d003f968462238e6aee332d2b30e4",
+      "same": true,
+      "source_sha256": "fa6ab6a1a2e4f1e2215f068d3a969f69478d003f968462238e6aee332d2b30e4"
+    },
+    "bi100_env": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/bi100_env.py",
+      "installed_sha256": "25e788f6810c210fcae663f4da5d171b69237becb2a8191b4518334b7ddda75e",
+      "same": true,
+      "source_sha256": "25e788f6810c210fcae663f4da5d171b69237becb2a8191b4518334b7ddda75e"
+    },
+    "bi100_external_extension": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/bi100_external_extension.py",
+      "installed_sha256": "5a5828f2e7162226ec563d3ba615fcb73d72dbedac26a1744fc08102079667e4",
+      "same": true,
+      "source_sha256": "5a5828f2e7162226ec563d3ba615fcb73d72dbedac26a1744fc08102079667e4"
+    },
+    "bi100_profile": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/bi100_profile.py",
+      "installed_sha256": "b029d669540ebb84f8ef3cc75e953faf174ea5ff216ff299e2976338588b57f6",
+      "same": true,
+      "source_sha256": "b029d669540ebb84f8ef3cc75e953faf174ea5ff216ff299e2976338588b57f6"
+    },
+    "block_major_kv_cache": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/block_major_kv_cache.py",
+      "installed_sha256": "73eb881836a24da302ecd436fa52736dd31dbe033e79d3b2203c13cbec4a7421",
+      "same": true,
+      "source_sha256": "73eb881836a24da302ecd436fa52736dd31dbe033e79d3b2203c13cbec4a7421"
+    },
+    "block_major_kv_extension": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/corex_block_major_kv_transfer.so",
+      "installed_sha256": "7e2aafd8dc755b0ee16c3b9bb812b95548fc042bbaa840dd9db7d2c51a10474c",
+      "same": true,
+      "source_sha256": "7e2aafd8dc755b0ee16c3b9bb812b95548fc042bbaa840dd9db7d2c51a10474c"
+    },
+    "block_manager": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/core/block_manager_v2.py",
+      "installed_sha256": "dd94758c612ee34d9bf631df2f41f5e7f802e30a4f946be69027087b3d7a24e1",
+      "same": true,
+      "source_sha256": "dd94758c612ee34d9bf631df2f41f5e7f802e30a4f946be69027087b3d7a24e1"
+    },
+    "block_table": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/core/block/block_table.py",
+      "installed_sha256": "4a6b6313cd20d3de6c217e9a984039b93485d3858f87af883f35a285db27e268",
+      "same": true,
+      "source_sha256": "4a6b6313cd20d3de6c217e9a984039b93485d3858f87af883f35a285db27e268"
+    },
+    "cache_engine": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/worker/cache_engine.py",
+      "installed_sha256": "2b9c72dd954476dc5446d84a3318e6defc447f56b13c1bc60a7a02afe80ea331",
+      "same": true,
+      "source_sha256": "2b9c72dd954476dc5446d84a3318e6defc447f56b13c1bc60a7a02afe80ea331"
+    },
+    "cache_trace_outputs": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/outputs.py",
+      "installed_sha256": "4ebe3ab3f868cdd1d5d24fd0fc6611abc14eb2235ef9ab3a03c1efe4e124bc36",
+      "same": true,
+      "source_sha256": "4ebe3ab3f868cdd1d5d24fd0fc6611abc14eb2235ef9ab3a03c1efe4e124bc36"
+    },
+    "chat_utils": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/entrypoints/chat_utils.py",
+      "installed_sha256": "8a9ecf4bb1f29953036c491f869cab982f325dcf4412e7799c0108bc0b63161b",
+      "same": true,
+      "source_sha256": "8a9ecf4bb1f29953036c491f869cab982f325dcf4412e7799c0108bc0b63161b"
+    },
+    "cli_args": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/entrypoints/openai/cli_args.py",
+      "installed_sha256": "04f4c6ac0c82b5111279205cda3204cf7f7894972acd603828a2de87d0a5fa57",
+      "same": true,
+      "source_sha256": "04f4c6ac0c82b5111279205cda3204cf7f7894972acd603828a2de87d0a5fa57"
+    },
+    "content_cache": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/core/block/cpu_kv_content_cache.py",
+      "installed_sha256": "99268eb7199dae108e353b657f1b4e4a78bc5638e046f119314f3cf68105c31c",
+      "same": true,
+      "source_sha256": "99268eb7199dae108e353b657f1b4e4a78bc5638e046f119314f3cf68105c31c"
+    },
+    "cpu_gpu_block_allocator": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/core/block/cpu_gpu_block_allocator.py",
+      "installed_sha256": "cdbc0400a584bef62618fa580de42cd12b5e2663c97fb01e6c3fa1f5bb27d9d0",
+      "same": true,
+      "source_sha256": "cdbc0400a584bef62618fa580de42cd12b5e2663c97fb01e6c3fa1f5bb27d9d0"
+    },
+    "evictor": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/core/evictor_v2.py",
+      "installed_sha256": "c4e1299af673da933d181cd2ff6b5c941eeda38c2e3119610690a5f62c437e04",
+      "same": true,
+      "source_sha256": "c4e1299af673da933d181cd2ff6b5c941eeda38c2e3119610690a5f62c437e04"
+    },
+    "fused_paged_prefill_extension": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/corex_fused_paged_prefill.so",
+      "installed_sha256": "ad4ea7707bb2f2bfe04e07a7ad5fd58a647232be70a3056937a0d738c8254bff",
+      "same": true,
+      "source_sha256": "ad4ea7707bb2f2bfe04e07a7ad5fd58a647232be70a3056937a0d738c8254bff"
+    },
+    "gdn_prefix": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/gdn_prefix.py",
+      "installed_sha256": "1c90b3f12da337dc6163ad548da30513d77a693daf03b53f794ca491f265ad2c",
+      "same": true,
+      "source_sha256": "1c90b3f12da337dc6163ad548da30513d77a693daf03b53f794ca491f265ad2c"
+    },
+    "mamba_cache": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/model_executor/models/mamba_cache.py",
+      "installed_sha256": "7d8ae53aca32e82518649160151995a9c583102ff47f8e1873e9d77b3dfc132c",
+      "same": true,
+      "source_sha256": "7d8ae53aca32e82518649160151995a9c583102ff47f8e1873e9d77b3dfc132c"
+    },
+    "model_runner": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/worker/model_runner.py",
+      "installed_sha256": "8ee212dadb2fb72143eca785aa931ca1e30e9eca3d3e828105cbb1d8ca0f026a",
+      "same": true,
+      "source_sha256": "8ee212dadb2fb72143eca785aa931ca1e30e9eca3d3e828105cbb1d8ca0f026a"
+    },
+    "moe_config": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/transformers/models/qwen3_5_moe/configuration_qwen3_5_moe.py",
+      "installed_sha256": "05653d043a9d880abb9b438c69c518c7a8667efcef1984c409611b995254d19f",
+      "same": true,
+      "source_sha256": "05653d043a9d880abb9b438c69c518c7a8667efcef1984c409611b995254d19f"
+    },
+    "paged_attention": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/attention/ops/paged_attn.py",
+      "installed_sha256": "82b2f386ed40e531482e828033bf25335f1fc480db5002341b2046f7393b133e",
+      "same": true,
+      "source_sha256": "82b2f386ed40e531482e828033bf25335f1fc480db5002341b2046f7393b133e"
+    },
+    "prefix_caching_block": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/core/block/prefix_caching_block.py",
+      "installed_sha256": "eb48a71ad79d1dabc6951cdf81261c66065121d7a5d6e3b42d867e634886b84e",
+      "same": true,
+      "source_sha256": "eb48a71ad79d1dabc6951cdf81261c66065121d7a5d6e3b42d867e634886b84e"
+    },
+    "protocol": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/entrypoints/openai/protocol.py",
+      "installed_sha256": "156e6406b85901b98f17c0f10c446d5b0de264b663528cdc6f7abb9531f3fcdd",
+      "same": true,
+      "source_sha256": "156e6406b85901b98f17c0f10c446d5b0de264b663528cdc6f7abb9531f3fcdd"
+    },
+    "reasoning_abs": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/reasoning/abs_reasoning_parsers.py",
+      "installed_sha256": "c377faa979fdecfeefcdc08df3c897aae38bb166d006454036ffd7050317dafa",
+      "same": true,
+      "source_sha256": "c377faa979fdecfeefcdc08df3c897aae38bb166d006454036ffd7050317dafa"
+    },
+    "reasoning_init": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/reasoning/__init__.py",
+      "installed_sha256": "b4f6de9e33b8bbd73c1e3ea08aeca3d3c4ad2895919fdaa538a562d71d6b2002",
+      "same": true,
+      "source_sha256": "b4f6de9e33b8bbd73c1e3ea08aeca3d3c4ad2895919fdaa538a562d71d6b2002"
+    },
+    "reasoning_qwen3": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/reasoning/qwen3_reasoning_parser.py",
+      "installed_sha256": "b4247d846581ba8d45296cb12d2ed574a5017bf791cd1639564bef0fcdcebe74",
+      "same": true,
+      "source_sha256": "b4247d846581ba8d45296cb12d2ed574a5017bf791cd1639564bef0fcdcebe74"
+    },
+    "sampler": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/model_executor/layers/sampler.py",
+      "installed_sha256": "6cb8b2caf7b56f0e70441c6bbe51fd2cae7700334cfa6e7e9dd18158beab11fe",
+      "same": true,
+      "source_sha256": "6cb8b2caf7b56f0e70441c6bbe51fd2cae7700334cfa6e7e9dd18158beab11fe"
+    },
+    "sampling_metadata": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/model_executor/sampling_metadata.py",
+      "installed_sha256": "3ff222e8e4bf0575c47beff18603e985b368c0a0b186126700911c9c5578822c",
+      "same": true,
+      "source_sha256": "3ff222e8e4bf0575c47beff18603e985b368c0a0b186126700911c9c5578822c"
+    },
+    "sampling_params": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/sampling_params.py",
+      "installed_sha256": "27aeb82ecb4a76013298f560f892d267bcb0529b7309184c154a298a5cf32581",
+      "same": true,
+      "source_sha256": "27aeb82ecb4a76013298f560f892d267bcb0529b7309184c154a298a5cf32581"
+    },
+    "scheduler": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/core/scheduler.py",
+      "installed_sha256": "80bcfe0aa122bc404e4b03ae81c8e23715c3e026e361f72785a22901e1121308",
+      "same": true,
+      "source_sha256": "80bcfe0aa122bc404e4b03ae81c8e23715c3e026e361f72785a22901e1121308"
+    },
+    "sequence": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/sequence.py",
+      "installed_sha256": "e2d964f11ab0db2d72fe9abe7357d8ab8b513b923a12aa7fbc70991cf2b4c042",
+      "same": true,
+      "source_sha256": "e2d964f11ab0db2d72fe9abe7357d8ab8b513b923a12aa7fbc70991cf2b4c042"
+    },
+    "serving_chat": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/entrypoints/openai/serving_chat.py",
+      "installed_sha256": "0d2609d00aff388abbe2283ec60f6c743065973a74903ea4b8960ce1692c4a92",
+      "same": true,
+      "source_sha256": "0d2609d00aff388abbe2283ec60f6c743065973a74903ea4b8960ce1692c4a92"
+    },
+    "serving_tokenization": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/entrypoints/openai/serving_tokenization.py",
+      "installed_sha256": "107a50d7c5ae08b133e83746d37498d22171f6b0017ea1979c3b06ca6461b905",
+      "same": true,
+      "source_sha256": "107a50d7c5ae08b133e83746d37498d22171f6b0017ea1979c3b06ca6461b905"
+    },
+    "tool_parser": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/entrypoints/openai/tool_parsers/qwen3coder_tool_parser.py",
+      "installed_sha256": "7281149b5d6b289c7648e6b04124fcf127d07cdb1b5d3173b7e5e8059640b0cd",
+      "same": true,
+      "source_sha256": "7281149b5d6b289c7648e6b04124fcf127d07cdb1b5d3173b7e5e8059640b0cd"
+    },
+    "transformers_qwen3_5_config": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/transformers/models/qwen3_5/configuration_qwen3_5.py",
+      "installed_sha256": "455cf765fe7a9490a486031b215a021b38fd5e868c2713d345a2eed5213dae5a",
+      "same": true,
+      "source_sha256": "455cf765fe7a9490a486031b215a021b38fd5e868c2713d345a2eed5213dae5a"
+    },
+    "transformers_qwen3_5_init": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/transformers/models/qwen3_5/__init__.py",
+      "installed_sha256": "3fd1a86bae1a56bcbac7d10839d48337abd27c8efb578644b77699bfa8a10b5c",
+      "same": true,
+      "source_sha256": "3fd1a86bae1a56bcbac7d10839d48337abd27c8efb578644b77699bfa8a10b5c"
+    },
+    "transformers_qwen3_5_moe_init": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/transformers/models/qwen3_5_moe/__init__.py",
+      "installed_sha256": "4f596d506120c7dcd2e224df1867bfd6c181110585a9e464a587338fc0d54c61",
+      "same": true,
+      "source_sha256": "4f596d506120c7dcd2e224df1867bfd6c181110585a9e464a587338fc0d54c61"
+    },
+    "vllm_model": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/model_executor/models/qwen3_5.py",
+      "installed_sha256": "82d10b0c93169d8c0f8967aed3c693b5f8829b2bbc8b6c20e69bd998e64a8907",
+      "same": true,
+      "source_sha256": "82d10b0c93169d8c0f8967aed3c693b5f8829b2bbc8b6c20e69bd998e64a8907"
+    },
+    "worker": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/worker/worker.py",
+      "installed_sha256": "afc1f5c1db90436992b61aeb50d9aaa8f019f372e736397b34724d009dca3255",
+      "same": true,
+      "source_sha256": "afc1f5c1db90436992b61aeb50d9aaa8f019f372e736397b34724d009dca3255"
+    },
+    "xformers_backend": {
+      "installed_path": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages/vllm/attention/backends/xformers.py",
+      "installed_sha256": "e787b924a23c0f932f25910e791663a2ee6ad9380f2907a5ff155f03be662030",
+      "same": true,
+      "source_sha256": "e787b924a23c0f932f25910e791663a2ee6ad9380f2907a5ff155f03be662030"
+    }
+  },
+  "installer_sha256": "233027a43e53bffc28a51a2c07f0abffd58349ac564f6258f4edcf43becb3941",
+  "model_runner_sha256": "8ee212dadb2fb72143eca785aa931ca1e30e9eca3d3e828105cbb1d8ca0f026a",
+  "offline_metadata_normalizer_sha256": "d54d89bb15df1be93bbc8447e43b080402629f217305ea8941c81154bce5c47a",
+  "profile_attention_layer_patch": true,
+  "qualified": true,
+  "runtime_import_contract": {
+    "api_server_from_overlay": true,
+    "cli_args_from_overlay": true,
+    "purged_bytecode_files": 2521,
+    "purged_cache_directories": 448,
+    "qualified": true,
+    "qwen3_coder_registered": true,
+    "qwen3_reasoning_registered": true,
+    "required_cli_options": [
+      "--reasoning-parser",
+      "--tool-call-parser"
+    ],
+    "schema": "bi100-runtime-import-contract-v1",
+    "version": 1
+  },
+  "runtime_root": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay",
+  "runtime_tree_sha256": "93f65cce49f5455401ae35c97371b0e8dbf0f94e7ab23878d2e7c5991603e849",
+  "schema": "bi100-bare-host-runtime-install-v2",
+  "site_packages": "/root/m1-170-source-70e6d31-exact/bench_runs/m1_49/runtime_overlay/site-packages",
+  "source_revision": "70e6d318408c75265b0934bc355b64a4610dc23e",
+  "source_tree_clean": true,
+  "startup_profile_guard_patch": true,
+  "system_site_packages_modified": false,
+  "version": 2,
+  "versions": {
+    "torch": "2.1.0+corex.3.2.3",
+    "transformers": "4.55.3",
+    "vllm": "0.6.3+corex.3.2.3"
+  },
+  "worker_sha256": "afc1f5c1db90436992b61aeb50d9aaa8f019f372e736397b34724d009dca3255"
+}

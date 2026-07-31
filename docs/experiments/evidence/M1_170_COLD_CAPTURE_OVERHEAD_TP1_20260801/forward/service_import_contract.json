@@ -1,0 +1,11 @@
+{
+  "api_server_from_overlay": true,
+  "cli_args_from_overlay": true,
+  "qualified": true,
+  "qwen3_coder_registered": true,
+  "qwen3_reasoning_registered": true,
+  "reasoning_parser_option": true,
+  "schema": "bi100-m1-170-service-import-contract-v1",
+  "tool_call_parser_option": true,
+  "version": 1
+}

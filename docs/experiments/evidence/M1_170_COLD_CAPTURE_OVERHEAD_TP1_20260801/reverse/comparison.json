@@ -1,0 +1,71 @@
+{
+  "by_shape": {
+    "16000": {
+      "admission64_cached_tokens": 0,
+      "admission64_overhead_fraction": -0.0011852888667331918,
+      "admission64_ttft_median_s": 3.5431360453367233,
+      "off_cached_tokens": 0,
+      "off_ttft_median_s": 3.5473406687378883,
+      "request_count": 3
+    },
+    "4096": {
+      "admission64_cached_tokens": 0,
+      "admission64_overhead_fraction": 0.034698241475276115,
+      "admission64_ttft_median_s": 1.309469886124134,
+      "off_cached_tokens": 0,
+      "off_ttft_median_s": 1.265557274222374,
+      "request_count": 3
+    },
+    "7800": {
+      "admission64_cached_tokens": 0,
+      "admission64_overhead_fraction": -0.008584001069039338,
+      "admission64_ttft_median_s": 1.7334506250917912,
+      "off_cached_tokens": 0,
+      "off_ttft_median_s": 1.7484594024717808,
+      "request_count": 3
+    }
+  },
+  "candidate_policy": "off",
+  "cold": {
+    "admission64_overhead_fraction_median": -0.007668927373272294,
+    "admission64_overhead_fraction_p90": -0.0004683718308425844,
+    "admission64_ttft_median_s": 1.7385822348296642,
+    "admission64_ttft_p90_s": 3.5915390372276303,
+    "off_ttft_median_s": 1.7520183362066746,
+    "off_ttft_p90_s": 3.593222001194954,
+    "request_count": 9
+  },
+  "cold_isolation": {
+    "admission64_cold_cached_tokens": 0,
+    "off_cold_cached_tokens": 0,
+    "qualified": true
+  },
+  "control_policy": "admission64",
+  "cross_policy_numeric_observation": {
+    "cold_complete_output_identity_matches": 8,
+    "cold_complete_output_identity_rate": 0.8888888888888888,
+    "cold_first_token_identity_matches": 9,
+    "cold_first_token_identity_rate": 1.0,
+    "complete_output_identity_matches": 16,
+    "complete_output_identity_rate": 0.8888888888888888,
+    "first_token_identity_matches": 18,
+    "first_token_identity_rate": 1.0,
+    "relative_l2_evaluated": false,
+    "strict_cross_policy_output_required_for_timing": false,
+    "strict_output_identity_qualified": false,
+    "teacher_forced_logits_evaluated": false
+  },
+  "qualified_analysis": true,
+  "reasons": [],
+  "request_manifest_sha256": "d364af0f94d2d242784bafdebaa24d7467c4586f35a1ddbb71cd8f226ded56be",
+  "schema": "bi100-m1-170-cold-capture-overhead-comparison-v2",
+  "scope": {
+    "cache_off_is_diagnostic_only": true,
+    "diagnostic_four_layer_model": true,
+    "production_promotion_authorized": false,
+    "semantic_quality_evaluated": false,
+    "tp4_evaluated": false,
+    "yaml_or_main_change_authorized": false
+  },
+  "version": 2
+}

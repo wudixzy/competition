@@ -1,0 +1,81 @@
+{
+  "by_shape": {
+    "16000": {
+      "forward_overhead_fraction": 0.03592910471651778,
+      "order_balanced_geometric_overhead_fraction": 0.017202649171723428,
+      "order_range": [
+        -0.0011852888667331918,
+        0.03592910471651778
+      ],
+      "reverse_overhead_fraction": -0.0011852888667331918
+    },
+    "4096": {
+      "forward_overhead_fraction": 0.11774579320000322,
+      "order_balanced_geometric_overhead_fraction": 0.07542066496810018,
+      "order_range": [
+        0.034698241475276115,
+        0.11774579320000322
+      ],
+      "reverse_overhead_fraction": 0.034698241475276115
+    },
+    "7800": {
+      "forward_overhead_fraction": 0.04999435183682022,
+      "order_balanced_geometric_overhead_fraction": 0.02028486179016098,
+      "order_range": [
+        -0.008584001069039338,
+        0.04999435183682022
+      ],
+      "reverse_overhead_fraction": -0.008584001069039338
+    }
+  },
+  "cold_request_count_per_order": 9,
+  "cross_policy_numeric_observation": {
+    "cold_complete_output_identity_rate": {
+      "forward": 0.8888888888888888,
+      "reverse": 0.8888888888888888
+    },
+    "cold_first_token_identity_rate": {
+      "forward": 1.0,
+      "reverse": 1.0
+    },
+    "complete_output_identity_rate": {
+      "forward": 0.8888888888888888,
+      "reverse": 0.8888888888888888
+    },
+    "first_token_identity_rate": {
+      "forward": 1.0,
+      "reverse": 1.0
+    }
+  },
+  "median": {
+    "forward_overhead_fraction": 0.055203189715118395,
+    "order_balanced_geometric_overhead_fraction": 0.023284375473967556,
+    "order_range": [
+      -0.007668927373272294,
+      0.055203189715118395
+    ],
+    "reverse_overhead_fraction": -0.007668927373272294
+  },
+  "p90": {
+    "forward_overhead_fraction": 0.03525412669764272,
+    "order_balanced_geometric_overhead_fraction": 0.017236080183422375,
+    "order_range": [
+      -0.0004683718308425844,
+      0.03525412669764272
+    ],
+    "reverse_overhead_fraction": -0.0004683718308425844
+  },
+  "qualified_order_balanced_timing": true,
+  "request_manifest_sha256": "d364af0f94d2d242784bafdebaa24d7467c4586f35a1ddbb71cd8f226ded56be",
+  "schema": "bi100-m1-170-order-balanced-summary-v1",
+  "scope": {
+    "diagnostic_four_layer_model": true,
+    "production_promotion_authorized": false,
+    "semantic_quality_evaluated": false,
+    "statistical_significance_claimed": false,
+    "tp4_evaluated": false,
+    "yaml_or_main_change_authorized": false
+  },
+  "source_revision": "70e6d318408c75265b0934bc355b64a4610dc23e",
+  "version": 1
+}

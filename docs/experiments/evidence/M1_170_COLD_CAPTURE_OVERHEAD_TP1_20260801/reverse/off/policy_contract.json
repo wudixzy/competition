@@ -1,0 +1,8 @@
+{
+  "expected_policy": "off",
+  "observed_policy": "off",
+  "observed_restore_mode": "hybrid64",
+  "qualified": true,
+  "schema": "bi100-m1-169-policy-contract-v1",
+  "version": 1
+}
