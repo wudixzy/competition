@@ -230,6 +230,29 @@ except (ModuleNotFoundError, ImportError, OSError):
                 return None
             return candidate
 
+        def natural_repeated_branch_candidate(
+                self, live_prefix_keys: Sequence[GdnPrefixKey],
+                max_blocks: int, block_size: int,
+                scheduler_chunk_tokens: int) -> GdnPrefixKey | None:
+            if (self.policy != "tail64_nofinal" or max_blocks <= 0
+                    or not live_prefix_keys):
+                return None
+            if (block_size <= 0 or scheduler_chunk_tokens <= 0
+                    or scheduler_chunk_tokens % block_size != 0):
+                raise ValueError(
+                    "scheduler chunk size must be divisible by block size")
+            chunk_blocks = scheduler_chunk_tokens // block_size
+            live_blocks = min(len(live_prefix_keys), max_blocks)
+            aligned_blocks = live_blocks // chunk_blocks * chunk_blocks
+            if aligned_blocks <= 0:
+                return None
+            candidate = live_prefix_keys[aligned_blocks - 1]
+            if candidate[0] != aligned_blocks:
+                raise ValueError("live prefix keys are not contiguous")
+            if candidate in self._resident:
+                return None
+            return candidate
+
         def should_capture_final(self, key: GdnPrefixKey) -> bool:
             if self.policy in {"off", "tail64_nofinal"}:
                 return False
@@ -248,8 +271,13 @@ except (ModuleNotFoundError, ImportError, OSError):
                     "admission64", "tail64", "tail64_nofinal"}:
                 return ()
             actions: list[Tuple[GdnPrefixKey, str]] = []
-            branch_key = self.repeated_branch_candidate(
-                live_prefix_keys, len(live_prefix_keys))
+            if self.policy == "tail64_nofinal":
+                branch_key = self.natural_repeated_branch_candidate(
+                    live_prefix_keys, len(live_prefix_keys), block_size,
+                    scheduler_chunk_tokens)
+            else:
+                branch_key = self.repeated_branch_candidate(
+                    live_prefix_keys, len(live_prefix_keys))
             if branch_key is not None:
                 actions.append((branch_key, "repeated_branch"))
             elif self.policy in {"tail64", "tail64_nofinal"}:

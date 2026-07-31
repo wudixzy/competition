@@ -259,6 +259,24 @@ class GdnPrefixPolicyTest(unittest.TestCase):
         self.assertEqual(branch_actions,
                          ((branch_key, "repeated_branch"),))
 
+        unaligned_actions = GdnPrefixStatePolicy(
+            "tail64_nofinal").select_sparse_capture_actions(
+                keys_from_block_hashes(hashes[:700]), hashes, 32768, 16,
+                "hybrid64", 64, 8192)
+        self.assertEqual(
+            unaligned_actions[0],
+            ((512, hashes[511]), "repeated_branch"))
+        self.assertEqual(unaligned_actions[0][0][0] * 16 % 8192, 0)
+
+    def test_tail64_nofinal_rejects_noncontiguous_live_keys(self):
+        policy = GdnPrefixStatePolicy("tail64_nofinal")
+        hashes = [digest(index % 251) for index in range(1024)]
+        live = keys_from_block_hashes(hashes)
+        live[1023] = (1023, live[1023][1])
+        with self.assertRaisesRegex(ValueError, "not contiguous"):
+            policy.natural_repeated_branch_candidate(
+                live, len(live), 16, 8192)
+
     def test_sparse_capture_prioritizes_observed_branch_over_tail(self):
         hashes = [digest(index % 251) for index in range(2048)]
         branch = (1024, hashes[1023])
