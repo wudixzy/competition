@@ -1,0 +1,17 @@
+{
+  "baseline_extension_sha256": "36e043f138aa87c635178e4aa6a30af710b87c3f3d7c2a3f1838fc0e365bd368",
+  "baseline_module_name": "corex_fused_paged_prefill_fp16_qk",
+  "baseline_source_sha256": "11c387e6012834fe634ffa8d038f7a4bf4ec19fa13ec23779ee1f414037e564b",
+  "candidate_extension_sha256": "ce75409a30b51e684f5384197b750952fdc63e9d19365f378791cf8ea3d3b67c",
+  "candidate_module_name": "corex_query_tiled_paged_prefill_reassessed",
+  "candidate_source": "qwen3_6_scripts/corex_query_tiled_paged_prefill_reassessed.cu",
+  "candidate_source_sha256": "0217061a8803d2a181a01dd7316531d8cfed1fb84619d5f4e204acafe53b89c5",
+  "gpus": [
+    1,
+    2,
+    3
+  ],
+  "instance": "ssh-73ca29ba",
+  "source_branch": "",
+  "source_revision": "1bdf7b826466ec7f0c98a20e8aa5d8d9391723d1"
+}

@@ -1,0 +1,54 @@
+{
+  "authorization": {
+    "long_context_or_quality_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "real_activation_replay_authorized": false,
+    "short_tp4_screen_authorized": false
+  },
+  "median_speedup": 0.016024077541737156,
+  "minimum_speedup": 0.013404538450661948,
+  "qualified": false,
+  "reasons": [
+    "p90_total_16k_q8176: cell gate failed",
+    "p90_total_32k_q8176: cell gate failed",
+    "p90_total_64k_q8176: cell gate failed",
+    "median speedup is below 1.08x"
+  ],
+  "rows": [
+    {
+      "baseline_cuda_median_ms": 62.90140151977539,
+      "candidate_baseline_output_l2": 1.9034015694574473e-05,
+      "candidate_cuda_median_ms": 2966.64013671875,
+      "candidate_reference_lse_l2": 2.8901730989617672e-08,
+      "candidate_reference_output_l2": 7.660003104894515e-06,
+      "case": "p90_total_16k_q8176",
+      "gpu": 1,
+      "qualified": false,
+      "speedup": 0.02120290922422004
+    },
+    {
+      "baseline_cuda_median_ms": 117.22984313964844,
+      "candidate_baseline_output_l2": 1.888940394496407e-05,
+      "candidate_cuda_median_ms": 7315.85595703125,
+      "candidate_reference_lse_l2": 2.6689996323012433e-08,
+      "candidate_reference_output_l2": 7.846983494082908e-06,
+      "case": "p90_total_32k_q8176",
+      "gpu": 2,
+      "qualified": false,
+      "speedup": 0.016024077541737156
+    },
+    {
+      "baseline_cuda_median_ms": 225.89605712890625,
+      "candidate_baseline_output_l2": 1.9606592978681482e-05,
+      "candidate_cuda_median_ms": 16852.20703125,
+      "candidate_reference_lse_l2": 2.4940235235932176e-08,
+      "candidate_reference_output_l2": 7.712547533302689e-06,
+      "case": "p90_total_64k_q8176",
+      "gpu": 3,
+      "qualified": false,
+      "speedup": 0.013404538450661948
+    }
+  ],
+  "schema": "bi100-m1-174-query-tiled-reassessment-screen-v1",
+  "version": 1
+}
