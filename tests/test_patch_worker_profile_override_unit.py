@@ -78,6 +78,14 @@ class WorkerProfileOverridePatchUnitTest(unittest.TestCase):
                     patched.count("[BI100] skipping worker.profile_run"), 1)
                 self.assertIn("BI100_IN_STARTUP_PROFILE", patched)
                 self.assertIn("num_gpu_blocks_override is not None", patched)
+                self.assertLess(
+                    patched.index("num_gpu_blocks_override is not None"),
+                    patched.index("torch.cuda.empty_cache()"),
+                )
+                self.assertLess(
+                    patched.index("torch.cuda.empty_cache()"),
+                    patched.index("self.model_runner.profile_run()"),
+                )
 
                 second = _run_patch(root)
                 self.assertEqual(second.returncode, 0, second.stderr)

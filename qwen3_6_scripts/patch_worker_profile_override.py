@@ -32,15 +32,11 @@ GUARDED_BLOCK = """\
 """
 
 NEW_BLOCK = """\
-        # Profile the memory usage of the model and get the maximum number of
-        # cache blocks that can be allocated with the remaining free memory.
-        torch.cuda.empty_cache()
-
         # BI100: Qwen3.6 batched dummy profile_run can trip GDN non-finite
         # checks before the server starts. If the operator explicitly provides
         # --num-gpu-blocks-override, trust that conservative capacity value and
-        # skip only the synthetic profile pass. Real inference still uses the
-        # normal GDN fail-fast path.
+        # skip the synthetic profile pass and its leading device synchronization.
+        # Real inference still uses the normal GDN fail-fast path.
         if self.cache_config.num_gpu_blocks_override is not None:
             cache_block_size = self.get_cache_block_size_bytes()
             if cache_block_size == 0:
@@ -52,9 +48,11 @@ NEW_BLOCK = """\
                 "[BI100] skipping worker.profile_run because "
                 "num_gpu_blocks_override=%d was explicitly set",
                 self.cache_config.num_gpu_blocks_override)
-            gc.collect()
-            torch.cuda.empty_cache()
             return self.cache_config.num_gpu_blocks_override, max(num_cpu_blocks, 0)
+
+        # Profile the memory usage of the model and get the maximum number of
+        # cache blocks that can be allocated with the remaining free memory.
+        torch.cuda.empty_cache()
 
         # Execute a forward pass with dummy inputs to profile the memory usage
         # of the model. Mark this synthetic pass so BI100_PROFILE can skip
