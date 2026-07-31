@@ -1,0 +1,217 @@
+{
+  "case_count": 18,
+  "cases": [
+    {
+      "entered_serving": true,
+      "matched": true,
+      "name": "completion_budget_precedence",
+      "record": {
+        "add_generation_prompt": true,
+        "continue_final_message": false,
+        "enable_thinking": null,
+        "has_guided_json": false,
+        "has_stream_options": false,
+        "sampling_logprobs": null,
+        "sampling_max_tokens": 7,
+        "stream": false,
+        "tool_choice_mode": "none"
+      },
+      "status_code": 200
+    },
+    {
+      "entered_serving": true,
+      "matched": true,
+      "name": "thinking_precedence",
+      "record": {
+        "add_generation_prompt": true,
+        "continue_final_message": false,
+        "enable_thinking": false,
+        "has_guided_json": false,
+        "has_stream_options": false,
+        "sampling_logprobs": null,
+        "sampling_max_tokens": 8,
+        "stream": false,
+        "tool_choice_mode": "none"
+      },
+      "status_code": 200
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "empty_stream_options_without_stream",
+      "record": null,
+      "status_code": 400
+    },
+    {
+      "entered_serving": true,
+      "matched": true,
+      "name": "empty_stream_options_with_stream",
+      "record": {
+        "add_generation_prompt": true,
+        "continue_final_message": false,
+        "enable_thinking": null,
+        "has_guided_json": false,
+        "has_stream_options": true,
+        "sampling_logprobs": null,
+        "sampling_max_tokens": 8,
+        "stream": true,
+        "tool_choice_mode": "none"
+      },
+      "status_code": 200
+    },
+    {
+      "entered_serving": true,
+      "matched": true,
+      "name": "top_logprobs_zero_is_noop",
+      "record": {
+        "add_generation_prompt": true,
+        "continue_final_message": false,
+        "enable_thinking": null,
+        "has_guided_json": false,
+        "has_stream_options": false,
+        "sampling_logprobs": null,
+        "sampling_max_tokens": 8,
+        "stream": false,
+        "tool_choice_mode": "none"
+      },
+      "status_code": 200
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "positive_top_logprobs_requires_logprobs",
+      "record": null,
+      "status_code": 400
+    },
+    {
+      "entered_serving": true,
+      "matched": true,
+      "name": "null_tool_choice",
+      "record": {
+        "add_generation_prompt": true,
+        "continue_final_message": false,
+        "enable_thinking": null,
+        "has_guided_json": false,
+        "has_stream_options": false,
+        "sampling_logprobs": null,
+        "sampling_max_tokens": 8,
+        "stream": false,
+        "tool_choice_mode": "null"
+      },
+      "status_code": 200
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "malformed_tool_choice",
+      "record": null,
+      "status_code": 400
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "missing_response_schema",
+      "record": null,
+      "status_code": 400
+    },
+    {
+      "entered_serving": true,
+      "matched": true,
+      "name": "valid_response_schema",
+      "record": {
+        "add_generation_prompt": true,
+        "continue_final_message": false,
+        "enable_thinking": null,
+        "has_guided_json": true,
+        "has_stream_options": false,
+        "sampling_logprobs": null,
+        "sampling_max_tokens": 8,
+        "stream": false,
+        "tool_choice_mode": "none"
+      },
+      "status_code": 200
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "multiple_output_constraints",
+      "record": null,
+      "status_code": 400
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "continue_uses_default_generation_prompt",
+      "record": null,
+      "status_code": 400
+    },
+    {
+      "entered_serving": true,
+      "matched": true,
+      "name": "continue_with_generation_prompt_disabled",
+      "record": {
+        "add_generation_prompt": false,
+        "continue_final_message": true,
+        "enable_thinking": null,
+        "has_guided_json": false,
+        "has_stream_options": false,
+        "sampling_logprobs": null,
+        "sampling_max_tokens": 8,
+        "stream": false,
+        "tool_choice_mode": "none"
+      },
+      "status_code": 200
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "legacy_function_call_fail_closed",
+      "record": null,
+      "status_code": 400
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "legacy_functions_fail_closed",
+      "record": null,
+      "status_code": 400
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "responses_max_output_tokens_fail_closed",
+      "record": null,
+      "status_code": 400
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "reasoning_effort_fail_closed",
+      "record": null,
+      "status_code": 400
+    },
+    {
+      "entered_serving": false,
+      "matched": true,
+      "name": "malformed_logprob_type",
+      "record": null,
+      "status_code": 400
+    }
+  ],
+  "http_500_count": 0,
+  "qualified": true,
+  "reasons": [],
+  "required_fields_present": true,
+  "runtime_files": {
+    "api_server": {
+      "path": "/tmp/m1-167-runtime-draft-20260731/site-packages/vllm/entrypoints/openai/api_server.py",
+      "sha256": "59be3588b2b694864e2bac6cc77f3b50fb5fea5973926db1d821f60e862d0450"
+    },
+    "protocol": {
+      "path": "/tmp/m1-167-runtime-draft-20260731/site-packages/vllm/entrypoints/openai/protocol.py",
+      "sha256": "156e6406b85901b98f17c0f10c446d5b0de264b663528cdc6f7abb9531f3fcdd"
+    }
+  },
+  "schema": "bi100-chat-field-interactions-runtime-probe-v1",
+  "synthetic_only": true
+}

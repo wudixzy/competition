@@ -1,0 +1,149 @@
+{
+  "schema": "bi100-chat-completion-field-interactions-v1",
+  "version": 1,
+  "strict_extra_policy": "forbid",
+  "scope": "OpenAI-compatible Chat Completions request parsing and sampling handoff",
+  "relationships": [
+    {
+      "name": "completion_token_budget",
+      "kind": "alias_precedence",
+      "top_level_fields": [
+        "max_tokens",
+        "max_completion_tokens"
+      ],
+      "rule": "max_completion_tokens_if_not_none",
+      "internal_target": "SamplingParams.max_tokens",
+      "required_methods": [
+        "_effective_max_tokens",
+        "to_beam_search_params",
+        "to_sampling_params"
+      ],
+      "required_tests": [
+        "test_max_completion_tokens_only_reaches_sampling_budget",
+        "test_max_completion_tokens_precedes_legacy_field_when_both_exist",
+        "test_both_completion_fields_reuse_type_and_boundary_validation"
+      ]
+    },
+    {
+      "name": "thinking_toggle",
+      "kind": "alias_precedence",
+      "top_level_fields": [
+        "thinking",
+        "chat_template_kwargs"
+      ],
+      "rule": "thinking_overrides_chat_template_kwargs_enable_thinking",
+      "internal_target": "chat_template_kwargs.enable_thinking",
+      "required_methods": [
+        "normalize_thinking"
+      ],
+      "required_tests": [
+        "test_thinking_disabled_variants_normalize_to_chat_template_kwargs",
+        "test_thinking_conflict_has_explicit_precedence"
+      ]
+    },
+    {
+      "name": "stream_options",
+      "kind": "dependency",
+      "top_level_fields": [
+        "stream",
+        "stream_options"
+      ],
+      "rule": "non_null_stream_options_requires_stream_true",
+      "required_methods": [
+        "validate_stream_options"
+      ],
+      "required_tests": [
+        "test_stream_options_dependency_including_empty_object"
+      ]
+    },
+    {
+      "name": "output_logprobs",
+      "kind": "dependency",
+      "top_level_fields": [
+        "logprobs",
+        "top_logprobs"
+      ],
+      "rule": "positive_top_logprobs_requires_logprobs_true_zero_is_noop",
+      "required_methods": [
+        "check_logprobs"
+      ],
+      "required_tests": [
+        "test_top_logprobs_dependency_and_noop_zero"
+      ]
+    },
+    {
+      "name": "tool_selection",
+      "kind": "dependency_and_default",
+      "top_level_fields": [
+        "tools",
+        "tool_choice"
+      ],
+      "rule": "tools_default_to_auto_named_choice_must_match_null_is_default",
+      "required_methods": [
+        "check_tool_usage"
+      ],
+      "required_tests": [
+        "test_tools_default_to_auto_but_explicit_none_is_preserved",
+        "test_null_and_malformed_tool_choice_fail_safely"
+      ]
+    },
+    {
+      "name": "structured_output_source",
+      "kind": "mutual_exclusion",
+      "top_level_fields": [
+        "response_format",
+        "guided_json",
+        "guided_regex",
+        "guided_choice",
+        "guided_grammar"
+      ],
+      "rule": "at_most_one_non_text_output_constraint",
+      "required_methods": [
+        "check_guided_decoding_count"
+      ],
+      "required_tests": [
+        "test_output_constraint_sources_are_mutually_exclusive"
+      ]
+    },
+    {
+      "name": "response_format_schema",
+      "kind": "nested_dependency",
+      "top_level_fields": [
+        "response_format"
+      ],
+      "rule": "json_schema_type_requires_schema_other_types_forbid_json_schema",
+      "required_response_format_methods": [
+        "validate_json_schema_payload"
+      ],
+      "required_tests": [
+        "test_response_format_json_schema_shape_is_strict"
+      ]
+    },
+    {
+      "name": "generation_prompt_mode",
+      "kind": "mutual_exclusion",
+      "top_level_fields": [
+        "add_generation_prompt",
+        "continue_final_message"
+      ],
+      "rule": "continue_final_message_requires_add_generation_prompt_false_including_default",
+      "required_methods": [
+        "check_generation_prompt"
+      ],
+      "required_tests": [
+        "test_continue_final_message_accounts_for_default_generation_prompt"
+      ]
+    }
+  ],
+  "fail_closed_lookalikes": {
+    "function_call": "Deprecated response and request semantics are not fully implemented; do not partially map to tool_choice.",
+    "functions": "Deprecated response and request semantics are not fully implemented; do not partially map to tools.",
+    "max_output_tokens": "Responses API field, not a Chat Completions token-budget alias.",
+    "reasoning_effort": "Effort levels are not losslessly equivalent to the local boolean thinking control."
+  },
+  "required_fail_closed_test": "test_lookalike_fields_remain_extra_forbidden",
+  "malformed_input_rule": {
+    "rule": "before_validators_must_not_raise_non_validation_exceptions",
+    "required_test": "test_non_object_and_malformed_multi_field_inputs_fail_safely"
+  }
+}

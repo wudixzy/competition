@@ -302,6 +302,50 @@ class ProtocolUnitTest(unittest.TestCase):
         self.assert_validation_error(thinking={"type": "maybe"})
         self.assert_validation_error(thinking="off")
 
+    def test_thinking_conflict_has_explicit_precedence(self):
+        cases = (
+            (False, True, False),
+            (True, False, True),
+        )
+        for thinking, nested, expected in cases:
+            with self.subTest(thinking=thinking, nested=nested):
+                request = self.request(
+                    thinking=thinking,
+                    chat_template_kwargs={"enable_thinking": nested},
+                )
+                self.assertIs(
+                    request.chat_template_kwargs["enable_thinking"],
+                    expected,
+                )
+
+    def test_stream_options_dependency_including_empty_object(self):
+        for stream_options in ({}, {"include_usage": True}):
+            with self.subTest(stream_options=stream_options):
+                self.assert_validation_error(
+                    stream=False,
+                    stream_options=stream_options,
+                )
+
+        request = self.request(
+            stream=True,
+            stream_options={},
+        )
+        self.assertTrue(request.stream)
+        self.assertIsNotNone(request.stream_options)
+
+    def test_top_logprobs_dependency_and_noop_zero(self):
+        no_op = self.request(logprobs=False, top_logprobs=0)
+        sampling = no_op.to_sampling_params(default_max_tokens=32)
+        self.assertIsNone(sampling.kwargs["logprobs"])
+
+        enabled = self.request(logprobs=True, top_logprobs=3)
+        sampling = enabled.to_sampling_params(default_max_tokens=32)
+        self.assertEqual(sampling.kwargs["logprobs"], 3)
+
+        self.assert_validation_error(logprobs=False, top_logprobs=1)
+        self.assert_validation_error(top_logprobs="not-an-int")
+        self.assert_validation_error(prompt_logprobs="not-an-int")
+
     def test_private_prompt_logprob_sample_is_strict_and_opt_in(self):
         request = self.request(
             prompt_logprobs=5,
@@ -341,6 +385,24 @@ class ProtocolUnitTest(unittest.TestCase):
 
         none = self.request(tools=[_tool()], tool_choice="none")
         self.assertEqual(none.tool_choice, "none")
+
+    def test_null_and_malformed_tool_choice_fail_safely(self):
+        null_choice = self.request(tool_choice=None)
+        self.assertIsNone(null_choice.tool_choice)
+
+        malformed = (
+            {},
+            {"function": {}},
+            {"type": "function"},
+            [],
+        )
+        for tool_choice in malformed:
+            with self.subTest(tool_choice=tool_choice):
+                with self.assertRaises(ValidationError):
+                    self.request(
+                        tools=[_tool()],
+                        tool_choice=tool_choice,
+                    )
 
     def test_explicit_strict_false_is_accepted_but_not_forwarded(self):
         tool = _tool()
@@ -401,6 +463,124 @@ class ProtocolUnitTest(unittest.TestCase):
                 'guided_json_from_schema = {"type": "object"}'),
             2,
         )
+
+    def test_output_constraint_sources_are_mutually_exclusive(self):
+        conflicts = (
+            {
+                "guided_json": {"type": "object"},
+                "guided_grammar": 'root ::= "x"',
+            },
+            {
+                "response_format": {"type": "json_object"},
+                "guided_regex": "x+",
+            },
+            {
+                "guided_choice": ["x"],
+                "guided_grammar": 'root ::= "x"',
+            },
+            {
+                "tools": [_tool()],
+                "tool_choice": {
+                    "type": "function",
+                    "function": {"name": "lookup"},
+                },
+                "response_format": {"type": "json_object"},
+            },
+        )
+        for conflict in conflicts:
+            with self.subTest(fields=tuple(conflict)):
+                self.assert_validation_error(**conflict)
+
+        grammar = self.request(guided_grammar='root ::= "x"')
+        guided = grammar.to_sampling_params(
+            default_max_tokens=32).kwargs["guided_decoding"]
+        self.assertEqual(guided.kwargs["grammar"], 'root ::= "x"')
+
+    def test_response_format_json_schema_shape_is_strict(self):
+        invalid = (
+            {"type": "json_schema"},
+            {
+                "type": "json_schema",
+                "json_schema": {"name": "missing_schema"},
+            },
+            {
+                "type": "text",
+                "json_schema": {
+                    "name": "unexpected",
+                    "schema": {"type": "object"},
+                },
+            },
+        )
+        for response_format in invalid:
+            with self.subTest(response_format=response_format):
+                self.assert_validation_error(
+                    response_format=response_format)
+
+        request = self.request(response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "valid_schema",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "answer": {"type": "string"},
+                    },
+                    "required": ["answer"],
+                },
+            },
+        })
+        guided = request.to_sampling_params(
+            default_max_tokens=32).kwargs["guided_decoding"]
+        self.assertEqual(
+            guided.kwargs["json"]["required"],
+            ["answer"],
+        )
+
+    def test_continue_final_message_accounts_for_default_generation_prompt(self):
+        self.assert_validation_error(continue_final_message=True)
+        self.assert_validation_error(
+            continue_final_message=True,
+            add_generation_prompt=True,
+        )
+        request = self.request(
+            continue_final_message=True,
+            add_generation_prompt=False,
+        )
+        self.assertTrue(request.continue_final_message)
+        self.assertFalse(request.add_generation_prompt)
+
+    def test_lookalike_fields_remain_extra_forbidden(self):
+        lookalikes = {
+            "function_call": "auto",
+            "functions": [_tool()["function"]],
+            "max_output_tokens": 8,
+            "reasoning_effort": "medium",
+        }
+        for field, value in lookalikes.items():
+            with self.subTest(field=field):
+                with self.assertRaises(ValidationError) as raised:
+                    self.request(**{field: value})
+                errors = raised.exception.errors(include_url=False)
+                self.assertTrue(any(
+                    error["type"] == "extra_forbidden"
+                    and tuple(error["loc"]) == (field,)
+                    for error in errors
+                ), errors)
+
+    def test_non_object_and_malformed_multi_field_inputs_fail_safely(self):
+        malformed_payloads = (
+            [],
+            "not-an-object",
+            _base_request(
+                tools=[_tool()],
+                tool_choice={"function": None},
+            ),
+            _base_request(top_logprobs={"private": "value"}),
+        )
+        for payload in malformed_payloads:
+            with self.subTest(payload_type=type(payload).__name__):
+                with self.assertRaises(ValidationError):
+                    self.protocol.ChatCompletionRequest.model_validate(payload)
 
     def test_assistant_tool_calls_allow_null_content(self):
         messages = [

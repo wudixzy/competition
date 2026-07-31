@@ -1,0 +1,68 @@
+{
+  "classified_openai_only_fields": [
+    "audio",
+    "function_call",
+    "functions",
+    "metadata",
+    "modalities",
+    "moderation",
+    "prediction",
+    "prompt_cache_key",
+    "prompt_cache_options",
+    "prompt_cache_retention",
+    "reasoning_effort",
+    "safety_identifier",
+    "service_tier",
+    "store",
+    "verbosity",
+    "web_search_options"
+  ],
+  "classified_upstream_only_fields": [
+    "logits_processors",
+    "mm_processor_kwargs",
+    "request_id",
+    "return_tokens_as_token_ids",
+    "structural_tag"
+  ],
+  "contract_path": "quality/chat_completion_request_compatibility.v1.json",
+  "contract_sha256": "fd7731d9e403f0a91f90a6cc6a332642305d6788b8fe6a5833b83c50f4e5557e",
+  "fail_closed_lookalike_fields": [
+    "function_call",
+    "functions",
+    "max_output_tokens",
+    "reasoning_effort"
+  ],
+  "interaction_contract_path": "quality/chat_completion_field_interactions.v1.json",
+  "interaction_contract_sha256": "fa052df447044dac9dfe8ec1439cbdf50b36ffa23536c6213a7cf88b1af08741",
+  "interaction_relationships": [
+    "completion_token_budget",
+    "thinking_toggle",
+    "stream_options",
+    "output_logprobs",
+    "tool_selection",
+    "structured_output_source",
+    "response_format_schema",
+    "generation_prompt_mode"
+  ],
+  "local_field_count": 51,
+  "lossless_alias_fields": [
+    "chat_template_kwargs",
+    "max_completion_tokens",
+    "max_tokens",
+    "thinking"
+  ],
+  "protocol_path": "qwen3_6_scripts/protocol.py",
+  "protocol_sha256": "156e6406b85901b98f17c0f10c446d5b0de264b663528cdc6f7abb9531f3fcdd",
+  "protocol_tests_path": "tests/test_protocol_unit.py",
+  "protocol_tests_sha256": "6ae9d67f4fada93d90c4e99e0d4b1f3a6dcbf3b152c3bec893e555f4bac82217",
+  "qualified": true,
+  "reasons": [],
+  "review_required_non_alias_fields": [
+    "function_call",
+    "functions",
+    "max_output_tokens",
+    "reasoning_effort"
+  ],
+  "schema": "bi100-chat-completion-request-field-audit-v1",
+  "strict_extra_policy": "forbid"
+}

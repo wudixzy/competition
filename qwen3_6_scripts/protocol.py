@@ -131,6 +131,20 @@ class ResponseFormat(OpenAIBaseModel):
     type: Literal["text", "json_object", "json_schema"]
     json_schema: Optional[JsonSchemaResponseFormat] = None
 
+    @model_validator(mode="after")
+    def validate_json_schema_payload(self):
+        if self.type == "json_schema":
+            if (self.json_schema is None
+                    or self.json_schema.json_schema is None):
+                raise ValueError(
+                    "`response_format.json_schema` must include `schema` "
+                    "when type is \"json_schema\".")
+        elif self.json_schema is not None:
+            raise ValueError(
+                "`response_format.json_schema` is only valid when type is "
+                "\"json_schema\".")
+        return self
+
 
 class StreamOptions(OpenAIBaseModel):
     include_usage: Optional[bool] = True
@@ -425,6 +439,8 @@ class ChatCompletionRequest(OpenAIBaseModel):
         reasoning_content is intentionally kept — chat_utils.py wraps it as
         <think>...</think> for multi-turn reasoning history.
         """
+        if not isinstance(data, dict):
+            return data
         messages = data.get("messages")
         if not isinstance(messages, list):
             return data
@@ -524,6 +540,8 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def normalize_thinking(cls, data):
+        if not isinstance(data, dict):
+            return data
         thinking = data.get("thinking")
         if thinking is None:
             return data
@@ -561,7 +579,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def validate_stream_options(cls, data):
-        if data.get("stream_options") and not data.get("stream"):
+        if not isinstance(data, dict):
+            return data
+        if (data.get("stream_options") is not None
+                and not data.get("stream")):
             raise ValueError(
                 "Stream options can only be defined when `stream=True`.")
 
@@ -570,6 +591,15 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_logprobs(cls, data):
+        if not isinstance(data, dict):
+            return data
+        for field_name in ("prompt_logprobs", "top_logprobs"):
+            field_value = data.get(field_name)
+            if (field_value is not None
+                    and (not isinstance(field_value, int)
+                         or isinstance(field_value, bool))):
+                raise ValueError(f"`{field_name}` must be an integer.")
+
         if (prompt_logprobs := data.get("prompt_logprobs")) is not None:
             if data.get("stream") and prompt_logprobs > 0:
                 raise ValueError(
@@ -582,7 +612,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             if top_logprobs < 0:
                 raise ValueError("`top_logprobs` must be a positive value.")
 
-            if not data.get("logprobs"):
+            if top_logprobs > 0 and not data.get("logprobs"):
                 raise ValueError(
                     "when using `top_logprobs`, `logprobs` must be set to true."
                 )
@@ -592,6 +622,8 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def validate_bi100_prompt_logprob_sample(cls, data):
+        if not isinstance(data, dict):
+            return data
         positions = data.get("bi100_prompt_logprobs_sample_positions")
         if positions is None:
             return data
@@ -626,20 +658,34 @@ class ChatCompletionRequest(OpenAIBaseModel):
     def check_guided_decoding_count(cls, data):
         if isinstance(data, ValueError):
             raise data
+        if not isinstance(data, dict):
+            return data
 
-        guide_count = sum([
-            "guided_json" in data and data["guided_json"] is not None,
-            "guided_regex" in data and data["guided_regex"] is not None,
-            "guided_choice" in data and data["guided_choice"] is not None
-        ])
+        guided_fields = (
+            "guided_json",
+            "guided_regex",
+            "guided_choice",
+            "guided_grammar",
+        )
+        guide_count = sum(data.get(field) is not None
+                          for field in guided_fields)
+        response_format = data.get("response_format")
+        has_structured_response_format = (
+            isinstance(response_format, dict)
+            and response_format.get("type") in (
+                "json_object",
+                "json_schema",
+            )
+        )
         # you can only use one kind of guided decoding
-        if guide_count > 1:
+        if guide_count + has_structured_response_format > 1:
             raise ValueError(
-                "You can only use one kind of guided decoding "
-                "('guided_json', 'guided_regex' or 'guided_choice').")
+                "You can only use one output constraint from "
+                "`response_format`, `guided_json`, `guided_regex`, "
+                "`guided_choice`, or `guided_grammar`.")
         # you can only either use guided decoding or a forced tool, not both
-        if guide_count > 0 and data.get("tool_choice",
-                                        "none") not in ("none", "auto"):
+        if (guide_count + has_structured_response_format > 0
+                and data.get("tool_choice", "none") not in ("none", "auto")):
             raise ValueError(
                 "You can only either use guided decoding or tools, not both.")
         return data
@@ -647,6 +693,8 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_tool_usage(cls, data):
+        if not isinstance(data, dict):
+            return data
 
         # if "tool_choice" is not specified but tools are provided,
         # default to "auto" tool_choice
@@ -654,7 +702,7 @@ class ChatCompletionRequest(OpenAIBaseModel):
             data["tool_choice"] = "auto"
 
         # if "tool_choice" is specified -- validation
-        if "tool_choice" in data:
+        if "tool_choice" in data and data["tool_choice"] is not None:
             if data["tool_choice"] == "none":
                 return data
 
@@ -675,20 +723,26 @@ class ChatCompletionRequest(OpenAIBaseModel):
             # it matches a valid tool
             if isinstance(data["tool_choice"], dict):
                 valid_tool = False
-                specified_function = data["tool_choice"]["function"]
-                if not specified_function:
+                specified_function = data["tool_choice"].get("function")
+                if not isinstance(specified_function, dict):
                     raise ValueError(
                         "Incorrectly formatted `tool_choice`. Should be like "
                         "`{\"type\": \"function\","
                         " \"function\": {\"name\": \"my_function\"}}`")
-                specified_function_name = specified_function["name"]
-                if not specified_function_name:
+                specified_function_name = specified_function.get("name")
+                if not isinstance(specified_function_name, str) \
+                        or not specified_function_name:
                     raise ValueError(
                         "Incorrectly formatted `tool_choice`. Should be like "
                         "`{\"type\": \"function\", "
                         "\"function\": {\"name\": \"my_function\"}}`")
                 for tool in data["tools"]:
-                    if tool["function"]["name"] == specified_function_name:
+                    if not isinstance(tool, dict):
+                        continue
+                    function = tool.get("function")
+                    if (isinstance(function, dict)
+                            and function.get("name")
+                            == specified_function_name):
                         valid_tool = True
                         break
                 if not valid_tool:
@@ -700,8 +754,10 @@ class ChatCompletionRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_generation_prompt(cls, data):
-        if data.get("continue_final_message") and data.get(
-                "add_generation_prompt"):
+        if not isinstance(data, dict):
+            return data
+        if (data.get("continue_final_message")
+                and data.get("add_generation_prompt", True)):
             raise ValueError("Cannot set both `continue_final_message` and "
                              "`add_generation_prompt` to True.")
         return data
@@ -879,20 +935,43 @@ class CompletionRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_guided_decoding_count(cls, data):
-        guide_count = sum([
-            "guided_json" in data and data["guided_json"] is not None,
-            "guided_regex" in data and data["guided_regex"] is not None,
-            "guided_choice" in data and data["guided_choice"] is not None
-        ])
-        if guide_count > 1:
+        if not isinstance(data, dict):
+            return data
+        guided_fields = (
+            "guided_json",
+            "guided_regex",
+            "guided_choice",
+            "guided_grammar",
+        )
+        guide_count = sum(data.get(field) is not None
+                          for field in guided_fields)
+        response_format = data.get("response_format")
+        has_structured_response_format = (
+            isinstance(response_format, dict)
+            and response_format.get("type") in (
+                "json_object",
+                "json_schema",
+            )
+        )
+        if guide_count + has_structured_response_format > 1:
             raise ValueError(
-                "You can only use one kind of guided decoding "
-                "('guided_json', 'guided_regex' or 'guided_choice').")
+                "You can only use one output constraint from "
+                "`response_format`, `guided_json`, `guided_regex`, "
+                "`guided_choice`, or `guided_grammar`.")
         return data
 
     @model_validator(mode="before")
     @classmethod
     def check_logprobs(cls, data):
+        if not isinstance(data, dict):
+            return data
+        for field_name in ("prompt_logprobs", "logprobs"):
+            field_value = data.get(field_name)
+            if (field_value is not None
+                    and (not isinstance(field_value, int)
+                         or isinstance(field_value, bool))):
+                raise ValueError(f"`{field_name}` must be an integer.")
+
         if (prompt_logprobs := data.get("prompt_logprobs")) is not None:
             if data.get("stream") and prompt_logprobs > 0:
                 raise ValueError(
@@ -909,7 +988,10 @@ class CompletionRequest(OpenAIBaseModel):
     @model_validator(mode="before")
     @classmethod
     def validate_stream_options(cls, data):
-        if data.get("stream_options") and not data.get("stream"):
+        if not isinstance(data, dict):
+            return data
+        if (data.get("stream_options") is not None
+                and not data.get("stream")):
             raise ValueError(
                 "Stream options can only be defined when `stream=True`.")
 

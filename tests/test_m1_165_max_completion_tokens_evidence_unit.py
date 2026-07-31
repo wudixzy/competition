@@ -69,6 +69,11 @@ class M1165MaxCompletionTokensEvidenceUnitTest(unittest.TestCase):
     def test_field_audit_is_strict_and_complete(self):
         audit = json.loads(
             (EVIDENCE / "field_audit.json").read_text(encoding="utf-8"))
+        probe = json.loads(
+            (EVIDENCE / "runtime_probe.json").read_text(encoding="utf-8"))
+        summary = json.loads(
+            (EVIDENCE / "verification_summary.json").read_text(
+                encoding="utf-8"))
         self.assertTrue(audit["qualified"], audit["reasons"])
         self.assertEqual(audit["strict_extra_policy"], "forbid")
         self.assertIn(
@@ -82,7 +87,11 @@ class M1165MaxCompletionTokensEvidenceUnitTest(unittest.TestCase):
             audit["contract_sha256"],
         )
         self.assertEqual(
-            _sha256(ROOT / audit["protocol_path"]),
+            probe["runtime_files"]["protocol"]["sha256"],
+            audit["protocol_sha256"],
+        )
+        self.assertEqual(
+            summary["runtime_overlay_identity"]["protocol.py"]["sha256"],
             audit["protocol_sha256"],
         )
 

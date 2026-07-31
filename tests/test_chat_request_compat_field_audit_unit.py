@@ -52,6 +52,33 @@ class ChatRequestCompatFieldAuditUnitTest(unittest.TestCase):
         ):
             self.assertIn(field, report["classified_openai_only_fields"])
 
+    def test_multi_field_interactions_are_explicit_and_tested(self):
+        report = self.audit_module.audit(ROOT)
+        self.assertTrue(report["qualified"], report["reasons"])
+        for relationship in (
+            "completion_token_budget",
+            "thinking_toggle",
+            "stream_options",
+            "output_logprobs",
+            "tool_selection",
+            "structured_output_source",
+            "response_format_schema",
+            "generation_prompt_mode",
+        ):
+            self.assertIn(
+                relationship,
+                report["interaction_relationships"],
+            )
+        self.assertEqual(
+            report["fail_closed_lookalike_fields"],
+            [
+                "function_call",
+                "functions",
+                "max_output_tokens",
+                "reasoning_effort",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
