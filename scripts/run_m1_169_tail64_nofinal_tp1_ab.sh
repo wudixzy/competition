@@ -147,7 +147,11 @@ port_free() {
 import socket
 import sys
 with socket.socket() as sock:
-    sock.bind(("127.0.0.1", int(sys.argv[1])))
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("127.0.0.1", int(sys.argv[1])))
+    except OSError:
+        raise SystemExit(1)
 PY
 }
 

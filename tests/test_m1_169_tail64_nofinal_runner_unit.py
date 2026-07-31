@@ -75,6 +75,8 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
     def test_arm_records_each_gate_and_waits_for_port_release(self) -> None:
         self.assertIn("wait_port_free()", self.source)
         self.assertIn("for _ in $(seq 1 120)", self.source)
+        self.assertIn("socket.SO_REUSEADDR", self.source)
+        self.assertIn("except OSError:", self.source)
         for name in (
             "startup.rc",
             "policy_contract.rc",
