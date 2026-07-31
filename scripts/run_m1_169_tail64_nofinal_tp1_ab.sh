@@ -213,6 +213,7 @@ start_service() {
     local arm=$1 policy=$2 identity="$arm/service_identity.json" observed
     port_free || return 1
     (
+        cd /tmp
         exec env CUDA_VISIBLE_DEVICES="$GPU_INDEX" \
             BI100_GDN_CACHE_POLICY="$policy" BI100_GDN_RESTORE_MODE=hybrid64 \
             BI100_HYBRID_KV_ACCOUNTING=full_attention BI100_CACHE_TRACE=1 \
@@ -270,6 +271,64 @@ PY
         sleep 5
     done
     return 1
+}
+
+verify_service_import_contract() {
+    local output=$1
+    (
+    cd /tmp
+    env PYTHONDONTWRITEBYTECODE=1 \
+        PYTHONPATH="$BI100_RUNTIME_SITE_PACKAGES:$ROOT/tests:$SYSTEM_PYTHONPATH" \
+        LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \
+        python3 - "$BI100_RUNTIME_SITE_PACKAGES" "$output" <<'PY'
+import inspect
+import json
+from pathlib import Path
+import sys
+
+from vllm.entrypoints.openai import api_server, cli_args
+from vllm.entrypoints.openai.tool_parsers import ToolParserManager
+from vllm.reasoning import ReasoningParserManager
+from vllm.utils import FlexibleArgumentParser
+
+site = Path(sys.argv[1]).resolve()
+output = Path(sys.argv[2])
+api_path = Path(inspect.getfile(api_server)).resolve()
+cli_path = Path(inspect.getfile(cli_args)).resolve()
+parser = cli_args.make_arg_parser(FlexibleArgumentParser())
+options = {
+    option
+    for action in parser._actions
+    for option in action.option_strings
+}
+qualified = all((
+    api_path.is_relative_to(site),
+    cli_path.is_relative_to(site),
+    "--reasoning-parser" in options,
+    "--tool-call-parser" in options,
+    "qwen3_coder" in ToolParserManager.tool_parsers,
+    "qwen3" in ReasoningParserManager.list_registered(),
+))
+report = {
+    "schema": "bi100-m1-170-service-import-contract-v1",
+    "version": 1,
+    "qualified": qualified,
+    "api_server_from_overlay": api_path.is_relative_to(site),
+    "cli_args_from_overlay": cli_path.is_relative_to(site),
+    "reasoning_parser_option": "--reasoning-parser" in options,
+    "tool_call_parser_option": "--tool-call-parser" in options,
+    "qwen3_coder_registered": (
+        "qwen3_coder" in ToolParserManager.tool_parsers),
+    "qwen3_reasoning_registered": (
+        "qwen3" in ReasoningParserManager.list_registered()),
+}
+output.write_text(
+    json.dumps(report, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+raise SystemExit(0 if qualified else 1)
+PY
+    )
 }
 
 scan_fatal() {
@@ -400,6 +459,7 @@ report = {
     "qualified_development_screen": int(sys.argv[10]) == 0,
     "gates": {
         "preflight_before": rc("preflight_before.rc"),
+        "service_import_contract": rc("service_import_contract.rc"),
         "admission64": rc("admission64/arm.rc"),
         "candidate": rc(f"{sys.argv[8]}/arm.rc"),
         "comparison": rc("comparison.rc"),
@@ -433,6 +493,15 @@ env PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH" \
     python3 "$ROOT/tests/verify_bare_host_runtime_identity.py" \
     --source-root "$ROOT" --runtime-site-packages "$BI100_RUNTIME_SITE_PACKAGES" \
     --runtime-install "$RUNTIME_INSTALL" --out "$RUN_ROOT/runtime_identity.json"
+CURRENT_STAGE=service_import_contract
+write_stage
+service_import_rc=0
+verify_service_import_contract "$RUN_ROOT/service_import_contract.json" \
+    > "$RUN_ROOT/service_import_contract.stdout" \
+    2> "$RUN_ROOT/service_import_contract.stderr" \
+    || service_import_rc=$?
+printf '%s\n' "$service_import_rc" > "$RUN_ROOT/service_import_contract.rc"
+[[ $service_import_rc -eq 0 ]]
 
 IFS=, read -r first second <<< "$ARM_ORDER"
 for policy in "$first" "$second"; do

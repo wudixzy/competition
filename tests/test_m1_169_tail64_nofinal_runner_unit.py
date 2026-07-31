@@ -51,6 +51,19 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
                       self.source)
         self.assertIn("CURRENT_STAGE=complete\nwrite_stage", self.source)
 
+    def test_service_cannot_import_repository_shadow_package(self) -> None:
+        start = self.source.index("start_service()")
+        stop = self.source.index("scan_fatal()")
+        service = self.source[start:stop]
+        self.assertLess(service.index("cd /tmp"), service.index("exec env"))
+        self.assertIn("verify_service_import_contract()", self.source)
+        self.assertIn('api_path.is_relative_to(site)', self.source)
+        self.assertIn('cli_path.is_relative_to(site)', self.source)
+        self.assertIn('"--reasoning-parser" in options', self.source)
+        self.assertIn('"qwen3_coder" in ToolParserManager.tool_parsers',
+                      self.source)
+        self.assertIn('"service_import_contract": rc(', self.source)
+
     def test_policy_contract_uses_runtime_overlay_introspection(self) -> None:
         self.assertIn("verify_policy_contract()", self.source)
         self.assertIn("from vllm.gdn_prefix import (", self.source)
