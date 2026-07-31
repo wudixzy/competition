@@ -51,6 +51,15 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
                       self.source)
         self.assertIn("CURRENT_STAGE=complete\nwrite_stage", self.source)
 
+    def test_policy_contract_uses_runtime_overlay_introspection(self) -> None:
+        self.assertIn("verify_policy_contract()", self.source)
+        self.assertIn("from vllm.gdn_prefix import (", self.source)
+        self.assertIn("gdn_cache_policy_from_env", self.source)
+        self.assertIn("gdn_restore_mode_from_env", self.source)
+        self.assertIn('observed == expected and restore == "hybrid64"',
+                      self.source)
+        self.assertNotIn('[BI100] GDN cache; policy=$policy', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

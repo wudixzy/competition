@@ -243,12 +243,44 @@ scan_fatal() {
     return "$found"
 }
 
+verify_policy_contract() {
+    local arm=$1 policy=$2
+    env BI100_GDN_CACHE_POLICY="$policy" BI100_GDN_RESTORE_MODE=hybrid64 \
+        PYTHONPATH="$BI100_RUNTIME_SITE_PACKAGES:$ROOT/tests:$SYSTEM_PYTHONPATH" \
+        LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \
+        python3 - "$policy" "$arm/policy_contract.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+from vllm.gdn_prefix import (
+    gdn_cache_policy_from_env,
+    gdn_restore_mode_from_env,
+)
+
+expected = sys.argv[1]
+observed = gdn_cache_policy_from_env()
+restore = gdn_restore_mode_from_env()
+report = {
+    "schema": "bi100-m1-169-policy-contract-v1",
+    "version": 1,
+    "expected_policy": expected,
+    "observed_policy": observed,
+    "observed_restore_mode": restore,
+    "qualified": observed == expected and restore == "hybrid64",
+}
+Path(sys.argv[2]).write_text(
+    json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+raise SystemExit(0 if report["qualified"] else 1)
+PY
+}
+
 run_arm() {
     local policy=$1 arm="$RUN_ROOT/$policy" rc=0
     mkdir -p "$arm"
     start_service "$arm" "$policy" || rc=1
     if [[ $rc -eq 0 ]]; then
-        grep -Fq "[BI100] GDN cache; policy=$policy restore=hybrid64" "$arm/server.log" || rc=1
+        verify_policy_contract "$arm" "$policy" || rc=1
     fi
     if [[ $rc -eq 0 ]]; then
         timeout --signal=TERM --kill-after=60s 7200s env \
