@@ -1,0 +1,28 @@
+{
+  "arm_order": [
+    "admission64",
+    "tail64_nofinal"
+  ],
+  "gates": {
+    "admission64": 0,
+    "cleanup": 0,
+    "comparison": 0,
+    "fatal_scan": 0,
+    "postflight_after": 0,
+    "preflight_after": 0,
+    "preflight_before": 0,
+    "tail64_nofinal": 0
+  },
+  "gpu_index": 1,
+  "instance": "ssh-73ca29ba",
+  "model_quality_evaluated": false,
+  "num_gpu_blocks_override": 552637,
+  "production_promotion_authorized": false,
+  "qualified_development_screen": true,
+  "returncode": 0,
+  "schema": "bi100-m1-169-tail64-nofinal-tp1-runner-v1",
+  "source_branch": "",
+  "source_revision": "badcfe5ac946b9b4d7a73d62581a82e3275deefe",
+  "tp4_evaluated": false,
+  "version": 1
+}
