@@ -45,6 +45,28 @@ from vllm.utils import iterate_with_cancellation, random_uuid
 logger = init_logger(__name__)
 
 
+def _bi100_exception_type(error: BaseException) -> str:
+    name = type(error).__name__
+    if (not name or len(name) > 64 or not name.isascii()
+            or not all(character.isalnum() or character in "._-"
+                       for character in name)):
+        return "unknown"
+    return name
+
+
+def _bi100_log_request_stage_error(stage: str,
+                                   error: BaseException) -> None:
+    try:
+        logger.warning(
+            "[BI100 4XX DETAIL] endpoint=chat stage=%s exception_type=%s",
+            stage,
+            _bi100_exception_type(error),
+        )
+    except Exception:
+        # Diagnostics must never turn a client error into HTTP 500.
+        pass
+
+
 def _serialize_tool_arguments(arguments) -> str:
     if arguments is None:
         return "{}"
@@ -342,14 +364,14 @@ class OpenAIServingChat(OpenAIServing):
                     **(request.chat_template_kwargs or {}),
                 )
         except Exception as e:
-            logger.exception("Error in applying chat template from request")
-            return self.create_error_response(str(e))
+            _bi100_log_request_stage_error("chat_template", e)
+            return self.create_error_response("Failed to apply chat template")
 
         try:
             mm_data = await mm_data_future
         except Exception as e:
-            logger.exception("Error in loading multi-modal data")
-            return self.create_error_response(str(e))
+            _bi100_log_request_stage_error("multimodal_load", e)
+            return self.create_error_response("Failed to load multi-modal data")
 
         # validation for OpenAI tools
         # tool_choice = "required" is not supported

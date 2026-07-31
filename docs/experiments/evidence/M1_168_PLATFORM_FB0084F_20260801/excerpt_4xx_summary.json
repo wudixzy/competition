@@ -1,0 +1,78 @@
+{
+  "attributed_count": 2,
+  "attribution_delta": -2,
+  "by_access_code": {},
+  "by_attributed_code": {
+    "400": 2
+  },
+  "by_endpoint": {
+    "chat": 2
+  },
+  "by_exception_type": {},
+  "by_failure_stage": {},
+  "by_reason": {
+    "invalid_top_p": 1,
+    "unclassified_chat_error": 1
+  },
+  "by_validation_field": {},
+  "by_validation_type": {},
+  "chat_4xx_access_count": 0,
+  "classified": false,
+  "complete": false,
+  "malformed_detail_marker_count": 0,
+  "malformed_marker_count": 0,
+  "privacy": {
+    "contains_multimodal_url_or_bytes": false,
+    "contains_raw_log_lines": false,
+    "contains_request_content": false,
+    "contains_response_content": false,
+    "contains_tool_schema": false,
+    "contains_validation_error_message": false,
+    "contains_validation_input_value": false
+  },
+  "qualified": false,
+  "request_shapes": [
+    {
+      "assistant_tool_msgs": 0,
+      "choice": "none",
+      "count": 1,
+      "image_data": 0,
+      "image_other": 0,
+      "image_remote": 0,
+      "images": 0,
+      "messages": 1,
+      "n": 1,
+      "stream": 0,
+      "strict_false": 0,
+      "strict_true": 0,
+      "system_other_parts": 0,
+      "system_part_msgs": 0,
+      "system_text_parts": 0,
+      "systems": 0,
+      "tool_msgs": 0,
+      "tools": 0
+    },
+    {
+      "assistant_tool_msgs": 0,
+      "choice": "none",
+      "count": 1,
+      "image_data": 0,
+      "image_other": 0,
+      "image_remote": 1,
+      "images": 1,
+      "messages": 1,
+      "n": 1,
+      "stream": 0,
+      "strict_false": 0,
+      "strict_true": 0,
+      "system_other_parts": 0,
+      "system_part_msgs": 0,
+      "system_text_parts": 0,
+      "systems": 0,
+      "tool_msgs": 0,
+      "tools": 0
+    }
+  ],
+  "schema": "bi100-api-4xx-attribution-v3",
+  "version": 3
+}

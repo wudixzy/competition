@@ -85,6 +85,10 @@ def _bi100_chat_4xx_reason(message):
         return "image_count_limit"
     if message == "Unknown model type: qwen3_5_moe":
         return "image_model_type_unsupported"
+    if message == "Failed to apply chat template":
+        return "chat_template_failed"
+    if message == "Failed to load multi-modal data":
+        return "multimodal_load_failed"
     return "unclassified_chat_error"
 
 

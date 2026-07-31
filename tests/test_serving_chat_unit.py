@@ -85,6 +85,23 @@ def _load_serialize_tool_arguments():
     return namespace["_serialize_tool_arguments"]
 
 
+def _load_request_stage_diagnostics():
+    tree = ast.parse(SERVING_CHAT.read_text(), filename=str(SERVING_CHAT))
+    names = {
+        "_bi100_exception_type",
+        "_bi100_log_request_stage_error",
+    }
+    functions = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in names
+    ]
+    module = ast.Module(body=functions, type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {"BaseException": BaseException}
+    exec(compile(module, str(SERVING_CHAT), "exec"), namespace)
+    return namespace
+
+
 def _load_named_tool_stream_helpers():
     tree = ast.parse(SERVING_CHAT.read_text(), filename=str(SERVING_CHAT))
     functions = [
@@ -217,6 +234,12 @@ class ServingChatUnitTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.serialize = staticmethod(_load_serialize_tool_arguments())
+        diagnostics = _load_request_stage_diagnostics()
+        cls.exception_type = staticmethod(
+            diagnostics["_bi100_exception_type"])
+        cls.log_stage_error = staticmethod(
+            diagnostics["_bi100_log_request_stage_error"])
+        cls.diagnostics_globals = diagnostics
         stream_helpers = _load_named_tool_stream_helpers()
         cls.named_delta = staticmethod(
             stream_helpers["_named_tool_delta_payload"])
@@ -239,6 +262,31 @@ class ServingChatUnitTest(unittest.TestCase):
     def test_tool_arguments_string_is_not_double_json_encoded(self):
         arguments = '{"city": "上海", "unit": "c"}'
         self.assertEqual(self.serialize(arguments), arguments)
+
+    def test_request_stage_diagnostics_are_bounded_and_never_raise(self):
+        class CapturingLogger:
+            def __init__(self):
+                self.lines = []
+
+            def warning(self, template, *args):
+                self.lines.append(template % args)
+
+        logger = CapturingLogger()
+        self.diagnostics_globals["logger"] = logger
+        error = TimeoutError("private URL and request details")
+        self.log_stage_error("multimodal_load", error)
+        self.assertEqual(logger.lines, [
+            "[BI100 4XX DETAIL] endpoint=chat stage=multimodal_load "
+            "exception_type=TimeoutError",
+        ])
+        self.assertNotIn("private", logger.lines[0])
+
+        class BrokenLogger:
+            def warning(self, *_args):
+                raise RuntimeError("logger failed")
+
+        self.diagnostics_globals["logger"] = BrokenLogger()
+        self.log_stage_error("chat_template", ValueError("private"))
 
     def test_tool_arguments_structured_values_are_json_encoded(self):
         self.assertEqual(json.loads(self.serialize({"city": "上海"})),

@@ -108,6 +108,14 @@ class Api4xxTelemetryTest(unittest.TestCase):
             self.reason("Unknown model type: qwen3_5_moe"),
             "image_model_type_unsupported",
         )
+        self.assertEqual(
+            self.reason("Failed to apply chat template"),
+            "chat_template_failed",
+        )
+        self.assertEqual(
+            self.reason("Failed to load multi-modal data"),
+            "multimodal_load_failed",
+        )
 
     def test_image_source_kinds_are_bounded(self):
         self.assertEqual(

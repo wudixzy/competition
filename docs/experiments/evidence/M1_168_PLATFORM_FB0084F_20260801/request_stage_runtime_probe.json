@@ -1,0 +1,23 @@
+{
+  "files": {
+    "api_server.py": {
+      "path": "/tmp/m1-168-runtime-draft-20260801/site-packages/vllm/entrypoints/openai/api_server.py",
+      "sha256": "fa6ab6a1a2e4f1e2215f068d3a969f69478d003f968462238e6aee332d2b30e4"
+    },
+    "serving_chat.py": {
+      "path": "/tmp/m1-168-runtime-draft-20260801/site-packages/vllm/entrypoints/openai/serving_chat.py",
+      "sha256": "5d1f5b905fa99d6147b40e6c960a549db7c065b2219b317b4e0c3a019257625f"
+    }
+  },
+  "lines": [
+    "[BI100 4XX DETAIL] endpoint=chat stage=multimodal_load exception_type=TimeoutError"
+  ],
+  "logger_failure_raised": false,
+  "qualified": true,
+  "reasons": {
+    "chat_template": "chat_template_failed",
+    "multimodal": "multimodal_load_failed"
+  },
+  "schema": "bi100-request-stage-4xx-runtime-probe-v1",
+  "source_transfer_note": "serving_chat behavior-equivalent draft normalized line endings during remote patch application"
+}

@@ -13,6 +13,7 @@ from typing import Any
 REPORT_SCHEMA = "bi100-api-4xx-attribution-v3"
 REPORT_VERSION = 3
 MARKER = "[BI100 4XX]"
+DETAIL_MARKER = "[BI100 4XX DETAIL]"
 ACCESS_RE = re.compile(
     r'"POST /v1/chat/completions HTTP/1\.[01]" (?P<code>4\d\d)\b'
 )
@@ -20,6 +21,7 @@ FIELD_RE = re.compile(r"(?P<key>[a-z_]+)=(?P<value>[^\s]+)")
 VALIDATION_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 ALLOWED_ENDPOINTS = {"chat", "request_validation"}
 ALLOWED_REASONS = {
+    "chat_template_failed",
     "empty_messages",
     "context_length_exceeded",
     "invalid_tool_arguments_json",
@@ -28,6 +30,7 @@ ALLOWED_REASONS = {
     "invalid_top_p",
     "image_count_limit",
     "image_model_type_unsupported",
+    "multimodal_load_failed",
     "n_exceeds_max_num_seqs",
     "request_validation_generation",
     "request_validation_message_content",
@@ -80,6 +83,7 @@ LEGACY_INTEGER_SHAPE_FIELDS = (
 )
 LEGACY_SHAPE_FIELDS = LEGACY_INTEGER_SHAPE_FIELDS + ("choice", "n")
 ALLOWED_CHOICES = {"unset", "none", "auto", "required", "named", "other"}
+ALLOWED_DETAIL_STAGES = {"chat_template", "multimodal_load"}
 
 
 def require_int(value: str | None, field: str, *, minimum: int = 0) -> int:
@@ -177,6 +181,28 @@ def parse_marker(line: str) -> dict[str, Any]:
     return record
 
 
+def parse_detail_marker(line: str) -> dict[str, str]:
+    payload = line.split(DETAIL_MARKER, 1)[1]
+    fields = {
+        match.group("key"): match.group("value")
+        for match in FIELD_RE.finditer(payload)
+    }
+    if fields.get("endpoint") != "chat":
+        raise ValueError("unknown detail endpoint")
+    stage = fields.get("stage")
+    if stage not in ALLOWED_DETAIL_STAGES:
+        raise ValueError("unknown detail stage")
+    exception_type = require_validation_identifier(
+        fields.get("exception_type"),
+        "exception_type",
+        legacy_default="unknown",
+    )
+    return {
+        "stage": stage,
+        "exception_type": exception_type,
+    }
+
+
 def shape_key(record: dict[str, Any]) -> tuple[Any, ...] | None:
     if "messages" not in record:
         return None
@@ -202,8 +228,11 @@ def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
     reasons: collections.Counter[str] = collections.Counter()
     validation_fields: collections.Counter[str] = collections.Counter()
     validation_types: collections.Counter[str] = collections.Counter()
+    failure_stages: collections.Counter[str] = collections.Counter()
+    exception_types: collections.Counter[str] = collections.Counter()
     shapes: collections.Counter[tuple[Any, ...]] = collections.Counter()
     malformed = 0
+    malformed_details = 0
     attributed = 0
 
     with log_path.open("r", encoding="utf-8", errors="replace") as stream:
@@ -211,6 +240,15 @@ def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
             access = ACCESS_RE.search(line)
             if access:
                 access_codes[int(access.group("code"))] += 1
+            if DETAIL_MARKER in line:
+                try:
+                    detail = parse_detail_marker(line)
+                except (TypeError, ValueError):
+                    malformed_details += 1
+                    continue
+                failure_stages[detail["stage"]] += 1
+                exception_types[detail["exception_type"]] += 1
+                continue
             if MARKER not in line:
                 continue
             try:
@@ -230,7 +268,8 @@ def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
                 shapes[key] += 1
 
     access_total = sum(access_codes.values())
-    complete = malformed == 0 and attributed_codes == access_codes
+    complete = (malformed == 0 and malformed_details == 0
+                and attributed_codes == access_codes)
     classified = reasons["unclassified_chat_error"] == 0
     qualified = complete and classified
     report = {
@@ -243,6 +282,7 @@ def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
         "attributed_count": attributed,
         "attribution_delta": access_total - attributed,
         "malformed_marker_count": malformed,
+        "malformed_detail_marker_count": malformed_details,
         "by_access_code": {
             str(key): value for key, value in sorted(access_codes.items())
         },
@@ -254,6 +294,8 @@ def summarize(log_path: Path) -> tuple[dict[str, Any], bool]:
         "by_reason": dict(sorted(reasons.items())),
         "by_validation_field": dict(sorted(validation_fields.items())),
         "by_validation_type": dict(sorted(validation_types.items())),
+        "by_failure_stage": dict(sorted(failure_stages.items())),
+        "by_exception_type": dict(sorted(exception_types.items())),
         "request_shapes": [
             shape_report(key, count)
             for key, count in sorted(

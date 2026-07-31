@@ -49,7 +49,7 @@ EXPECTED_COMMON_OPTIMIZATION = {
     "kv_eviction_policy": "lru",
     "kernel_profile": "submission",
 }
-EXPECTED_4XX_FIELDS = {
+LEGACY_4XX_FIELDS = {
     "schema",
     "version",
     "complete",
@@ -68,6 +68,11 @@ EXPECTED_4XX_FIELDS = {
     "request_shapes",
     "privacy",
 }
+EXPECTED_4XX_FIELDS = LEGACY_4XX_FIELDS | {
+    "malformed_detail_marker_count",
+    "by_failure_stage",
+    "by_exception_type",
+}
 EXPECTED_4XX_PRIVACY = {
     "contains_raw_log_lines": False,
     "contains_request_content": False,
@@ -82,6 +87,13 @@ EXPECTED_QUALITY_COMPARISON_PRIVACY = {
     "contains_raw_model_outputs": False,
     "contains_credentials": False,
 }
+
+
+def api_4xx_fields_are_valid(report: Any) -> bool:
+    if not isinstance(report, dict):
+        return False
+    fields = set(report)
+    return fields in (LEGACY_4XX_FIELDS, EXPECTED_4XX_FIELDS)
 EXPECTED_PROCESS_IDENTITY_FIELDS = {
     "schema",
     "version",
@@ -362,7 +374,7 @@ def _api_4xx_reasons(report: Any, label: str) -> list[str]:
     reasons: list[str] = []
     if not isinstance(report, dict):
         return [f"{label}: 4xx report root must be an object"]
-    if set(report) != EXPECTED_4XX_FIELDS:
+    if not api_4xx_fields_are_valid(report):
         reasons.append(f"{label}: 4xx report fields are invalid")
     if (
         report.get("schema") != api_4xx.REPORT_SCHEMA
@@ -375,6 +387,7 @@ def _api_4xx_reasons(report: Any, label: str) -> list[str]:
         or report.get("classified") is not True
         or report.get("attribution_delta") != 0
         or report.get("malformed_marker_count") != 0
+        or report.get("malformed_detail_marker_count", 0) != 0
     ):
         reasons.append(f"{label}: 4xx attribution is incomplete")
     if report.get("privacy") != EXPECTED_4XX_PRIVACY:
@@ -392,8 +405,17 @@ def _api_4xx_reasons(report: Any, label: str) -> list[str]:
     attributed_codes = report.get("by_attributed_code")
     endpoints = report.get("by_endpoint")
     by_reason = report.get("by_reason")
+    failure_stages = report.get("by_failure_stage", {})
+    exception_types = report.get("by_exception_type", {})
     shapes = report.get("request_shapes")
-    mappings = (access_codes, attributed_codes, endpoints, by_reason)
+    mappings = (
+        access_codes,
+        attributed_codes,
+        endpoints,
+        by_reason,
+        failure_stages,
+        exception_types,
+    )
     if (
         any(
             not isinstance(mapping, dict)

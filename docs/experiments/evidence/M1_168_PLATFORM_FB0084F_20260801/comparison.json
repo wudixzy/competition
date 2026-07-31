@@ -1,0 +1,91 @@
+{
+  "schema": "bi100-platform-result-comparison-v1",
+  "candidate": {
+    "revision": "fb0084fc778e62c26d6a6e108b87dc027ae2ed79",
+    "result_path": "result/20260801/fb0084fc77报错及结果",
+    "result_sha256": "4de37f411f06eec1e241532692db7002b4ce44c132d621965f3ace88856b7cff"
+  },
+  "baseline": {
+    "revision": "503fa7c670b6172d9a3e2912166e78317f5e289f",
+    "result_path": "result/result0730/503fa7c670各项指标",
+    "result_sha256": "28deb18cca59a2bbec76388871572d8c933bffe498f1f0a5284ba294b363ee06"
+  },
+  "functional": {
+    "candidate_pass_rate": 0.96,
+    "baseline_pass_rate": 0.96,
+    "candidate_failed": 2,
+    "baseline_failed": 2,
+    "unchanged_failed_cases": [
+      "t2_n_2",
+      "t13_multimodal_base64"
+    ]
+  },
+  "request_outcomes": {
+    "candidate_successful": 631,
+    "baseline_successful": 631,
+    "candidate_errors": 250,
+    "baseline_errors": 250,
+    "tool_4xx_candidate": 226,
+    "tool_4xx_baseline": 226,
+    "image_4xx_candidate": 22,
+    "image_4xx_baseline": 22,
+    "multi_system_4xx_candidate": 7,
+    "multi_system_4xx_baseline": 7,
+    "failure_population_changed": false
+  },
+  "performance": {
+    "candidate": {
+      "ttft_p90_ms": 30805.42,
+      "output_tps_p10": 3.81,
+      "output_tps_mean": 11.88,
+      "input_tps_mean": 1602.62,
+      "wall_time_s": 36442.74,
+      "cache_hit_rate": 0.54,
+      "total_cached_tokens": 5486608,
+      "weighted_tpm_linear": 64450.51
+    },
+    "baseline": {
+      "ttft_p90_ms": 27487.67,
+      "output_tps_p10": 4.42,
+      "output_tps_mean": 12.90,
+      "input_tps_mean": 2018.60,
+      "wall_time_s": 34755.65,
+      "cache_hit_rate": 0.54,
+      "total_cached_tokens": 5486608,
+      "weighted_tpm_linear": 67426.57
+    },
+    "candidate_vs_baseline_percent": {
+      "ttft_p90": 12.07,
+      "output_tps_p10": -13.80,
+      "output_tps_mean": -7.91,
+      "input_tps_mean": -20.61,
+      "wall_time": 4.85,
+      "weighted_tpm_linear": -4.41
+    },
+    "ttft_bucket_p90_candidate_vs_baseline_percent": {
+      "lt_6k": 39.04,
+      "6k_16k": 34.33,
+      "16k_32k": 11.01,
+      "32k_64k": 1.19,
+      "64k_128k": 1.77,
+      "128k_256k": 2.69
+    }
+  },
+  "code_attribution": {
+    "computility_run_identical": true,
+    "fused_prefill_default_enabled": false,
+    "max_completion_tokens_fix_present": false,
+    "request_validation_field_type_diagnostics_present": true,
+    "post_baseline_default_path_change": "admission64 capture-boundary alignment",
+    "capture_boundary_performance_causality_proven": false,
+    "required_next_test": "same-runtime TP4 A/B of capture-boundary alignment with identical request order"
+  },
+  "interpretation": {
+    "new_protocol_regression_proven": false,
+    "performance_regression_observed": true,
+    "performance_regression_code_cause_proven": false,
+    "platform_variance_remains_plausible": true,
+    "short_context_fixed_overhead_signal": true,
+    "official_8000_score_comparable": false
+  }
+}

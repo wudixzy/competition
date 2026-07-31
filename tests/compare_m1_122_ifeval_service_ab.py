@@ -135,7 +135,7 @@ def _zero_4xx_reasons(report: Any, label: str) -> list[str]:
     if not isinstance(report, dict):
         return [f"{label}: 4xx report root must be an object"]
     reasons = []
-    if set(report) != service.EXPECTED_4XX_FIELDS:
+    if not service.api_4xx_fields_are_valid(report):
         reasons.append(f"{label}: 4xx report fields are invalid")
     if (
         report.get("schema") != api_4xx.REPORT_SCHEMA
@@ -147,6 +147,7 @@ def _zero_4xx_reasons(report: Any, label: str) -> list[str]:
         or report.get("attributed_count") != 0
         or report.get("attribution_delta") != 0
         or report.get("malformed_marker_count") != 0
+        or report.get("malformed_detail_marker_count", 0) != 0
     ):
         reasons.append(f"{label}: IFEval must have zero fully classified 4xx")
     for name in (
@@ -156,8 +157,10 @@ def _zero_4xx_reasons(report: Any, label: str) -> list[str]:
         "by_reason",
         "by_validation_field",
         "by_validation_type",
+        "by_failure_stage",
+        "by_exception_type",
     ):
-        if report.get(name) != {}:
+        if report.get(name, {}) != {}:
             reasons.append(f"{label}: unexpected 4xx detail in {name}")
     if report.get("request_shapes") != []:
         reasons.append(f"{label}: unexpected 4xx request shape")

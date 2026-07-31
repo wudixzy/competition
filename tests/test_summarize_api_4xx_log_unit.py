@@ -121,6 +121,30 @@ class SummarizeApi4xxLogTest(unittest.TestCase):
             "invalid_top_p": 1,
         })
 
+    def test_request_stage_detail_is_bounded_and_summarized(self):
+        report, qualified = self.summarize(
+            "WARNING [BI100 4XX DETAIL] endpoint=chat "
+            "stage=multimodal_load exception_type=TimeoutError\n"
+            "WARNING [BI100 4XX] endpoint=chat code=400 "
+            f"reason=multimodal_load_failed {SHAPE}\n"
+            'INFO: 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" '
+            "400 Bad Request\n"
+        )
+        self.assertTrue(qualified, report)
+        self.assertEqual(
+            report["by_failure_stage"], {"multimodal_load": 1})
+        self.assertEqual(
+            report["by_exception_type"], {"TimeoutError": 1})
+        self.assertEqual(report["malformed_detail_marker_count"], 0)
+
+    def test_malformed_request_stage_detail_fails_closed(self):
+        report, qualified = self.summarize(
+            "WARNING [BI100 4XX DETAIL] endpoint=chat "
+            "stage=private/stage exception_type=private/value\n"
+        )
+        self.assertFalse(qualified)
+        self.assertEqual(report["malformed_detail_marker_count"], 1)
+
     def test_zero_4xx_is_complete(self):
         report, qualified = self.summarize(
             'INFO: 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" '
