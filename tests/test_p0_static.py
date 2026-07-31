@@ -583,8 +583,12 @@ class P0StaticCoverageTest(unittest.TestCase):
             "qwen3_6_scripts/patch_worker_startup_profile_guard.py")
         launch_src = read("launch_service")
         docs = read("docs/ENV_KNOBS.md")
-        self.assertNotIn("patch_worker_profile_override.py", patch_ops)
+        self.assertIn("patch_worker_profile_override.py", patch_ops)
         self.assertIn("patch_worker_startup_profile_guard.py", patch_ops)
+        self.assertLess(
+            patch_ops.index("patch_worker_startup_profile_guard.py"),
+            patch_ops.index("patch_worker_profile_override.py"),
+        )
         self.assertNotIn("num_gpu_blocks_override", guard_src)
         self.assertIn("BI100_IN_STARTUP_PROFILE", guard_src)
         self.assertIn("num_gpu_blocks_override is not None", patch_src)
