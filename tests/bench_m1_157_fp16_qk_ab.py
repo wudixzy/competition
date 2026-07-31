@@ -235,7 +235,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     baseline, baseline_artifact = _load_extension(
         args.baseline_extension,
         args.expected_baseline_sha256,
-        "corex_fused_paged_prefill",
+        args.baseline_module_name,
     )
     candidate, candidate_artifact = _load_extension(
         args.candidate_extension,
@@ -303,6 +303,10 @@ def main() -> int:
     parser.add_argument("--candidate-extension", required=True, type=Path)
     parser.add_argument("--expected-baseline-sha256", required=True)
     parser.add_argument("--expected-candidate-sha256", required=True)
+    parser.add_argument(
+        "--baseline-module-name",
+        default="corex_fused_paged_prefill",
+    )
     parser.add_argument(
         "--candidate-module-name",
         default="corex_fused_paged_prefill_fp16_qk",

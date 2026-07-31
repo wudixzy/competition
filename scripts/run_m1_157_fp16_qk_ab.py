@@ -27,6 +27,7 @@ RUNNER_SCHEMA = "bi100-m1-157-fp16-qk-ab-runner-v1"
 SCREEN_SCHEMA = "bi100-m1-157-fp16-qk-ab-screen-v1"
 RUNTIME_IDENTITY = "corex-3.2.3-m1-157"
 MIN_MEDIAN_SPEEDUP = 1.08
+BASELINE_MODULE_NAME = "corex_fused_paged_prefill"
 
 
 def screen_authorization(qualified: bool) -> dict[str, bool]:
@@ -56,6 +57,7 @@ def _spawn_cell(
     gpu: int,
     baseline: Path,
     baseline_sha: str,
+    baseline_module_name: str,
     candidate: Path,
     candidate_sha: str,
     candidate_module_name: str,
@@ -87,6 +89,8 @@ def _spawn_cell(
                 str(candidate),
                 "--expected-baseline-sha256",
                 baseline_sha,
+                "--baseline-module-name",
+                baseline_module_name,
                 "--expected-candidate-sha256",
                 candidate_sha,
                 "--candidate-module-name",
@@ -116,6 +120,7 @@ def _run_cells(
     gpus: list[int],
     baseline: Path,
     baseline_sha: str,
+    baseline_module_name: str,
     candidate: Path,
     candidate_sha: str,
     candidate_module_name: str,
@@ -129,6 +134,7 @@ def _run_cells(
             gpu=gpu,
             baseline=baseline,
             baseline_sha=baseline_sha,
+            baseline_module_name=baseline_module_name,
             candidate=candidate,
             candidate_sha=candidate_sha,
             candidate_module_name=candidate_module_name,
@@ -169,6 +175,7 @@ def aggregate(
     revision: str,
     baseline_sha: str,
     candidate_sha: str,
+    baseline_module_name: str = BASELINE_MODULE_NAME,
     candidate_module_name: str = "corex_fused_paged_prefill_fp16_qk",
 ) -> dict[str, Any]:
     reasons: list[str] = []
@@ -223,6 +230,11 @@ def aggregate(
             != baseline_sha
         ):
             reasons.append(f"{case}: baseline identity differs")
+        if (
+            (report.get("baseline_extension") or {}).get("module_name")
+            != baseline_module_name
+        ):
+            reasons.append(f"{case}: baseline module name differs")
         if (
             (report.get("candidate_extension") or {}).get("sha256")
             != candidate_sha
@@ -311,6 +323,7 @@ def run(args: argparse.Namespace) -> int:
                 "instance": args.instance,
                 "gpus": args.gpus,
                 "baseline_extension_sha256": baseline_sha,
+                "baseline_module_name": args.baseline_module_name,
                 "candidate_extension_sha256": candidate_sha,
                 "candidate_module_name": args.candidate_module_name,
                 "candidate_source": str(candidate_source.relative_to(ROOT)),
@@ -336,6 +349,7 @@ def run(args: argparse.Namespace) -> int:
             gpus=args.gpus,
             baseline=baseline,
             baseline_sha=baseline_sha,
+            baseline_module_name=args.baseline_module_name,
             candidate=candidate,
             candidate_sha=candidate_sha,
             candidate_module_name=args.candidate_module_name,
@@ -348,6 +362,7 @@ def run(args: argparse.Namespace) -> int:
             revision=revision,
             baseline_sha=baseline_sha,
             candidate_sha=candidate_sha,
+            baseline_module_name=args.baseline_module_name,
             candidate_module_name=args.candidate_module_name,
         )
         lifecycle._atomic_json(run_root / "screen.json", screen)
@@ -450,6 +465,7 @@ def run(args: argparse.Namespace) -> int:
                 "fixed_cases": list(CASES),
                 "wall_s": time.monotonic() - started,
                 "baseline_extension_sha256": baseline_sha,
+                "baseline_module_name": args.baseline_module_name,
                 "candidate_extension_sha256": candidate_sha,
                 "candidate_module_name": args.candidate_module_name,
                 "candidate_source": str(candidate_source.relative_to(ROOT)),
@@ -487,6 +503,10 @@ def main() -> int:
     parser.add_argument("baseline_extension", type=Path)
     parser.add_argument("candidate_extension", type=Path)
     parser.add_argument("run_root", type=Path)
+    parser.add_argument(
+        "--baseline-module-name",
+        default=BASELINE_MODULE_NAME,
+    )
     parser.add_argument(
         "--candidate-module-name",
         default="corex_fused_paged_prefill_fp16_qk",

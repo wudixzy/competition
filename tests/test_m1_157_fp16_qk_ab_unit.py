@@ -54,7 +54,10 @@ def report(case: str, gpu: int, speedup: float = 1.10) -> dict:
         "warmups": CELL.WARMUPS,
         "trials": CELL.TRIALS,
         "visible_physical_gpu": gpu,
-        "baseline_extension": {"sha256": "a" * 64},
+        "baseline_extension": {
+            "sha256": "a" * 64,
+            "module_name": "corex_fused_paged_prefill",
+        },
         "candidate_extension": {
             "sha256": "c" * 64,
             "module_name": "corex_fused_paged_prefill_fp16_qk",
@@ -136,6 +139,7 @@ class M1157Fp16QkAbTest(unittest.TestCase):
         ]
         reports[0]["visible_physical_gpu"] = 3
         reports[1]["candidate_extension"]["sha256"] = "d" * 64
+        reports[1]["baseline_extension"]["module_name"] = "wrong_module"
         value = RUNNER.aggregate(
             reports[:-1],
             revision="b" * 40,

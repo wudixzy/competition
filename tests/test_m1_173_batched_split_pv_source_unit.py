@@ -55,6 +55,10 @@ class M1173BatchedSplitPvSourceTest(unittest.TestCase):
         runner = RUNNER.read_text(encoding="utf-8")
         self.assertIn("bench_m1_162_calibrated_fp16_qk_ab.py", runner)
         self.assertIn("bi100-m1-173-batched-split-pv-ab-runner-v1", runner)
+        self.assertIn(
+            'runner.BASELINE_MODULE_NAME = "corex_fused_paged_prefill_fp16_qk"',
+            runner,
+        )
         self.assertIn('"real_activation_replay_authorized": qualified', runner)
         self.assertIn('"short_tp4_screen_authorized": False', runner)
         self.assertIn('"main_or_yaml_change_authorized": False', runner)
