@@ -12,7 +12,11 @@ GdnPrefixKey = Tuple[int, bytes]
 GdnCapturePoint = Tuple[int, GdnPrefixKey]
 GdnCaptureAction = Tuple[GdnPrefixKey, str]
 
-_VALID_POLICIES = {"fine32", "admission64", "tail64", "off"}
+_VALID_POLICIES = {
+    "fine32", "admission64", "tail64", "tail64_nofinal", "off"
+}
+_SPARSE_POLICIES = {"admission64", "tail64", "tail64_nofinal"}
+_TAIL_POLICIES = {"tail64", "tail64_nofinal"}
 GDN_KERNEL_CHUNK_TOKENS = 64
 GDN_DIRECT_MIN_REPLAY_TOKENS = 2
 
@@ -246,6 +250,7 @@ class GdnPrefixStatePolicy:
             "fine32": 32,
             "admission64": 64,
             "tail64": 64,
+            "tail64_nofinal": 64,
             "off": 0,
         }[policy]
         self._resident: OrderedDict[GdnPrefixKey, None] = OrderedDict()
@@ -262,9 +267,9 @@ class GdnPrefixStatePolicy:
     def should_capture_final(self, key: GdnPrefixKey) -> bool:
         """Return whether a final state must be materialized on this request."""
         make_prefix_key(*key)
-        if self.policy == "off":
+        if self.policy in {"off", "tail64_nofinal"}:
             return False
-        if self.policy in {"admission64", "tail64"}:
+        if self.policy in _SPARSE_POLICIES:
             return key not in self._resident
         return True
 
@@ -289,7 +294,7 @@ class GdnPrefixStatePolicy:
         A live KV hit proves that the content occurred in an earlier request;
         the current request is therefore the second or later occurrence.
         """
-        if (self.policy not in {"admission64", "tail64"} or max_blocks <= 0
+        if (self.policy not in _SPARSE_POLICIES or max_blocks <= 0
                 or not live_prefix_keys):
             return None
         candidate = live_prefix_keys[min(len(live_prefix_keys), max_blocks) - 1]
@@ -303,14 +308,14 @@ class GdnPrefixStatePolicy:
             block_size: int, restore_mode: str, replay_alignment: int,
             scheduler_chunk_tokens: int) -> Tuple[GdnCaptureAction, ...]:
         """Choose at most two scheduler-owned sparse capture actions."""
-        if self.policy not in {"admission64", "tail64"}:
+        if self.policy not in _SPARSE_POLICIES:
             return ()
         actions: List[GdnCaptureAction] = []
         branch_key = self.repeated_branch_candidate(
             live_prefix_keys, len(live_prefix_keys))
         if branch_key is not None:
             actions.append((branch_key, "repeated_branch"))
-        elif self.policy == "tail64":
+        elif self.policy in _TAIL_POLICIES:
             tail_key = tail_capture_key(
                 block_hashes, prompt_tokens, block_size,
                 scheduler_chunk_tokens)

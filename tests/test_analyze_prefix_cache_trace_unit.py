@@ -307,6 +307,8 @@ class AnalyzerTest(unittest.TestCase):
             records, 16, policy="admission64", gdn_chunk_tokens=64)
         tail = sim.simulate(
             records, 16, policy="tail64", gdn_chunk_tokens=64)
+        tail_nofinal = sim.simulate(
+            records, 16, policy="tail64_nofinal", gdn_chunk_tokens=64)
 
         self.assertEqual(
             admission["request_results"][1]["effective_hit_tokens"], 0)
@@ -317,6 +319,17 @@ class AnalyzerTest(unittest.TestCase):
         self.assertEqual(
             tail["request_results"][1]["residual_prefill_tokens"], 64)
         self.assertLessEqual(tail["gdn_policy_cache_size"], 64)
+        self.assertEqual(
+            tail_nofinal["request_results"][1]["effective_hit_tokens"], 64)
+        self.assertLess(
+            tail_nofinal["gdn_policy_cache_size"],
+            tail["gdn_policy_cache_size"])
+        self.assertEqual(admission["forced_capture_splits"], 2)
+        self.assertEqual(tail["forced_capture_splits"], 2)
+        self.assertEqual(tail_nofinal["forced_capture_splits"], 0)
+        self.assertEqual(
+            tail_nofinal["request_results"][0]["capture_action_reasons"],
+            ["tail_checkpoint"])
 
     def test_gdn_state_without_live_kv_cannot_avoid_tokens(self):
         records = [
@@ -404,8 +417,11 @@ class AnalyzerTest(unittest.TestCase):
             self.assertIn("fine32", report["policy_metrics"])
             self.assertIn("admission64", report["policy_metrics"])
             self.assertIn("tail64", report["policy_metrics"])
+            self.assertIn("tail64_nofinal", report["policy_metrics"])
             self.assertIn("admission64_m1_29", report["policy_metrics"])
             self.assertEqual(report["tail64"]["policy"], "tail64")
+            self.assertEqual(
+                report["tail64_nofinal"]["policy"], "tail64_nofinal")
             self.assertFalse(
                 report["policy_metrics"]["admission64"]
                 ["per_request_timing_projection_complete"])

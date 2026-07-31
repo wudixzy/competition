@@ -75,7 +75,8 @@ class P0StaticCoverageTest(unittest.TestCase):
     def test_protocol_rejects_forced_tool_with_guided_decoding(self):
         src = read("qwen3_6_scripts/protocol.py")
         unit_src = read("tests/test_protocol_unit.py")
-        self.assertIn("guide_count > 0", src)
+        self.assertIn(
+            "guide_count + has_structured_response_format > 0", src)
         self.assertIn('not in ("none", "auto")', src)
         self.assertIn("You can only either use guided decoding or tools", src)
         self.assertNotIn("guide_count > 1 and data.get(\"tool_choice\"", src)
@@ -784,9 +785,9 @@ class P0StaticCoverageTest(unittest.TestCase):
         policy_src = read("qwen3_6_scripts/gdn_prefix.py")
         scheduler_src = read("qwen3_6_scripts/scheduler.py")
         self.assertIn("def should_capture_final(", policy_src)
+        self.assertIn("if self.policy in _SPARSE_POLICIES:", policy_src)
         self.assertIn(
-            'if self.policy in {"admission64", "tail64"}:', policy_src
-        )
+            'if self.policy in {"off", "tail64_nofinal"}:', policy_src)
         self.assertIn("key not in self._resident", policy_src)
         self.assertIn("self.should_capture_final(final_key)", policy_src)
         self.assertIn(

@@ -190,13 +190,16 @@ except (ModuleNotFoundError, ImportError, OSError):
 
     class GdnPrefixStatePolicy:
         def __init__(self, policy: str) -> None:
-            if policy not in {"fine32", "admission64", "tail64", "off"}:
+            if policy not in {
+                    "fine32", "admission64", "tail64",
+                    "tail64_nofinal", "off"}:
                 raise ValueError(f"unknown GDN cache policy: {policy}")
             self.policy = policy
             self.capacity = {
                 "fine32": 32,
                 "admission64": 64,
                 "tail64": 64,
+                "tail64_nofinal": 64,
                 "off": 0,
             }[policy]
             self._resident: OrderedDict[GdnPrefixKey, None] = OrderedDict()
@@ -218,7 +221,8 @@ except (ModuleNotFoundError, ImportError, OSError):
 
         def repeated_branch_candidate(self, live_prefix_keys: Sequence[GdnPrefixKey],
                                     max_blocks: int) -> GdnPrefixKey | None:
-            if (self.policy not in {"admission64", "tail64"}
+            if (self.policy not in {
+                    "admission64", "tail64", "tail64_nofinal"}
                     or max_blocks <= 0 or not live_prefix_keys):
                 return None
             candidate = live_prefix_keys[min(len(live_prefix_keys), max_blocks) - 1]
@@ -227,9 +231,10 @@ except (ModuleNotFoundError, ImportError, OSError):
             return candidate
 
         def should_capture_final(self, key: GdnPrefixKey) -> bool:
-            if self.policy == "off":
+            if self.policy in {"off", "tail64_nofinal"}:
                 return False
-            if self.policy in {"admission64", "tail64"}:
+            if self.policy in {
+                    "admission64", "tail64", "tail64_nofinal"}:
                 return key not in self._resident
             return True
 
@@ -239,14 +244,15 @@ except (ModuleNotFoundError, ImportError, OSError):
                 block_size: int, restore_mode: str, replay_alignment: int,
                 scheduler_chunk_tokens: int
                 ) -> Tuple[Tuple[GdnPrefixKey, str], ...]:
-            if self.policy not in {"admission64", "tail64"}:
+            if self.policy not in {
+                    "admission64", "tail64", "tail64_nofinal"}:
                 return ()
             actions: list[Tuple[GdnPrefixKey, str]] = []
             branch_key = self.repeated_branch_candidate(
                 live_prefix_keys, len(live_prefix_keys))
             if branch_key is not None:
                 actions.append((branch_key, "repeated_branch"))
-            elif self.policy == "tail64":
+            elif self.policy in {"tail64", "tail64_nofinal"}:
                 tail_key = tail_capture_key(
                     block_hashes, prompt_tokens, block_size,
                     scheduler_chunk_tokens)
@@ -583,9 +589,12 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
               cpu_capacity: int = 0,
               h2d_ms_per_block: float = M1_44_H2D_MS_PER_BLOCK,
               d2h_ms_per_block: float = M1_44_D2H_MS_PER_BLOCK) -> Dict[str, Any]:
-    if policy not in {"off", "fine32", "admission64", "tail64"}:
+    if policy not in {
+            "off", "fine32", "admission64", "tail64",
+            "tail64_nofinal"}:
         raise ValueError(
-            "policy must be one of off, fine32, admission64, tail64")
+            "policy must be one of off, fine32, admission64, tail64, "
+            "tail64_nofinal")
     if gdn_chunk_tokens <= 0:
         raise ValueError("gdn_chunk_tokens must be positive")
     if cpu_capacity < 0:
@@ -754,7 +763,7 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
             "residual_prefill_tokens": residual_prefill_tokens,
         }
 
-        capture_targets: list[Tuple[int, bytes]] = []
+        capture_actions: list[Tuple[Tuple[int, bytes], str]] = []
         if policy == "fine32":
             restore_tokens = (restore_key[0] * block_size
                               if restore_key is not None else 0)
@@ -765,16 +774,31 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
                     hashes, logical_end, block_size, restore_mode,
                     restore_alignment)
                 if step_key is not None:
-                    capture_targets.append(step_key)
+                    capture_actions.append((step_key, "fine32_chunk"))
                 if logical_end >= prompt_tokens:
                     break
                 logical_end = min(prompt_tokens,
                                   logical_end + gdn_chunk_tokens)
-        elif policy in {"admission64", "tail64"}:
-            capture_targets.extend(
-                key for key, _ in gdn_policy.select_sparse_capture_actions(
+        elif policy in {"admission64", "tail64", "tail64_nofinal"}:
+            capture_actions.extend(
+                gdn_policy.select_sparse_capture_actions(
                     live_keys, hashes, prompt_tokens, block_size,
                     restore_mode, restore_alignment, gdn_chunk_tokens))
+        capture_targets = [key for key, _ in capture_actions]
+        forced_capture_splits = sum(
+            request_avoided_tokens < key[0] * block_size < prompt_tokens
+            and key[0] * block_size % gdn_chunk_tokens != 0
+            for key, _ in capture_actions
+            if policy in {
+                "admission64", "tail64", "tail64_nofinal"
+            }
+        )
+        request_result.update({
+            "capture_action_reasons": [
+                reason for _, reason in capture_actions
+            ],
+            "forced_capture_splits": forced_capture_splits,
+        })
         gdn_policy.admit(dict.fromkeys(capture_targets))
 
         mutable_tail = prompt_tokens % block_size != 0
@@ -882,6 +906,10 @@ def _simulate(records: Sequence[Dict[str, Any]], capacity: int,
                                     if total_prompt_tokens else 0.0),
         "residual_prefill_tokens": sum(
             item["residual_prefill_tokens"] for item in request_results),
+        "forced_capture_splits": sum(
+            item["forced_capture_splits"] for item in request_results),
+        "requests_with_forced_capture_split": sum(
+            item["forced_capture_splits"] > 0 for item in request_results),
         "request_results": request_results,
         "final_cache": cache,
         "final_cpu_cache": cpu_cache,
@@ -949,6 +977,12 @@ def _metrics(raw: Dict[str, Any], total_prompt_tokens: int) -> Dict[str, Any]:
         "combined_hit_token_rate": raw["combined_hit_token_rate"],
         "combined_hit_tokens": raw["combined_hit_tokens"],
         "residual_prefill_tokens": raw["residual_prefill_tokens"],
+        "forced_capture_splits": raw["forced_capture_splits"],
+        "requests_with_forced_capture_split": (
+            raw["requests_with_forced_capture_split"]),
+        "forced_capture_split_request_rate": (
+            raw["requests_with_forced_capture_split"] / len(request_results)
+            if request_results else 0.0),
         "residual_prefill_token_rate": (
             raw["residual_prefill_tokens"] / total_prompt_tokens
             if total_prompt_tokens else 0.0),
@@ -1269,10 +1303,14 @@ def main(argv: list[str] | None = None) -> None:
     total_prompt_tokens = sum(record["prompt_tokens"] for record in records)
     control_policy_results = {}
     policy_results = {}
-    for policy in ("off", "fine32", "admission64", "tail64"):
+    for policy in (
+            "off", "fine32", "admission64", "tail64",
+            "tail64_nofinal"):
         restore_mode = (
             args.gdn_restore_mode
-            if policy in {"admission64", "tail64"} else "direct")
+            if policy in {
+                "admission64", "tail64", "tail64_nofinal"
+            } else "direct")
         control_policy_results[policy] = _simulate(
             records, capacity, False, policy, args.gdn_chunk_tokens,
             restore_mode, 0, args.h2d_ms_per_block, args.d2h_ms_per_block)
@@ -1296,6 +1334,8 @@ def main(argv: list[str] | None = None) -> None:
         policy_results["admission64"], total_prompt_tokens)
     tail64 = _metrics(
         policy_results["tail64"], total_prompt_tokens)
+    tail64_nofinal = _metrics(
+        policy_results["tail64_nofinal"], total_prompt_tokens)
     frequency_aware = _metrics(
         policy_results["admission64_m1_29"], total_prompt_tokens)
 
@@ -1382,6 +1422,7 @@ def main(argv: list[str] | None = None) -> None:
         "admission64_control": admission64_control,
         "admission64": admission64,
         "tail64": tail64,
+        "tail64_nofinal": tail64_nofinal,
         "frequency_aware": frequency_aware,
         "tail64_effective_hit_gain_percentage_points": (
             100 * (tail64["usable_gdn_state_avoided_token_rate"]
@@ -1402,7 +1443,9 @@ def main(argv: list[str] | None = None) -> None:
 
     if baseline is not None:
         qualifications = {}
-        for name in ("admission64", "tail64", "admission64_m1_29"):
+        for name in (
+                "admission64", "tail64", "tail64_nofinal",
+                "admission64_m1_29"):
             candidate_metrics = report["policy_metrics"][name]
             wall_s = candidate_metrics["projected_sequential_wall_s"]
             timing_complete = wall_s is not None and wall_s > 0

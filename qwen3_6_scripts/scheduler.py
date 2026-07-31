@@ -524,7 +524,7 @@ class Scheduler:
         targets = self._gdn_request_capture_targets.get(
             seq_group.request_id, ())
         if (self._gdn_prefix_policy.policy
-                not in {"admission64", "tail64"}
+                not in {"admission64", "tail64", "tail64_nofinal"}
                 or not targets):
             return token_chunk_size, physical_query_tokens
         if token_chunk_size <= 0 or physical_query_tokens <= 0:
@@ -1582,7 +1582,8 @@ class Scheduler:
                             else num_computed_tokens)
                         if (self._gdn_restore_mode == "hybrid64"
                                 and self._gdn_prefix_policy.policy
-                                in {"admission64", "tail64"}):
+                                in {"admission64", "tail64",
+                                    "tail64_nofinal"}):
                             gdn_segment_offsets = list(
                                 canonical_direct_segment_offsets(
                                     self.block_manager.get_content_hashes(

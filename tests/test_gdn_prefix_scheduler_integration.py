@@ -58,6 +58,47 @@ class GdnPrefixSchedulerIntegrationTest(unittest.TestCase):
             scheduler._cap_gdn_capture_boundary(suffix, 8, 8),
             (8, 8))
 
+    def test_tail64_nofinal_natural_tail_does_not_add_a_tiny_step(self):
+        from qwen3_6_scripts.gdn_prefix import GdnPrefixStatePolicy
+        from qwen3_6_scripts.scheduler import Scheduler
+
+        target = (1536, hashlib.sha256(b"tail").digest())
+
+        class Data:
+            def __init__(self, computed_tokens):
+                self.computed_tokens = computed_tokens
+
+            def get_num_computed_tokens(self):
+                return self.computed_tokens
+
+        class Group:
+            request_id = "m1-169"
+
+            def __init__(self, computed_tokens):
+                self.seqs = [SimpleNamespace(data=Data(computed_tokens))]
+
+            def get_seqs(self, status=None):
+                return self.seqs
+
+            @staticmethod
+            def is_prefill():
+                return True
+
+        scheduler = Scheduler.__new__(Scheduler)
+        scheduler.cache_config = SimpleNamespace(block_size=16)
+        scheduler._gdn_prefix_policy = GdnPrefixStatePolicy(
+            "tail64_nofinal")
+        scheduler._gdn_request_capture_targets = {"m1-169": (target,)}
+
+        self.assertEqual(
+            scheduler._cap_gdn_capture_boundary(
+                Group(16384), 8192, 8192),
+            (8192, 8192))
+        self.assertEqual(
+            scheduler._cap_gdn_capture_boundary(
+                Group(24576), 8192, 8192),
+            (8192, 8192))
+
     def test_prefill_separates_logical_progress_from_physical_budget(self):
         from qwen3_6_scripts.gdn_prefix import (
             GdnPrefixStatePolicy,
