@@ -339,6 +339,7 @@ report = {
         "preflight_before": rc("preflight_before.rc"),
         "admission64": rc("admission64/arm.rc"),
         "tail64_nofinal": rc("tail64_nofinal/arm.rc"),
+        "comparison": rc("comparison.rc"),
         "cleanup": rc("cleanup.rc"),
         "postflight_after": rc("postflight_after.rc"),
         "preflight_after": rc("preflight_after.rc"),
@@ -376,6 +377,17 @@ for policy in "$first" "$second"; do
     write_stage
     run_arm "$policy"
 done
+CURRENT_STAGE=comparison
+write_stage
+comparison_rc=0
+python3 "$ROOT/tests/compare_m1_169_tail64_nofinal_tp1.py" \
+    --control "$RUN_ROOT/admission64/measurement.json" \
+    --candidate "$RUN_ROOT/tail64_nofinal/measurement.json" \
+    --out "$RUN_ROOT/comparison.json" \
+    > "$RUN_ROOT/comparison.stdout" 2> "$RUN_ROOT/comparison.stderr" \
+    || comparison_rc=$?
+printf '%s\n' "$comparison_rc" > "$RUN_ROOT/comparison.rc"
+[[ $comparison_rc -eq 0 ]]
 CURRENT_STAGE=complete
 write_stage
 exit 0

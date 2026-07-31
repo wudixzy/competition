@@ -60,6 +60,18 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
                       self.source)
         self.assertNotIn('[BI100] GDN cache; policy=$policy', self.source)
 
+    def test_both_complete_arms_reach_privacy_safe_comparison(self) -> None:
+        self.assertIn("compare_m1_169_tail64_nofinal_tp1.py", self.source)
+        self.assertIn(
+            '--control "$RUN_ROOT/admission64/measurement.json"',
+            self.source,
+        )
+        self.assertIn(
+            '--candidate "$RUN_ROOT/tail64_nofinal/measurement.json"',
+            self.source,
+        )
+        self.assertIn('"comparison": rc("comparison.rc")', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
