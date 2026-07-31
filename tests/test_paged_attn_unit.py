@@ -9,6 +9,7 @@ import types
 import unittest
 from contextlib import redirect_stderr
 from io import StringIO
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PAGED_ATTN = ROOT / "qwen3_6_scripts" / "paged_attn.py"
@@ -161,6 +162,57 @@ def _load_paged_attn(**env):
 
 
 class PagedAttentionUnitTest(unittest.TestCase):
+
+    def test_disabled_fused_and_capture_paths_skip_segment_validation(self):
+        module = _load_paged_attn()
+
+        class FallbackReached(RuntimeError):
+            pass
+
+        class FakeTensor:
+            shape = (17, 4, 256)
+            dtype = "float16"
+            device = "cuda:0"
+            is_cuda = True
+
+            @staticmethod
+            def is_contiguous():
+                return True
+
+            @staticmethod
+            def permute(*args):
+                raise FallbackReached
+
+        tensor = FakeTensor()
+        with mock.patch.object(
+                module,
+                "_is_supported_corex_fused_paged_prefill_segment",
+                side_effect=AssertionError("disabled guard was evaluated"),
+        ) as supported:
+            with self.assertRaises(FallbackReached):
+                module.PagedAttention._forward_prefix_segment_pytorch(
+                    tensor,
+                    tensor,
+                    tensor,
+                    tensor,
+                    tensor,
+                    tensor,
+                    tensor,
+                    tensor,
+                    0,
+                    0,
+                    4,
+                    1,
+                    256,
+                    4,
+                    16,
+                    512,
+                    256 ** -0.5,
+                    "float16",
+                    fused_request_eligible=False,
+                    capture_request_eligible=False,
+                )
+        supported.assert_not_called()
 
     def test_legacy_decode_interface_uses_head_mapping_tensor(self):
         module = _load_paged_attn()

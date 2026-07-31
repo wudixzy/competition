@@ -1963,8 +1963,10 @@ class PagedAttention:
     ) -> torch.Tensor:
         """Run online-softmax attention for one strict-prefix query segment."""
         q_len = query.shape[0]
-        supported_segment = (
-            _is_supported_corex_fused_paged_prefill_segment(
+        supported_segment = False
+        if fused_request_eligible or capture_request_eligible:
+            supported_segment = (
+                _is_supported_corex_fused_paged_prefill_segment(
                 query,
                 key,
                 value,
@@ -1980,7 +1982,7 @@ class PagedAttention:
                 head_dim,
                 gqa_ratio,
                 block_size,
-            ))
+                ))
         segment_eligible = bool(
             fused_request_eligible
             and _USE_COREX_FUSED_PAGED_PREFILL
