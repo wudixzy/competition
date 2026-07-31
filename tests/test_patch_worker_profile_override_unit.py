@@ -85,6 +85,10 @@ class WorkerProfileOverridePatchUnitTest(unittest.TestCase):
             self.assertEqual(patched.returncode, 0, patched.stderr)
             text = worker.read_text(encoding="utf-8")
             self.assertIn("[BI100] skipping worker.profile_run", text)
+            self.assertIn(
+                "Mark this synthetic pass so BI100_PROFILE can exclude",
+                text,
+            )
             self.assertLess(
                 text.index("num_gpu_blocks_override is not None"),
                 text.index("torch.cuda.empty_cache()"),
