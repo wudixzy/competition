@@ -1,0 +1,125 @@
+{
+  "authorization": {
+    "main_or_yaml_change_authorized": false,
+    "operator_screen_only": true,
+    "real_activation_replay_authorized": false,
+    "tp4_service_authorized": false
+  },
+  "baseline_extension": {
+    "module_name": "corex_fused_paged_prefill_fp16_qk",
+    "path": "/tmp/m1-162-fp16-qk-eea631a/corex_fused_paged_prefill_fp16_qk.so",
+    "sha256": "36e043f138aa87c635178e4aa6a30af710b87c3f3d7c2a3f1838fc0e365bd368",
+    "size_bytes": 247256
+  },
+  "candidate_extension": {
+    "module_name": "corex_fused_paged_prefill_batched_split_pv",
+    "path": "/tmp/m1-173-batched-split-pv-4112640/build/corex_fused_paged_prefill_batched_split_pv.so",
+    "sha256": "4319ade649d9501df8ff605c9099f5b82cb2bc38c07f7b661ab5ad95b49cbe2f",
+    "size_bytes": 247272
+  },
+  "case": "p90_total_32k_q8176",
+  "context_len": 24576,
+  "device_name": "Iluvatar BI-V100",
+  "evaluation": {
+    "qualified": true,
+    "reasons": []
+  },
+  "instance": "ssh-73ca29ba",
+  "numeric_contract_sha256": "1be3ccf34cef906fdc8345c1754960bb4485259f51c3963ab9ca15fd3a4bdb05",
+  "numerical": {
+    "baseline_calibrated": {
+      "candidate_finite": true,
+      "candidate_to_fp32_max_abs": 1.5266239643096924e-05,
+      "candidate_to_fp32_relative_l2": 0.00020748327521141586,
+      "candidate_vs_rounded_max_abs": 3.0517578125e-05,
+      "candidate_vs_rounded_relative_l2": 1.8795705225092935e-05,
+      "fp16_rounding_to_fp32_max_abs": 1.5255063772201538e-05,
+      "fp16_rounding_to_fp32_relative_l2": 0.00020748182226210332,
+      "max_abs_error_multiple_over_fp16_rounding": 1.0007326007326007,
+      "reference_fp32_finite": true,
+      "relative_l2_error_multiple_over_fp16_rounding": 1.00000700277883,
+      "rounded_reference_finite": true
+    },
+    "baseline_lse_relative_l2": 3.3836506794988466e-08,
+    "candidate_calibrated": {
+      "candidate_finite": true,
+      "candidate_to_fp32_max_abs": 1.5266239643096924e-05,
+      "candidate_to_fp32_relative_l2": 0.00020748327521141586,
+      "candidate_vs_rounded_max_abs": 3.0517578125e-05,
+      "candidate_vs_rounded_relative_l2": 1.8795705225092935e-05,
+      "fp16_rounding_to_fp32_max_abs": 1.5255063772201538e-05,
+      "fp16_rounding_to_fp32_relative_l2": 0.00020748182226210332,
+      "max_abs_error_multiple_over_fp16_rounding": 1.0007326007326007,
+      "reference_fp32_finite": true,
+      "relative_l2_error_multiple_over_fp16_rounding": 1.00000700277883,
+      "rounded_reference_finite": true
+    },
+    "candidate_lse_relative_l2": 3.3836506794988466e-08,
+    "candidate_repeat": {
+      "lse_exact": true,
+      "output_exact": true
+    },
+    "candidate_vs_baseline": {
+      "finite": true,
+      "lse_relative_l2": 0.0,
+      "output_max_abs": 0.0,
+      "output_relative_l2": 0.0
+    },
+    "candidate_vs_reference": {
+      "finite": true,
+      "lse_relative_l2": 3.3836506794988466e-08,
+      "output_max_abs": 3.0517578125e-05,
+      "output_relative_l2": 1.8795705225092935e-05
+    }
+  },
+  "query_len": 8176,
+  "runtime_identity": "corex-3.2.3-m1-173-batched-split-pv",
+  "schema": "bi100-m1-162-calibrated-fp16-qk-ab-cell-v1",
+  "seed": 20260731,
+  "source_revision": "b3d20731d31a8b67d1ec44bc1725d34fd2752508",
+  "timings": {
+    "baseline": {
+      "cuda_median_ms": 117.07643127441406,
+      "cuda_trials_ms": [
+        116.91899108886719,
+        117.07643127441406,
+        117.17324829101562,
+        116.99518585205078,
+        117.09695434570312
+      ],
+      "host_median_ms": 117.30155348777771,
+      "host_trials_ms": [
+        117.43152141571045,
+        117.35255271196365,
+        117.30155348777771,
+        117.07563325762749,
+        117.19636991620064
+      ]
+    },
+    "candidate": {
+      "cuda_median_ms": 116.50765228271484,
+      "cuda_trials_ms": [
+        116.44940185546875,
+        116.31236267089844,
+        116.51658630371094,
+        116.5284423828125,
+        116.50765228271484
+      ],
+      "host_median_ms": 116.59956350922585,
+      "host_trials_ms": [
+        116.53585359454155,
+        116.50639772415161,
+        116.634551435709,
+        116.64622649550438,
+        116.59956350922585
+      ]
+    },
+    "speedup": 1.0048819024377817
+  },
+  "torch_version": "2.1.0",
+  "total_kv_len": 32752,
+  "trials": 5,
+  "version": 1,
+  "visible_physical_gpu": 2,
+  "warmups": 1
+}

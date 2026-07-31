@@ -1,0 +1,51 @@
+{
+  "authorization": {
+    "long_context_or_quality_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "real_activation_replay_authorized": false,
+    "short_tp4_screen_authorized": false
+  },
+  "median_speedup": 1.0043696732129823,
+  "minimum_speedup": 0.9990989401504516,
+  "qualified": false,
+  "reasons": [
+    "median speedup is below 1.08x"
+  ],
+  "rows": [
+    {
+      "baseline_cuda_median_ms": 62.7314567565918,
+      "candidate_baseline_output_l2": 0.0,
+      "candidate_cuda_median_ms": 62.78803253173828,
+      "candidate_reference_lse_l2": 3.661707667395583e-08,
+      "candidate_reference_output_l2": 1.8985638088582123e-05,
+      "case": "p90_total_16k_q8176",
+      "gpu": 1,
+      "qualified": true,
+      "speedup": 0.9990989401504516
+    },
+    {
+      "baseline_cuda_median_ms": 117.07643127441406,
+      "candidate_baseline_output_l2": 0.0,
+      "candidate_cuda_median_ms": 116.50765228271484,
+      "candidate_reference_lse_l2": 3.3836506794988466e-08,
+      "candidate_reference_output_l2": 1.8795705225092935e-05,
+      "case": "p90_total_32k_q8176",
+      "gpu": 2,
+      "qualified": true,
+      "speedup": 1.0048819024377817
+    },
+    {
+      "baseline_cuda_median_ms": 225.6834716796875,
+      "candidate_baseline_output_l2": 0.0,
+      "candidate_cuda_median_ms": 224.70159912109375,
+      "candidate_reference_lse_l2": 3.2596216911416556e-08,
+      "candidate_reference_output_l2": 1.942902577695364e-05,
+      "case": "p90_total_64k_q8176",
+      "gpu": 3,
+      "qualified": true,
+      "speedup": 1.0043696732129823
+    }
+  ],
+  "schema": "bi100-m1-173-batched-split-pv-ab-screen-v1",
+  "version": 1
+}
