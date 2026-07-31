@@ -99,7 +99,17 @@ __global__ void gather_kv_group_kernel(
       value_value = __half2float(value_new[source]);
     }
     key_tiles[index] = key_value;
+#if defined(BI100_BATCHED_SPLIT_PV)
+    for (int head = 0; head < kNumQueryHeads; ++head) {
+      const int64_t value_index =
+          (static_cast<int64_t>(split) * kNumQueryHeads + head)
+              * kElements
+          + element;
+      value_tiles[value_index] = value_value;
+    }
+#else
     value_tiles[index] = value_value;
+#endif
   }
 }
 
@@ -295,6 +305,25 @@ cublasStatus_t pv_batched(
       kNumQueryHeads);
 }
 
+#if defined(BI100_BATCHED_SPLIT_PV)
+cublasStatus_t pv_split_head_batched(
+    cublasHandle_t handle, const float* value_tiles, const float* scores,
+    float* output, int query_len, int active_splits) {
+  const float alpha = 1.0f;
+  const float beta = 0.0f;
+  return cublasSgemmStridedBatched(
+      handle, CUBLAS_OP_N, CUBLAS_OP_N,
+      kHeadDim, query_len, kTileTokens,
+      &alpha, value_tiles, kHeadDim,
+      static_cast<long long>(kTileTokens) * kHeadDim,
+      scores, kTileTokens,
+      static_cast<long long>(query_len) * kTileTokens,
+      &beta, output, kHeadDim,
+      static_cast<long long>(query_len) * kHeadDim,
+      active_splits * kNumQueryHeads);
+}
+#endif
+
 }  // namespace
 
 std::vector<torch::Tensor> fused_paged_prefill_forward(
@@ -381,8 +410,14 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
       {kNumQueryHeads, query_len, kHeadDim}, half_options);
   auto key_tiles = torch::empty(
       {kSplitCount, kTileTokens, kHeadDim}, half_options);
+#if defined(BI100_BATCHED_SPLIT_PV)
+  auto value_tiles = torch::empty(
+      {kSplitCount, kNumQueryHeads, kTileTokens, kHeadDim},
+      float_options);
+#else
   auto value_tiles = torch::empty(
       {kSplitCount, kTileTokens, kHeadDim}, float_options);
+#endif
   auto scores = torch::empty(
       {kSplitCount, kNumQueryHeads, query_len, kTileTokens},
       float_options);
@@ -460,6 +495,12 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
         active_splits, rows);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
 
+#if defined(BI100_BATCHED_SPLIT_PV)
+    check_cublas(pv_split_head_batched(
+        handle, value_tiles.data_ptr<float>(), scores.data_ptr<float>(),
+        split_output.data_ptr<float>(), query_len, active_splits),
+        "split-head-batched paged prefill PV");
+#else
     for (int split = 0; split < active_splits; ++split) {
       check_cublas(pv_batched(
           handle,
@@ -468,6 +509,7 @@ std::vector<torch::Tensor> fused_paged_prefill_forward(
           split_output.data_ptr<float>() + split * output_split_stride,
           query_len), "split4 paged prefill PV");
     }
+#endif
 
     merge_split_output_kernel<<<
         launch_blocks(output_elements), kThreads, 0, stream>>>(
