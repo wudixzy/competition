@@ -45,6 +45,16 @@ class M1168PlatformFb0084fEvidenceUnitTest(unittest.TestCase):
         self.assertFalse(
             interpretation["performance_regression_code_cause_proven"])
 
+    def test_incomplete_success_population_blocks_score_comparison(self):
+        qualification = _load("comparison.json")["qualification"]
+        self.assertAlmostEqual(
+            qualification["request_success_rate"], 631 / 881)
+        self.assertTrue(qualification["timed_out"])
+        self.assertFalse(qualification["performance_population_complete"])
+        self.assertAlmostEqual(
+            qualification["diagnostic_weighted_linear"], 4769.580193333333)
+        self.assertFalse(qualification["official_score_comparable"])
+
     def test_incomplete_excerpt_is_not_promoted_to_complete_attribution(self):
         value = _load("excerpt_4xx_summary.json")
         self.assertFalse(value["qualified"])

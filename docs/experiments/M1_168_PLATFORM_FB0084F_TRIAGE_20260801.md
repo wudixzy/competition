@@ -62,6 +62,19 @@ and a qualified CoreX runtime probe, but this platform result cannot validate
 it retroactively. A new submission is required to measure the success-rate
 change.
 
+## Qualification impact
+
+Only 631 of 881 requests succeeded, for a 71.62% request success rate, and the
+workload report records `timed_out=true`. The reported latency and throughput
+distribution is therefore conditioned on the successful subset rather than
+the required workload population. Using the documented formula with the
+reported mean output TPS, mean input TPS, and cached TPM converted to tokens
+per second gives a diagnostic linear value of about 4,769.58. This is not a
+qualification score: fixing the 250 protocol failures changes the measured
+request population and may materially move every percentile and throughput
+term. The next platform run must establish protocol success before its
+performance distribution can be compared with the hard targets.
+
 ## Boundaries
 
 - M1-109 fused prefill remains disabled by default in both compared runs and
@@ -70,6 +83,8 @@ change.
   excerpt; its exact response is still missing.
 - The exact official `n=2` request shape is unknown, so the existing greedy
   sequential fan-out cannot yet be credited with fixing that test.
+- The old run's 71.62% success rate and timeout make its performance metrics
+  diagnostic only; they cannot be projected onto the current branch.
 - No formal YAML or `main` change is authorized by this triage.
 
 Structured evidence is under

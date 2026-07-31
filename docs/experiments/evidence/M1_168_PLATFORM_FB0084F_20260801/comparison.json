@@ -33,6 +33,18 @@
     "multi_system_4xx_baseline": 7,
     "failure_population_changed": false
   },
+  "qualification": {
+    "request_success_rate": 0.7162315550510783,
+    "timed_out": true,
+    "performance_population_complete": false,
+    "diagnostic_weighted_linear": 4769.580193333333,
+    "diagnostic_weighted_formula_inputs": {
+      "output_tps_mean": 11.88,
+      "input_tps_mean": 1602.62,
+      "cache_tps_from_cached_tpm": 150.55416666666667
+    },
+    "official_score_comparable": false
+  },
   "performance": {
     "candidate": {
       "ttft_p90_ms": 30805.42,
