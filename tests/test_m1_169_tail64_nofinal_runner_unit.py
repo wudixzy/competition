@@ -22,7 +22,7 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
 
     def test_candidate_is_accepted_by_fixed_matrix(self) -> None:
         self.assertIn(
-            'choices=("fine32", "admission64", "tail64_nofinal")',
+            'choices=("fine32", "admission64", "tail64_nofinal", "off")',
             self.bench,
         )
 
@@ -33,8 +33,8 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
             "--max-num-batched-tokens 8192",
             "BI100_GDN_RESTORE_MODE=hybrid64",
             "BI100_ATTN_COREX_FUSED_PREFILL=0",
-            "admission64,tail64_nofinal",
-            "tail64_nofinal,admission64",
+            "CANDIDATE_POLICY=${CANDIDATE_POLICY:-tail64_nofinal}",
+            "ARM_ORDER=${ARM_ORDER:-admission64,$CANDIDATE_POLICY}",
         ):
             self.assertIn(fragment, self.source)
 

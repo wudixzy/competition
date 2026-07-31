@@ -538,7 +538,7 @@ def main() -> int:
     parser.add_argument("--model-path", type=Path, required=True)
     parser.add_argument(
         "--policy",
-        choices=("fine32", "admission64", "tail64_nofinal"),
+        choices=("fine32", "admission64", "tail64_nofinal", "off"),
         required=True,
     )
     parser.add_argument(
@@ -548,6 +548,16 @@ def main() -> int:
         required=True,
     )
     parser.add_argument("--salt-namespace", required=True)
+    parser.add_argument(
+        "--salt-order",
+        choices=("namespace-first", "identity-first"),
+        default="namespace-first",
+        help=(
+            "Keep the frozen historical request identity by default. "
+            "identity-first moves the per-request discriminator into the "
+            "first content block for cold-cache diagnostics."
+        ),
+    )
     parser.add_argument("--corpus", type=Path, nargs="+")
     parser.add_argument("--timeout-s", type=float, default=900.0)
     parser.add_argument("--out", type=Path, required=True)
@@ -571,7 +581,10 @@ def main() -> int:
     records = []
     for target in SHAPES:
         for pair in PAIRS:
-            salt = f"{args.salt_namespace}:{target}:{pair}"
+            if args.salt_order == "identity-first":
+                salt = f"{pair}:{target}:{args.salt_namespace}"
+            else:
+                salt = f"{args.salt_namespace}:{target}:{pair}"
             messages, rendered_tokens = build_prompt(
                 tokenizer, corpus, target, salt, tools)
             for phase in PHASES:
@@ -624,6 +637,7 @@ def main() -> int:
             "thinking": False,
             "tool_choice": "none",
             "stream_usage": True,
+            "salt_order": args.salt_order,
             "salt_namespace_sha256": _sha256_bytes(
                 args.salt_namespace.encode("utf-8")),
             "corpus": corpus_manifest,

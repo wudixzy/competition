@@ -14,7 +14,10 @@ INSTANCE=$1
 RUN_ROOT=$2
 GPU_INDEX=${GPU_INDEX:-1}
 PORT=${PORT:-8061}
-ARM_ORDER=${ARM_ORDER:-admission64,tail64_nofinal}
+CANDIDATE_POLICY=${CANDIDATE_POLICY:-tail64_nofinal}
+ARM_ORDER=${ARM_ORDER:-admission64,$CANDIDATE_POLICY}
+BENCH_SALT_ORDER=${BENCH_SALT_ORDER:-namespace-first}
+BENCH_SALT_NAMESPACE=${BENCH_SALT_NAMESPACE:-m1-169-tail64-nofinal-tp1-v1}
 MODEL_PATH=${MODEL_PATH:-/root/shared-storage/models/Qwen/Qwen3.6-35B-A3B-diagnostic-4L-real}
 BI100_RUNTIME_SITE_PACKAGES=${BI100_RUNTIME_SITE_PACKAGES:-}
 STARTUP_TIMEOUT_S=${STARTUP_TIMEOUT_S:-900}
@@ -40,10 +43,23 @@ FATAL_PATTERN='CUDA error|illegal memory access|SIGSEGV|Fatal Python error|out o
     echo "PORT must be between 1 and 65535" >&2
     exit 2
 }
-case "$ARM_ORDER" in
-    admission64,tail64_nofinal|tail64_nofinal,admission64) ;;
-    *) echo "ARM_ORDER must contain admission64 and tail64_nofinal once" >&2; exit 2 ;;
+case "$CANDIDATE_POLICY" in
+    tail64_nofinal|off) ;;
+    *) echo "CANDIDATE_POLICY must be tail64_nofinal or off" >&2; exit 2 ;;
 esac
+[[ "$ARM_ORDER" == "admission64,$CANDIDATE_POLICY" \
+    || "$ARM_ORDER" == "$CANDIDATE_POLICY,admission64" ]] || {
+    echo "ARM_ORDER must contain admission64 and CANDIDATE_POLICY once" >&2
+    exit 2
+}
+case "$BENCH_SALT_ORDER" in
+    namespace-first|identity-first) ;;
+    *) echo "BENCH_SALT_ORDER is invalid" >&2; exit 2 ;;
+esac
+[[ "$BENCH_SALT_NAMESPACE" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] || {
+    echo "BENCH_SALT_NAMESPACE must be a short non-sensitive label" >&2
+    exit 2
+}
 [[ "$STARTUP_TIMEOUT_S" =~ ^[1-9][0-9]*$ ]] || {
     echo "STARTUP_TIMEOUT_S must be positive" >&2
     exit 2
@@ -103,6 +119,9 @@ printf '%s\n' "$GPU_INDEX" > "$RUN_ROOT/gpu_index.txt"
 printf '%s\n' "$MODEL_PATH" > "$RUN_ROOT/model_path.txt"
 printf '%s\n' "$BI100_RUNTIME_SITE_PACKAGES" > "$RUN_ROOT/runtime_site_packages.txt"
 printf '%s\n' "$ARM_ORDER" > "$RUN_ROOT/arm_order.txt"
+printf '%s\n' "$CANDIDATE_POLICY" > "$RUN_ROOT/candidate_policy.txt"
+printf '%s\n' "$BENCH_SALT_ORDER" > "$RUN_ROOT/bench_salt_order.txt"
+printf '%s\n' "$BENCH_SALT_NAMESPACE" > "$RUN_ROOT/bench_salt_namespace.txt"
 printf '%s\n' "$NUM_GPU_BLOCKS_OVERRIDE" > "$RUN_ROOT/num_gpu_blocks_override.txt"
 
 write_stage() {
@@ -318,7 +337,8 @@ run_arm() {
             python3 "$ROOT/tests/bench_m1_104_admission64_policy_matrix.py" \
             --base "http://127.0.0.1:$PORT" --model-path "$MODEL_PATH" \
             --policy "$policy" --ab-pair 1 \
-            --salt-namespace m1-169-tail64-nofinal-tp1-v1 \
+            --salt-namespace "$BENCH_SALT_NAMESPACE" \
+            --salt-order "$BENCH_SALT_ORDER" \
             --out "$arm/measurement.json" \
             > "$arm/measurement.stdout" 2> "$arm/measurement.stderr" \
             || { measurement_rc=$?; rc=1; }
@@ -349,7 +369,7 @@ finish() {
     printf '%s\n' "$after" > "$RUN_ROOT/preflight_after.rc"
     printf '%s\n' "$fatal" > "$RUN_ROOT/fatal_scan.rc"
     if [[ $cleanup -ne 0 || $post -ne 0 || $after -ne 0 || $fatal -ne 0 ]]; then final=1; fi
-    python3 - "$RUN_ROOT" "$SOURCE_REVISION" "$SOURCE_BRANCH" "$INSTANCE" "$GPU_INDEX" "$ARM_ORDER" "$NUM_GPU_BLOCKS_OVERRIDE" "$final" <<'PY'
+    python3 - "$RUN_ROOT" "$SOURCE_REVISION" "$SOURCE_BRANCH" "$INSTANCE" "$GPU_INDEX" "$ARM_ORDER" "$NUM_GPU_BLOCKS_OVERRIDE" "$CANDIDATE_POLICY" "$BENCH_SALT_ORDER" "$final" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -361,7 +381,11 @@ def rc(path):
     except (OSError, ValueError):
         return None
 report = {
-    "schema": "bi100-m1-169-tail64-nofinal-tp1-runner-v1",
+    "schema": (
+        "bi100-m1-169-tail64-nofinal-tp1-runner-v1"
+        if sys.argv[8] == "tail64_nofinal"
+        else "bi100-m1-170-cold-capture-overhead-runner-v1"
+    ),
     "version": 1,
     "source_revision": sys.argv[2],
     "source_branch": sys.argv[3],
@@ -370,12 +394,14 @@ report = {
     "arm_order": sys.argv[6].split(","),
     "num_gpu_blocks_override": (
         int(sys.argv[7]) if sys.argv[7] else None),
-    "returncode": int(sys.argv[8]),
-    "qualified_development_screen": int(sys.argv[8]) == 0,
+    "candidate_policy": sys.argv[8],
+    "bench_salt_order": sys.argv[9],
+    "returncode": int(sys.argv[10]),
+    "qualified_development_screen": int(sys.argv[10]) == 0,
     "gates": {
         "preflight_before": rc("preflight_before.rc"),
         "admission64": rc("admission64/arm.rc"),
-        "tail64_nofinal": rc("tail64_nofinal/arm.rc"),
+        "candidate": rc(f"{sys.argv[8]}/arm.rc"),
         "comparison": rc("comparison.rc"),
         "cleanup": rc("cleanup.rc"),
         "postflight_after": rc("postflight_after.rc"),
@@ -417,12 +443,21 @@ done
 CURRENT_STAGE=comparison
 write_stage
 comparison_rc=0
-python3 "$ROOT/tests/compare_m1_169_tail64_nofinal_tp1.py" \
-    --control "$RUN_ROOT/admission64/measurement.json" \
-    --candidate "$RUN_ROOT/tail64_nofinal/measurement.json" \
-    --out "$RUN_ROOT/comparison.json" \
-    > "$RUN_ROOT/comparison.stdout" 2> "$RUN_ROOT/comparison.stderr" \
-    || comparison_rc=$?
+if [[ "$CANDIDATE_POLICY" == tail64_nofinal ]]; then
+    python3 "$ROOT/tests/compare_m1_169_tail64_nofinal_tp1.py" \
+        --control "$RUN_ROOT/admission64/measurement.json" \
+        --candidate "$RUN_ROOT/tail64_nofinal/measurement.json" \
+        --out "$RUN_ROOT/comparison.json" \
+        > "$RUN_ROOT/comparison.stdout" 2> "$RUN_ROOT/comparison.stderr" \
+        || comparison_rc=$?
+else
+    python3 "$ROOT/tests/compare_m1_170_cold_capture_overhead.py" \
+        --control "$RUN_ROOT/admission64/measurement.json" \
+        --candidate "$RUN_ROOT/off/measurement.json" \
+        --out "$RUN_ROOT/comparison.json" \
+        > "$RUN_ROOT/comparison.stdout" 2> "$RUN_ROOT/comparison.stderr" \
+        || comparison_rc=$?
+fi
 printf '%s\n' "$comparison_rc" > "$RUN_ROOT/comparison.rc"
 [[ $comparison_rc -eq 0 ]]
 CURRENT_STAGE=complete
