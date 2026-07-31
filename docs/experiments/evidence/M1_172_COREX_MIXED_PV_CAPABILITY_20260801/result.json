@@ -1,0 +1,49 @@
+{
+  "schema": "bi100-m1-172-corex-mixed-pv-capability-v1",
+  "version": 1,
+  "source_revision": "70e6d318408c75265b0934bc355b64a4610dc23e",
+  "instance": "ssh-73ca29ba",
+  "physical_gpu": 1,
+  "corex_version": "3.2.3",
+  "candidate_patch_sha256": "113972f0184a35fb00fc4b7c0372209a3f6877e7afd5860316896b9c65b9ddb6",
+  "candidate_extension_sha256": "6ee08812eab724a6acb7098de75981ec96335af332fd76ce95e1917f20b0ea20",
+  "baseline_extension_sha256": "ad4ea7707bb2f2bfe04e07a7ad5fd58a647232be70a3056937a0d738c8254bff",
+  "compile": {
+    "qualified_attempt_succeeded": true,
+    "torch_root": "/usr/local/corex-3.2.3/lib64/python3/dist-packages/torch",
+    "excluded_harness_attempt_count": 1
+  },
+  "cell": {
+    "name": "p90_total_16k_q8176",
+    "context_tokens": 8192,
+    "query_tokens": 8176,
+    "completed": false,
+    "error_stage": "mixed_pv_gemm",
+    "error_type": "CUBLAS_STATUS_NOT_SUPPORTED",
+    "cublas_status": 15,
+    "finite_evaluated": false,
+    "numeric_gate_evaluated": false,
+    "repeat_exact_evaluated": false,
+    "speedup_evaluated": false
+  },
+  "lifecycle": {
+    "temporary_tree_removed": true,
+    "experiment_processes_remaining": 0,
+    "gpu_postflight_qualified": true,
+    "tp4_started": false
+  },
+  "evaluation": {
+    "qualified": false,
+    "route_closed": true,
+    "three_cell_screen_authorized": false,
+    "service_or_tp4_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "stop_reason": "CoreX 3.2.3 does not support the requested mixed PV GemmEx type combination"
+  },
+  "privacy": {
+    "raw_tensors_recorded": false,
+    "prompts_recorded": false,
+    "model_outputs_recorded": false,
+    "credentials_recorded": false
+  }
+}
