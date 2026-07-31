@@ -28,6 +28,9 @@ SCREEN_SCHEMA = "bi100-m1-157-fp16-qk-ab-screen-v1"
 RUNTIME_IDENTITY = "corex-3.2.3-m1-157"
 MIN_MEDIAN_SPEEDUP = 1.08
 BASELINE_MODULE_NAME = "corex_fused_paged_prefill"
+CANDIDATE_MODULE_NAME = "corex_fused_paged_prefill_fp16_qk"
+CANDIDATE_SOURCE = (
+    ROOT / "qwen3_6_scripts" / "corex_fused_paged_prefill_fp16_qk.cu")
 
 
 def screen_authorization(qualified: bool) -> dict[str, bool]:
@@ -509,16 +512,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--candidate-module-name",
-        default="corex_fused_paged_prefill_fp16_qk",
+        default=CANDIDATE_MODULE_NAME,
     )
     parser.add_argument(
         "--candidate-source",
         type=Path,
-        default=(
-            ROOT
-            / "qwen3_6_scripts"
-            / "corex_fused_paged_prefill_fp16_qk.cu"
-        ),
+        default=CANDIDATE_SOURCE,
     )
     parser.add_argument(
         "--gpus",
