@@ -141,6 +141,61 @@ def _solid_png_data_url(rgb: tuple[int, int, int]) -> str:
     return "data:image/png;base64," + base64.b64encode(image).decode("ascii")
 
 
+def _multimodal_cache_surface(
+    base: str,
+    timeout_s: float,
+) -> Json:
+    def payload(rgb: tuple[int, int, int]) -> Json:
+        return {
+            "model": "llm",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": _solid_png_data_url(rgb)},
+                    },
+                    {
+                        "type": "text",
+                        "text": "Provide a short diagnostic response.",
+                    },
+                ],
+            }],
+            "max_tokens": 8,
+            "temperature": 0,
+            "seed": 20260727,
+            "thinking": False,
+        }
+
+    red = payload((255, 0, 0))
+    blue = payload((0, 0, 255))
+    red_cold, red_cold_summary = _post_chat(
+        base, red, timeout_s=max(timeout_s, 360))
+    red_warm, red_warm_summary = _post_chat(
+        base, red, timeout_s=max(timeout_s, 360))
+    _, blue_summary = _post_chat(
+        base, blue, timeout_s=max(timeout_s, 360))
+    red_cold_message = red_cold["choices"][0]["message"]
+    red_warm_message = red_warm["choices"][0]["message"]
+    if red_cold_message != red_warm_message:
+        raise AssertionError("same-image fixed greedy response changed")
+    if red_cold_summary["cached_tokens"] != 0:
+        raise AssertionError("cold image request unexpectedly used cache")
+    if red_warm_summary["cached_tokens"] <= 0:
+        raise AssertionError("same-image replay did not use cache")
+    if blue_summary["cached_tokens"] != 0:
+        raise AssertionError("different image reused cached state")
+    return {
+        "red_cold": red_cold_summary,
+        "red_warm": red_warm_summary,
+        "blue_cold": blue_summary,
+        "same_image_exact": True,
+        "same_image_cache_hit": True,
+        "different_image_cache_isolated": True,
+        "semantic_quality_evaluated": False,
+    }
+
+
 def _atomic_write(path: Path, value: Json) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(
@@ -301,29 +356,7 @@ def run_gate(base: str, model_path: Path, timeout_s: float) -> Json:
         return summary
 
     def multimodal_surface() -> Json:
-        _, summary = _post_chat(base, {
-            "model": "llm",
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": _solid_png_data_url((255, 0, 0)),
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": "Provide a short diagnostic response.",
-                    },
-                ],
-            }],
-            "max_tokens": 8,
-            "temperature": 0,
-            "seed": 20260727,
-            "thinking": False,
-        }, timeout_s=max(timeout_s, 360))
-        return summary
+        return _multimodal_cache_surface(base, timeout_s)
 
     def invalid_request() -> Json:
         _, summary = _post_chat(

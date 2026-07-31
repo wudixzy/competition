@@ -75,6 +75,61 @@ class Qwen36DiagnosticApiUnitTest(unittest.TestCase):
                 AssertionError, "generated no completion tokens"):
             api._response_summary(response)
 
+    def test_multimodal_surface_requires_exact_replay_and_image_isolation(
+            self) -> None:
+        def response(content: str) -> dict:
+            return {
+                "choices": [{
+                    "message": {"role": "assistant", "content": content},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 32, "completion_tokens": 2},
+            }
+
+        cold = response("same")
+        warm = response("same")
+        blue = response("different")
+        summaries = [
+            {"cached_tokens": 0},
+            {"cached_tokens": 16},
+            {"cached_tokens": 0},
+        ]
+        with mock.patch.object(
+                api,
+                "_post_chat",
+                side_effect=list(zip((cold, warm, blue), summaries)),
+        ) as post:
+            result = api._multimodal_cache_surface(
+                "http://127.0.0.1:8000", 30)
+        self.assertEqual(post.call_count, 3)
+        self.assertTrue(result["same_image_exact"])
+        self.assertTrue(result["same_image_cache_hit"])
+        self.assertTrue(result["different_image_cache_isolated"])
+        self.assertFalse(result["semantic_quality_evaluated"])
+
+    def test_multimodal_surface_rejects_cross_image_cache_hit(self) -> None:
+        response = {
+            "choices": [{
+                "message": {"role": "assistant", "content": "same"},
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 32, "completion_tokens": 2},
+        }
+        summaries = [
+            {"cached_tokens": 0},
+            {"cached_tokens": 16},
+            {"cached_tokens": 16},
+        ]
+        with mock.patch.object(
+                api,
+                "_post_chat",
+                side_effect=[(response, row) for row in summaries],
+        ):
+            with self.assertRaisesRegex(
+                    AssertionError, "different image reused cached state"):
+                api._multimodal_cache_surface(
+                    "http://127.0.0.1:8000", 30)
+
 
 class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
     def test_harness_is_diagnostic_only_and_keeps_capacity(self) -> None:
