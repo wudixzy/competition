@@ -538,7 +538,7 @@ def main() -> int:
     parser.add_argument("--model-path", type=Path, required=True)
     parser.add_argument(
         "--policy",
-        choices=("fine32", "admission64"),
+        choices=("fine32", "admission64", "tail64_nofinal"),
         required=True,
     )
     parser.add_argument(
