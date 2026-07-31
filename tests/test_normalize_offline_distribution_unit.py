@@ -165,6 +165,21 @@ class NormalizeOfflineDistributionTest(unittest.TestCase):
         self.assertEqual(unknown_result.returncode, 2)
         self.assertIn("unknown option", unknown_result.stderr)
 
+    def test_installer_purges_bytecode_before_runtime_import_probe(self):
+        source = INSTALLER.read_text(encoding="utf-8")
+        purge = source.index('rglob("__pycache__")')
+        probe = source.index("from vllm.entrypoints.openai import api_server")
+        self.assertLess(purge, probe)
+        self.assertIn("PYTHONDONTWRITEBYTECODE=1", source)
+        self.assertIn('required_options = {"--reasoning-parser", "--tool-call-parser"}',
+                      source)
+        self.assertIn('"qwen3_coder" in ToolParserManager.tool_parsers',
+                      source)
+        self.assertIn('"qwen3" in ReasoningParserManager.list_registered()',
+                      source)
+        self.assertIn('"runtime_import_contract": runtime_import_contract',
+                      source)
+
 
 if __name__ == "__main__":
     unittest.main()

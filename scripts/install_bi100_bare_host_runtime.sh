@@ -165,6 +165,89 @@ export PYTHONPATH="$SITE_PACKAGES:$SYSTEM_PYTHONPATH:${BASE_PYTHONPATH}"
     bash ./patch_ops.sh
 )
 
+# The system package copy can contain timestamp-valid bytecode for files that
+# patch_ops replaces. A first `python -m` invocation must never execute that
+# stale code before falling back to the installed overlay sources.
+RUNTIME_IMPORT_CONTRACT="$RUNTIME_STAGE/runtime_import_contract.json"
+(
+cd /tmp
+PYTHONDONTWRITEBYTECODE=1 python3 - "$SITE_PACKAGES" \
+    "$RUNTIME_IMPORT_CONTRACT" <<'PY'
+from __future__ import annotations
+
+import inspect
+import json
+from pathlib import Path
+import shutil
+import sys
+
+
+site = Path(sys.argv[1]).resolve()
+output = Path(sys.argv[2])
+package_roots = (site / "vllm", site / "transformers")
+bytecode_files = [
+    path
+    for root in package_roots
+    for path in root.rglob("*")
+    if path.is_file() and path.suffix in {".pyc", ".pyo"}
+]
+cache_directories = [
+    path
+    for root in package_roots
+    for path in root.rglob("__pycache__")
+    if path.is_dir()
+]
+for path in sorted(cache_directories, reverse=True):
+    shutil.rmtree(path)
+
+from vllm.entrypoints.openai import api_server, cli_args
+from vllm.entrypoints.openai.tool_parsers import ToolParserManager
+from vllm.reasoning import ReasoningParserManager
+from vllm.utils import FlexibleArgumentParser
+
+parser = cli_args.make_arg_parser(FlexibleArgumentParser())
+options = {
+    option
+    for action in parser._actions
+    for option in action.option_strings
+}
+api_path = Path(inspect.getfile(api_server)).resolve()
+cli_path = Path(inspect.getfile(cli_args)).resolve()
+required_options = {"--reasoning-parser", "--tool-call-parser"}
+qualified = all((
+    not any(
+        path.exists()
+        for root in package_roots
+        for path in root.rglob("*.pyc")
+    ),
+    required_options.issubset(options),
+    "qwen3_coder" in ToolParserManager.tool_parsers,
+    "qwen3" in ReasoningParserManager.list_registered(),
+    api_path.is_relative_to(site),
+    cli_path.is_relative_to(site),
+))
+report = {
+    "schema": "bi100-runtime-import-contract-v1",
+    "version": 1,
+    "qualified": qualified,
+    "purged_bytecode_files": len(bytecode_files),
+    "purged_cache_directories": len(cache_directories),
+    "required_cli_options": sorted(required_options),
+    "qwen3_coder_registered": (
+        "qwen3_coder" in ToolParserManager.tool_parsers),
+    "qwen3_reasoning_registered": (
+        "qwen3" in ReasoningParserManager.list_registered()),
+    "api_server_from_overlay": api_path.is_relative_to(site),
+    "cli_args_from_overlay": cli_path.is_relative_to(site),
+}
+output.write_text(
+    json.dumps(report, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+raise SystemExit(0 if qualified else 1)
+PY
+)
+
 # Build the expected post-patch block manager from the authoritative source.
 # It is intentionally not byte-equal to the base override because patch_ops
 # adds the disabled-by-default privacy-safe cache trace afterward.
@@ -183,7 +266,8 @@ REPORT_PATH="$RUNTIME_STAGE/install.json"
 cd /tmp
 python3 - "$ROOT" "$SITE_PACKAGES" "$RUNTIME_ROOT" "$REPORT_PATH" \
     "$EXPECTED_ROOT/vllm/core/block_manager_v2.py" \
-    "$EXPECTED_ROOT/vllm/outputs.py" "$SOURCE_REVISION" <<'PY'
+    "$EXPECTED_ROOT/vllm/outputs.py" "$SOURCE_REVISION" \
+    "$RUNTIME_IMPORT_CONTRACT" <<'PY'
 from __future__ import annotations
 
 import hashlib
@@ -202,6 +286,7 @@ output = Path(sys.argv[4])
 expected_block_manager = Path(sys.argv[5]).resolve()
 expected_outputs = Path(sys.argv[6]).resolve()
 source_revision = sys.argv[7]
+runtime_import_contract_path = Path(sys.argv[8])
 
 
 def package_root(name: str) -> Path:
@@ -467,6 +552,9 @@ versions = {
     for name in ("torch", "transformers", "vllm")
 }
 qualified = qualified and versions["transformers"] == "4.55.3"
+runtime_import_contract = json.loads(
+    runtime_import_contract_path.read_text(encoding="utf-8"))
+qualified = qualified and runtime_import_contract.get("qualified") is True
 report = {
     "schema": "bi100-bare-host-runtime-install-v2",
     "version": 2,
@@ -478,6 +566,7 @@ report = {
     "source_tree_clean": True,
     "runtime_tree_sha256": tree_digest(site),
     "versions": versions,
+    "runtime_import_contract": runtime_import_contract,
     "files": files,
     "block_manager_base_sha256": digest(
         root / "vllm/core/block_manager_v2.py"),
