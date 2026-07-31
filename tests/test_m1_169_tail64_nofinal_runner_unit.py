@@ -85,6 +85,14 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
         ):
             self.assertIn(name, self.source)
 
+    def test_optional_profile_override_is_diagnostic_and_recorded(self) -> None:
+        self.assertIn("NUM_GPU_BLOCKS_OVERRIDE=${NUM_GPU_BLOCKS_OVERRIDE:-}",
+                      self.source)
+        self.assertIn('--num-gpu-blocks-override "$NUM_GPU_BLOCKS_OVERRIDE"',
+                      self.source)
+        self.assertIn('"num_gpu_blocks_override": (', self.source)
+        self.assertIn('"production_promotion_authorized": False', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,8 @@ ARM_ORDER=${ARM_ORDER:-admission64,tail64_nofinal}
 MODEL_PATH=${MODEL_PATH:-/root/shared-storage/models/Qwen/Qwen3.6-35B-A3B-diagnostic-4L-real}
 BI100_RUNTIME_SITE_PACKAGES=${BI100_RUNTIME_SITE_PACKAGES:-}
 STARTUP_TIMEOUT_S=${STARTUP_TIMEOUT_S:-900}
+NUM_GPU_BLOCKS_OVERRIDE=${NUM_GPU_BLOCKS_OVERRIDE:-}
+BLOCK_OVERRIDE_ARGS=()
 ACTIVE_PID=""
 ACTIVE_PGID=""
 ACTIVE_STARTTIME=""
@@ -46,6 +48,13 @@ esac
     echo "STARTUP_TIMEOUT_S must be positive" >&2
     exit 2
 }
+if [[ -n "$NUM_GPU_BLOCKS_OVERRIDE" ]]; then
+    [[ "$NUM_GPU_BLOCKS_OVERRIDE" =~ ^[1-9][0-9]*$ ]] || {
+        echo "NUM_GPU_BLOCKS_OVERRIDE must be a positive integer" >&2
+        exit 2
+    }
+    BLOCK_OVERRIDE_ARGS=(--num-gpu-blocks-override "$NUM_GPU_BLOCKS_OVERRIDE")
+fi
 
 RUN_ROOT=$(python3 - "$RUN_ROOT" <<'PY'
 from pathlib import Path
@@ -94,6 +103,7 @@ printf '%s\n' "$GPU_INDEX" > "$RUN_ROOT/gpu_index.txt"
 printf '%s\n' "$MODEL_PATH" > "$RUN_ROOT/model_path.txt"
 printf '%s\n' "$BI100_RUNTIME_SITE_PACKAGES" > "$RUN_ROOT/runtime_site_packages.txt"
 printf '%s\n' "$ARM_ORDER" > "$RUN_ROOT/arm_order.txt"
+printf '%s\n' "$NUM_GPU_BLOCKS_OVERRIDE" > "$RUN_ROOT/num_gpu_blocks_override.txt"
 
 write_stage() {
     printf '%s\n' "$CURRENT_STAGE" > "$RUN_ROOT/stage.txt"
@@ -195,6 +205,7 @@ start_service() {
                 --served-model-name llm --max-model-len 262144 \
                 --gpu-memory-utilization 0.9 --trust-remote-code \
                 --tensor-parallel-size 1 --max-num-seqs 1 \
+                "${BLOCK_OVERRIDE_ARGS[@]}" \
                 --disable-log-requests --disable-frontend-multiprocessing \
                 --max-num-batched-tokens 8192 --enable-chunked-prefill \
                 --max-seq-len-to-capture 32768 --enable-auto-tool-choice \
@@ -334,7 +345,7 @@ finish() {
     printf '%s\n' "$after" > "$RUN_ROOT/preflight_after.rc"
     printf '%s\n' "$fatal" > "$RUN_ROOT/fatal_scan.rc"
     if [[ $cleanup -ne 0 || $post -ne 0 || $after -ne 0 || $fatal -ne 0 ]]; then final=1; fi
-    python3 - "$RUN_ROOT" "$SOURCE_REVISION" "$SOURCE_BRANCH" "$INSTANCE" "$GPU_INDEX" "$ARM_ORDER" "$final" <<'PY'
+    python3 - "$RUN_ROOT" "$SOURCE_REVISION" "$SOURCE_BRANCH" "$INSTANCE" "$GPU_INDEX" "$ARM_ORDER" "$NUM_GPU_BLOCKS_OVERRIDE" "$final" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -353,8 +364,10 @@ report = {
     "instance": sys.argv[4],
     "gpu_index": int(sys.argv[5]),
     "arm_order": sys.argv[6].split(","),
-    "returncode": int(sys.argv[7]),
-    "qualified_development_screen": int(sys.argv[7]) == 0,
+    "num_gpu_blocks_override": (
+        int(sys.argv[7]) if sys.argv[7] else None),
+    "returncode": int(sys.argv[8]),
+    "qualified_development_screen": int(sys.argv[8]) == 0,
     "gates": {
         "preflight_before": rc("preflight_before.rc"),
         "admission64": rc("admission64/arm.rc"),
