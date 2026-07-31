@@ -1,0 +1,27 @@
+{
+  "schema": "bi100-m1-171-inactive-prefill-guard-v1",
+  "version": 1,
+  "source_revision_measured": "70e6d318408c75265b0934bc355b64a4610dc23e",
+  "implementation_revision": "c32f7b7",
+  "instance": "ssh-73ca29ba",
+  "physical_gpu": 1,
+  "runtime_tree_sha256": "93f65cce49f5455401ae35c97371b0e8dbf0f94e7ab23878d2e7c5991603e849",
+  "iterations": 100000,
+  "guard_net_ns_per_call": 9494.44323,
+  "hypothetical_guard_calls": 64,
+  "hypothetical_64_call_upper_bound_ms": 0.60764436672,
+  "finite": true,
+  "evaluation": {
+    "platform_regression_explained": false,
+    "service_ab_authorized": false,
+    "tp4_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "stop_reason": "measured disabled-path overhead is sub-millisecond"
+  },
+  "privacy": {
+    "raw_tensors_recorded": false,
+    "prompts_recorded": false,
+    "model_outputs_recorded": false,
+    "credentials_recorded": false
+  }
+}
