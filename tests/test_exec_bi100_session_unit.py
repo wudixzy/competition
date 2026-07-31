@@ -252,10 +252,15 @@ time.sleep(60)
             )
             try:
                 deadline = time.monotonic() + 5
-                while (
-                    not identity.is_file()
-                    or not grandchild_path.is_file()
-                ):
+                grandchild_pid = None
+                while not identity.is_file() or grandchild_pid is None:
+                    try:
+                        candidate = grandchild_path.read_text(
+                            encoding="ascii").strip()
+                        if candidate.isdecimal():
+                            grandchild_pid = int(candidate)
+                    except FileNotFoundError:
+                        pass
                     if process.poll() is not None:
                         break
                     if time.monotonic() >= deadline:
@@ -264,8 +269,7 @@ time.sleep(60)
                 self.assertIsNone(process.poll())
                 value = json.loads(identity.read_text(encoding="utf-8"))
                 self.assertEqual(value["pid"], process.pid)
-                grandchild_pid = int(
-                    grandchild_path.read_text(encoding="ascii"))
+                self.assertIsNotNone(grandchild_pid)
 
                 os.killpg(process.pid, signal.SIGTERM)
                 stdout, stderr = process.communicate(timeout=5)
