@@ -35,6 +35,7 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
             "BI100_ATTN_COREX_FUSED_PREFILL=0",
             "CANDIDATE_POLICY=${CANDIDATE_POLICY:-tail64_nofinal}",
             "ARM_ORDER=${ARM_ORDER:-admission64,$CANDIDATE_POLICY}",
+            "BENCH_TOOL_COUNT=${BENCH_TOOL_COUNT:-29}",
         ):
             self.assertIn(fragment, self.source)
 
@@ -114,6 +115,7 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
         self.assertIn('--num-gpu-blocks-override "$NUM_GPU_BLOCKS_OVERRIDE"',
                       self.source)
         self.assertIn('"num_gpu_blocks_override": (', self.source)
+        self.assertIn('"bench_tool_count": int(', self.source)
         self.assertIn('"production_promotion_authorized": False', self.source)
 
 

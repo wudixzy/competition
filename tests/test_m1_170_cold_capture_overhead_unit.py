@@ -51,7 +51,7 @@ def _report(policy: str, ttft: float) -> dict:
         "reasons": [],
         "request_count": matrix.REQUEST_COUNT,
         "request_manifest_sha256": "b" * 64,
-        "fixed": {"salt_order": "identity-first"},
+        "fixed": {"salt_order": "identity-first", "tool_count": 0},
         "requests": rows,
     }
 
@@ -63,6 +63,7 @@ class M1170ColdCaptureOverheadUnitTest(unittest.TestCase):
         source = WRAPPER.read_text(encoding="utf-8")
         self.assertIn("CANDIDATE_POLICY=off", source)
         self.assertIn("BENCH_SALT_ORDER=identity-first", source)
+        self.assertIn("BENCH_TOOL_COUNT=0", source)
         self.assertIn("exec", source)
 
     def test_shared_runner_keeps_m1_169_default(self) -> None:
@@ -80,18 +81,27 @@ class M1170ColdCaptureOverheadUnitTest(unittest.TestCase):
         self.assertAlmostEqual(
             result["cold"]["admission64_overhead_fraction_median"], 0.2)
         self.assertEqual(
-            result["cache_transparency"]["all_output_identity_rate"], 1.0)
+            result["cross_policy_numeric_observation"][
+                "complete_output_identity_rate"], 1.0)
         self.assertFalse(
             result["scope"]["production_promotion_authorized"])
 
-    def test_output_difference_fails_analysis(self) -> None:
+    def test_output_difference_is_separate_from_timing_analysis(self) -> None:
         control = _report("admission64", 1.0)
         candidate = _report("off", 1.0)
         candidate = copy.deepcopy(candidate)
         candidate["requests"][0]["output_sha256"] = "different"
         result = compare.compare(control, candidate)
-        self.assertFalse(result["qualified_analysis"])
-        self.assertIn("cross-policy output identity differs", result["reasons"])
+        self.assertTrue(result["qualified_analysis"])
+        self.assertEqual(
+            result["cross_policy_numeric_observation"][
+                "complete_output_identity_matches"],
+            matrix.REQUEST_COUNT - 1,
+        )
+        self.assertFalse(result["cross_policy_numeric_observation"][
+            "strict_output_identity_qualified"])
+        self.assertFalse(result["cross_policy_numeric_observation"][
+            "teacher_forced_logits_evaluated"])
 
     def test_cache_off_must_report_zero_cached_tokens(self) -> None:
         control = _report("admission64", 1.0)
@@ -101,7 +111,18 @@ class M1170ColdCaptureOverheadUnitTest(unittest.TestCase):
         result = compare.compare(control, candidate)
         self.assertFalse(result["qualified_analysis"])
         self.assertIn(
-            "cache-off cold rows reported cached tokens", result["reasons"])
+            "cold rows contain cached tokens and cannot attribute capture "
+            "overhead", result["reasons"])
+
+    def test_admission64_cold_rows_must_also_be_uncached(self) -> None:
+        control = _report("admission64", 1.0)
+        candidate = _report("off", 1.0)
+        control = copy.deepcopy(control)
+        control["requests"][0]["cached_tokens"] = 16
+        result = compare.compare(control, candidate)
+        self.assertFalse(result["qualified_analysis"])
+        self.assertEqual(
+            result["cold_isolation"]["admission64_cold_cached_tokens"], 16)
 
 
 if __name__ == "__main__":

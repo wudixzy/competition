@@ -83,6 +83,7 @@ class M1104Admission64PolicyMatrixUnitTest(unittest.TestCase):
         self.assertEqual(tools[0]["function"]["name"], "read_file_0")
         self.assertFalse(
             tools[-1]["function"]["parameters"]["additionalProperties"])
+        self.assertEqual(module.make_tools(0), [])
 
     def test_complete_matrix_is_valid_and_aggregates(self):
         rows = complete_records()

@@ -16,7 +16,7 @@ except ImportError:
     import bench_m1_104_admission64_policy_matrix as matrix
 
 
-SCHEMA = "bi100-m1-170-cold-capture-overhead-comparison-v1"
+SCHEMA = "bi100-m1-170-cold-capture-overhead-comparison-v2"
 OUTPUT_FIELDS = (
     "first_token_sha256",
     "output_sha256",
@@ -39,6 +39,7 @@ def _load(path: Path, policy: str) -> dict[str, Any]:
         or value.get("reasons") != []
         or value.get("request_count") != matrix.REQUEST_COUNT
         or value.get("fixed", {}).get("salt_order") != "identity-first"
+        or value.get("fixed", {}).get("tool_count") != 0
     ):
         raise ValueError(f"{path} measurement contract differs")
     records = value.get("requests")
@@ -90,11 +91,14 @@ def compare(control: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
         raise ValueError("control/candidate request manifests differ")
 
     output_matches = 0
+    first_token_matches = 0
     cold_output_matches = 0
+    cold_first_token_matches = 0
     by_shape: dict[str, Any] = {}
     all_control_cold: list[float] = []
     all_candidate_cold: list[float] = []
-    candidate_cached_tokens = 0
+    control_cold_cached_tokens = 0
+    candidate_cold_cached_tokens = 0
     for target in matrix.SHAPES:
         control_ttft: list[float] = []
         candidate_ttft: list[float] = []
@@ -106,9 +110,15 @@ def compare(control: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
             exact = all(left.get(field) == right.get(field)
                         for field in OUTPUT_FIELDS)
             output_matches += int(exact)
+            first_token_matches += int(
+                left.get("first_token_sha256")
+                == right.get("first_token_sha256"))
             if left.get("phase") != "cold":
                 continue
             cold_output_matches += int(exact)
+            cold_first_token_matches += int(
+                left.get("first_token_sha256")
+                == right.get("first_token_sha256"))
             left_ttft = _positive(left.get("ttft_s"), "control.ttft_s")
             right_ttft = _positive(right.get("ttft_s"), "candidate.ttft_s")
             control_ttft.append(left_ttft)
@@ -119,7 +129,8 @@ def compare(control: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
             candidate_cached += int(right.get("cached_tokens") or 0)
         if len(control_ttft) != len(matrix.PAIRS):
             raise ValueError(f"target={target} cold matrix differs")
-        candidate_cached_tokens += candidate_cached
+        control_cold_cached_tokens += control_cached
+        candidate_cold_cached_tokens += candidate_cached
         control_median = statistics.median(control_ttft)
         candidate_median = statistics.median(candidate_ttft)
         by_shape[str(target)] = {
@@ -133,20 +144,20 @@ def compare(control: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
         }
 
     cold_count = len(matrix.SHAPES) * len(matrix.PAIRS)
-    exact = (
-        output_matches == matrix.REQUEST_COUNT
-        and cold_output_matches == cold_count
+    cold_isolated = (
+        control_cold_cached_tokens == 0
+        and candidate_cold_cached_tokens == 0
     )
-    off_is_cold = candidate_cached_tokens == 0
-    qualified = exact and off_is_cold
+    qualified = cold_isolated
     return {
         "schema": SCHEMA,
-        "version": 1,
+        "version": 2,
         "qualified_analysis": qualified,
         "reasons": [
             reason for condition, reason in (
-                (not exact, "cross-policy output identity differs"),
-                (not off_is_cold, "cache-off cold rows reported cached tokens"),
+                (not cold_isolated,
+                 "cold rows contain cached tokens and cannot attribute "
+                 "capture overhead"),
             ) if condition
         ],
         "control_policy": "admission64",
@@ -165,12 +176,29 @@ def compare(control: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any
                 _percentile(all_control_cold, 90)
                 / _percentile(all_candidate_cold, 90) - 1.0),
         },
-        "cache_transparency": {
-            "all_output_identity_matches": output_matches,
-            "all_output_identity_rate": output_matches / matrix.REQUEST_COUNT,
-            "cold_output_identity_matches": cold_output_matches,
-            "cold_output_identity_rate": cold_output_matches / cold_count,
-            "off_cold_cached_tokens": candidate_cached_tokens,
+        "cold_isolation": {
+            "qualified": cold_isolated,
+            "admission64_cold_cached_tokens": control_cold_cached_tokens,
+            "off_cold_cached_tokens": candidate_cold_cached_tokens,
+        },
+        "cross_policy_numeric_observation": {
+            "first_token_identity_matches": first_token_matches,
+            "first_token_identity_rate": (
+                first_token_matches / matrix.REQUEST_COUNT),
+            "complete_output_identity_matches": output_matches,
+            "complete_output_identity_rate": (
+                output_matches / matrix.REQUEST_COUNT),
+            "cold_first_token_identity_matches": cold_first_token_matches,
+            "cold_first_token_identity_rate": (
+                cold_first_token_matches / cold_count),
+            "cold_complete_output_identity_matches": cold_output_matches,
+            "cold_complete_output_identity_rate": (
+                cold_output_matches / cold_count),
+            "strict_output_identity_qualified": (
+                output_matches == matrix.REQUEST_COUNT),
+            "teacher_forced_logits_evaluated": False,
+            "relative_l2_evaluated": False,
+            "strict_cross_policy_output_required_for_timing": False,
         },
         "by_shape": by_shape,
         "scope": {

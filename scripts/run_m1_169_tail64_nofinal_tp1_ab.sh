@@ -18,6 +18,7 @@ CANDIDATE_POLICY=${CANDIDATE_POLICY:-tail64_nofinal}
 ARM_ORDER=${ARM_ORDER:-admission64,$CANDIDATE_POLICY}
 BENCH_SALT_ORDER=${BENCH_SALT_ORDER:-namespace-first}
 BENCH_SALT_NAMESPACE=${BENCH_SALT_NAMESPACE:-m1-169-tail64-nofinal-tp1-v1}
+BENCH_TOOL_COUNT=${BENCH_TOOL_COUNT:-29}
 MODEL_PATH=${MODEL_PATH:-/root/shared-storage/models/Qwen/Qwen3.6-35B-A3B-diagnostic-4L-real}
 BI100_RUNTIME_SITE_PACKAGES=${BI100_RUNTIME_SITE_PACKAGES:-}
 STARTUP_TIMEOUT_S=${STARTUP_TIMEOUT_S:-900}
@@ -58,6 +59,10 @@ case "$BENCH_SALT_ORDER" in
 esac
 [[ "$BENCH_SALT_NAMESPACE" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] || {
     echo "BENCH_SALT_NAMESPACE must be a short non-sensitive label" >&2
+    exit 2
+}
+[[ "$BENCH_TOOL_COUNT" == 0 || "$BENCH_TOOL_COUNT" == 29 ]] || {
+    echo "BENCH_TOOL_COUNT must be 0 or 29" >&2
     exit 2
 }
 [[ "$STARTUP_TIMEOUT_S" =~ ^[1-9][0-9]*$ ]] || {
@@ -122,6 +127,7 @@ printf '%s\n' "$ARM_ORDER" > "$RUN_ROOT/arm_order.txt"
 printf '%s\n' "$CANDIDATE_POLICY" > "$RUN_ROOT/candidate_policy.txt"
 printf '%s\n' "$BENCH_SALT_ORDER" > "$RUN_ROOT/bench_salt_order.txt"
 printf '%s\n' "$BENCH_SALT_NAMESPACE" > "$RUN_ROOT/bench_salt_namespace.txt"
+printf '%s\n' "$BENCH_TOOL_COUNT" > "$RUN_ROOT/bench_tool_count.txt"
 printf '%s\n' "$NUM_GPU_BLOCKS_OVERRIDE" > "$RUN_ROOT/num_gpu_blocks_override.txt"
 
 write_stage() {
@@ -404,6 +410,7 @@ run_arm() {
             --policy "$policy" --ab-pair 1 \
             --salt-namespace "$BENCH_SALT_NAMESPACE" \
             --salt-order "$BENCH_SALT_ORDER" \
+            --tool-count "$BENCH_TOOL_COUNT" \
             --out "$arm/measurement.json" \
             > "$arm/measurement.stdout" 2> "$arm/measurement.stderr" \
             || { measurement_rc=$?; rc=1; }
@@ -434,7 +441,7 @@ finish() {
     printf '%s\n' "$after" > "$RUN_ROOT/preflight_after.rc"
     printf '%s\n' "$fatal" > "$RUN_ROOT/fatal_scan.rc"
     if [[ $cleanup -ne 0 || $post -ne 0 || $after -ne 0 || $fatal -ne 0 ]]; then final=1; fi
-    python3 - "$RUN_ROOT" "$SOURCE_REVISION" "$SOURCE_BRANCH" "$INSTANCE" "$GPU_INDEX" "$ARM_ORDER" "$NUM_GPU_BLOCKS_OVERRIDE" "$CANDIDATE_POLICY" "$BENCH_SALT_ORDER" "$final" <<'PY'
+    python3 - "$RUN_ROOT" "$SOURCE_REVISION" "$SOURCE_BRANCH" "$INSTANCE" "$GPU_INDEX" "$ARM_ORDER" "$NUM_GPU_BLOCKS_OVERRIDE" "$CANDIDATE_POLICY" "$BENCH_SALT_ORDER" "$BENCH_TOOL_COUNT" "$final" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -449,9 +456,9 @@ report = {
     "schema": (
         "bi100-m1-169-tail64-nofinal-tp1-runner-v1"
         if sys.argv[8] == "tail64_nofinal"
-        else "bi100-m1-170-cold-capture-overhead-runner-v1"
+        else "bi100-m1-170-cold-capture-overhead-runner-v2"
     ),
-    "version": 1,
+    "version": 1 if sys.argv[8] == "tail64_nofinal" else 2,
     "source_revision": sys.argv[2],
     "source_branch": sys.argv[3],
     "instance": sys.argv[4],
@@ -461,8 +468,9 @@ report = {
         int(sys.argv[7]) if sys.argv[7] else None),
     "candidate_policy": sys.argv[8],
     "bench_salt_order": sys.argv[9],
-    "returncode": int(sys.argv[10]),
-    "qualified_development_screen": int(sys.argv[10]) == 0,
+    "bench_tool_count": int(sys.argv[10]),
+    "returncode": int(sys.argv[11]),
+    "qualified_development_screen": int(sys.argv[11]) == 0,
     "gates": {
         "preflight_before": rc("preflight_before.rc"),
         "service_import_contract": rc("service_import_contract.rc"),

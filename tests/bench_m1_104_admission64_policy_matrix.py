@@ -558,6 +558,17 @@ def main() -> int:
             "first content block for cold-cache diagnostics."
         ),
     )
+    parser.add_argument(
+        "--tool-count",
+        type=int,
+        choices=(0, TOOL_COUNT),
+        default=TOOL_COUNT,
+        help=(
+            "Keep the historical tool-shaped matrix by default. Zero is a "
+            "bounded cold-prefix diagnostic that places the request salt in "
+            "the first cache block."
+        ),
+    )
     parser.add_argument("--corpus", type=Path, nargs="+")
     parser.add_argument("--timeout-s", type=float, default=900.0)
     parser.add_argument("--out", type=Path, required=True)
@@ -577,7 +588,7 @@ def main() -> int:
         trust_remote_code=True,
         local_files_only=True,
     )
-    tools = make_tools()
+    tools = make_tools(args.tool_count)
     records = []
     for target in SHAPES:
         for pair in PAIRS:
@@ -591,8 +602,6 @@ def main() -> int:
                 payload = {
                     "model": "llm",
                     "messages": messages,
-                    "tools": tools,
-                    "tool_choice": "none",
                     "thinking": False,
                     "temperature": 0,
                     "seed": SEED,
@@ -600,6 +609,11 @@ def main() -> int:
                     "stream": True,
                     "stream_options": {"include_usage": True},
                 }
+                if tools:
+                    payload.update({
+                        "tools": tools,
+                        "tool_choice": "none",
+                    })
                 record = stream_request(args.base, payload, args.timeout_s)
                 record.update({
                     "request_id": f"{target}_pair{pair}_{phase}",
@@ -631,11 +645,11 @@ def main() -> int:
             "pairs": list(PAIRS),
             "phases": list(PHASES),
             "seed": SEED,
-            "tool_count": TOOL_COUNT,
+            "tool_count": args.tool_count,
             "max_tokens": MAX_TOKENS,
             "temperature": 0,
             "thinking": False,
-            "tool_choice": "none",
+            "tool_choice": "none" if tools else None,
             "stream_usage": True,
             "salt_order": args.salt_order,
             "salt_namespace_sha256": _sha256_bytes(
