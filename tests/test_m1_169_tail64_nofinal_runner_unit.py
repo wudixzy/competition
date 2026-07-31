@@ -45,6 +45,12 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
         self.assertIn('"tp4_evaluated": False', self.source)
         self.assertIn('"production_promotion_authorized": False', self.source)
 
+    def test_startup_poll_is_quiet_and_stage_is_recorded(self) -> None:
+        self.assertIn("health >/dev/null 2>&1 && return 0", self.source)
+        self.assertIn('printf \'%s\\n\' "$CURRENT_STAGE" > "$RUN_ROOT/stage.txt"',
+                      self.source)
+        self.assertIn("CURRENT_STAGE=complete\nwrite_stage", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

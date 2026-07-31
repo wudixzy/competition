@@ -95,6 +95,10 @@ printf '%s\n' "$MODEL_PATH" > "$RUN_ROOT/model_path.txt"
 printf '%s\n' "$BI100_RUNTIME_SITE_PACKAGES" > "$RUN_ROOT/runtime_site_packages.txt"
 printf '%s\n' "$ARM_ORDER" > "$RUN_ROOT/arm_order.txt"
 
+write_stage() {
+    printf '%s\n' "$CURRENT_STAGE" > "$RUN_ROOT/stage.txt"
+}
+
 read_starttime() {
     python3 - "$1" <<'PY'
 from pathlib import Path
@@ -219,7 +223,7 @@ PY
     done
     [[ -n "$ACTIVE_PGID" && "$ACTIVE_SESSION_TOKEN" =~ ^[0-9a-f]{32}$ ]] || return 1
     for _ in $(seq 1 "$((STARTUP_TIMEOUT_S / 5))"); do
-        health && return 0
+        health >/dev/null 2>&1 && return 0
         active_live || break
         sleep 5
     done
@@ -323,9 +327,11 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 CURRENT_STAGE=preflight_before
+write_stage
 run_preflight "$RUN_ROOT/preflight_before"
 printf '0\n' > "$RUN_ROOT/preflight_before.rc"
 CURRENT_STAGE=runtime_identity
+write_stage
 env PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH" \
     LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \
     python3 "$ROOT/tests/verify_bare_host_runtime_identity.py" \
@@ -335,7 +341,9 @@ env PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH" \
 IFS=, read -r first second <<< "$ARM_ORDER"
 for policy in "$first" "$second"; do
     CURRENT_STAGE=$policy
+    write_stage
     run_arm "$policy"
 done
 CURRENT_STAGE=complete
+write_stage
 exit 0
