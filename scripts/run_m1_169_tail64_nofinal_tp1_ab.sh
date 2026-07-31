@@ -141,6 +141,14 @@ with socket.socket() as sock:
 PY
 }
 
+wait_port_free() {
+    for _ in $(seq 1 120); do
+        port_free && return 0
+        sleep 1
+    done
+    return 1
+}
+
 health() {
     python3 - "$PORT" <<'PY'
 import sys
@@ -277,12 +285,18 @@ PY
 
 run_arm() {
     local policy=$1 arm="$RUN_ROOT/$policy" rc=0
+    local startup_rc=0 policy_rc=125 measurement_rc=125 health_rc=0
+    local cleanup_rc=0 port_rc=0
     mkdir -p "$arm"
-    start_service "$arm" "$policy" || rc=1
+    start_service "$arm" "$policy" || { startup_rc=$?; rc=1; }
+    printf '%s\n' "$startup_rc" > "$arm/startup.rc"
     if [[ $rc -eq 0 ]]; then
-        verify_policy_contract "$arm" "$policy" || rc=1
+        policy_rc=0
+        verify_policy_contract "$arm" "$policy" || { policy_rc=$?; rc=1; }
     fi
+    printf '%s\n' "$policy_rc" > "$arm/policy_contract.rc"
     if [[ $rc -eq 0 ]]; then
+        measurement_rc=0
         timeout --signal=TERM --kill-after=60s 7200s env \
             PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH" \
             LD_LIBRARY_PATH="$COREX_LD_LIBRARY_PATH" PATH="$COREX_PATH" \
@@ -291,11 +305,17 @@ run_arm() {
             --policy "$policy" --ab-pair 1 \
             --salt-namespace m1-169-tail64-nofinal-tp1-v1 \
             --out "$arm/measurement.json" \
-            > "$arm/measurement.stdout" 2> "$arm/measurement.stderr" || rc=1
+            > "$arm/measurement.stdout" 2> "$arm/measurement.stderr" \
+            || { measurement_rc=$?; rc=1; }
     fi
-    health > "$arm/health_after.stdout" 2> "$arm/health_after.stderr" || rc=1
-    stop_active || rc=1
-    port_free || rc=1
+    printf '%s\n' "$measurement_rc" > "$arm/measurement.rc"
+    health > "$arm/health_after.stdout" 2> "$arm/health_after.stderr" \
+        || { health_rc=$?; rc=1; }
+    printf '%s\n' "$health_rc" > "$arm/health_after.rc"
+    stop_active || { cleanup_rc=$?; rc=1; }
+    printf '%s\n' "$cleanup_rc" > "$arm/cleanup.rc"
+    wait_port_free || { port_rc=$?; rc=1; }
+    printf '%s\n' "$port_rc" > "$arm/port_free.rc"
     printf '%s\n' "$rc" > "$arm/arm.rc"
     return "$rc"
 }

@@ -72,6 +72,19 @@ class M1169Tail64NoFinalRunnerUnitTest(unittest.TestCase):
         )
         self.assertIn('"comparison": rc("comparison.rc")', self.source)
 
+    def test_arm_records_each_gate_and_waits_for_port_release(self) -> None:
+        self.assertIn("wait_port_free()", self.source)
+        self.assertIn("for _ in $(seq 1 120)", self.source)
+        for name in (
+            "startup.rc",
+            "policy_contract.rc",
+            "measurement.rc",
+            "health_after.rc",
+            "cleanup.rc",
+            "port_free.rc",
+        ):
+            self.assertIn(name, self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
