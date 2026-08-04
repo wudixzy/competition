@@ -1,0 +1,37 @@
+{
+  "cases": [
+    {
+      "baseline_median_change_percent": -0.018458010988442464,
+      "candidate_median_change_percent": 0.022954014379350518,
+      "case": "p90_total_16k_q8176",
+      "historical_speedup": 1.153618947610942,
+      "new_speedup": 1.1531413202743572,
+      "speedup_change_percent": -0.041402521826972016
+    },
+    {
+      "baseline_median_change_percent": 0.02443364811755,
+      "candidate_median_change_percent": -0.025920647004451514,
+      "case": "p90_total_32k_q8176",
+      "historical_speedup": 1.165179094285798,
+      "new_speedup": 1.165765964126094,
+      "speedup_change_percent": 0.05036735066514808
+    },
+    {
+      "baseline_median_change_percent": 0.010121288899300751,
+      "candidate_median_change_percent": -0.11252662596370477,
+      "case": "p90_total_64k_q8176",
+      "historical_speedup": 1.1707189184551994,
+      "new_speedup": 1.1721563983452106,
+      "speedup_change_percent": 0.12278608189812967
+    }
+  ],
+  "historical_evidence": "docs/experiments/evidence/M1_162_CALIBRATED_FP16_QK_20260730",
+  "historical_instance": "ssh-73ca29ba",
+  "historical_median_speedup": 1.165179094285798,
+  "maximum_absolute_speedup_change_percent": 0.12278608189812967,
+  "new_instance": "ssh-1f88d35a",
+  "new_median_speedup": 1.165765964126094,
+  "qualified": true,
+  "schema": "bi100-m1-175-fp16-qk-cross-instance-comparison-v1",
+  "version": 1
+}

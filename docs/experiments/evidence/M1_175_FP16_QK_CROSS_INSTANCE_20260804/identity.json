@@ -1,0 +1,36 @@
+{
+  "authorization": {
+    "long_context_or_quality_authorized": false,
+    "main_or_yaml_change_authorized": false,
+    "real_activation_replay_authorized": false,
+    "short_tp4_screen_authorized": false
+  },
+  "compiled_artifacts": {
+    "baseline_sha256": "526fb4775385fa506f6ebfb584c50bd75b6147aa4a7eaefde6a5623f49ffa16d",
+    "candidate_sha256": "da1aa02eaf2fe0fe098f8d20cb4d5b423b76561e24bebc38abc713910a2e7b8b"
+  },
+  "gpu": 1,
+  "instance": "ssh-1f88d35a",
+  "privacy": {
+    "credentials_recorded": false,
+    "model_outputs_recorded": false,
+    "prompts_recorded": false,
+    "raw_tensors_recorded": false
+  },
+  "runtime": {
+    "corex_root": "/usr/local/corex-3.2.3",
+    "device_name": "Iluvatar BI-V100",
+    "torch_root": "/usr/local/corex/lib64/python3/dist-packages/torch",
+    "torch_version": "2.1.0"
+  },
+  "schema": "bi100-m1-175-fp16-qk-cross-instance-identity-v1",
+  "source_files": {
+    "baseline_build_sha256": "2090a36fcb9c13c4c413e5f8bb3250161c1b7375ece58d487ead4f6ad22ca47b",
+    "baseline_source_sha256": "11c387e6012834fe634ffa8d038f7a4bf4ec19fa13ec23779ee1f414037e564b",
+    "candidate_build_sha256": "5c0ebb3c53dc4478b31ed78552c321b2d65c3065f20383aa0e7f2db40f976c57",
+    "candidate_source_sha256": "afa58c5bcc24b0c3b9f5c39b47c6995544ed90e7906c290e021d012020d1e9a7",
+    "numeric_contract_sha256": "1be3ccf34cef906fdc8345c1754960bb4485259f51c3963ab9ca15fd3a4bdb05"
+  },
+  "source_revision": "1e0410f080031a95edb7ec413ffba20f2a1a2608",
+  "version": 1
+}
