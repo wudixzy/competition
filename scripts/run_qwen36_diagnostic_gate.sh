@@ -30,6 +30,8 @@ RUN_ROOT=$5
 SOURCE_MODEL_PATH=${SOURCE_MODEL_PATH:-/root/public-storage/models/Qwen/Qwen3.6-35B-A3B}
 PORT=${PORT:-8000}
 STARTUP_TIMEOUT_S=${STARTUP_TIMEOUT_S:-900}
+ACTIVATION_CAPTURE=${BI100_DIAGNOSTIC_ACTIVATION_CAPTURE:-0}
+ACTIVATION_CAPTURE_TARGETS=${BI100_DIAGNOSTIC_ACTIVATION_CAPTURE_TARGETS:-32768,65536,131072}
 ACTIVE_PID=""
 ACTIVE_PGID=""
 ACTIVE_STARTTIME=""
@@ -69,6 +71,23 @@ fi
 if [[ ! "$STARTUP_TIMEOUT_S" =~ ^[1-9][0-9]*$ ]]; then
     echo "STARTUP_TIMEOUT_S must be a positive integer" >&2
     exit 2
+fi
+case "$ACTIVATION_CAPTURE" in
+    0|1) ;;
+    *)
+        echo "BI100_DIAGNOSTIC_ACTIVATION_CAPTURE must be 0 or 1" >&2
+        exit 2
+        ;;
+esac
+if [[ "$ACTIVATION_CAPTURE" == 1 ]]; then
+    if [[ "$TP_SIZE" != 1 ]]; then
+        echo "diagnostic activation capture is restricted to TP1" >&2
+        exit 2
+    fi
+    if [[ "$ACTIVATION_CAPTURE_TARGETS" != "32768,65536,131072" ]]; then
+        echo "diagnostic activation capture uses the frozen target matrix" >&2
+        exit 2
+    fi
 fi
 
 RUN_ROOT=$(python3 - "$RUN_ROOT" <<'PY'
@@ -136,6 +155,7 @@ git -C "$ROOT" rev-parse HEAD > "$RUN_ROOT/source_revision.txt"
 git -C "$ROOT" branch --show-current > "$RUN_ROOT/source_branch.txt"
 printf '%s\n' "$GPU_LIST" > "$RUN_ROOT/gpu_list.txt"
 printf '%s\n' "$TP_SIZE" > "$RUN_ROOT/tp_size.txt"
+printf '%s\n' "$ACTIVATION_CAPTURE" > "$RUN_ROOT/activation_capture.txt"
 
 SYSTEM_PYTHONPATH=/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages
 export PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH"
@@ -546,6 +566,38 @@ export BI100_CPU_KV_OFFLOAD=0
 export BI100_MOE_COREX_DIRECT_ROUTED=1
 export BI100_GDN_COREX_PACKED_DECODE=1
 
+if [[ "$ACTIVATION_CAPTURE" == 1 ]]; then
+    SOURCE_REVISION=$(tr -d '[:space:]' < "$RUN_ROOT/source_revision.txt")
+    RUNTIME_TREE_SHA=$(python3 - \
+            "$RUN_ROOT/runtime_overlay_identity.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+tree = value.get("runtime_tree_sha256")
+if (
+    value.get("qualified") is not True
+    or not isinstance(tree, str)
+    or len(tree) != 64
+    or any(character not in "0123456789abcdef" for character in tree)
+):
+    raise SystemExit("runtime overlay identity is not qualified")
+print(tree)
+PY
+    ) || exit 4
+    export BI100_ATTN_COREX_FUSED_PREFILL=0
+    export BI100_ATTN_COREX_FUSED_PREFILL_SHADOW=0
+    export BI100_ATTN_CAPTURE_REPLAY=1
+    export BI100_ATTN_CAPTURE_REPLAY_DIR="$RUN_ROOT/activation-bank"
+    export BI100_ATTN_CAPTURE_REPLAY_RUN_ID="m1-176-${SOURCE_REVISION:0:12}"
+    export BI100_ATTN_CAPTURE_REPLAY_CONTEXTS=24576,57344,122880
+    export BI100_ATTN_CAPTURE_REPLAY_CALL_ORDINALS=0
+    export BI100_ATTN_CAPTURE_REPLAY_SOURCE_REVISION="$SOURCE_REVISION"
+    export BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY="bare-host-overlay-v1:${RUNTIME_TREE_SHA:0:20}"
+    export BI100_ATTN_CAPTURE_REPLAY_SYNTHETIC_ATTESTATION=synthetic-exact-prompt-v1
+fi
+
 RUNTIME_WORKDIR="$RUN_ROOT/runtime-workdir"
 mkdir -p "$RUNTIME_WORKDIR"
 COMMAND=(
@@ -603,6 +655,16 @@ environment_names = (
     "BI100_CPU_KV_OFFLOAD",
     "BI100_MOE_COREX_DIRECT_ROUTED",
     "BI100_GDN_COREX_PACKED_DECODE",
+    "BI100_ATTN_COREX_FUSED_PREFILL",
+    "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW",
+    "BI100_ATTN_CAPTURE_REPLAY",
+    "BI100_ATTN_CAPTURE_REPLAY_DIR",
+    "BI100_ATTN_CAPTURE_REPLAY_RUN_ID",
+    "BI100_ATTN_CAPTURE_REPLAY_CONTEXTS",
+    "BI100_ATTN_CAPTURE_REPLAY_CALL_ORDINALS",
+    "BI100_ATTN_CAPTURE_REPLAY_SOURCE_REVISION",
+    "BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY",
+    "BI100_ATTN_CAPTURE_REPLAY_SYNTHETIC_ATTESTATION",
 )
 report = {
     "schema": "qwen36-diagnostic-service-contract-v1",
@@ -739,6 +801,28 @@ else
     overall_rc=1
 fi
 
+if [[ "$ACTIVATION_CAPTURE" == 1 ]]; then
+    if timeout --signal=TERM --kill-after=70s 7200s \
+            python3 "$ROOT/tests/capture_fused_prefill_activation_service.py" \
+            --base "http://127.0.0.1:$PORT" \
+            --model-path "$MODEL_PATH" \
+            --targets "$ACTIVATION_CAPTURE_TARGETS" \
+            --max-tokens 2 \
+            --timeout-s 1800 \
+            --run-id "$BI100_ATTN_CAPTURE_REPLAY_RUN_ID" \
+            --out "$RUN_ROOT/activation_capture_requests.json" \
+            > "$RUN_ROOT/activation_capture_requests.stdout" \
+            2> "$RUN_ROOT/activation_capture_requests.stderr"; then
+        printf '%s\n' 0 > "$RUN_ROOT/activation_capture.rc"
+    else
+        rc=$?
+        printf '%s\n' "$rc" > "$RUN_ROOT/activation_capture.rc"
+        overall_rc=1
+    fi
+else
+    printf '%s\n' 0 > "$RUN_ROOT/activation_capture.rc"
+fi
+
 if timeout --signal=TERM --kill-after=70s 2400s \
         python3 "$ROOT/tests/qwen36_compat_http_gate.py" \
         --base "http://127.0.0.1:$PORT" \
@@ -861,6 +945,9 @@ tool_choice_http = json.loads(
     if (root / "tool_choice_http_gate.json").is_file() else None
 prefix = json.loads((root / "prefix_boundary.json").read_text()) \
     if (root / "prefix_boundary.json").is_file() else None
+activation_capture = json.loads(
+    (root / "activation_capture_requests.json").read_text()) \
+    if (root / "activation_capture_requests.json").is_file() else None
 overlay = json.loads(
     (root / "runtime_overlay_identity.json").read_text()) \
     if (root / "runtime_overlay_identity.json").is_file() else None
@@ -884,6 +971,7 @@ gates = {
     "tool_http": read_rc("tool_http_gate.rc"),
     "tool_choice_http": read_rc("tool_choice_http_gate.rc"),
     "prefix_boundary": read_rc("prefix_boundary.rc"),
+    "activation_capture": read_rc("activation_capture.rc"),
     "cleanup": read_rc("cleanup.rc"),
     "cleanup_status": read_rc("cleanup_status.rc"),
     "service_postflight": read_rc("service_postflight.rc"),
@@ -977,6 +1065,14 @@ report = {
         "warm_cached_tokens": (
             prefix.get("warm_cache", {}).get("cached_tokens")),
     } if prefix else None,
+    "activation_capture_summary": {
+        "run_id": activation_capture.get("run_id"),
+        "targets": activation_capture.get("targets"),
+        "request_count": len(activation_capture.get("requests", [])),
+        "raw_activation_manifest_sha256": sha(
+            "activation-bank/rank-0.manifest.json"),
+        "tp4_evaluated": False,
+    } if activation_capture else None,
     "artifact_sha256": {
         name: sha(name) for name in (
             "checkpoint_verify.json",
@@ -994,6 +1090,8 @@ report = {
             "tool_http_gate.json",
             "tool_choice_http_gate.json",
             "prefix_boundary.json",
+            "activation_capture_requests.json",
+            "activation-bank/rank-0.manifest.json",
             "server.log",
             "cleanup_status.json",
             "service_postflight.json",
