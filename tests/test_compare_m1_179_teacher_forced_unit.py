@@ -92,7 +92,13 @@ class M1179ComparatorTests(unittest.TestCase):
         candidate = _arm("candidate")
         for case in candidate["cases"]:
             for position in case["positions"]:
-                position["actual_token_key"] = "e" * 64
+                translated = {}
+                for item in position["top_logprobs"]:
+                    old = item["token_key"]
+                    translated[old] = f"{int(old, 16) + 100000:064x}"
+                    item["token_key"] = translated[old]
+                position["actual_token_key"] = translated[
+                    position["actual_token_key"]]
         result = comparison.compare(
             _arm("control_a"), _arm("control_b"), candidate, CONTRACT)
         self.assertEqual(result["status"], "invalid", result)

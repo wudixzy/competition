@@ -1,5 +1,23 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-05 M1-179 FP16-QK 增量分布归因
+
+M1-179 使用同一完整模型 TP4 runtime 完成
+`M1-109 control A → M1-162 candidate → M1-109 control B` 三臂固定
+teacher-forced 归因。每臂只运行 4K/16K/32K/64K 各一个请求、每长度 64 个
+位置，共 3 次服务启动和 12 个模型请求；三臂 fused dispatch 均为 4，所有
+请求 `cached_tokens=0`，生命周期和 fatal/postflight 通过。
+
+M1-109 A/A 在 256 个位置完全一致：top-1 100%、0 flip、teacher/shared
+logprob P99 和各长度 NLL 差均为 0。M1-162 相对 M1-109 的 top-1 为
+95.703125%，11 个 flip 中 8 个超过校准后的 0.1-nat margin，teacher/shared
+logprob P99 为 5.7766/4.5917 nats；4K/16K mean NLL 分别回退
+0.0522/0.0962 nats。结论为
+`incremental_fp16_qk_distribution_drift/inconclusive`：漂移不能用 A/A 噪声解释，
+M1-162 停止晋升，保留 M1-109。本轮未运行能力或性能，不授权 main、YAML、
+默认 selector 或正式 881。详见
+`docs/experiments/M1_179_FP16_QK_INCREMENTAL_DISTRIBUTION_20260905.md`。
+
 ## 2026-09-04 M1-177 长上下文精简 smoke
 
 M1-162 在完整模型 TP4 上完成一次 131K/235K cold control/candidate smoke：

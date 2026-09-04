@@ -2,11 +2,21 @@
 
 ## Decision
 
-M1-162 shows obvious model-distribution drift in the two-arm quick screen and
-requires reviewer adjudication. The experiment is valid, but its v2
+The combined fused-prefill path differs obviously from the fused-off baseline
+in the two-arm quick screen and requires reviewer adjudication. The experiment
+is valid, but its v2
 distribution status is `distribution_drift_requires_adjudication / inconclusive`:
-the adaptive protocol correctly stopped before control B, so no A/A-calibrated
+the historical adaptive protocol stopped before control B, so no A/A-calibrated
 formal pass or fail is available.
+
+Reviewer limitation: this comparison changed both the earlier M1-109 fused
+prefill path and the M1-162 FP16-QK increment at once. It therefore cannot
+attribute the observations below to FP16-QK alone. Also, the private HMAC token
+identity key existed only in the completed orchestrator process and was not
+persisted; a separately launched control B cannot be paired with these old
+anonymous token identities. M1-179 must rerun a fresh M1-109/M1-162/M1-109
+three-arm comparison under one shared ephemeral key. The raw M1-178 evidence
+and numbers remain unchanged.
 
 Across 256 fixed teacher-forced positions, control A and candidate agreed on
 top-1 at 248 positions (96.875%). Eight top-1 flips occurred; five had a
@@ -104,7 +114,8 @@ not used to reinterpret the measured logits.
   timing was rerun.
 - TP4 service performance: M1-176/M1-177 gains are retained, not recomputed by
   this distribution workload.
-- Distribution: valid quick-screen evidence shows obvious drift and is
+- Distribution: valid quick-screen evidence shows the combined fused path
+  differs from fused-off and is
   `inconclusive` pending adjudication; no formal A/A envelope exists.
 - Capability: not run, so no capability conclusion exists.
 - Promotion: not authorized. No main, YAML, default-selector, 881-request,

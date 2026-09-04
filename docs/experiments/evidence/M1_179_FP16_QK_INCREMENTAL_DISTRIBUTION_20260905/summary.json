@@ -1,0 +1,195 @@
+{
+  "schema": "bi100-m1-179-fp16-qk-incremental-distribution-summary-v1",
+  "version": 1,
+  "date": "2026-09-05",
+  "status": "inconclusive",
+  "classification": "incremental_fp16_qk_distribution_drift",
+  "experiment_validity": "pass",
+  "source_revision": "653b90b483ee6f704481d9a8d32f52c182873cd2",
+  "source_dirty_summary": "clean",
+  "instance": "cc-ce19242b-436f-4141-868b-610eb3ac8cee-0",
+  "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+  "runtime": {
+    "identity": "overlay-44a43f355cfc-torch-2.1.0-vllm-0.6.3",
+    "overlay": "/tmp/m1-176-focused-runtime.ihZwyu/runtime/site-packages",
+    "install_source_revision": "44a43f355cfc0301ffabec4874a6cf29ff2599e3",
+    "python": "3.10.12",
+    "corex": "3.2.3",
+    "compiler": "clang version 16.0.6",
+    "torch": "2.1.0",
+    "vllm": "0.6.3",
+    "transformers": "4.55.3",
+    "relevant_overlay_files_byte_equal": true,
+    "runtime_tree_hash_used": false,
+    "per_source_file_hashes_used": false
+  },
+  "extensions": {
+    "m1_109_fp32_qk": {
+      "source": "qwen3_6_scripts/corex_fused_paged_prefill_split4.cu",
+      "path": "/tmp/m1-179-build-653b90b/corex_fused_paged_prefill_m1_109_fp32_qk.so",
+      "sha256": "b7b30f8c3c3af0153c58dde4760159dbdfeeec17fd352b192ae57990ad1a0be8",
+      "runtime_introspection_matched": true
+    },
+    "m1_162_fp16_qk": {
+      "source": "qwen3_6_scripts/corex_fused_paged_prefill_fp16_qk.cu",
+      "path": "/tmp/m1-179-build-653b90b/corex_fused_paged_prefill_m1_162_fp16_qk.so",
+      "sha256": "3724d6651eed814b84043d0b0155cfb381baab02e9db56665116dc8e016f2f91",
+      "runtime_introspection_matched": true
+    }
+  },
+  "session_preflight": {
+    "id": "m1-176-focus-preflight-4e2b2e7",
+    "gpu_indices": [0, 1, 2, 3],
+    "gpu_names": ["Iluvatar BI-V100", "Iluvatar BI-V100", "Iluvatar BI-V100", "Iluvatar BI-V100"],
+    "gpu_health_qualified": true,
+    "fp16_matmul_qualified": true,
+    "collective_qualified": true,
+    "reused_for_unchanged_machine_session": true
+  },
+  "service_contract": {
+    "arm_order": ["control_a", "candidate", "control_b"],
+    "arm_variants": {
+      "control_a": "m1_109_fp32_qk",
+      "candidate": "m1_162_fp16_qk",
+      "control_b": "m1_109_fp32_qk"
+    },
+    "all_arms_fused_prefill_enabled": true,
+    "tensor_parallel_size": 4,
+    "dtype": "float16",
+    "max_model_len": 262144,
+    "block_size": 16,
+    "targets": [4096, 16384, 32768, 65536],
+    "positions_per_request": 64,
+    "completion_tokens": 1,
+    "temperature": 0,
+    "seed": 20260729,
+    "streaming": false,
+    "all_non_variant_launch_and_environment_fields_equal": true
+  },
+  "request_population": {
+    "control_a": {"expected": 4, "attempted": 4, "completed": 4, "failed": 0},
+    "candidate": {"expected": 4, "attempted": 4, "completed": 4, "failed": 0},
+    "control_b": {"expected": 4, "attempted": 4, "completed": 4, "failed": 0},
+    "total_teacher_forced_model_requests": 12,
+    "http_200": 12,
+    "usage_complete": 12,
+    "finish_reason_length": 12,
+    "cached_tokens": {
+      "control_a": [0, 0, 0, 0],
+      "candidate": [0, 0, 0, 0],
+      "control_b": [0, 0, 0, 0]
+    }
+  },
+  "dispatch": {
+    "control_a": {"variant": "m1_109_fp32_qk", "count": 4},
+    "candidate": {"variant": "m1_162_fp16_qk", "count": 4},
+    "control_b": {"variant": "m1_109_fp32_qk", "count": 4}
+  },
+  "aa_distribution": {
+    "sampled_positions": 256,
+    "top1_agreement": 1.0,
+    "top1_flip_count": 0,
+    "high_margin_flip_count": 0,
+    "mutual_topk_coverage": 1.0,
+    "teacher_token_abs_logprob_delta_p99_nats": 0.0,
+    "shared_token_abs_logprob_delta_p99_nats": 0.0,
+    "paired_mean_nll_difference_nats": 0.0,
+    "position_sampling_one_sided_95_upper_nats": 0.0,
+    "nll_by_length": [
+      {"prompt_tokens": 4096, "sampled_positions": 64, "mean_nll_difference_nats": 0.0, "position_sampling_one_sided_95_upper_nats": 0.0},
+      {"prompt_tokens": 16384, "sampled_positions": 64, "mean_nll_difference_nats": 0.0, "position_sampling_one_sided_95_upper_nats": 0.0},
+      {"prompt_tokens": 32768, "sampled_positions": 64, "mean_nll_difference_nats": 0.0, "position_sampling_one_sided_95_upper_nats": 0.0},
+      {"prompt_tokens": 65536, "sampled_positions": 64, "mean_nll_difference_nats": 0.0, "position_sampling_one_sided_95_upper_nats": 0.0}
+    ],
+    "all_logprobs_finite": true
+  },
+  "incremental_distribution": {
+    "sampled_positions": 256,
+    "top1_agreement": 0.95703125,
+    "top1_flip_count": 11,
+    "high_margin_flip_count": 8,
+    "mutual_topk_coverage": 0.9090909090909091,
+    "teacher_token_abs_logprob_delta_p99_nats": 5.776590585708618,
+    "shared_token_abs_logprob_delta_p99_nats": 4.591724634170532,
+    "paired_mean_nll_difference_nats": -0.08348121072191095,
+    "position_sampling_one_sided_95_upper_nats": 0.04329939584933307,
+    "high_margin_threshold_nats": 0.1,
+    "nll_regression_threshold_nats": 0.01,
+    "first_divergent_position": {"prompt_tokens": 4096, "position": 178, "sample_ordinal": 12, "control_margin_nats": 0.4609375},
+    "nll_by_length": [
+      {"prompt_tokens": 4096, "sampled_positions": 64, "mean_nll_difference_nats": 0.05222109241879025, "position_sampling_one_sided_95_upper_nats": 0.2707143307197839},
+      {"prompt_tokens": 16384, "sampled_positions": 64, "mean_nll_difference_nats": 0.09618059732032691, "position_sampling_one_sided_95_upper_nats": 0.2503084000201312},
+      {"prompt_tokens": 32768, "sampled_positions": 64, "mean_nll_difference_nats": -0.16406640911011294, "position_sampling_one_sided_95_upper_nats": -0.010792307206429541},
+      {"prompt_tokens": 65536, "sampled_positions": 64, "mean_nll_difference_nats": -0.318260123516648, "position_sampling_one_sided_95_upper_nats": 0.07120716801729898}
+    ],
+    "flip_details": [
+      {"prompt_tokens": 4096, "position": 178, "control_margin_nats": 0.4609375},
+      {"prompt_tokens": 16384, "position": 451, "control_margin_nats": 0.328125},
+      {"prompt_tokens": 16384, "position": 643, "control_margin_nats": 0.0625},
+      {"prompt_tokens": 16384, "position": 965, "control_margin_nats": 0.34375},
+      {"prompt_tokens": 16384, "position": 1864, "control_margin_nats": 0.75},
+      {"prompt_tokens": 16384, "position": 3172, "control_margin_nats": 0.171875},
+      {"prompt_tokens": 16384, "position": 14798, "control_margin_nats": 0.03125},
+      {"prompt_tokens": 32768, "position": 515, "control_margin_nats": 0.0625},
+      {"prompt_tokens": 32768, "position": 17969, "control_margin_nats": 0.328125},
+      {"prompt_tokens": 32768, "position": 31710, "control_margin_nats": 3.500000014901161},
+      {"prompt_tokens": 65536, "position": 42281, "control_margin_nats": 4.906249767169356}
+    ],
+    "all_logprobs_finite": true
+  },
+  "bootstrap": {
+    "method": "fixed_strata_within_position_resampling",
+    "interpretation": "position_sampling_diagnostic",
+    "not_a_run_to_run_confidence_interval": true,
+    "fixed_strata": [4096, 16384, 32768, 65536],
+    "requests_per_arm_per_stratum": 1,
+    "positions_per_stratum": 64,
+    "samples": 20000,
+    "seed": 20260905
+  },
+  "timing": {
+    "control_a_wall_s": 674.001870463,
+    "candidate_wall_s": 671.330174513,
+    "control_b_wall_s": 740.210554847,
+    "total_funnel_wall_s": 2203.379104235908,
+    "performance_rerun": false
+  },
+  "resource_reduction": {
+    "old_three_arm_model_requests": 228,
+    "m1_179_model_requests": 12,
+    "requests_eliminated": 216,
+    "request_reduction_fraction": 0.9473684210526315,
+    "service_startups": 3
+  },
+  "lifecycle": {
+    "term_first": true,
+    "term_grace_seconds": 60,
+    "kill_sent_any_arm": false,
+    "all_child_processes_waited_and_reaped": true,
+    "per_arm_postflight_qualified": true,
+    "final_postflight_qualified": true,
+    "api_server_residuals": 0,
+    "worker_residuals": 0,
+    "gpu_process_residuals": 0,
+    "fatal_oom_segfault_timeout_collective_worker_loss_counts_all_zero": true
+  },
+  "conclusions": {
+    "experiment_validity": "pass",
+    "aa_distribution": "pass with exact zero observed restart envelope",
+    "incremental_distribution": "incremental_fp16_qk_distribution_drift / inconclusive",
+    "operator_numerics": "M1-176 G2 pass retained; not rerun",
+    "capability": "not run",
+    "performance": "M1-176 and M1-177 historical gains retained; not rerun",
+    "promotion": "M1-162 stopped; M1-109 retained for reviewer-directed follow-up"
+  },
+  "privacy": {
+    "contains_token_keys": false,
+    "contains_token_ids": false,
+    "contains_prompts": false,
+    "contains_model_outputs": false,
+    "contains_credentials": false,
+    "raw_observations_committed": false
+  },
+  "next_authorized_stage": "reviewer adjudication only",
+  "main_yaml_or_default_selector_change_authorized": false
+}
