@@ -137,7 +137,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             self.extension_path = None
             self.extension_sha256 = None
         else:
-            if (self.workload_mode != "teacher_forced"
+            if (self.workload_mode not in ("teacher_forced", "m1_180")
                     or extension_path is None
                     or not extension_path.is_absolute()
                     or not extension_path.is_file()
@@ -151,7 +151,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
                     "explicit fused variant extension identity is invalid")
             self.extension_path = extension_path.resolve()
             self.extension_sha256 = extension_sha256
-        if (self.workload_mode == "teacher_forced"
+        if (self.workload_mode in ("teacher_forced", "m1_180")
                 and (self.targets != TEACHER_FORCED_TARGETS
                      or self.repetitions != 1)):
             raise ValueError(
@@ -183,6 +183,22 @@ class AttentionOperatorTp4Runner(CaptureRunner):
         self.session_preflight_id = self.session_preflight[
             "session_preflight_id"]
         self.dispatch_count: int | None = None
+        self.arm_label = getattr(self.args, "arm_label", None)
+        if self.workload_mode == "m1_180":
+            expected = {
+                "fused_off": ("control", None),
+                "m1_109": ("control", "m1_109_fp32_qk"),
+                "m1_162": ("candidate", "m1_162_fp16_qk"),
+            }
+            if (self.arm_label not in expected
+                    or expected[self.arm_label]
+                    != (self.args.selector, self.fused_variant)):
+                raise ValueError("M1-180 arm/selector/variant binding differs")
+            if self.arm_label == "m1_162":
+                for path in (self.args.reference_fused_off,
+                             self.args.reference_m1_109):
+                    if path is None or not path.is_file():
+                        raise ValueError("M1-180 candidate references are missing")
 
     def prepare(self) -> None:
         self.run_root.mkdir(parents=True)
@@ -365,6 +381,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "environment": {name: environment[name] for name in relevant_names
                             if name in environment},
             "fused_variant": self.fused_variant,
+            "algorithm_variant": self.arm_label,
             "extension_identity": ({
                 "module_path": str(self.extension_path),
                 "sha256": self.extension_sha256,
@@ -394,7 +411,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
                 "--out", str(self.run_root / "measurement.json"),
             ]
             environment = self.base_environment()
-        else:
+        elif self.workload_mode == "teacher_forced":
             key = os.environ.get("BI100_TEACHER_FORCED_HMAC_KEY", "")
             if (len(key) != 64 or any(character not in "0123456789abcdef"
                                       for character in key)):
@@ -414,6 +431,33 @@ class AttentionOperatorTp4Runner(CaptureRunner):
                 "--timeout-s", "3600",
                 "--out", str(self.run_root / "measurement.json"),
             ]
+            environment = self.base_environment()
+            environment["BI100_TEACHER_FORCED_HMAC_KEY"] = key
+        else:
+            key = os.environ.get("BI100_TEACHER_FORCED_HMAC_KEY", "")
+            if (len(key) != 64 or any(character not in "0123456789abcdef"
+                                      for character in key)):
+                raise RuntimeError("teacher token identity key is unavailable")
+            command = [
+                sys.executable,
+                str(self.root / "tests/m1_180_capability_distribution_api.py"),
+                "--base", "http://127.0.0.1:8000",
+                "--model-path", str(self.model_path),
+                "--attention-runtime-manifest",
+                str(self.run_root / "runtime_manifest.json"),
+                "--runtime-identity", self.runtime_identity,
+                "--source-revision", self.source_revision,
+                "--instance", self.args.instance,
+                "--arm", self.arm_label,
+                "--workload-id", self.args.pair_id,
+                "--out", str(self.run_root / "measurement.json"),
+            ]
+            if self.args.reference_fused_off is not None:
+                command.extend(["--reference-fused-off",
+                                str(self.args.reference_fused_off)])
+            if self.args.reference_m1_109 is not None:
+                command.extend(["--reference-m1-109",
+                                str(self.args.reference_m1_109)])
             environment = self.base_environment()
             environment["BI100_TEACHER_FORCED_HMAC_KEY"] = key
         rc = _run_to_files(
@@ -488,10 +532,15 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             attempted = completed if measurement.is_file() else 0
             failed = 0 if completed == len(self.targets) else max(
                 0, len(self.targets) - completed)
-        else:
+        elif self.workload_mode == "performance":
             attempted = measured.get("attempted_requests", 0)
             completed = measured.get("completed_requests", 0)
             failed = measured.get("failed_requests", 0)
+        else:
+            population = measured.get("request_population") or {}
+            attempted = population.get("attempted", 0)
+            completed = population.get("completed", 0)
+            failed = population.get("failed", 0)
         _atomic_json(self.run_root / "runner_status.json", {
             "schema": "bi100-attention-operator-tp4-arm-v1",
             "version": 1,
@@ -514,6 +563,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "model_path": str(self.model_path),
             "selector": self.args.selector,
             "fused_variant": self.fused_variant,
+            "algorithm_variant": self.arm_label,
             "extension_path": (str(self.extension_path)
                                if self.extension_path is not None else None),
             "extension_sha256": self.extension_sha256,
@@ -525,7 +575,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "gpu_count": 4,
             "tensor_parallel_size": 4,
             "request_population": {
-                "expected": len(self.targets) * self.repetitions,
+                "expected": (attempted if self.workload_mode == "m1_180"
+                             else len(self.targets) * self.repetitions),
                 "attempted": attempted,
                 "completed": completed,
                 "failed": failed,
@@ -542,7 +593,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
                     "postflight_after.json", "fatal_scan.json",
                     "timeline_report.json")},
             "hashes_required": False,
-            "capability_run": False,
+            "capability_run": self.workload_mode == "m1_180",
             "cache_matrix_run": False,
         })
 
@@ -585,11 +636,16 @@ def main() -> int:
     parser.add_argument("--session-preflight", type=Path, required=True)
     parser.add_argument("--targets", default=",".join(map(str, TARGETS)))
     parser.add_argument("--repetitions", type=int, default=REPETITIONS)
-    parser.add_argument("--workload", choices=("performance", "teacher_forced"),
+    parser.add_argument("--workload", choices=(
+        "performance", "teacher_forced", "m1_180"),
                         default="performance")
     parser.add_argument("--fused-variant", choices=FUSED_VARIANTS)
     parser.add_argument("--extension-path", type=Path)
     parser.add_argument("--extension-sha256")
+    parser.add_argument("--arm-label", choices=(
+        "fused_off", "m1_109", "m1_162"))
+    parser.add_argument("--reference-fused-off", type=Path)
+    parser.add_argument("--reference-m1-109", type=Path)
     args = parser.parse_args()
     args.profile = "attention_operator"
     args.contexts = ""
