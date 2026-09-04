@@ -40,7 +40,7 @@ worker loss or timeout still fails promotion.
 
 | Class | Primary metrics | Role |
 | --- | --- | --- |
-| Run validity | source/runtime/artifact identity, complete population, lifecycle, GPU health | Decide whether evidence may be interpreted |
+| Run validity | lightweight source/runtime provenance, complete population, lifecycle, GPU health | Decide whether evidence may be interpreted |
 | Protocol and state | HTTP/SSE schema, usage, tools, cache keys, state identity, capacity | Exact hard invariants |
 | Operator numerics | finite values, FP32-calibrated error, LSE/state error, indexing | Detect real mathematical or implementation errors |
 | Distribution | teacher-forced NLL/logprob, margin-aware top-k flips, next token | Escalate meaningful model-distribution drift |
@@ -51,8 +51,9 @@ worker loss or timeout still fails promotion.
 
 A run is valid only when all of the following hold:
 
-- exact source, runtime overlay, model, tokenizer, command, environment and
-  candidate artifact identities are recorded;
+- source commit and dirty state, package/runtime versions, model/tokenizer
+  paths and configuration, launch command, environment and candidate build
+  provenance are recorded;
 - control and candidate use the same workload order and request semantics;
 - the expected request population is complete, including failed requests;
 - raw timing samples are retained and startup/warmup treatment is explicit;
@@ -67,6 +68,29 @@ A run is valid only when all of the following hold:
 An incomplete platform population such as 631/881 is not a performance
 baseline. Throughput and latency calculated only over successful requests may
 be reported diagnostically but cannot qualify a candidate.
+
+### Lightweight provenance policy
+
+Development evidence should be cheap enough to run on every iteration. In the
+current single-developer workflow, Git commit plus dirty-state summary,
+package/compiler versions, launch command, selected environment, file paths
+and runtime introspection markers are sufficient for ordinary source, overlay
+and locally built extension provenance.
+
+SHA-256 is a hard requirement only when it performs a real correctness or
+supply-chain role:
+
+- logical prefix-cache and multimodal content identity;
+- external dataset snapshots and untrusted downloads;
+- cross-host transfer where corruption or partial transfer is a credible risk;
+- release-time prebuilt binaries distributed in the final Docker image.
+
+Do not require per-file SHA-256 for a tracked source tree, every runtime overlay
+file, temporary same-host activations, local reports, model outputs or every
+intermediate extension build. Their checksums may be recorded for debugging,
+but a missing checksum alone does not invalidate a development experiment.
+Runtime activation is proved by Python/module introspection, dispatch markers
+and observed behavior rather than a complete overlay-tree digest.
 
 ## G1: protocol, indexing and cache invariants
 
@@ -154,8 +178,10 @@ with documented atomics or scheduling nondeterminism must instead declare a
 repeat-to-repeat numeric envelope before testing. Unexplained intermittent
 non-finite values, large outliers or input-dependent races are hard failures.
 
-Cross-host, cross-version or cross-binary bit identity is not required. Source,
-toolchain, artifact hashes and metric reproduction are required.
+Cross-host, cross-version or cross-binary bit identity is not required. Source
+commit, dirty state, toolchain/runtime versions, build provenance and metric
+reproduction are required. An artifact checksum is optional for same-host
+development and required only by the lightweight provenance policy above.
 
 ## G3: model-distribution fidelity
 

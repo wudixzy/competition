@@ -1,5 +1,18 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-04 轻量开发证据
+
+- 当前主要为单开发者工作流，不再要求每个源码、runtime overlay 文件、临时激活、
+  本地报告和中间扩展都计算并绑定 SHA-256。普通开发证据使用 Git commit、dirty
+  状态、包/编译器版本、命令、关键环境、路径、runtime introspection 和 dispatch
+  marker。
+- SHA-256 只在确有作用时保持硬门槛：prefix/multimodal cache 内容身份、外部数据
+  集快照、不可信下载、存在传输损坏风险的跨主机文件，以及最终 Docker 发布的
+  预编译二进制。现有历史 v1 报告中的 SHA 仍是历史身份，不回写删除。
+- v2 机器合同和验证器已防止把逐文件 artifact、overlay tree、临时 activation
+  SHA 再列为普通开发必需项。已有 runner 可以继续记录 checksum 作为诊断，但同机
+  开发不应只因缺少 checksum 被判 `invalid`。
+
 ## 2026-09-04 v2 指标与晋升门禁
 
 - 新候选统一使用 `docs/BI100_VALIDATION_METRICS_V2_20260904.md`。它将实验

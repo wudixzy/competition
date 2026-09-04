@@ -84,6 +84,20 @@ def validate_contract(contract: Any, family: str) -> dict[str, Any]:
     if family == "layered" and version == 2:
         if value.get("result_states") != list(STATES):
             raise ContractError("v2 result states differ")
+        validity = _mapping(value.get("experiment_validity"),
+                            "experiment_validity")
+        provenance = _mapping(validity.get("provenance_policy"),
+                              "provenance_policy")
+        required_names = (validity.get("required_identity", [])
+                          + validity.get("required_population", []))
+        if (any("sha256" in str(name).lower() for name in required_names)
+                or "runtime_overlay_file_tree" not in
+                provenance.get("sha256_not_required_for", [])
+                or "temporary_activation" not in
+                provenance.get("sha256_not_required_for", [])
+                or "prefix_cache_content_identity" not in
+                provenance.get("sha256_required_only_for", [])):
+            raise ContractError("v2 lightweight provenance policy differs")
         numeric = _mapping(value["operator_numerics"], "operator_numerics")
         if (numeric.get("relative_l2_error_ratio_limit") != 2.0
                 or numeric.get("maximum_absolute_error_ratio_limit") != 2.0

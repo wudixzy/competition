@@ -155,7 +155,7 @@ preserve content identity, live-KV intersection and restorable GDN state.
 2. Create a clean private integration branch from `main`; do not merge the
    current 80-commit research branch wholesale.
 3. Cherry-pick only M1-165/M1-167 protocol support, privacy-safe 4xx
-   attribution, their overlay identity checks and focused tests.
+   attribution, their runtime introspection checks and focused tests.
 4. Re-run unit, preflight and immutable runtime introspection. Submit one new
    platform build to determine whether success reaches at least 99%.
 5. Do not interpret its performance until all expected request classes enter
@@ -249,7 +249,9 @@ Only then may a `main` or formal YAML change be proposed.
   45-60 second grace period before survivor-only KILL, wait/reap children, and
   require clean GPU/process/fatal postflight.
 - Keep raw prompts, images, tokens and activations out of Git. Commit only
-  privacy-safe manifests, hashes, summaries and reproducible scripts.
+  privacy-safe manifests, lightweight provenance, summaries and reproducible
+  scripts. Do not make per-file SHA-256 a development gate unless it protects
+  cache identity, external data, a risky transfer or a release binary.
 
 ## Promotion gates
 

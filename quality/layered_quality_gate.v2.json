@@ -19,13 +19,20 @@
     "performance_and_lifecycle": "hard_operational"
   },
   "experiment_validity": {
-    "required_identity": ["source_commit", "runtime_overlay", "model", "tokenizer", "launch_command", "environment", "candidate_artifact_sha256"],
-    "required_population": ["expected_request_count", "attempted_request_count", "completed_request_count", "failed_request_count", "workload_order_digest", "workload_identity_digest"],
+    "required_identity": ["source_commit", "source_dirty_state", "runtime_versions", "model_path_and_config", "tokenizer_path_and_version", "launch_command", "environment", "candidate_build_provenance"],
+    "required_population": ["expected_request_count", "attempted_request_count", "completed_request_count", "failed_request_count", "workload_order", "workload_identity"],
     "required_lifecycle": ["gpu_preflight", "gpu_postflight", "scoped_cleanup", "fatal_scan"],
     "raw_timing_samples_required": true,
     "complete_request_population_required_for_performance": true,
     "infrastructure_failure_state": "invalid",
-    "postflight_failure_state": "invalid"
+    "postflight_failure_state": "invalid",
+    "provenance_policy": {
+      "tracked_source": "git_commit_plus_dirty_state",
+      "runtime": "package_versions_paths_and_introspection_markers",
+      "candidate_binary": "source_commit_build_command_compiler_version_and_filename",
+      "sha256_required_only_for": ["prefix_cache_content_identity", "external_dataset_snapshot", "untrusted_download", "cross_host_transfer_when_corruption_risk", "release_prebuilt_binary"],
+      "sha256_not_required_for": ["tracked_source_file", "runtime_overlay_file_tree", "temporary_activation", "same_host_development_artifact", "local_report", "model_output"]
+    }
   },
   "identity_and_protocol": {
     "exact_invariants": ["http_status", "sse_framing", "usage", "finish_reason", "tool_protocol", "reasoning_protocol", "structured_output_protocol", "multimodal_protocol", "tokenizer", "chat_template", "special_tokens", "request_semantics", "tensor_shape", "tensor_dtype", "head_mapping", "causal_mask", "indices", "block_table", "cache_content_identity", "kv_state_identity", "gdn_state_identity", "skipped_tokens", "cached_tokens", "multimodal_isolation"],

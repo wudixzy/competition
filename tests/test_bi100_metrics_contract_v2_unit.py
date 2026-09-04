@@ -71,6 +71,26 @@ class BI100MetricsContractV2Tests(unittest.TestCase):
         with self.assertRaises(metrics.ContractError):
             metrics.validate_contract(crossed, "layered")
 
+    def test_v2_uses_lightweight_provenance(self) -> None:
+        validity = LAYERED_V2["experiment_validity"]
+        required = validity["required_identity"] + validity["required_population"]
+        self.assertFalse(any("sha256" in name.lower() for name in required))
+        policy = validity["provenance_policy"]
+        self.assertIn("temporary_activation",
+                      policy["sha256_not_required_for"])
+        self.assertIn("runtime_overlay_file_tree",
+                      policy["sha256_not_required_for"])
+        self.assertIn("prefix_cache_content_identity",
+                      policy["sha256_required_only_for"])
+
+        funnel_evidence = [
+            name
+            for stage in FUNNEL_V2["stages"]
+            for name in stage["required_evidence"]
+        ]
+        self.assertFalse(any("sha256" in name.lower()
+                             for name in funnel_evidence))
+
     def test_report_binding_prevents_v1_report_from_becoming_v2(self) -> None:
         v1_report = {
             "schema": "bi100-validation-layer-report-v1",
