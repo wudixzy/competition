@@ -452,6 +452,9 @@ class ShortTp4V2Runner(CaptureRunner):
 
 
 def main() -> int:
+    # All observations live under a private /tmp run root. Enforce 0600 for
+    # every file created by this runner and its child processes.
+    os.umask(0o077)
     parser = argparse.ArgumentParser()
     parser.add_argument("instance")
     parser.add_argument("run_root", type=Path)
