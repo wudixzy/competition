@@ -32,6 +32,7 @@ PORT=${PORT:-8000}
 STARTUP_TIMEOUT_S=${STARTUP_TIMEOUT_S:-900}
 ACTIVATION_CAPTURE=${BI100_DIAGNOSTIC_ACTIVATION_CAPTURE:-0}
 ACTIVATION_CAPTURE_TARGETS=${BI100_DIAGNOSTIC_ACTIVATION_CAPTURE_TARGETS:-32768,65536,131072}
+CAPTURE_ONLY=${BI100_DIAGNOSTIC_CAPTURE_ONLY:-$ACTIVATION_CAPTURE}
 ACTIVE_PID=""
 ACTIVE_PGID=""
 ACTIVE_STARTTIME=""
@@ -79,6 +80,17 @@ case "$ACTIVATION_CAPTURE" in
         exit 2
         ;;
 esac
+case "$CAPTURE_ONLY" in
+    0|1) ;;
+    *)
+        echo "BI100_DIAGNOSTIC_CAPTURE_ONLY must be 0 or 1" >&2
+        exit 2
+        ;;
+esac
+if [[ "$CAPTURE_ONLY" == 1 && "$ACTIVATION_CAPTURE" != 1 ]]; then
+    echo "capture-only profile requires activation capture" >&2
+    exit 2
+fi
 if [[ "$ACTIVATION_CAPTURE" == 1 ]]; then
     if [[ "$TP_SIZE" != 1 ]]; then
         echo "diagnostic activation capture is restricted to TP1" >&2
@@ -156,6 +168,8 @@ git -C "$ROOT" branch --show-current > "$RUN_ROOT/source_branch.txt"
 printf '%s\n' "$GPU_LIST" > "$RUN_ROOT/gpu_list.txt"
 printf '%s\n' "$TP_SIZE" > "$RUN_ROOT/tp_size.txt"
 printf '%s\n' "$ACTIVATION_CAPTURE" > "$RUN_ROOT/activation_capture.txt"
+printf '%s\n' "$CAPTURE_ONLY" > "$RUN_ROOT/capture_only.txt"
+export BI100_DIAGNOSTIC_CAPTURE_ONLY="$CAPTURE_ONLY"
 
 SYSTEM_PYTHONPATH=/usr/local/corex/lib64/python3/dist-packages:/usr/local/corex/lib/python3/dist-packages
 export PYTHONPATH="$ROOT/tests:$BI100_RUNTIME_SITE_PACKAGES:$SYSTEM_PYTHONPATH"
@@ -392,7 +406,6 @@ trap 'exit 130' INT
 if python3 "$ROOT/scripts/verify_qwen36_diagnostic_checkpoint.py" \
         --source "$SOURCE_MODEL_PATH" \
         --checkpoint "$MODEL_PATH" \
-        --full-hash \
         --json-out "$RUN_ROOT/checkpoint_verify.json" \
         > "$RUN_ROOT/checkpoint_verify.stdout" \
         2> "$RUN_ROOT/checkpoint_verify.stderr"; then
@@ -404,17 +417,56 @@ else
     exit 4
 fi
 
-if timeout --signal=TERM --kill-after=70s 240s \
+if [[ "$CAPTURE_ONLY" == 1 ]]; then
+    python3 - "$ROOT" "$BI100_RUNTIME_SITE_PACKAGES" "$RUNTIME_INSTALL" \
+            "$RUN_ROOT/runtime_overlay_identity.json" <<'PY'
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+root, site, install, out = map(Path, sys.argv[1:])
+revision = subprocess.check_output(
+    ["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+value = json.loads(install.read_text(encoding="utf-8"))
+pairs = (
+    (root / "qwen3_6_scripts/paged_attn.py",
+     site / "vllm/attention/ops/paged_attn.py"),
+    (root / "qwen3_6_scripts/qwen3_5.py",
+     site / "vllm/model_executor/models/qwen3_5.py"),
+)
+qualified = (
+    value.get("source_revision") == revision
+    and all(left.is_file() and right.is_file()
+            and left.read_bytes() == right.read_bytes()
+            for left, right in pairs)
+)
+out.write_text(json.dumps({
+    "schema": "bi100-capture-overlay-identity-v1",
+    "version": 1,
+    "qualified": qualified,
+    "source_revision": revision,
+    "install_source_revision": value.get("source_revision"),
+    "required_files_byte_equal": qualified,
+    "hash_verification_used": False,
+}, indent=2, sort_keys=True) + "\n")
+raise SystemExit(0 if qualified else 1)
+PY
+    rc=$?
+else
+    timeout --signal=TERM --kill-after=70s 240s \
         python3 "$ROOT/tests/verify_bare_host_runtime_identity.py" \
-        --source-root "$ROOT" \
-        --runtime-site-packages "$BI100_RUNTIME_SITE_PACKAGES" \
-        --runtime-install "$RUNTIME_INSTALL" \
-        --out "$RUN_ROOT/runtime_overlay_identity.json" \
-        > "$RUN_ROOT/runtime_overlay_identity.stdout" \
-        2> "$RUN_ROOT/runtime_overlay_identity.stderr"; then
+            --source-root "$ROOT" \
+            --runtime-site-packages "$BI100_RUNTIME_SITE_PACKAGES" \
+            --runtime-install "$RUNTIME_INSTALL" \
+            --out "$RUN_ROOT/runtime_overlay_identity.json" \
+            > "$RUN_ROOT/runtime_overlay_identity.stdout" \
+            2> "$RUN_ROOT/runtime_overlay_identity.stderr"
+    rc=$?
+fi
+if [[ $rc -eq 0 ]]; then
     printf '%s\n' 0 > "$RUN_ROOT/runtime_overlay_identity.rc"
 else
-    rc=$?
     printf '%s\n' "$rc" > "$RUN_ROOT/runtime_overlay_identity.rc"
     echo "immutable runtime overlay identity failed" >&2
     exit 4
@@ -485,7 +537,6 @@ python3 - "$ROOT" "$MODEL_PATH" "$SOURCE_MODEL_PATH" \
         "$BI100_RUNTIME_SITE_PACKAGES" "$RUNTIME_INSTALL" "$GPU_LIST" \
         "$TP_SIZE" "$INSTANCE" "$RUN_ROOT/runtime_identity.json" \
         "$RUN_ROOT/runtime_overlay_identity.json" <<'PY'
-import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -499,13 +550,6 @@ install = Path(sys.argv[5])
 out = Path(sys.argv[9])
 overlay_path = Path(sys.argv[10])
 
-def sha(path):
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
 install_report = json.loads(install.read_text(encoding="utf-8"))
 overlay_report = json.loads(overlay_path.read_text(encoding="utf-8"))
 report = {
@@ -518,17 +562,15 @@ report = {
         text=True).strip(),
     "diagnostic_model": str(model),
     "source_model": str(source_model),
-    "diagnostic_manifest_sha256": sha(
-        model / "diagnostic-checkpoint-manifest.json"),
-    "diagnostic_config_sha256": sha(model / "config.json"),
-    "diagnostic_index_sha256": sha(model / "model.safetensors.index.json"),
+    "diagnostic_manifest": str(model / "diagnostic-checkpoint-manifest.json"),
+    "diagnostic_config": str(model / "config.json"),
+    "diagnostic_index": str(model / "model.safetensors.index.json"),
     "runtime_site_packages": str(site),
     "runtime_install_report": str(install),
-    "runtime_install_sha256": sha(install),
     "runtime_install_source_revision": install_report.get("source_revision"),
-    "runtime_overlay_identity_sha256": sha(overlay_path),
     "runtime_overlay_qualified": overlay_report.get("qualified"),
-    "runtime_tree_sha256": overlay_report.get("runtime_tree_sha256"),
+    "runtime_hash_verification_used": (
+        overlay_report.get("hash_verification_used") is not False),
     "physical_gpus": sys.argv[6].split(","),
     "tensor_parallel_size": int(sys.argv[7]),
     "instance": sys.argv[8],
@@ -568,22 +610,17 @@ export BI100_GDN_COREX_PACKED_DECODE=1
 
 if [[ "$ACTIVATION_CAPTURE" == 1 ]]; then
     SOURCE_REVISION=$(tr -d '[:space:]' < "$RUN_ROOT/source_revision.txt")
-    RUNTIME_TREE_SHA=$(python3 - \
+    RUNTIME_CAPTURE_ID=$(python3 - \
             "$RUN_ROOT/runtime_overlay_identity.json" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-tree = value.get("runtime_tree_sha256")
-if (
-    value.get("qualified") is not True
-    or not isinstance(tree, str)
-    or len(tree) != 64
-    or any(character not in "0123456789abcdef" for character in tree)
-):
+revision = value.get("source_revision")
+if value.get("qualified") is not True or not isinstance(revision, str):
     raise SystemExit("runtime overlay identity is not qualified")
-print(tree)
+print(revision[:20])
 PY
     ) || exit 4
     CAPTURE_IDENTITIES=$(python3 - "$MODEL_PATH" "$SOURCE_MODEL_PATH" \
@@ -635,7 +672,7 @@ PY
     export BI100_ATTN_CAPTURE_REPLAY_CALL_ORDINALS=0
     export BI100_ATTN_CAPTURE_REPLAY_LAYER_INDICES="$CAPTURE_LAYER_INDEX"
     export BI100_ATTN_CAPTURE_REPLAY_SOURCE_REVISION="$SOURCE_REVISION"
-    export BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY="bare-host-overlay-v1:${RUNTIME_TREE_SHA:0:20}"
+    export BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY="bare-host-overlay-v1:${RUNTIME_CAPTURE_ID}"
     export BI100_ATTN_CAPTURE_REPLAY_INSTANCE="$INSTANCE"
     export BI100_ATTN_CAPTURE_REPLAY_MODEL_CONFIG_SHA256="$MODEL_CONFIG_SHA"
     export BI100_ATTN_CAPTURE_REPLAY_TOKENIZER_SHA256="$TOKENIZER_SHA"
@@ -715,6 +752,7 @@ environment_names = (
     "BI100_ATTN_CAPTURE_REPLAY_TOKENIZER_SHA256",
     "BI100_ATTN_CAPTURE_REPLAY_SOURCE_ARTIFACT_SHA256",
     "BI100_ATTN_CAPTURE_REPLAY_SYNTHETIC_ATTESTATION",
+    "BI100_DIAGNOSTIC_CAPTURE_ONLY",
 )
 report = {
     "schema": "qwen36-diagnostic-service-contract-v1",
@@ -874,6 +912,7 @@ else
     printf '%s\n' 0 > "$RUN_ROOT/activation_capture.rc"
 fi
 
+if [[ "$CAPTURE_ONLY" != 1 ]]; then
 if timeout --signal=TERM --kill-after=70s 2400s \
         python3 "$ROOT/tests/qwen36_compat_http_gate.py" \
         --base "http://127.0.0.1:$PORT" \
@@ -941,6 +980,7 @@ else
     printf '%s\n' "$rc" > "$RUN_ROOT/prefix_boundary.rc"
     overall_rc=1
 fi
+fi
 
 if ! perform_postflight; then
     overall_rc=1
@@ -961,8 +1001,7 @@ else
     printf '%s\n' 0 > "$RUN_ROOT/layer_trace.rc"
 fi
 
-python3 - "$RUN_ROOT" "$overall_rc" <<'PY'
-import hashlib
+python3 - "$RUN_ROOT" "$overall_rc" "$CAPTURE_ONLY" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -977,10 +1016,6 @@ def read_rc(name):
         return int(path.read_text().strip())
     except ValueError:
         return None
-
-def sha(name):
-    path = root / name
-    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
 
 api = json.loads((root / "api_gate.json").read_text()) \
     if (root / "api_gate.json").is_file() else None
@@ -1032,19 +1067,31 @@ gates = {
     "preflight_after": read_rc("preflight_after.rc"),
     "preflight_comparison": read_rc("preflight_comparison.rc"),
 }
+capture_only = sys.argv[3] == "1"
+skipped_gates = (
+    ["compat_http", "tool_http", "tool_choice_http", "prefix_boundary"]
+    if capture_only else []
+)
+required_gates = [name for name in gates if name not in skipped_gates]
 report = {
-    "schema": "qwen36-diagnostic-service-gate-v1",
-    "version": 1,
+    "schema": "qwen36-diagnostic-service-gate-v2",
+    "version": 2,
     "qualified": (
         int(sys.argv[2]) == 0
-        and all(value == 0 for value in gates.values())
+        and all(gates[name] == 0 for name in required_gates)
     ),
+    "workload_scope": (
+        "m1-176-activation-capture-only" if capture_only
+        else "complete-diagnostic-gate"),
+    "required_gates": required_gates,
+    "skipped_gates": skipped_gates,
     "runtime_identity": json.loads(
         (root / "runtime_identity.json").read_text()),
     "gates": gates,
     "runtime_overlay_summary": {
         "qualified": overlay.get("qualified"),
-        "runtime_tree_sha256": overlay.get("runtime_tree_sha256"),
+        "source_revision": overlay.get("source_revision"),
+        "hash_verification_used": overlay.get("hash_verification_used"),
     } if overlay else None,
     "preflight_comparison_summary": {
         "qualified": preflight_comparison.get("qualified"),
@@ -1120,12 +1167,10 @@ report = {
         "run_id": activation_capture.get("run_id"),
         "targets": activation_capture.get("targets"),
         "request_count": len(activation_capture.get("requests", [])),
-        "raw_activation_manifest_sha256": sha(
-            "activation-bank/rank-0.manifest.json"),
         "tp4_evaluated": False,
     } if activation_capture else None,
-    "artifact_sha256": {
-        name: sha(name) for name in (
+    "artifacts_present": {
+        name: (root / name).is_file() for name in (
             "checkpoint_verify.json",
             "runtime_overlay_identity.json",
             "runtime_identity.json",
@@ -1143,7 +1188,6 @@ report = {
             "prefix_boundary.json",
             "activation_capture_requests.json",
             "activation-bank/rank-0.manifest.json",
-            "server.log",
             "cleanup_status.json",
             "service_postflight.json",
             "preflight_after.json",

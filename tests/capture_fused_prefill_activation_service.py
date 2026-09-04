@@ -250,8 +250,6 @@ def main() -> int:
             "completion_tokens": result["completion_tokens"],
             "cached_tokens": result["cached_tokens"],
             "finish_reason": result["finish_reason"],
-            "first_token_sha256": result["first_token_sha256"],
-            "output_sha256": result["output_sha256"],
             "captured_bucket": expected_bucket,
         })
     report = {

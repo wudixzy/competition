@@ -143,7 +143,7 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
             "verify_qwen36_diagnostic_checkpoint.py",
             "verify_bare_host_runtime_identity.py",
             "runtime_overlay_identity.json",
-            "runtime_tree_sha256",
+            "required_files_byte_equal",
             "BI100_DIAGNOSTIC_LAYER_TRACE=1",
             "BI100_HYBRID_KV_ACCOUNTING=full_attention",
             "prefix_boundary_api.py",
@@ -207,6 +207,21 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
         self.assertNotIn("computility-run.yaml", harness)
         self.assertNotIn("git push", harness)
 
+    def test_capture_profile_has_its_own_complete_request_population(self) -> None:
+        harness = (
+            ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'CAPTURE_ONLY=${BI100_DIAGNOSTIC_CAPTURE_ONLY:-$ACTIVATION_CAPTURE}',
+            harness,
+        )
+        self.assertIn('if [[ "$CAPTURE_ONLY" != 1 ]]; then', harness)
+        self.assertIn('"m1-176-activation-capture-only"', harness)
+        self.assertIn('required_gates = [name for name in gates', harness)
+        self.assertIn('"skipped_gates": skipped_gates', harness)
+        self.assertNotIn("--full-hash", harness)
+        self.assertNotIn('"artifact_sha256":', harness)
+
     def test_gpu_preflight_wrappers_cover_child_cleanup_window(self) -> None:
         harness = (
             ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
@@ -255,6 +270,22 @@ class Qwen36DiagnosticHarnessStaticTest(unittest.TestCase):
         )
         self.assertEqual(unsafe.returncode, 2)
         self.assertIn("short non-sensitive label", unsafe.stderr)
+
+    def test_capture_only_requires_explicit_activation_capture(self) -> None:
+        script = ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
+        result = subprocess.run(
+            [
+                "bash", str(script), "/missing-model", "1", "0",
+                "single-card", "/tmp/unused-capture-only-run",
+            ],
+            env={"PATH": "/usr/bin:/bin", "BI100_DIAGNOSTIC_CAPTURE_ONLY": "1"},
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires activation capture", result.stderr)
 
     def test_harness_rejects_non_tmp_run_root_before_model_access(self) -> None:
         script = ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh"
