@@ -1,0 +1,66 @@
+{
+  "schema": "bi100-m1-177-fp16-qk-long-smoke-summary-v1",
+  "version": 1,
+  "date": "2026-09-04",
+  "status": "inconclusive",
+  "classification": "positive_diagnostic_underpowered",
+  "change_scope": "attention_operator",
+  "source_revision": "6c6b12d1bde89a7c32f1d6b93675794897d53139",
+  "branch": "exp/M1-132-layered-quality-gate-20260729",
+  "instance": "cc-ce19242b-436f-4141-868b-610eb3ac8cee-0",
+  "runtime_identity": "overlay-44a43f355cfc-torch-2.1.0-vllm-0.6.3",
+  "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+  "service_contract": {
+    "tensor_parallel_size": 4,
+    "dtype": "float16",
+    "max_model_len": 262144,
+    "block_size": 16,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 1,
+    "completion_tokens": 8,
+    "targets": [131072, 235000],
+    "repetitions_per_target": 1,
+    "service_startups_per_arm": 1,
+    "control_selector": 0,
+    "candidate_selector": 1
+  },
+  "request_population": {
+    "control": {"expected": 2, "attempted": 2, "completed": 2, "failed": 0},
+    "candidate": {"expected": 2, "attempted": 2, "completed": 2, "failed": 0},
+    "cached_tokens_zero": 4,
+    "first_token_match_count": 2,
+    "full_output_match_count": 2
+  },
+  "raw_ttft_seconds": {
+    "control": {"131072": [254.74437446007505], "235000": [587.3459751280025]},
+    "candidate": {"131072": [189.37637966894545], "235000": [382.9287682969589]}
+  },
+  "paired_performance": {
+    "estimator": "mean_of_paired_control_over_candidate_ttft_gains",
+    "aggregate_gain": 0.43950034345490707,
+    "bucket_gains": {"131072": 0.345175015518838, "235000": 0.5338256713909761},
+    "one_sided_95_lower_ci": null,
+    "bootstrap_samples": 0,
+    "formal_performance_qualified": false
+  },
+  "dispatch": {"control": 0, "candidate": 4},
+  "lifecycle": {
+    "term_first": true,
+    "all_children_reaped": true,
+    "api_server_residuals": 0,
+    "worker_residuals": 0,
+    "gpu_process_residuals": 0,
+    "fatal_oom_collective_worker_loss_counts_all_zero": true,
+    "postflight_qualified": true
+  },
+  "limitations": {
+    "baseline_comparison": "fused_off_production_baseline_to_combined_m1_162_path",
+    "incremental_m1_109_to_m1_162_gain_claimed": false,
+    "one_repetition_per_length": true,
+    "confidence_interval_available": false,
+    "teacher_forced_distribution_run": false,
+    "capability_run": false
+  },
+  "next_authorized_stage": "focused_teacher_forced_distribution",
+  "promotion_authorized": false
+}

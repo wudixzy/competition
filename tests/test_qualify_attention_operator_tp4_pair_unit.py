@@ -147,6 +147,38 @@ class AttentionOperatorPairTests(unittest.TestCase):
         self.assertEqual(result["request_population_per_arm"], 4)
         self.assertEqual(result["targets"], list(targets))
 
+    def test_single_repetition_is_positive_but_underpowered(self) -> None:
+        targets = (131072, 235000)
+        statuses, manifests, measurements = inputs(0.70)
+        for selector in ("control", "candidate"):
+            statuses[selector]["targets"] = list(targets)
+            statuses[selector]["repetitions"] = 1
+            statuses[selector]["request_population"] = {
+                "expected": 2, "attempted": 2, "completed": 2, "failed": 0}
+            measurements[selector] = report(
+                selector, 1.0 if selector == "control" else 0.70)
+            measurements[selector]["targets"] = list(targets)
+            measurements[selector]["repetitions"] = 1
+            measurements[selector]["expected_requests"] = 2
+            measurements[selector]["attempted_requests"] = 2
+            measurements[selector]["completed_requests"] = 2
+            measurements[selector]["cases"] = [
+                {"target_prompt_tokens": target, "repetition": 0,
+                 "response": _response(
+                     target, 1.0 if selector == "control" else 0.70)}
+                for target in targets
+            ]
+        result = qualifier.qualify(
+            statuses, manifests, measurements,
+            targets=targets, repetitions=1)
+        self.assertEqual(result["status"], "inconclusive", result)
+        self.assertEqual(
+            result["classification"], "positive_diagnostic_underpowered")
+        self.assertIsNone(result["performance"]["one_sided_95_lower_ci"])
+        self.assertEqual(result["performance"]["bootstrap_samples"], 0)
+        self.assertFalse(result["long_context_authorized"])
+        self.assertTrue(result["distribution_authorized"])
+
 
 if __name__ == "__main__":
     unittest.main()

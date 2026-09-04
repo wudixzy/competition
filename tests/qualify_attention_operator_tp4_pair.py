@@ -160,6 +160,7 @@ def qualify(
                                if candidate_failure else "invalid_evidence"),
             "reasons": reasons,
             "long_context_authorized": False,
+            "distribution_authorized": False,
         }
     control = _case_map(measurements["control"])
     candidate = _case_map(measurements["candidate"])
@@ -169,6 +170,7 @@ def qualify(
             "classification": "invalid_evidence",
             "reasons": ["paired request identities differ"],
             "long_context_authorized": False,
+            "distribution_authorized": False,
         }
     identities = sorted(control)
     if any(not _finite(control[item].get("ttft_s"))
@@ -180,6 +182,7 @@ def qualify(
             "classification": "invalid_evidence",
             "reasons": ["paired TTFT sample is non-finite or non-positive"],
             "long_context_authorized": False,
+            "distribution_authorized": False,
         }
     gains = [control[item]["ttft_s"] / candidate[item]["ttft_s"] - 1.0
              for item in identities]
@@ -191,7 +194,8 @@ def qualify(
         control[item]["output_sha256"] == candidate[item]["output_sha256"]
         for item in identities)
     point = statistics.mean(gains)
-    lower = _bootstrap_lower(gains)
+    underpowered = repetitions < 2
+    lower = None if underpowered else _bootstrap_lower(gains)
     buckets = []
     bucket_stable = True
     for target in targets:
@@ -210,7 +214,19 @@ def qualify(
             "mean_gain": mean_gain,
             "stable": stable,
         })
-    if point < 0.02:
+    if underpowered:
+        status = "inconclusive"
+        if point >= 0.05 and bucket_stable:
+            classification = "positive_diagnostic_underpowered"
+            decision_reasons = [
+                "fewer than two repetitions per length; formal confidence "
+                "interval and performance qualification are unavailable"]
+        else:
+            classification = "underpowered_performance_evidence"
+            decision_reasons = [
+                "fewer than two repetitions per length and no clear stable "
+                "diagnostic gain"]
+    elif point < 0.02:
         status, classification = "fail", "gain_below_two_percent"
         decision_reasons = ["aggregate TTFT gain is below 2%"]
     elif point < 0.05:
@@ -249,8 +265,8 @@ def qualify(
             "aggregate_gain": point,
             "one_sided_95_lower_ci": lower,
             "buckets": buckets,
-            "bootstrap_samples": BOOTSTRAP_SAMPLES,
-            "bootstrap_seed": BOOTSTRAP_SEED,
+            "bootstrap_samples": 0 if underpowered else BOOTSTRAP_SAMPLES,
+            "bootstrap_seed": None if underpowered else BOOTSTRAP_SEED,
         },
         "distribution": {"status": "not_run",
                          "reason": "run only after focused performance survives",
@@ -261,6 +277,9 @@ def qualify(
                        "reason": "outside attention-operator development scope"},
         "reasons": decision_reasons,
         "long_context_authorized": status == "pass",
+        "distribution_authorized": (
+            status == "pass"
+            or classification == "positive_diagnostic_underpowered"),
     }
 
 
@@ -301,6 +320,7 @@ def main() -> int:
             "schema": SCHEMA, "version": 1, "status": "invalid",
             "classification": "invalid_evidence", "reasons": [str(exc)],
             "long_context_authorized": False,
+            "distribution_authorized": False,
         }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(

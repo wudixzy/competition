@@ -1,5 +1,18 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-04 M1-177 长上下文精简 smoke
+
+M1-162 在完整模型 TP4 上完成一次 131K/235K cold control/candidate smoke：
+TTFT 分别改善 34.52% 和 53.38%，四个请求均为 `cached_tokens=0`，首 token
+与完整输出摘要均 2/2 匹配，dispatch 0/4，清理及 postflight 通过。
+
+每个长度仅 1 个样本，因此结论为
+`positive_diagnostic_underpowered/inconclusive`，不报告 bootstrap CI，也不算
+正式性能通过。该证据只支持下一步聚焦 teacher-forced distribution，不授权
+默认开关、YAML、`main` 或晋升。review 同时修复了 runtime 进程继承仓库 CWD
+导致源码包遮蔽 overlay，以及单重复被错误判作正式 `pass` 的问题。详见
+`docs/experiments/M1_177_FP16_QK_LONG_SMOKE_20260904.md`。
+
 ## 2026-09-04 M1-176 完整模型精简 TP4 结果
 
 M1-162 FP16-QK 在源码 `4d79d00fce24aa1ba6a515870653341f608242ff`
