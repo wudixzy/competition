@@ -37,6 +37,14 @@ def _capture() -> dict:
 
 class ShortTp4V2RunnerTests(unittest.TestCase):
 
+    def test_l3_requires_fixed_full_model_path(self) -> None:
+        self.assertTrue(runner.is_expected_full_model_path(
+            Path("/root/public-storage/models/Qwen/Qwen3.6-35B-A3B")))
+        self.assertFalse(runner.is_expected_full_model_path(
+            Path("/tmp/diagnostic-checkpoint/model")))
+        self.assertFalse(runner.is_expected_full_model_path(
+            Path("relative/model")))
+
     def test_service_environment_binds_teacher_keys(self) -> None:
         value = runner.ShortTp4V2Runner.__new__(runner.ShortTp4V2Runner)
         root = Path(__file__).resolve().parents[1]

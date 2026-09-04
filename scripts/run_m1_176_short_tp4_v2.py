@@ -21,6 +21,13 @@ from run_m1_140_activation_capture import (
 
 TARGETS = (4096, 16384, 32768, 65536)
 PROJECTED_GAIN_FLOOR = 0.02
+EXPECTED_MODEL_PATH = Path(
+    "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B")
+
+
+def is_expected_full_model_path(path: Path) -> bool:
+    return path.is_absolute() and Path(os.path.normpath(str(path))) == (
+        EXPECTED_MODEL_PATH)
 
 
 def _load_private_json(path: Path) -> dict[str, Any]:
@@ -127,8 +134,9 @@ class ShortTp4V2Runner(CaptureRunner):
             if not candidate.is_file():
                 raise RuntimeError("runtime install report is missing")
             self.runtime_install = candidate
-        if not self.model_path.is_dir():
-            raise RuntimeError("model path is missing")
+        if (not is_expected_full_model_path(self.model_path)
+                or not self.model_path.is_dir()):
+            raise RuntimeError("L3 requires the fixed full-model path")
         self.l2_authorization = validate_l2_authorization(
             self.args.l2_replay_status, self.args.l2_capture_status)
         l2_revision = self.l2_authorization["source_revision"]
