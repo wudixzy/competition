@@ -6,6 +6,12 @@ Status: research and planning only. This review does not authorize a formal
 `computility-run.yaml` change, a default-selector change, a `main` merge, an
 official-score claim, or a repository-visibility change.
 
+Metric selection and candidate decisions follow
+`docs/BI100_VALIDATION_METRICS_V2_20260904.md`. Historical v1 evidence keeps
+its original interpretation; new candidates use calibrated low-precision
+numerics, margin-aware distribution review, paired capability non-inferiority
+and profile-based performance continuation rules.
+
 ## Executive assessment
 
 The project is no longer blocked on finding any viable optimization. It has a
@@ -170,7 +176,8 @@ protocol-induced 5xx, worker loss or fatal error.
 6. Confirm 131K, 235K and near-262K only after the short TP4 stage qualifies.
 
 Exit criterion: no real numeric failure, no cache/protocol regression, material
-paired TTFT gain, and no task-capability non-inferiority failure.
+paired TTFT gain under the v2 confidence rule, and no task-capability
+non-inferiority failure.
 
 ### R2: Re-profile the accepted stack
 
@@ -230,6 +237,11 @@ Only then may a `main` or formal YAML change be proposed.
   automatically a numeric or capability failure. A failed same-activation
   numeric comparison, nonfinite value, protocol semantic change or invalid
   cache state remains a hard rejection.
+- Component continuation is based on a measured hotspot and at least 2%
+  conservative projected end-to-end gain, not a universal 1.5x speedup.
+  Short TP4 advancement normally requires at least 3% paired gain with a
+  one-sided 95% lower confidence bound above zero; 2%-3% is inconclusive and
+  permits only the bounded extra pairs defined by v2.
 - Do not rerun M1-173 batched split PV, M1-174 query-tiled scalar fusion,
   M1-172 unsupported mixed PV, blind ixinfer FMHA configurations, scalar GDN
   variants, or YAML/chunk/threshold sweeps without new profile evidence.
@@ -263,6 +275,7 @@ promotion evidence.
 ## Reference lineage
 
 - `docs/experiments/M1_139_EFFICIENT_EXPERIMENT_FUNNEL_20260730.md`
+- `docs/BI100_VALIDATION_METRICS_V2_20260904.md`
 - `docs/experiments/M1_151_TTFT_P90_PREFILL_GRID_20260730.md`
 - `docs/experiments/M1_156_FUSED_PREFILL_PHASE_PROFILE_20260730.md`
 - `docs/experiments/M1_162_CALIBRATED_FP16_QK_REASSESSMENT_20260730.md`

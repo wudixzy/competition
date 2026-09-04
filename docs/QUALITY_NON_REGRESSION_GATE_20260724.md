@@ -1,5 +1,14 @@
 # BI100 model-quality non-regression gate
 
+For new candidate decisions, metric roles and thresholds are governed by
+`docs/BI100_VALIDATION_METRICS_V2_20260904.md`. This document continues to
+define the frozen functional and long-context datasets, runtime identity,
+lifecycle and historical v1 execution commands. Exact protocol, token/cache
+identity and state-isolation requirements remain hard. Floating-point output
+and long autoregressive trajectory comparisons use the v2 calibrated numeric
+and margin-aware adjudication rules where execution order legitimately
+changes.
+
 ## Scope
 
 Model capability and output correctness are hard promotion gates. They do not

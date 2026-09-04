@@ -1,5 +1,13 @@
 # BI100 layered inference validation gate
 
+> Superseded for new candidate design on 2026-09-04 by
+> `docs/BI100_VALIDATION_METRICS_V2_20260904.md`. This document and
+> `quality/layered_quality_gate.v1.json` remain immutable interpretations of
+> historical v1 evidence. In particular, the universal operator
+> `relative-L2 <=1e-5`, `max-abs <=1e-3`, universal 98% teacher-forced top-1
+> threshold and unconditional full-sequence cache identity are not to be
+> copied into new contracts without the v2 calibration and cache-class rules.
+
 ## Why the gate is layered
 
 A fused floating-point implementation can be mathematically valid without

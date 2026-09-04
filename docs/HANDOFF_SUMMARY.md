@@ -1,5 +1,27 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-04 v2 指标与晋升门禁
+
+- 新候选统一使用 `docs/BI100_VALIDATION_METRICS_V2_20260904.md`。它将实验
+  有效性、协议/缓存状态、算子数值、teacher-forced 分布、任务能力和性能拆成
+  独立层，报告使用 `pass/fail/inconclusive/invalid`，不再把平台故障直接归因
+  为候选失败。
+- FP16 算子默认比较同激活 FP32 reference，并要求候选误差不超过现有 FP16
+  baseline 误差的 2 倍；固定 `rel-L2 <=1e-5` 和 `max-abs <=1e-3` 降为诊断，
+  除非具体算子在看结果前另有依据。NaN/Inf、索引、mask、shape 和错误状态仍是
+  硬失败。
+- teacher-forced top-1 一致率不再有统一 98% 硬阈值。高 margin flip 和 NLL
+  回退相对 control/control 噪声校准，越界进入能力裁决，不能伪装成算子数值
+  失败，也不能被文本相似度直接豁免。
+- 缓存分成纯 memoization 和会改变计算分段的 aligned recomputation。内容键、
+  状态身份、跳过 token 和多模态隔离始终 exact；后者在恢复边界使用校准数值和
+  first-token 门禁，长 suffix 低 margin 分叉只触发进一步分析。
+- 单算子不再统一要求 1.5x。根据 profile 和 Amdahl 上限，保守预计端到端收益
+  至少 2% 才继续；短 TP4 通常要求至少 3% 配对收益且单侧 95% 置信下界大于
+  零。最终比赛的 TPS、TTFT、缓存、成功率、8000 分和 262144 容量门槛不变。
+- 旧 `quality/*v1.json` 与历史报告保持不变。coding-agent 需要后续新增 v2
+  合同、验证器兼容和单测，不能原地改写历史身份。
+
 ## 2026-09-04 框架审计与后续路线图
 
 - 当前成果的主要问题不是缺少候选，而是协议修复、缓存正确性、prefill
