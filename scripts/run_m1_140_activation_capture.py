@@ -97,6 +97,7 @@ def _run_to_files(
     stderr_path: Path,
     *,
     environment: dict[str, str] | None = None,
+    cwd: Path | None = None,
     timeout_s: int,
 ) -> int:
     wrapped = [
@@ -121,6 +122,7 @@ def _run_to_files(
                 stdout=stdout,
                 stderr=stderr,
                 env=environment,
+                cwd=cwd,
                 start_new_session=True,
             )
             starttime = _read_starttime(process.pid)

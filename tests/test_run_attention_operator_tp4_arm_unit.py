@@ -35,6 +35,9 @@ class AttentionOperatorRunnerTests(unittest.TestCase):
         self.assertIn('"runtime_probe.stderr"', source)
         self.assertIn("if probe.returncode:", source)
         self.assertIn('cwd=self.run_root / "runtime-workdir"', source)
+        self.assertIn(
+            'cwd=self.run_root / "runtime-workdir", timeout_s=14400',
+            source)
 
     def test_reusable_session_preflight_is_fail_closed(self) -> None:
         value = {
@@ -65,7 +68,8 @@ class AttentionOperatorRunnerTests(unittest.TestCase):
             value.runtime_install = root / "README.md"
             value.run_root = Path("/tmp/attention-runner-unit")
             value.model_path = runner.EXPECTED_MODEL_PATH
-            value.args = SimpleNamespace(selector=selector)
+            value.args = SimpleNamespace(
+                selector=selector, workload="performance")
             values.append(value.service_environment())
         control, candidate = values
         self.assertEqual(control.pop("BI100_ATTN_COREX_FUSED_PREFILL"), "0")
@@ -73,6 +77,22 @@ class AttentionOperatorRunnerTests(unittest.TestCase):
         self.assertEqual(control, candidate)
         self.assertNotIn(
             "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256", values[0])
+
+    def test_teacher_forced_mode_enables_only_cache_observation(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        value = runner.AttentionOperatorTp4Runner.__new__(
+            runner.AttentionOperatorTp4Runner)
+        value.root = root
+        value.runtime_site = root
+        value.runtime_install = root / "README.md"
+        value.run_root = Path("/tmp/attention-runner-unit")
+        value.model_path = runner.EXPECTED_MODEL_PATH
+        value.args = SimpleNamespace(
+            selector="candidate", workload="teacher_forced")
+        environment = value.service_environment()
+        self.assertEqual(environment["BI100_CACHE_TRACE"], "1")
+        self.assertEqual(
+            environment["BI100_ATTN_COREX_FUSED_PREFILL"], "1")
 
 
 if __name__ == "__main__":

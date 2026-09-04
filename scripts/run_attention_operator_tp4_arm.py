@@ -26,6 +26,7 @@ EXPECTED_MODEL_PATH = Path(
 TARGETS = (16384, 32768, 65536)
 REPETITIONS = 3
 MAX_TOKENS = 8
+TEACHER_FORCED_TARGETS = (4096, 16384, 32768, 65536)
 
 
 def _identifier(value: str) -> bool:
@@ -87,6 +88,12 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             raise ValueError("pair identity is invalid")
         self.targets, self.repetitions = _workload_config(
             self.args.targets, self.args.repetitions)
+        self.workload_mode = getattr(self.args, "workload", "performance")
+        if (self.workload_mode == "teacher_forced"
+                and (self.targets != TEACHER_FORCED_TARGETS
+                     or self.repetitions != 1)):
+            raise ValueError(
+                "teacher-forced workload requires fixed targets and one request")
         if not _api_listener_absent():
             raise RuntimeError("API port 8000 has an active listener")
         self.source_revision = _git(self.root, "rev-parse", "HEAD")
@@ -94,7 +101,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
         self.source_dirty_summary = _git(
             self.root, "status", "--short", "--untracked-files=all") or "clean"
         self.run_id = (
-            f"attention-tp4-{self.args.selector}-{self.source_revision[:10]}")
+            f"attention-tp4-{self.workload_mode}-{self.args.selector}-"
+            f"{self.source_revision[:10]}")
         if (self.model_path != EXPECTED_MODEL_PATH
                 or not self.model_path.is_dir()):
             raise RuntimeError("focused TP4 requires the fixed full model")
@@ -196,7 +204,9 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "BI100_HYBRID_KV_ACCOUNTING": "full_attention",
             "BI100_CPU_KV_OFFLOAD": "0",
             "BI100_BLOCK_MAJOR_CPU_KV": "0",
-            "BI100_CACHE_TRACE": "0",
+            "BI100_CACHE_TRACE": (
+                "1" if getattr(self.args, "workload", "performance")
+                == "teacher_forced" else "0"),
             "BI100_ATTN_COREX_FUSED_PREFILL": (
                 "1" if self.args.selector == "candidate" else "0"),
             "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW": "0",
@@ -242,6 +252,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "schema": "bi100-attention-operator-runtime-v1",
             "version": 1,
             "change_scope": "attention_operator",
+            "workload_mode": self.workload_mode,
             "source_revision": self.source_revision,
             "source_dirty_summary": self.source_dirty_summary,
             "runtime_identity": self.runtime_identity,
@@ -267,20 +278,47 @@ class AttentionOperatorTp4Runner(CaptureRunner):
 
     def run_requests(self) -> None:
         self.write_runtime_manifest()
-        rc = _run_to_files([
-            sys.executable,
-            str(self.root / "tests/attention_operator_tp4_service.py"),
-            "--base", "http://127.0.0.1:8000",
-            "--model-path", str(self.model_path),
-            "--timeout-s", "1800", "--run-id", self.run_id,
-            "--workload-id", self.args.pair_id,
-            "--selector", self.args.selector,
-            "--targets", ",".join(map(str, self.targets)),
-            "--repetitions", str(self.repetitions),
-            "--out", str(self.run_root / "measurement.json"),
-        ], self.run_root / "measurement.stdout",
+        if self.workload_mode == "performance":
+            command = [
+                sys.executable,
+                str(self.root / "tests/attention_operator_tp4_service.py"),
+                "--base", "http://127.0.0.1:8000",
+                "--model-path", str(self.model_path),
+                "--timeout-s", "1800", "--run-id", self.run_id,
+                "--workload-id", self.args.pair_id,
+                "--selector", self.args.selector,
+                "--targets", ",".join(map(str, self.targets)),
+                "--repetitions", str(self.repetitions),
+                "--out", str(self.run_root / "measurement.json"),
+            ]
+            environment = self.base_environment()
+        else:
+            key = os.environ.get("BI100_TEACHER_FORCED_HMAC_KEY", "")
+            if (len(key) != 64 or any(character not in "0123456789abcdef"
+                                      for character in key)):
+                raise RuntimeError("teacher token identity key is unavailable")
+            command = [
+                sys.executable,
+                str(self.root / "tests/teacher_forced_topk_api.py"),
+                "--base", "http://127.0.0.1:8000",
+                "--model-path", str(self.model_path),
+                "--attention-runtime-manifest",
+                str(self.run_root / "runtime_manifest.json"),
+                "--runtime-identity", self.runtime_identity,
+                "--source-revision", self.source_revision,
+                "--instance", self.args.instance,
+                "--mode", self.args.selector,
+                "--targets", ",".join(map(str, self.targets)),
+                "--timeout-s", "3600",
+                "--out", str(self.run_root / "measurement.json"),
+            ]
+            environment = self.base_environment()
+            environment["BI100_TEACHER_FORCED_HMAC_KEY"] = key
+        rc = _run_to_files(
+            command, self.run_root / "measurement.stdout",
             self.run_root / "measurement.stderr",
-            environment=self.base_environment(), timeout_s=7200)
+            environment=environment,
+            cwd=self.run_root / "runtime-workdir", timeout_s=14400)
         if rc:
             raise RuntimeError("focused attention request population failed")
 
@@ -337,10 +375,20 @@ class AttentionOperatorTp4Runner(CaptureRunner):
         measurement = self.run_root / "measurement.json"
         measured = (json.loads(measurement.read_text(encoding="utf-8"))
                     if measurement.is_file() else {})
+        if self.workload_mode == "teacher_forced":
+            completed = len(measured.get("cases") or [])
+            attempted = completed if measurement.is_file() else 0
+            failed = 0 if completed == len(self.targets) else max(
+                0, len(self.targets) - completed)
+        else:
+            attempted = measured.get("attempted_requests", 0)
+            completed = measured.get("completed_requests", 0)
+            failed = measured.get("failed_requests", 0)
         _atomic_json(self.run_root / "runner_status.json", {
             "schema": "bi100-attention-operator-tp4-arm-v1",
             "version": 1,
             "change_scope": "attention_operator",
+            "workload_mode": self.workload_mode,
             "qualified": returncode == 0,
             "result_status": result_status,
             "returncode": returncode,
@@ -366,9 +414,9 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "tensor_parallel_size": 4,
             "request_population": {
                 "expected": len(self.targets) * self.repetitions,
-                "attempted": measured.get("attempted_requests", 0),
-                "completed": measured.get("completed_requests", 0),
-                "failed": measured.get("failed_requests", 0),
+                "attempted": attempted,
+                "completed": completed,
+                "failed": failed,
             },
             "dispatch_count": self.dispatch_count,
             "gates": self.gates,
@@ -425,6 +473,8 @@ def main() -> int:
     parser.add_argument("--session-preflight", type=Path, required=True)
     parser.add_argument("--targets", default=",".join(map(str, TARGETS)))
     parser.add_argument("--repetitions", type=int, default=REPETITIONS)
+    parser.add_argument("--workload", choices=("performance", "teacher_forced"),
+                        default="performance")
     args = parser.parse_args()
     args.profile = "attention_operator"
     args.contexts = ""
