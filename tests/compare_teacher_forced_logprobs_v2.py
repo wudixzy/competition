@@ -167,10 +167,26 @@ def compare(
         "status": decision["status"],
         "classification": decision["classification"],
         "source_revision": control_a["source_revision"],
+        "runtime_identity": control_a["runtime_identity"],
+        "instance": control_a["instance"],
+        "model_path": control_a["model_path"],
         "targets": list(TARGETS),
         "sampled_positions": observed["sampled_positions"],
+        "workload_identity": {
+            "case_ids": [case["id"] for case in control_a["cases"]],
+            "prompt_tokens": [case["prompt_tokens"]
+                              for case in control_a["cases"]],
+            "sampled_positions_per_case": [len(case["positions"])
+                                           for case in control_a["cases"]],
+        },
+        "arm_binding": {
+            "control_a": "control",
+            "control_b": "control",
+            "candidate": "candidate",
+        },
         "aa": {
             **aa_metrics,
+            "sampled_positions": aa["sampled_positions"],
             "top1_agreement": aa["top1_agreement"],
             "mutual_topk_coverage": aa["mutual_topk_coverage"],
             "teacher_token_logprob_delta": aa["teacher_token_logprob_delta"],

@@ -154,6 +154,70 @@ def _status_reasons(statuses: dict[str, dict[str, Any]]) -> list[str]:
     return reasons
 
 
+def _distribution_reasons(
+    distribution: Any,
+    base_status: dict[str, Any],
+    contract: dict[str, Any],
+) -> tuple[list[str], str]:
+    if not isinstance(distribution, dict):
+        return ["distribution evidence is not an object"], "invalid"
+    status = distribution.get("status")
+    allowed = {"pass", "inconclusive", "invalid"}
+    reasons = []
+    if status not in allowed:
+        reasons.append("distribution status is unsupported")
+        status = "invalid"
+    if (distribution.get("schema")
+            != "bi100-teacher-forced-distribution-v2"
+            or distribution.get("version") != 2):
+        reasons.append("distribution schema/version differs")
+    for field in ("source_revision", "runtime_identity", "instance",
+                  "model_path"):
+        if (not isinstance(distribution.get(field), str)
+                or not distribution[field]
+                or distribution[field] != base_status.get(field)):
+            reasons.append(f"distribution {field} differs")
+    if distribution.get("targets") != list(service.TARGETS):
+        reasons.append("distribution targets differ")
+    expected_workload = {
+        "case_ids": [f"length_{target}" for target in service.TARGETS],
+        "prompt_tokens": list(service.TARGETS),
+        "sampled_positions_per_case": [64] * len(service.TARGETS),
+    }
+    if distribution.get("workload_identity") != expected_workload:
+        reasons.append("distribution workload identity differs")
+    if distribution.get("arm_binding") != {
+            "control_a": "control", "control_b": "control",
+            "candidate": "candidate"}:
+        reasons.append("distribution arms are not bound to candidate")
+    sampled = distribution.get("sampled_positions")
+    aa = distribution.get("aa")
+    candidate = distribution.get("candidate")
+    decision = distribution.get("decision")
+    if (not isinstance(sampled, int) or isinstance(sampled, bool)
+            or sampled <= 0 or not isinstance(aa, dict) or not aa
+            or not isinstance(candidate, dict) or not candidate
+            or not isinstance(decision, dict) or not decision
+            or aa.get("sampled_positions") != sampled
+            or candidate.get("sampled_positions") != sampled):
+        reasons.append("distribution sample population is incomplete")
+    else:
+        try:
+            expected_decision = metrics_contract.classify_distribution(
+                candidate, aa, contract)
+        except (metrics_contract.ContractError, KeyError, TypeError) as exc:
+            reasons.append(f"distribution decision is invalid: {exc}")
+        else:
+            if decision != expected_decision:
+                reasons.append("distribution decision does not match evidence")
+            if (distribution.get("classification")
+                    != expected_decision.get("classification")
+                    or distribution.get("status")
+                    != expected_decision.get("status")):
+                reasons.append("distribution status/classification differs")
+    return reasons, "invalid" if reasons else status
+
+
 def qualify(
     statuses: dict[str, dict[str, Any]],
     measurements: dict[str, dict[str, Any]],
@@ -166,6 +230,9 @@ def qualify(
         metrics_contract.validate_contract(contract, "layered")
     except metrics_contract.ContractError as exc:
         reasons.append(str(exc))
+    distribution_reasons, distribution_status = _distribution_reasons(
+        distribution, statuses["control_a"], contract)
+    reasons.extend(distribution_reasons)
     base_manifest = manifests["control_a"]
     for selector, manifest in manifests.items():
         if (manifest.get("schema") != "bi100-quality-runtime-manifest-v2"
@@ -293,11 +360,6 @@ def qualify(
             for identity in identities)
         for name in ("control_b", "candidate")
     }
-    if distribution.get("schema") != "bi100-teacher-forced-distribution-v2" \
-            or distribution.get("version") != 2:
-        distribution_status = "invalid"
-    else:
-        distribution_status = distribution.get("status")
     if distribution_status == "invalid":
         status = "invalid"
     elif performance["status"] == "fail":

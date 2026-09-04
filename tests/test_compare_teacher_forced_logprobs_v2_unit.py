@@ -83,6 +83,10 @@ class TeacherForcedV2Tests(unittest.TestCase):
         self.assertEqual(result["status"], "pass", result)
         self.assertEqual(result["sampled_positions"], 256)
         self.assertEqual(result["candidate"]["top1_agreement"], 1.0)
+        self.assertEqual(result["runtime_identity"],
+                         "overlay-install-44a-byte-equal")
+        self.assertEqual(result["aa"]["sampled_positions"], 256)
+        self.assertEqual(result["arm_binding"]["candidate"], "candidate")
 
     def test_high_margin_flip_requires_adjudication(self) -> None:
         candidate = _report("candidate")

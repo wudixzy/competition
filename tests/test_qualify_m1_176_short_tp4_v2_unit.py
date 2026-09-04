@@ -109,10 +109,45 @@ def _manifest(selector: str) -> dict:
 
 
 def _distribution(status: str = "pass") -> dict:
+    aa = {
+        "shared_logprob_delta_p99": 0.001,
+        "paired_nll_upper_ci": 0.001,
+        "sampled_positions": 256,
+    }
+    candidate = {
+        "sampled_positions": 256,
+        "top1_agreement": 1.0,
+        "mutual_topk_coverage": 1.0,
+        "teacher_token_logprob_delta": 0.001,
+        "shared_token_logprob_delta": 0.001,
+        "paired_nll_difference": 0.0,
+        "paired_nll_one_sided_95_upper_ci": 0.001,
+        "first_divergent_token": -1,
+        "baseline_top1_margin": 0.2,
+        "high_margin_flips": 0,
+    }
+    if status == "inconclusive":
+        candidate["high_margin_flips"] = 1
+    decision = qualification.metrics_contract.classify_distribution(
+        candidate, aa, CONTRACT)
     return {
         "schema": "bi100-teacher-forced-distribution-v2", "version": 2,
-        "status": status, "classification": "distribution_within_aa_envelope",
-        "aa": {}, "candidate": {}, "decision": {},
+        "status": decision["status"],
+        "classification": decision["classification"],
+        "source_revision": "a" * 40,
+        "runtime_identity": "overlay-byte-equal",
+        "instance": "private-instance",
+        "model_path": "/model",
+        "targets": list(service.TARGETS),
+        "sampled_positions": 256,
+        "workload_identity": {
+            "case_ids": [f"length_{target}" for target in service.TARGETS],
+            "prompt_tokens": list(service.TARGETS),
+            "sampled_positions_per_case": [64] * len(service.TARGETS),
+        },
+        "arm_binding": {"control_a": "control", "control_b": "control",
+                        "candidate": "candidate"},
+        "aa": aa, "candidate": candidate, "decision": decision,
     }
 
 
@@ -164,6 +199,51 @@ class ShortTp4V2QualificationTests(unittest.TestCase):
         manifests["candidate"]["environment"]["extra"] = "1"
         result = qualification.qualify(
             statuses, measurements, manifests, _distribution(), CONTRACT)
+        self.assertEqual(result["status"], "invalid", result)
+
+    def test_empty_distribution_is_invalid(self) -> None:
+        statuses = {name: _status(name) for name in qualification.SELECTORS}
+        measurements = {name: _measurement(name, 0.95)
+                        for name in qualification.SELECTORS}
+        manifests = {name: _manifest(name)
+                     for name in qualification.SELECTORS}
+        evidence = _distribution()
+        evidence["aa"] = {}
+        result = qualification.qualify(
+            statuses, measurements, manifests, evidence, CONTRACT)
+        self.assertEqual(result["status"], "invalid", result)
+
+    def test_unknown_distribution_status_is_invalid(self) -> None:
+        evidence = _distribution()
+        evidence["status"] = "mystery"
+        statuses = {name: _status(name) for name in qualification.SELECTORS}
+        result = qualification.qualify(
+            statuses,
+            {name: _measurement(name, 0.95) for name in qualification.SELECTORS},
+            {name: _manifest(name) for name in qualification.SELECTORS},
+            evidence, CONTRACT)
+        self.assertEqual(result["status"], "invalid", result)
+
+    def test_unbound_candidate_distribution_is_invalid(self) -> None:
+        evidence = _distribution()
+        evidence["arm_binding"]["candidate"] = "control"
+        statuses = {name: _status(name) for name in qualification.SELECTORS}
+        result = qualification.qualify(
+            statuses,
+            {name: _measurement(name, 0.95) for name in qualification.SELECTORS},
+            {name: _manifest(name) for name in qualification.SELECTORS},
+            evidence, CONTRACT)
+        self.assertEqual(result["status"], "invalid", result)
+
+    def test_distribution_decision_mismatch_is_invalid(self) -> None:
+        evidence = _distribution()
+        evidence["decision"]["top1_agreement"] = 0.0
+        statuses = {name: _status(name) for name in qualification.SELECTORS}
+        result = qualification.qualify(
+            statuses,
+            {name: _measurement(name, 0.95) for name in qualification.SELECTORS},
+            {name: _manifest(name) for name in qualification.SELECTORS},
+            evidence, CONTRACT)
         self.assertEqual(result["status"], "invalid", result)
 
 
