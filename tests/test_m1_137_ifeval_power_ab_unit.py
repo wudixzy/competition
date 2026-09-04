@@ -77,10 +77,14 @@ class M1137IFEvalPowerABTest(unittest.TestCase):
             ),
         )
 
-    def test_layered_contract_digest_is_pinned(self):
-        self.assertEqual(
+    def test_historical_layered_contract_digest_is_pinned_separately(self):
+        self.assertNotEqual(
             M.service._file_sha256(M.LAYERED_CONTRACT),
             M.EXPECTED_LAYERED_CONTRACT_SHA256,
+        )
+        self.assertEqual(
+            M.CURRENT_LAYERED_CONTRACT_SHA256,
+            M.service._file_sha256(M.LAYERED_CONTRACT),
         )
         self.assertEqual(
             M.LAYERED_CONTRACT_SHA256,
