@@ -1,5 +1,30 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-04 框架审计与后续路线图
+
+- 当前成果的主要问题不是缺少候选，而是协议修复、缓存正确性、prefill
+  组件、TP4 端到端和正式 `main` 分处不同证据阶段。`main` 仍为
+  `fb0084fc778e62c26d6a6e108b87dc027ae2ed79`，当前研究分支比它多约 80 个
+  提交，禁止整体合并。
+- `fb0084f` 官方结果仅 631/881 请求成功并发生 timeout，性能分布不能作为当前
+  候选的完整基线。优先从 `main` 建立干净私有集成分支，只合入已经通过实际
+  CoreX overlay 验证的 M1-165/M1-167 协议兼容和隐私安全 4xx 诊断，再通过新
+  平台运行恢复可信请求总体。
+- M1-162 是当前最成熟的增量 prefill 候选：相对 M1-109 快 15%-17%，并已跨
+  实例复现。下一步不是继续造 synthetic kernel，而是完成 M1-176 的真实激活
+  capture/replay、短 TP4、teacher-forced 漂移刻画和能力非劣性验证。
+- 长上下文 decode 仍是 Output TPS 的结构性瓶颈。当前 32K/64K/131K/235K 的
+  64-token TPS 为 10.188/7.024/5.120/3.698；后续只允许最多两种面向生产
+  `q4/kv1/head_dim256/block16/q_len1` 的 direct paged online-softmax 实现。
+- 缓存有效命中已从 49.93% 提高到 62.78%，接近约 65.6% 理论上限。后续重点
+  转为 checkpoint/state-pool 开销和复用收益感知准入，不再追逐表面命中率。
+- M1-38 小批量 MoE 应按分层数值门禁重新审视；GDN 新内核必须等待
+  M1-162 后的全模型 profile。M1-173、M1-174、M1-172、盲目 ixinfer 配置和
+  YAML/tile/阈值扫描保持关闭。
+- 完整审计、阶段退出条件、实验预算和晋升门禁见
+  `docs/research/BI100_FRAMEWORK_REVIEW_AND_ROADMAP_20260904.md`。该文档仅规划
+  私有实验，不授权正式 YAML、默认开关、`main` 或仓库可见性修改。
+
 ## 2026-07-28 M1-93 request swap 缓存命名空间修复
 
 - 私有分支为 `fix/M1-93-prefix-swap-namespace-20260728`。审计确认

@@ -2,6 +2,8 @@
 
 协作交接、远端阻塞点、最新验证结果和下一步建议见
 [`docs/HANDOFF_SUMMARY.md`](docs/HANDOFF_SUMMARY.md)。
+当前框架卡点、候选优先级、阶段退出条件和后续优化路线见
+[`docs/research/BI100_FRAMEWORK_REVIEW_AND_ROADMAP_20260904.md`](docs/research/BI100_FRAMEWORK_REVIEW_AND_ROADMAP_20260904.md)。
 模型能力、缓存正确性和长上下文非回退门禁见
 [`docs/QUALITY_NON_REGRESSION_GATE_20260724.md`](docs/QUALITY_NON_REGRESSION_GATE_20260724.md)。
 三卡环境中的真实权重 4 层诊断 checkpoint、TP1/TP2 服务和 TP4 rank-local
