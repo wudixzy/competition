@@ -12,6 +12,15 @@ import run_attention_operator_tp4_arm as runner
 
 class AttentionOperatorRunnerTests(unittest.TestCase):
 
+    def test_long_workload_configuration_is_validated(self) -> None:
+        self.assertEqual(
+            runner._workload_config("131072,235000", 2),
+            ((131072, 235000), 2))
+        with self.assertRaises(ValueError):
+            runner._workload_config("235000,131072", 2)
+        with self.assertRaises(ValueError):
+            runner._workload_config("262140", 2)
+
     def test_port_probe_checks_listener_not_bindability(self) -> None:
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))

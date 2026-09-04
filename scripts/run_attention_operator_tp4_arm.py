@@ -25,11 +25,28 @@ EXPECTED_MODEL_PATH = Path(
     "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B")
 TARGETS = (16384, 32768, 65536)
 REPETITIONS = 3
+MAX_TOKENS = 8
 
 
 def _identifier(value: str) -> bool:
     return 1 <= len(value) <= 128 and all(
         item.isalnum() or item in "._-" for item in value)
+
+
+def _workload_config(
+    raw_targets: str,
+    repetitions: int,
+) -> tuple[tuple[int, ...], int]:
+    try:
+        targets = tuple(int(value) for value in raw_targets.split(","))
+    except ValueError as exc:
+        raise ValueError("targets must be comma-separated integers") from exc
+    if (not targets or targets != tuple(sorted(set(targets)))
+            or any(target <= MAX_TOKENS
+                   or target + MAX_TOKENS > 262144 for target in targets)
+            or not 1 <= repetitions <= 3):
+        raise ValueError("focused workload configuration is invalid")
+    return targets, repetitions
 
 
 def _api_listener_absent(port: int = 8000) -> bool:
@@ -68,19 +85,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             raise ValueError("run root must be a new absolute path")
         if not _identifier(self.args.pair_id):
             raise ValueError("pair identity is invalid")
-        try:
-            self.targets = tuple(
-                int(value) for value in self.args.targets.split(","))
-        except ValueError as exc:
-            raise ValueError("targets must be comma-separated integers") from exc
-        self.repetitions = self.args.repetitions
-        if (not self.targets
-                or self.targets != tuple(sorted(set(self.targets)))
-                or any(target <= service.MAX_TOKENS
-                       or target + service.MAX_TOKENS > 262144
-                       for target in self.targets)
-                or not 1 <= self.repetitions <= 3):
-            raise ValueError("focused workload configuration is invalid")
+        self.targets, self.repetitions = _workload_config(
+            self.args.targets, self.args.repetitions)
         if not _api_listener_absent():
             raise RuntimeError("API port 8000 has an active listener")
         self.source_revision = _git(self.root, "rev-parse", "HEAD")
