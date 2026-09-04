@@ -119,7 +119,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             env=self.base_environment())
         versions = json.loads(probe.stdout.strip().splitlines()[-1])
         compiler = subprocess.run(
-            ["clang++", "--version"], capture_output=True, text=True)
+            ["/usr/local/corex-3.2.3/bin/clang++", "--version"],
+            capture_output=True, text=True)
         compiler_line = (compiler.stdout or compiler.stderr).splitlines()
         compiler_version = compiler_line[0] if compiler_line else "unavailable"
         self.runtime_identity = (

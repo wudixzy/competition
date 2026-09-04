@@ -11,6 +11,10 @@ import run_attention_operator_tp4_arm as runner
 
 class AttentionOperatorRunnerTests(unittest.TestCase):
 
+    def test_compiler_probe_uses_fixed_corex_toolchain(self) -> None:
+        source = Path(runner.__file__).read_text(encoding="utf-8")
+        self.assertIn('"/usr/local/corex-3.2.3/bin/clang++"', source)
+
     def test_reusable_session_preflight_is_fail_closed(self) -> None:
         value = {
             "schema": "bi100-session-preflight-v1", "version": 1,
