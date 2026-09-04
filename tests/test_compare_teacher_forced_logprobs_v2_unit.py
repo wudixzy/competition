@@ -101,7 +101,7 @@ class TeacherForcedV2Tests(unittest.TestCase):
         self.assertEqual(len(result["candidate"]["nll_by_length"]), 4)
         self.assertEqual(result["arm_binding"]["candidate"], "candidate")
 
-    def test_quick_screen_authorizes_control_b_only_without_clear_drift(self) -> None:
+    def test_quick_screen_authorizes_control_b_for_valid_drift(self) -> None:
         passed = comparison.quick_screen(
             _report("control"), _report("candidate"))
         self.assertEqual(passed["status"], "pass", passed)
@@ -114,7 +114,7 @@ class TeacherForcedV2Tests(unittest.TestCase):
                     item["logprob"] -= 0.1
         stopped = comparison.quick_screen(_report("control"), candidate)
         self.assertEqual(stopped["status"], "inconclusive", stopped)
-        self.assertFalse(stopped["control_b_authorized"])
+        self.assertTrue(stopped["control_b_authorized"])
 
     def test_cached_observation_is_invalid(self) -> None:
         candidate = _report("candidate")

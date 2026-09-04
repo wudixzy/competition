@@ -51,6 +51,10 @@ def _arm_paths(root: Path) -> dict[str, Path]:
     }
 
 
+def _control_b_required(quick_status: str) -> bool:
+    return quick_status in {"pass", "inconclusive"}
+
+
 def validate_arm(root: Path, selector: str) -> tuple[list[str], dict[str, Any]]:
     reasons: list[str] = []
     paths = _arm_paths(root)
@@ -197,7 +201,7 @@ def _base_summary(
         "quick_screen": quick,
         "control_b_triggered": control_b_triggered,
         "control_b_trigger_reason": (
-            "control_a_candidate_quick_screen_passed"
+            "control_a_candidate_evidence_valid_drift_requires_aa"
             if control_b_triggered else "quick_screen_did_not_pass"),
         "service_startups": len(arms),
         "teacher_forced_requests": 4 * len(arms),
@@ -217,7 +221,7 @@ def _base_summary(
             "request_reduction_fraction": 216 / 228,
             "old_service_startups": 3,
             "new_service_startups_if_control_b_runs": 3,
-            "adaptive_early_stop_can_avoid_control_b": True,
+            "only_hard_or_invalid_evidence_can_avoid_control_b": True,
         },
         "lifecycle": {
             label: {
@@ -308,7 +312,7 @@ def main() -> int:
         "classification": quick["classification"],
         "control_b_authorized": quick.get("control_b_authorized", False),
     }, sort_keys=True), flush=True)
-    if quick["status"] != "pass":
+    if not _control_b_required(quick["status"]):
         summary = _base_summary(
             args, started, arms, quick, control_b_triggered=False)
         _write(args.run_root / "summary.json", summary)

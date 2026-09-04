@@ -23,6 +23,9 @@ import quality_runtime_contract as runtime_contract
 
 SCHEMA = "bi100-teacher-forced-topk-observation-v1"
 VERSION = 1
+INCREMENTAL_SCHEMA = "bi100-teacher-forced-topk-observation-v2"
+INCREMENTAL_VERSION = 2
+FUSED_VARIANTS = {"m1_109_fp32_qk", "m1_162_fp16_qk"}
 TARGETS = (4096, 32768, 65536, 131072, 235000)
 TOP_K = 5
 POSITIONS_PER_CASE = 64
@@ -117,6 +120,21 @@ def load_attention_runtime_manifest(path: Path, expected: Json) -> Json:
     }
     if not required.issubset(environment):
         raise ValueError("attention runtime environment is incomplete")
+    variant = value.get("fused_variant")
+    extension = value.get("extension_identity")
+    if variant is not None:
+        if (variant not in FUSED_VARIANTS
+                or selector != "1"
+                or environment.get(
+                    "BI100_ATTN_COREX_FUSED_PREFILL_VARIANT") != variant
+                or not isinstance(extension, dict)
+                or extension.get("module_path") != environment.get(
+                    "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION")
+                or extension.get("sha256") != environment.get(
+                    "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256")
+                or extension.get("runtime_loaded_module") != extension.get(
+                    "module_path")):
+            raise ValueError("attention runtime fused variant is invalid")
     return value
 
 
@@ -473,7 +491,10 @@ def main() -> int:
         except (json.JSONDecodeError, OSError, ValueError) as exc:
             parser.error(str(exc))
     environment = contract["environment"]
-    expected_selector = "0" if args.mode == "control" else "1"
+    fused_variant = contract.get("fused_variant")
+    expected_selector = (
+        "1" if fused_variant is not None
+        else "0" if args.mode == "control" else "1")
     if environment.get("BI100_ATTN_COREX_FUSED_PREFILL") != expected_selector:
         parser.error("runtime fused-prefill selector differs")
 
@@ -498,8 +519,8 @@ def main() -> int:
         case.pop("elapsed_s", None)
 
     report = {
-        "schema": SCHEMA,
-        "version": VERSION,
+        "schema": INCREMENTAL_SCHEMA if fused_variant else SCHEMA,
+        "version": INCREMENTAL_VERSION if fused_variant else VERSION,
         "mode": args.mode,
         "source_revision": args.source_revision,
         "runtime_identity": args.runtime_identity,
@@ -525,6 +546,9 @@ def main() -> int:
             "contains_credentials": False,
         },
     }
+    if fused_variant:
+        report["fused_variant"] = fused_variant
+        report["extension_identity"] = contract["extension_identity"]
     _atomic_write(args.out, report)
     return 0
 

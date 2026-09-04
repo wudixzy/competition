@@ -98,6 +98,47 @@ class TeacherForcedTopkApiTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 api.load_attention_runtime_manifest(path, expected)
 
+    def test_incremental_attention_manifest_binds_loaded_variant(self) -> None:
+        expected = {
+            "source_revision": "a" * 40, "runtime_identity": "runtime-1",
+            "instance": "instance-1", "model_path": "/model",
+            "tokenizer_path": "/model", "gpu_count": 4,
+            "tensor_parallel_size": 4, "max_model_len": 262144,
+            "served_model_name": "llm",
+        }
+        path_value = "/tmp/m1_109_fp32_qk.so"
+        value = {
+            "schema": "bi100-attention-operator-runtime-v1", "version": 1,
+            "change_scope": "attention_operator",
+            "workload_mode": "teacher_forced", "dtype": "float16",
+            "block_size": 16, **expected, "command": ["launch_service"],
+            "fused_variant": "m1_109_fp32_qk",
+            "extension_identity": {
+                "module_path": path_value,
+                "runtime_loaded_module": path_value,
+                "sha256": "a" * 64,
+            },
+            "environment": {
+                "BI100_ATTN_COREX_FUSED_PREFILL": "1",
+                "BI100_ATTN_COREX_FUSED_PREFILL_VARIANT": "m1_109_fp32_qk",
+                "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION": path_value,
+                "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256": "a" * 64,
+                "BI100_CACHE_TRACE": "0",
+                "BI100_GDN_CACHE_POLICY": "admission64",
+                "BI100_GDN_RESTORE_MODE": "hybrid64",
+                "BI100_KV_EVICTION_POLICY": "lru",
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "manifest.json"
+            manifest.write_text(json.dumps(value), encoding="utf-8")
+            self.assertEqual(
+                api.load_attention_runtime_manifest(manifest, expected), value)
+            value["extension_identity"]["runtime_loaded_module"] = "/tmp/wrong.so"
+            manifest.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "variant is invalid"):
+                api.load_attention_runtime_manifest(manifest, expected)
+
     def test_fixed_sampler_is_stable_and_in_range(self) -> None:
         for token_count in api.TARGETS:
             first = api.sample_positions(token_count, 64)

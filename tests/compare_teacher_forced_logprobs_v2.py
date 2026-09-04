@@ -152,7 +152,7 @@ def _pair(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
 
 
 def quick_screen(control_a: Any, candidate: Any) -> dict[str, Any]:
-    """Conservative two-arm screen used before paying for control B."""
+    """Validate two arms; valid drift still requires control B calibration."""
     reasons = []
     reasons.extend(_v2_arm_reasons(control_a, "control_a"))
     reasons.extend(_v2_arm_reasons(candidate, "candidate"))
@@ -223,7 +223,7 @@ def quick_screen(control_a: Any, candidate: Any) -> dict[str, Any]:
             "samples": BOOTSTRAP_SAMPLES,
             "seed": BOOTSTRAP_SEED,
         },
-        "control_b_authorized": status == "pass",
+        "control_b_authorized": status in {"pass", "inconclusive"},
     }
 
 

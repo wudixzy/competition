@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -27,6 +28,15 @@ TARGETS = (16384, 32768, 65536)
 REPETITIONS = 3
 MAX_TOKENS = 8
 TEACHER_FORCED_TARGETS = (4096, 16384, 32768, 65536)
+FUSED_VARIANTS = ("m1_109_fp32_qk", "m1_162_fp16_qk")
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _identifier(value: str) -> bool:
@@ -117,6 +127,30 @@ class AttentionOperatorTp4Runner(CaptureRunner):
         self.targets, self.repetitions = _workload_config(
             self.args.targets, self.args.repetitions)
         self.workload_mode = getattr(self.args, "workload", "performance")
+        self.fused_variant = getattr(self.args, "fused_variant", None)
+        extension_path = getattr(self.args, "extension_path", None)
+        extension_sha256 = getattr(self.args, "extension_sha256", None)
+        if self.fused_variant is None:
+            if extension_path is not None or extension_sha256 is not None:
+                raise ValueError(
+                    "extension identity requires an explicit fused variant")
+            self.extension_path = None
+            self.extension_sha256 = None
+        else:
+            if (self.workload_mode != "teacher_forced"
+                    or extension_path is None
+                    or not extension_path.is_absolute()
+                    or not extension_path.is_file()
+                    or not extension_path.is_relative_to(Path("/tmp"))
+                    or not isinstance(extension_sha256, str)
+                    or len(extension_sha256) != 64
+                    or any(character not in "0123456789abcdef"
+                           for character in extension_sha256)
+                    or _sha256(extension_path) != extension_sha256):
+                raise ValueError(
+                    "explicit fused variant extension identity is invalid")
+            self.extension_path = extension_path.resolve()
+            self.extension_sha256 = extension_sha256
         if (self.workload_mode == "teacher_forced"
                 and (self.targets != TEACHER_FORCED_TARGETS
                      or self.repetitions != 1)):
@@ -130,6 +164,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             self.root, "status", "--short", "--untracked-files=all") or "clean"
         self.run_id = (
             f"attention-tp4-{self.workload_mode}-{self.args.selector}-"
+            f"{self.fused_variant or 'legacy'}-"
             f"{self.source_revision[:10]}")
         if (self.model_path != EXPECTED_MODEL_PATH
                 or not self.model_path.is_dir()):
@@ -169,17 +204,22 @@ class AttentionOperatorTp4Runner(CaptureRunner):
                            and left.read_bytes() == right.read_bytes()
                            for left, right in pairs)):
             raise RuntimeError("runtime overlay differs from experiment source")
-        probe = subprocess.run([
-            sys.executable, "-c",
+        probe_source = (
             "import json,sys,torch,vllm,transformers;"
-            "import vllm.corex_fused_paged_prefill as ext;"
+            "import vllm.attention.ops.paged_attn as pa;"
+            "ext=pa._corex_fused_paged_prefill;"
             "print(json.dumps({'python':sys.version.split()[0],"
             "'torch':torch.__version__,'vllm':vllm.__version__,"
             "'transformers':transformers.__version__,"
-            "'candidate_module':ext.__file__}))",
+            "'fused_variant':pa._FUSED_PREFILL_VARIANT,"
+            "'extension_module':getattr(ext,'__file__',None)}))"
+        )
+        probe = subprocess.run([
+            sys.executable, "-c",
+            probe_source,
         ], check=False, capture_output=True, text=True,
             cwd=self.run_root / "runtime-workdir",
-            env=self.base_environment())
+            env=self.service_environment())
         (self.run_root / "runtime_probe.stdout").write_text(
             probe.stdout, encoding="utf-8")
         (self.run_root / "runtime_probe.stderr").write_text(
@@ -188,6 +228,14 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             raise RuntimeError(
                 f"runtime import probe failed with rc={probe.returncode}")
         versions = json.loads(probe.stdout.strip().splitlines()[-1])
+        expected_variant = self.fused_variant or "default"
+        expected_module = (str(self.extension_path)
+                           if self.extension_path is not None else None)
+        if (versions.get("fused_variant") != expected_variant
+                or (expected_module is not None
+                    and Path(versions.get("extension_module", "")).resolve()
+                    != self.extension_path)):
+            raise RuntimeError("runtime loaded fused variant identity differs")
         compiler = subprocess.run(
             ["/usr/local/corex-3.2.3/bin/clang++", "--version"],
             capture_output=True, text=True)
@@ -206,6 +254,9 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "runtime_install_source_revision": install_revision,
             "runtime_identity": self.runtime_identity,
             "versions": versions,
+            "fused_variant": expected_variant,
+            "extension_module": versions.get("extension_module"),
+            "extension_sha256": self.extension_sha256,
             "compiler": compiler_version,
             "relevant_overlay_files_byte_equal": True,
             "tree_hash_used": False,
@@ -213,6 +264,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
         })
 
     def service_environment(self) -> dict[str, str]:
+        fused_variant = getattr(self, "fused_variant", None)
         environment = self.base_environment()
         environment.update({
             "BI100_RUNTIME_SITE_PACKAGES": str(self.runtime_site),
@@ -234,7 +286,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "BI100_BLOCK_MAJOR_CPU_KV": "0",
             "BI100_CACHE_TRACE": "0",
             "BI100_ATTN_COREX_FUSED_PREFILL": (
-                "1" if self.args.selector == "candidate" else "0"),
+                "1" if fused_variant is not None
+                or self.args.selector == "candidate" else "0"),
             "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW": "0",
             "BI100_ATTN_CAPTURE_REPLAY": "0",
             "BI100_PROFILE": "0",
@@ -243,8 +296,20 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "BI100_GDN_ALLOW_NAN_ZERO": "0",
             "BI100_GDN_FINITE_CHECK": "0",
         })
-        environment.pop("BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION", None)
-        environment.pop("BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256", None)
+        if fused_variant is None:
+            environment.pop(
+                "BI100_ATTN_COREX_FUSED_PREFILL_VARIANT", None)
+            environment.pop(
+                "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION", None)
+            environment.pop(
+                "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256", None)
+        else:
+            environment["BI100_ATTN_COREX_FUSED_PREFILL_VARIANT"] = (
+                fused_variant)
+            environment["BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION"] = str(
+                self.extension_path)
+            environment["BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256"] = (
+                self.extension_sha256)
         return environment
 
     def write_runtime_manifest(self) -> None:
@@ -257,6 +322,9 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "BI100_HYBRID_KV_ACCOUNTING", "BI100_CPU_KV_OFFLOAD",
             "BI100_BLOCK_MAJOR_CPU_KV", "BI100_CACHE_TRACE",
             "BI100_ATTN_COREX_FUSED_PREFILL",
+            "BI100_ATTN_COREX_FUSED_PREFILL_VARIANT",
+            "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION",
+            "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256",
             "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW",
             "BI100_ATTN_CAPTURE_REPLAY", "BI100_GDN_ALLOW_NAN_ZERO",
             "BI100_GDN_FINITE_CHECK",
@@ -294,11 +362,19 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "block_size": 16,
             "served_model_name": "llm",
             "command": command,
-            "environment": {name: environment[name] for name in relevant_names},
+            "environment": {name: environment[name] for name in relevant_names
+                            if name in environment},
+            "fused_variant": self.fused_variant,
+            "extension_identity": ({
+                "module_path": str(self.extension_path),
+                "sha256": self.extension_sha256,
+                "runtime_loaded_module": self.runtime_versions[
+                    "extension_module"],
+            } if self.fused_variant is not None else None),
             "candidate_build_provenance": {
-                "module_path": self.runtime_versions["candidate_module"],
+                "module_path": self.runtime_versions["extension_module"],
                 "compiler": self.compiler_version,
-                "sha256_used": False,
+                "sha256_used": self.extension_sha256 is not None,
             },
         })
 
@@ -352,9 +428,15 @@ class AttentionOperatorTp4Runner(CaptureRunner):
         log = (self.run_root / "server.log").read_text(
             encoding="utf-8", errors="replace")
         count = log.count("path=corex_split4")
-        if self.args.selector == "candidate" and count <= 0:
+        variant_count = (log.count(
+            f"path=corex_split4 variant={self.fused_variant}")
+            if self.fused_variant is not None else count)
+        if self.fused_variant is not None:
+            if count <= 0 or count != variant_count:
+                raise RuntimeError("fused-prefill variant dispatch is absent")
+        elif self.args.selector == "candidate" and count <= 0:
             raise RuntimeError("candidate dispatch marker is absent")
-        if self.args.selector == "control" and count != 0:
+        elif self.args.selector == "control" and count != 0:
             raise RuntimeError("control unexpectedly dispatched candidate")
         self.dispatch_count = count
         (self.run_root / "dispatch_count.txt").write_text(
@@ -431,6 +513,10 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "instance": self.args.instance,
             "model_path": str(self.model_path),
             "selector": self.args.selector,
+            "fused_variant": self.fused_variant,
+            "extension_path": (str(self.extension_path)
+                               if self.extension_path is not None else None),
+            "extension_sha256": self.extension_sha256,
             "workload_id": self.args.pair_id,
             "session_preflight_id": self.session_preflight_id,
             "targets": list(self.targets),
@@ -501,6 +587,9 @@ def main() -> int:
     parser.add_argument("--repetitions", type=int, default=REPETITIONS)
     parser.add_argument("--workload", choices=("performance", "teacher_forced"),
                         default="performance")
+    parser.add_argument("--fused-variant", choices=FUSED_VARIANTS)
+    parser.add_argument("--extension-path", type=Path)
+    parser.add_argument("--extension-sha256")
     args = parser.parse_args()
     args.profile = "attention_operator"
     args.contexts = ""

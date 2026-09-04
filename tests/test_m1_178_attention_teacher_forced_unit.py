@@ -61,6 +61,12 @@ def _arm(root: Path, selector: str) -> None:
 
 class M1178RunnerTests(unittest.TestCase):
 
+    def test_valid_drift_requires_control_b_but_hard_error_stops(self) -> None:
+        self.assertTrue(runner._control_b_required("pass"))
+        self.assertTrue(runner._control_b_required("inconclusive"))
+        self.assertFalse(runner._control_b_required("invalid"))
+        self.assertFalse(runner._control_b_required("fail"))
+
     def test_valid_arm_and_cross_arm_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -109,6 +109,34 @@ class AttentionOperatorRunnerTests(unittest.TestCase):
         self.assertEqual(
             environment["BI100_ATTN_COREX_FUSED_PREFILL"], "1")
 
+    def test_incremental_variants_keep_fused_on_and_bind_extension(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        environments = []
+        for selector, variant in (("control", "m1_109_fp32_qk"),
+                                  ("candidate", "m1_162_fp16_qk")):
+            value = runner.AttentionOperatorTp4Runner.__new__(
+                runner.AttentionOperatorTp4Runner)
+            value.root = root
+            value.runtime_site = root
+            value.runtime_install = root / "README.md"
+            value.run_root = Path("/tmp/attention-runner-unit")
+            value.model_path = runner.EXPECTED_MODEL_PATH
+            value.args = SimpleNamespace(
+                selector=selector, workload="teacher_forced")
+            value.fused_variant = variant
+            value.extension_path = Path(f"/tmp/{variant}.so")
+            value.extension_sha256 = "a" * 64
+            environments.append(value.service_environment())
+        for environment, variant in zip(
+                environments, runner.FUSED_VARIANTS):
+            self.assertEqual(
+                environment["BI100_ATTN_COREX_FUSED_PREFILL"], "1")
+            self.assertEqual(environment[
+                "BI100_ATTN_COREX_FUSED_PREFILL_VARIANT"], variant)
+            self.assertEqual(environment[
+                "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256"],
+                "a" * 64)
+
 
 if __name__ == "__main__":
     unittest.main()

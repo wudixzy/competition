@@ -70,6 +70,11 @@ def _env_choice(name: str, default: str, choices: Tuple[str, ...]) -> str:
     return value
 
 
+_FUSED_PREFILL_VARIANT = _env_choice(
+    "BI100_ATTN_COREX_FUSED_PREFILL_VARIANT",
+    "default",
+    ("default", "m1_109_fp32_qk", "m1_162_fp16_qk"),
+)
 _FUSED_PREFILL_SHADOW = env_bool(
     "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW", False)
 _FUSED_PREFILL_SHADOW_MAX_CALLS_PER_CONTEXT = env_int(
@@ -2403,13 +2408,16 @@ class PagedAttention:
                     raise RuntimeError(
                         "corex fused paged-prefill failed the real-activation "
                         "shadow-reference numerical gate")
-            log_key = "corex_split4"
+            log_key = f"corex_split4:{_FUSED_PREFILL_VARIANT}"
             if log_key not in _PREFIX_DISPATCH_LOGGED:
                 print(
                     "[BI100 PAGED_ATTN] prefix_dispatch "
                     f"pid={os.getpid()} rank={os.environ.get('RANK', '?')} "
                     f"local_rank={os.environ.get('LOCAL_RANK', '?')} "
-                    f"path={log_key} context_len={block_context_len} "
+                    "path=corex_split4 "
+                    f"variant={_FUSED_PREFILL_VARIANT} "
+                    f"module={getattr(_corex_fused_paged_prefill, '__file__', '?')} "
+                    f"context_len={block_context_len} "
                     f"query_len={q_len} required_blocks={required_blocks}",
                     file=sys.stderr,
                     flush=True,
