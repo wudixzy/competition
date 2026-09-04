@@ -232,9 +232,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "BI100_HYBRID_KV_ACCOUNTING": "full_attention",
             "BI100_CPU_KV_OFFLOAD": "0",
             "BI100_BLOCK_MAJOR_CPU_KV": "0",
-            "BI100_CACHE_TRACE": (
-                "1" if getattr(self.args, "workload", "performance")
-                == "teacher_forced" else "0"),
+            "BI100_CACHE_TRACE": "0",
             "BI100_ATTN_COREX_FUSED_PREFILL": (
                 "1" if self.args.selector == "candidate" else "0"),
             "BI100_ATTN_COREX_FUSED_PREFILL_SHADOW": "0",

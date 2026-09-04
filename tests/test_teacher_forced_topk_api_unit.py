@@ -82,7 +82,7 @@ class TeacherForcedTopkApiTests(unittest.TestCase):
             "command": ["launch_service"],
             "environment": {
                 "BI100_ATTN_COREX_FUSED_PREFILL": "1",
-                "BI100_CACHE_TRACE": "1",
+                "BI100_CACHE_TRACE": "0",
                 "BI100_GDN_CACHE_POLICY": "admission64",
                 "BI100_GDN_RESTORE_MODE": "hybrid64",
                 "BI100_KV_EVICTION_POLICY": "lru",

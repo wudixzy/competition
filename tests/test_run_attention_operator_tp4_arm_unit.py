@@ -93,7 +93,7 @@ class AttentionOperatorRunnerTests(unittest.TestCase):
         self.assertNotIn(
             "BI100_ATTN_COREX_FUSED_PREFILL_EXTENSION_SHA256", values[0])
 
-    def test_teacher_forced_mode_enables_only_cache_observation(self) -> None:
+    def test_teacher_forced_mode_keeps_verbose_cache_trace_disabled(self) -> None:
         root = Path(__file__).resolve().parents[1]
         value = runner.AttentionOperatorTp4Runner.__new__(
             runner.AttentionOperatorTp4Runner)
@@ -105,7 +105,7 @@ class AttentionOperatorRunnerTests(unittest.TestCase):
         value.args = SimpleNamespace(
             selector="candidate", workload="teacher_forced")
         environment = value.service_environment()
-        self.assertEqual(environment["BI100_CACHE_TRACE"], "1")
+        self.assertEqual(environment["BI100_CACHE_TRACE"], "0")
         self.assertEqual(
             environment["BI100_ATTN_COREX_FUSED_PREFILL"], "1")
 

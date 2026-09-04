@@ -41,7 +41,7 @@ def _arm(root: Path, selector: str) -> None:
         "environment": {
             "BI100_ATTN_COREX_FUSED_PREFILL": (
                 "1" if selector == "candidate" else "0"),
-            "BI100_CACHE_TRACE": "1", "OTHER": "same",
+            "BI100_CACHE_TRACE": "0", "OTHER": "same",
         },
     }
     values = {

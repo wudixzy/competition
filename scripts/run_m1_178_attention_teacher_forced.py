@@ -100,7 +100,7 @@ def validate_arm(root: Path, selector: str) -> tuple[list[str], dict[str, Any]]:
             or not isinstance(environment, dict)
             or environment.get("BI100_ATTN_COREX_FUSED_PREFILL")
             != ("1" if selector == "candidate" else "0")
-            or environment.get("BI100_CACHE_TRACE") != "1"):
+            or environment.get("BI100_CACHE_TRACE") != "0"):
         reasons.append(f"{selector}: runtime/selector manifest failed")
     if (fatal.get("qualified") is not True
             or any((fatal.get("category_counts") or {}).values())):
