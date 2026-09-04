@@ -142,6 +142,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "'transformers':transformers.__version__,"
             "'candidate_module':ext.__file__}))",
         ], check=False, capture_output=True, text=True,
+            cwd=self.run_root / "runtime-workdir",
             env=self.base_environment())
         (self.run_root / "runtime_probe.stdout").write_text(
             probe.stdout, encoding="utf-8")

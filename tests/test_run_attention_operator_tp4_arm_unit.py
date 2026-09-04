@@ -34,6 +34,7 @@ class AttentionOperatorRunnerTests(unittest.TestCase):
         self.assertIn('"/usr/local/corex-3.2.3/bin/clang++"', source)
         self.assertIn('"runtime_probe.stderr"', source)
         self.assertIn("if probe.returncode:", source)
+        self.assertIn('cwd=self.run_root / "runtime-workdir"', source)
 
     def test_reusable_session_preflight_is_fail_closed(self) -> None:
         value = {

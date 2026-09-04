@@ -464,6 +464,7 @@ class CaptureRunner:
             ],
             stdout=self.server_log,
             stderr=subprocess.STDOUT,
+            cwd=self.run_root / "runtime-workdir",
             env=self.service_environment(),
         )
         self.process_starttime = _read_starttime(self.process.pid)
