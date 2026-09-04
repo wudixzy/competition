@@ -56,6 +56,34 @@ def _api_listener_absent(port: int = 8000) -> bool:
         return connection.connect_ex(("127.0.0.1", port)) != 0
 
 
+def _api_port_bindable(port: int = 8000) -> bool:
+    try:
+        with socket.socket() as probe:
+            probe.bind(("", port))
+        return True
+    except OSError:
+        return False
+
+
+def _wait_api_port_reusable(
+    port: int = 8000,
+    *,
+    timeout_s: float = 120.0,
+    interval_s: float = 2.0,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> bool:
+    deadline = monotonic() + timeout_s
+    while True:
+        if not _api_listener_absent(port):
+            raise RuntimeError("API port 8000 has an active listener")
+        if _api_port_bindable(port):
+            return True
+        if monotonic() >= deadline:
+            return False
+        sleep(interval_s)
+
+
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(root), *args], check=True,
@@ -94,8 +122,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
                      or self.repetitions != 1)):
             raise ValueError(
                 "teacher-forced workload requires fixed targets and one request")
-        if not _api_listener_absent():
-            raise RuntimeError("API port 8000 has an active listener")
+        if not _wait_api_port_reusable():
+            raise RuntimeError("closed API socket did not become reusable")
         self.source_revision = _git(self.root, "rev-parse", "HEAD")
         self.source_branch = _git(self.root, "branch", "--show-current")
         self.source_dirty_summary = _git(

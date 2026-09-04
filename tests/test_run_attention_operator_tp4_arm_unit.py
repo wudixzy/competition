@@ -6,6 +6,7 @@ import socket
 from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest import mock
 
 import run_attention_operator_tp4_arm as runner
 
@@ -26,8 +27,22 @@ class AttentionOperatorRunnerTests(unittest.TestCase):
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
             self.assertTrue(runner._api_listener_absent(port))
+            self.assertFalse(runner._api_port_bindable(port))
             listener.listen()
             self.assertFalse(runner._api_listener_absent(port))
+
+    def test_closed_socket_reuse_is_waited_not_failed_open(self) -> None:
+        with (
+            mock.patch.object(runner, "_api_listener_absent", return_value=True),
+            mock.patch.object(
+                runner, "_api_port_bindable", side_effect=[False, False, True]),
+        ):
+            sleeps = []
+            self.assertTrue(runner._wait_api_port_reusable(
+                timeout_s=10, interval_s=2,
+                monotonic=mock.Mock(side_effect=[0, 1, 2]),
+                sleep=sleeps.append))
+            self.assertEqual(sleeps, [2, 2])
 
     def test_compiler_probe_uses_fixed_corex_toolchain(self) -> None:
         source = Path(runner.__file__).read_text(encoding="utf-8")
