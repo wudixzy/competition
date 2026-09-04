@@ -57,6 +57,7 @@ def _arm_reasons(
     reasons = []
     if not isinstance(status, dict) or not isinstance(manifest, dict):
         return [f"{selector}: runner evidence is malformed"]
+    gates = status.get("gates")
     if (status.get("schema") != "bi100-attention-operator-tp4-arm-v1"
             or status.get("version") != 1
             or status.get("change_scope") != "attention_operator"
@@ -72,7 +73,8 @@ def _arm_reasons(
             or status.get("service_startups") != 1
             or status.get("gpu_count") != 4
             or status.get("tensor_parallel_size") != 4
-            or any(value != 0 for value in (status.get("gates") or {}).values())
+            or not isinstance(gates, dict)
+            or any(value != 0 for value in gates.values())
             or status.get("dispatch_count") is None
             or (selector == "candidate" and status["dispatch_count"] <= 0)
             or (selector == "control" and status["dispatch_count"] != 0)):
@@ -172,6 +174,13 @@ def qualify(
         }
     gains = [control[item]["ttft_s"] / candidate[item]["ttft_s"] - 1.0
              for item in identities]
+    first_token_matches = sum(
+        control[item]["first_token_sha256"]
+        == candidate[item]["first_token_sha256"]
+        for item in identities)
+    output_matches = sum(
+        control[item]["output_sha256"] == candidate[item]["output_sha256"]
+        for item in identities)
     point = statistics.mean(gains)
     lower = _bootstrap_lower(gains)
     buckets = []
@@ -233,7 +242,10 @@ def qualify(
             "bootstrap_seed": BOOTSTRAP_SEED,
         },
         "distribution": {"status": "not_run",
-                         "reason": "run only after focused performance survives"},
+                         "reason": "run only after focused performance survives",
+                         "first_token_match_count": first_token_matches,
+                         "full_output_match_count": output_matches,
+                         "paired_request_count": len(identities)},
         "capability": {"status": "not_run",
                        "reason": "outside attention-operator development scope"},
         "reasons": decision_reasons,
@@ -265,7 +277,7 @@ def main() -> int:
             {name: _load(root / "measurement.json")
              for name, root in roots.items()},
         )
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
         result = {
             "schema": SCHEMA, "version": 1, "status": "invalid",
             "classification": "invalid_evidence", "reasons": [str(exc)],

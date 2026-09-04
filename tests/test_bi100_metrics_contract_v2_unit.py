@@ -219,6 +219,10 @@ class BI100MetricsContractV2Tests(unittest.TestCase):
         evidence["timing_samples"] = [float("nan")]
         self.assertEqual(metrics.classify_validity(
             evidence, LAYERED_V2)["status"], "invalid")
+        evidence["timing_samples"] = [1.0]
+        evidence["runtime_versions"] = True
+        self.assertEqual(metrics.classify_validity(
+            evidence, LAYERED_V2)["status"], "invalid")
 
     def test_performance_two_and_three_percent_boundaries(self) -> None:
         self.assertEqual(metrics.classify_performance(

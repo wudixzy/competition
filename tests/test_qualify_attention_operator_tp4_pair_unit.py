@@ -88,6 +88,12 @@ class AttentionOperatorPairTests(unittest.TestCase):
         result = qualifier.qualify(statuses, manifests, measurements)
         self.assertEqual(result["status"], "fail", result)
 
+    def test_malformed_gate_evidence_is_invalid_without_raising(self) -> None:
+        statuses, manifests, measurements = inputs(0.94)
+        statuses["control"]["gates"] = []
+        result = qualifier.qualify(statuses, manifests, measurements)
+        self.assertEqual(result["status"], "invalid", result)
+
     def test_cross_arm_workload_or_runtime_drift_is_invalid(self) -> None:
         statuses, manifests, measurements = inputs(0.94)
         manifests["candidate"]["command"].append("--different")
@@ -101,6 +107,18 @@ class AttentionOperatorPairTests(unittest.TestCase):
             result["performance"]["estimator"],
             "mean_of_nine_paired_control_over_candidate_ttft_gains")
         self.assertNotIn("control_b", str(result))
+
+    def test_output_drift_is_retained_as_distribution_diagnostic(self) -> None:
+        statuses, manifests, measurements = inputs(0.94)
+        measurements["candidate"]["cases"][0]["response"][
+            "first_token_sha256"] = "c" * 64
+        measurements["candidate"]["cases"][1]["response"][
+            "output_sha256"] = "d" * 64
+        result = qualifier.qualify(statuses, manifests, measurements)
+        self.assertEqual(result["status"], "pass", result)
+        self.assertEqual(result["distribution"]["first_token_match_count"], 8)
+        self.assertEqual(result["distribution"]["full_output_match_count"], 8)
+        self.assertEqual(result["distribution"]["paired_request_count"], 9)
 
 
 if __name__ == "__main__":

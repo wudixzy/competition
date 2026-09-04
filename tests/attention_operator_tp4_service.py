@@ -15,7 +15,8 @@ from bench_fused_prefill_service import _post_stream, stream_timing_metrics
 from long_context_api import build_exact_prompt
 
 
-SCHEMA = "bi100-attention-operator-tp4-service-v1"
+SCHEMA = "bi100-attention-operator-tp4-service-v2"
+VERSION = 2
 TARGETS = (16384, 32768, 65536)
 REPETITIONS = 3
 MAX_TOKENS = 8
@@ -53,8 +54,11 @@ def summarize_response(raw: dict[str, Any]) -> dict[str, Any]:
         "tpot_s": timing["tpot_s"],
         "output_tps": timing["output_tps"],
         "prompt_tokens": raw["prompt_tokens"],
+        "cached_tokens": raw["cached_tokens"],
         "completion_tokens": completion,
         "finish_reason": raw["finish_reason"],
+        "first_token_sha256": raw["first_token_sha256"],
+        "output_sha256": raw["output_sha256"],
     }
 
 
@@ -68,7 +72,9 @@ def response_reasons(value: Any, target: int) -> list[str]:
         if (not isinstance(item, (int, float)) or isinstance(item, bool)
                 or not math.isfinite(float(item)) or float(item) < 0.0):
             reasons.append(f"{name} is not finite and non-negative")
-    if value.get("ttft_s", 0.0) <= 0.0:
+    ttft = value.get("ttft_s")
+    if (isinstance(ttft, (int, float)) and not isinstance(ttft, bool)
+            and math.isfinite(float(ttft)) and float(ttft) <= 0.0):
         reasons.append("TTFT is not positive")
     if (value.get("ok") is not True or value.get("http_status") != 200
             or value.get("sse_complete") is not True
@@ -76,10 +82,20 @@ def response_reasons(value: Any, target: int) -> list[str]:
         reasons.append("HTTP/SSE/usage contract differs")
     if value.get("prompt_tokens") != target:
         reasons.append("prompt token count differs")
+    cached_tokens = value.get("cached_tokens")
+    if (not isinstance(cached_tokens, int) or isinstance(cached_tokens, bool)
+            or cached_tokens != 0):
+        reasons.append("request is not a zero-cache cold sample")
     if value.get("completion_tokens") != MAX_TOKENS:
         reasons.append("completion token count differs")
     if value.get("finish_reason") != "length":
         reasons.append("finish reason differs")
+    for name in ("first_token_sha256", "output_sha256"):
+        digest = value.get(name)
+        if (not isinstance(digest, str) or len(digest) != 64
+                or any(character not in "0123456789abcdef"
+                       for character in digest)):
+            reasons.append(f"{name} is not a SHA-256 digest")
     return reasons
 
 
@@ -88,7 +104,7 @@ def evaluate(report: Any) -> dict[str, Any]:
         return {"qualified": False, "reasons": ["report is not an object"]}
     cases = report.get("cases")
     expected = len(TARGETS) * REPETITIONS
-    if (report.get("schema") != SCHEMA or report.get("version") != 1
+    if (report.get("schema") != SCHEMA or report.get("version") != VERSION
             or report.get("change_scope") != "attention_operator"
             or report.get("targets") != list(TARGETS)
             or report.get("repetitions") != REPETITIONS
@@ -140,7 +156,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     ttft = [case["response"]["ttft_s"] for case in cases]
     report = {
         "schema": SCHEMA,
-        "version": 1,
+        "version": VERSION,
         "change_scope": "attention_operator",
         "selector": args.selector,
         "run_id": args.run_id,

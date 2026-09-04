@@ -54,13 +54,11 @@ def _signed_number(value: Any, name: str) -> float:
 
 
 def _nonempty_identity(value: Any) -> bool:
-    if isinstance(value, bool):
-        return True
     if isinstance(value, str):
         return bool(value.strip())
     if isinstance(value, (list, tuple, dict)):
         return bool(value)
-    return value is not None
+    return False
 
 
 def contract_identity(contract: Any, family: str) -> tuple[str, int]:

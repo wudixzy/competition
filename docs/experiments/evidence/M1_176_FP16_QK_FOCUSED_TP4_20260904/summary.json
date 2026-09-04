@@ -81,6 +81,14 @@
     "all_buckets_stable": true,
     "extra_control_or_reversed_pair_used": false
   },
+  "measurement_limitations": {
+    "baseline_comparison": "fused_off_production_baseline_to_combined_m1_162_path",
+    "incremental_m1_109_to_m1_162_gain_claimed": false,
+    "unique_deterministic_prompt_per_repetition": true,
+    "cached_tokens_retained": false,
+    "strict_zero_cache_claimed": false,
+    "output_digests_retained": false
+  },
   "reporting_metrics": {
     "ttft_definition": "request_start_to_first_output_token",
     "tpot_definition": "first_to_last_output_time_divided_by_completion_tokens_minus_one",

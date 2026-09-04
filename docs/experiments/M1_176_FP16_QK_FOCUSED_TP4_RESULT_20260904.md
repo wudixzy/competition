@@ -7,6 +7,11 @@ control and one candidate service used the fixed full model, the same runtime,
 launch arguments, request semantics and nine-request cold population. Candidate
 dispatch was observed four times; control dispatch was zero.
 
+The control disabled the complete fused-prefill selector. The measured gain is
+therefore the fused-off production baseline to the combined M1-162 path; it is
+not an incremental M1-109-to-M1-162 service gain. The separate operator screen
+remains the evidence for that incremental comparison.
+
 Across nine paired TTFT samples, mean `control / candidate - 1` gain was
 35.56%, with a one-sided 95% bootstrap lower bound of 30.66%. The 16K, 32K and
 64K buckets were all stable. This clears the frozen 5% continuation rule and
@@ -84,6 +89,10 @@ children were reaped.
 
 All 18 requests returned HTTP 200 with complete SSE, usage,
 `finish_reason=length`, exact prompt count and eight completion tokens.
+Each repetition used a different deterministic filler namespace, but this v1
+measurement did not retain `cached_tokens`. Treat it as a cache-isolated prompt
+screen rather than proof that every request reported exactly zero cached
+tokens. The v2 harness now records and requires `cached_tokens == 0`.
 
 | Prompt | Control raw TTFT s | Candidate raw TTFT s | Mean paired gain |
 | ---: | --- | --- | ---: |

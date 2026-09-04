@@ -12,8 +12,11 @@ def _response(target: int, ttft: float = 1.0) -> dict:
         "usage_complete": True, "elapsed_s": ttft + 0.7,
         "ttft_s": ttft, "last_output_s": ttft + 0.7,
         "decode_window_s": 0.7, "tpot_s": 0.1, "output_tps": 10.0,
-        "prompt_tokens": target, "completion_tokens": service.MAX_TOKENS,
+        "prompt_tokens": target, "cached_tokens": 0,
+        "completion_tokens": service.MAX_TOKENS,
         "finish_reason": "length",
+        "first_token_sha256": "a" * 64,
+        "output_sha256": "b" * 64,
     }
 
 
@@ -25,7 +28,7 @@ def report(selector: str = "control", ttft: float = 1.0) -> dict:
         for repetition in range(service.REPETITIONS)
     ]
     return {
-        "schema": service.SCHEMA, "version": 1,
+        "schema": service.SCHEMA, "version": service.VERSION,
         "change_scope": "attention_operator", "selector": selector,
         "run_id": f"run-{selector}", "workload_id": "pair-1",
         "targets": list(service.TARGETS),
@@ -58,16 +61,36 @@ class AttentionOperatorServiceTests(unittest.TestCase):
         self.assertTrue(any("HTTP/SSE/usage" in item for item in result["reasons"]))
         self.assertTrue(any("ttft_s" in item for item in result["reasons"]))
 
+    def test_malformed_timing_is_rejected_without_raising(self) -> None:
+        value = report()
+        value["cases"][0]["response"]["ttft_s"] = "not-a-number"
+        result = service.evaluate(value)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any("ttft_s" in item for item in result["reasons"]))
+
     def test_summary_defines_first_to_last_token_metrics(self) -> None:
         raw = {
             "ok": True, "elapsed_s": 3.0, "ttft_s": 2.0,
             "last_output_s": 2.7, "completion_tokens": 8,
-            "prompt_tokens": 16, "finish_reason": "length",
+            "prompt_tokens": 16, "cached_tokens": 0,
+            "finish_reason": "length",
+            "first_token_sha256": "a" * 64,
+            "output_sha256": "b" * 64,
         }
         value = service.summarize_response(copy.deepcopy(raw))
         self.assertEqual(value["ttft_s"], 2.0)
         self.assertAlmostEqual(value["tpot_s"], 0.1)
         self.assertAlmostEqual(value["output_tps"], 10.0)
+
+    def test_cached_or_unidentified_output_is_rejected(self) -> None:
+        value = report()
+        value["cases"][0]["response"]["cached_tokens"] = 16
+        value["cases"][1]["response"]["first_token_sha256"] = "missing"
+        result = service.evaluate(value)
+        self.assertFalse(result["qualified"])
+        self.assertTrue(any("zero-cache" in item for item in result["reasons"]))
+        self.assertTrue(any("first_token_sha256" in item
+                            for item in result["reasons"]))
 
 
 if __name__ == "__main__":
