@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -16,7 +17,7 @@ from typing import Any, Callable
 
 from record_experiment_timeline import summarize
 from run_m1_140_activation_capture import (
-    CaptureRunner, _atomic_json, _health, _port_free, _run_to_files,
+    CaptureRunner, _atomic_json, _health, _run_to_files,
 )
 
 
@@ -29,6 +30,12 @@ REPETITIONS = 3
 def _identifier(value: str) -> bool:
     return 1 <= len(value) <= 128 and all(
         item.isalnum() or item in "._-" for item in value)
+
+
+def _api_listener_absent(port: int = 8000) -> bool:
+    with socket.socket() as connection:
+        connection.settimeout(0.25)
+        return connection.connect_ex(("127.0.0.1", port)) != 0
 
 
 def _git(root: Path, *args: str) -> str:
@@ -61,8 +68,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             raise ValueError("run root must be a new absolute path")
         if not _identifier(self.args.pair_id):
             raise ValueError("pair identity is invalid")
-        if not _port_free():
-            raise RuntimeError("API port 8000 is occupied")
+        if not _api_listener_absent():
+            raise RuntimeError("API port 8000 has an active listener")
         self.source_revision = _git(self.root, "rev-parse", "HEAD")
         self.source_branch = _git(self.root, "branch", "--show-current")
         self.source_dirty_summary = _git(

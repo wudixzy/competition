@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import socket
 from types import SimpleNamespace
 import tempfile
 import unittest
@@ -10,6 +11,14 @@ import run_attention_operator_tp4_arm as runner
 
 
 class AttentionOperatorRunnerTests(unittest.TestCase):
+
+    def test_port_probe_checks_listener_not_bindability(self) -> None:
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+            self.assertTrue(runner._api_listener_absent(port))
+            listener.listen()
+            self.assertFalse(runner._api_listener_absent(port))
 
     def test_compiler_probe_uses_fixed_corex_toolchain(self) -> None:
         source = Path(runner.__file__).read_text(encoding="utf-8")
