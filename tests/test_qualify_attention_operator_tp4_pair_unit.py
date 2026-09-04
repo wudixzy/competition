@@ -4,7 +4,7 @@ import copy
 import unittest
 
 import qualify_attention_operator_tp4_pair as qualifier
-from test_attention_operator_tp4_service_unit import report
+from test_attention_operator_tp4_service_unit import _response, report
 
 
 def status(selector: str) -> dict:
@@ -105,7 +105,7 @@ class AttentionOperatorPairTests(unittest.TestCase):
         result = qualifier.qualify(statuses, manifests, measurements)
         self.assertEqual(
             result["performance"]["estimator"],
-            "mean_of_nine_paired_control_over_candidate_ttft_gains")
+            "mean_of_paired_control_over_candidate_ttft_gains")
         self.assertNotIn("control_b", str(result))
 
     def test_output_drift_is_retained_as_distribution_diagnostic(self) -> None:
@@ -119,6 +119,33 @@ class AttentionOperatorPairTests(unittest.TestCase):
         self.assertEqual(result["distribution"]["first_token_match_count"], 8)
         self.assertEqual(result["distribution"]["full_output_match_count"], 8)
         self.assertEqual(result["distribution"]["paired_request_count"], 9)
+
+    def test_long_profile_uses_four_request_population(self) -> None:
+        targets = (131072, 235000)
+        statuses, manifests, measurements = inputs(0.80)
+        for selector in ("control", "candidate"):
+            statuses[selector]["targets"] = list(targets)
+            statuses[selector]["repetitions"] = 2
+            statuses[selector]["request_population"] = {
+                "expected": 4, "attempted": 4, "completed": 4, "failed": 0}
+            measurements[selector] = report(selector, 1.0 if selector == "control" else 0.8)
+            measurements[selector]["targets"] = list(targets)
+            measurements[selector]["repetitions"] = 2
+            measurements[selector]["expected_requests"] = 4
+            measurements[selector]["attempted_requests"] = 4
+            measurements[selector]["completed_requests"] = 4
+            measurements[selector]["cases"] = [
+                {"target_prompt_tokens": target, "repetition": repetition,
+                 "response": _response(target,
+                    1.0 if selector == "control" else 0.8)}
+                for target in targets for repetition in range(2)
+            ]
+        result = qualifier.qualify(
+            statuses, manifests, measurements,
+            targets=targets, repetitions=2)
+        self.assertEqual(result["status"], "pass", result)
+        self.assertEqual(result["request_population_per_arm"], 4)
+        self.assertEqual(result["targets"], list(targets))
 
 
 if __name__ == "__main__":

@@ -99,15 +99,20 @@ def response_reasons(value: Any, target: int) -> list[str]:
     return reasons
 
 
-def evaluate(report: Any) -> dict[str, Any]:
+def evaluate(
+    report: Any,
+    *,
+    targets: tuple[int, ...] = TARGETS,
+    repetitions: int = REPETITIONS,
+) -> dict[str, Any]:
     if not isinstance(report, dict):
         return {"qualified": False, "reasons": ["report is not an object"]}
     cases = report.get("cases")
-    expected = len(TARGETS) * REPETITIONS
+    expected = len(targets) * repetitions
     if (report.get("schema") != SCHEMA or report.get("version") != VERSION
             or report.get("change_scope") != "attention_operator"
-            or report.get("targets") != list(TARGETS)
-            or report.get("repetitions") != REPETITIONS
+            or report.get("targets") != list(targets)
+            or report.get("repetitions") != repetitions
             or report.get("max_tokens") != MAX_TOKENS
             or report.get("seed") != SEED
             or report.get("workload_order") != WORKLOAD_ORDER
@@ -120,8 +125,8 @@ def evaluate(report: Any) -> dict[str, Any]:
                 "reasons": ["focused request population is incomplete"]}
     reasons = []
     for index, case in enumerate(cases):
-        target = TARGETS[index // REPETITIONS]
-        repetition = index % REPETITIONS
+        target = targets[index // repetitions]
+        repetition = index % repetitions
         if (not isinstance(case, dict)
                 or case.get("target_prompt_tokens") != target
                 or case.get("repetition") != repetition):
@@ -140,8 +145,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         args.model_path, trust_remote_code=True, local_files_only=True)
     started = time.monotonic()
     cases = []
-    for target in TARGETS:
-        for repetition in range(REPETITIONS):
+    for target in args.targets:
+        for repetition in range(args.repetitions):
             content = build_exact_prompt(
                 tokenizer, target,
                 f"{args.workload_id}-{target}-{repetition}")
@@ -161,12 +166,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "selector": args.selector,
         "run_id": args.run_id,
         "workload_id": args.workload_id,
-        "targets": list(TARGETS),
-        "repetitions": REPETITIONS,
+        "targets": list(args.targets),
+        "repetitions": args.repetitions,
         "max_tokens": MAX_TOKENS,
         "seed": SEED,
         "workload_order": WORKLOAD_ORDER,
-        "expected_requests": len(TARGETS) * REPETITIONS,
+        "expected_requests": len(args.targets) * args.repetitions,
         "attempted_requests": len(cases),
         "completed_requests": len(cases),
         "failed_requests": 0,
@@ -186,7 +191,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "credentials_recorded": False,
         },
     }
-    report["evaluation"] = evaluate(report)
+    report["evaluation"] = evaluate(
+        report, targets=args.targets, repetitions=args.repetitions)
     report["qualified"] = report["evaluation"]["qualified"]
     report["reasons"] = report["evaluation"]["reasons"]
     return report
@@ -201,10 +207,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workload-id", required=True)
     parser.add_argument("--selector", choices=("control", "candidate"),
                         required=True)
+    parser.add_argument("--targets", default=",".join(map(str, TARGETS)))
+    parser.add_argument("--repetitions", type=int, default=REPETITIONS)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     if not math.isfinite(args.timeout_s) or args.timeout_s <= 0:
         parser.error("timeout must be finite and positive")
+    try:
+        args.targets = tuple(int(value) for value in args.targets.split(","))
+    except ValueError:
+        parser.error("targets must be comma-separated integers")
+    if (not args.targets or args.targets != tuple(sorted(set(args.targets)))
+            or any(target <= MAX_TOKENS
+                   or target + MAX_TOKENS > 262144
+                   for target in args.targets)):
+        parser.error("targets must be unique, ascending and fit max_model_len")
+    if not 1 <= args.repetitions <= 3:
+        parser.error("repetitions must be in [1, 3]")
     return args
 
 

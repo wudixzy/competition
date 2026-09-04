@@ -68,6 +68,19 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             raise ValueError("run root must be a new absolute path")
         if not _identifier(self.args.pair_id):
             raise ValueError("pair identity is invalid")
+        try:
+            self.targets = tuple(
+                int(value) for value in self.args.targets.split(","))
+        except ValueError as exc:
+            raise ValueError("targets must be comma-separated integers") from exc
+        self.repetitions = self.args.repetitions
+        if (not self.targets
+                or self.targets != tuple(sorted(set(self.targets)))
+                or any(target <= service.MAX_TOKENS
+                       or target + service.MAX_TOKENS > 262144
+                       for target in self.targets)
+                or not 1 <= self.repetitions <= 3):
+            raise ValueError("focused workload configuration is invalid")
         if not _api_listener_absent():
             raise RuntimeError("API port 8000 has an active listener")
         self.source_revision = _git(self.root, "rev-parse", "HEAD")
@@ -248,6 +261,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "--timeout-s", "1800", "--run-id", self.run_id,
             "--workload-id", self.args.pair_id,
             "--selector", self.args.selector,
+            "--targets", ",".join(map(str, self.targets)),
+            "--repetitions", str(self.repetitions),
             "--out", str(self.run_root / "measurement.json"),
         ], self.run_root / "measurement.stdout",
             self.run_root / "measurement.stderr",
@@ -330,13 +345,13 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "selector": self.args.selector,
             "workload_id": self.args.pair_id,
             "session_preflight_id": self.session_preflight_id,
-            "targets": list(TARGETS),
-            "repetitions": REPETITIONS,
+            "targets": list(self.targets),
+            "repetitions": self.repetitions,
             "service_startups": 1,
             "gpu_count": 4,
             "tensor_parallel_size": 4,
             "request_population": {
-                "expected": 9,
+                "expected": len(self.targets) * self.repetitions,
                 "attempted": measured.get("attempted_requests", 0),
                 "completed": measured.get("completed_requests", 0),
                 "failed": measured.get("failed_requests", 0),
@@ -394,9 +409,10 @@ def main() -> int:
                         required=True)
     parser.add_argument("--pair-id", required=True)
     parser.add_argument("--session-preflight", type=Path, required=True)
+    parser.add_argument("--targets", default=",".join(map(str, TARGETS)))
+    parser.add_argument("--repetitions", type=int, default=REPETITIONS)
     args = parser.parse_args()
     args.profile = "attention_operator"
-    args.targets = ",".join(map(str, TARGETS))
     args.contexts = ""
     args.ordinals = ""
     runner = AttentionOperatorTp4Runner(args)

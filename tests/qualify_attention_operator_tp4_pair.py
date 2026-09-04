@@ -53,6 +53,8 @@ def _arm_reasons(
     status: Any,
     manifest: Any,
     measurement: Any,
+    targets: tuple[int, ...],
+    repetitions: int,
 ) -> list[str]:
     reasons = []
     if not isinstance(status, dict) or not isinstance(manifest, dict):
@@ -66,10 +68,13 @@ def _arm_reasons(
             or status.get("result_status") != "pass"
             or status.get("returncode") != 0
             or status.get("terminal_stage") != "complete"
-            or status.get("targets") != list(service.TARGETS)
-            or status.get("repetitions") != service.REPETITIONS
+            or status.get("targets") != list(targets)
+            or status.get("repetitions") != repetitions
             or status.get("request_population") != {
-                "expected": 9, "attempted": 9, "completed": 9, "failed": 0}
+                "expected": len(targets) * repetitions,
+                "attempted": len(targets) * repetitions,
+                "completed": len(targets) * repetitions,
+                "failed": 0}
             or status.get("service_startups") != 1
             or status.get("gpu_count") != 4
             or status.get("tensor_parallel_size") != 4
@@ -92,7 +97,8 @@ def _arm_reasons(
                 "BI100_ATTN_COREX_FUSED_PREFILL")
             != ("1" if selector == "candidate" else "0")):
         reasons.append(f"{selector}: runtime manifest is invalid")
-    evaluated = service.evaluate(measurement)
+    evaluated = service.evaluate(
+        measurement, targets=targets, repetitions=repetitions)
     if not evaluated["qualified"]:
         reasons.append(f"{selector}: " + "; ".join(evaluated["reasons"]))
     if isinstance(measurement, dict) and measurement.get("selector") != selector:
@@ -104,12 +110,15 @@ def qualify(
     statuses: dict[str, dict[str, Any]],
     manifests: dict[str, dict[str, Any]],
     measurements: dict[str, dict[str, Any]],
+    *,
+    targets: tuple[int, ...] = service.TARGETS,
+    repetitions: int = service.REPETITIONS,
 ) -> dict[str, Any]:
     reasons = []
     for selector in ("control", "candidate"):
         reasons.extend(_arm_reasons(
             selector, statuses.get(selector), manifests.get(selector),
-            measurements.get(selector)))
+            measurements.get(selector), targets, repetitions))
     control_status = statuses.get("control") or {}
     candidate_status = statuses.get("candidate") or {}
     control_manifest = manifests.get("control") or {}
@@ -185,7 +194,7 @@ def qualify(
     lower = _bootstrap_lower(gains)
     buckets = []
     bucket_stable = True
-    for target in service.TARGETS:
+    for target in targets:
         target_ids = [item for item in identities if item[0] == target]
         target_gains = [control[item]["ttft_s"]
                         / candidate[item]["ttft_s"] - 1.0
@@ -226,14 +235,16 @@ def qualify(
         "model_path": control_status["model_path"],
         "workload_id": control_status["workload_id"],
         "session_preflight_id": control_status["session_preflight_id"],
-        "request_population_per_arm": 9,
+        "targets": list(targets),
+        "repetitions": repetitions,
+        "request_population_per_arm": len(targets) * repetitions,
         "service_startups_per_arm": 1,
         "dispatch": {
             "control": control_status["dispatch_count"],
             "candidate": candidate_status["dispatch_count"],
         },
         "performance": {
-            "estimator": "mean_of_nine_paired_control_over_candidate_ttft_gains",
+            "estimator": "mean_of_paired_control_over_candidate_ttft_gains",
             "paired_gains": gains,
             "aggregate_gain": point,
             "one_sided_95_lower_ci": lower,
@@ -265,10 +276,16 @@ def main() -> int:
     for selector in ("control", "candidate"):
         parser.add_argument(f"--{selector}-root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--profile", choices=("short", "long"),
+                        default="short")
     args = parser.parse_args()
     try:
         roots = {name: getattr(args, f"{name}_root")
                  for name in ("control", "candidate")}
+        targets, repetitions = (
+            (service.TARGETS, service.REPETITIONS)
+            if args.profile == "short" else ((131072, 235000), 2)
+        )
         result = qualify(
             {name: _load(root / "runner_status.json")
              for name, root in roots.items()},
@@ -276,6 +293,8 @@ def main() -> int:
              for name, root in roots.items()},
             {name: _load(root / "measurement.json")
              for name, root in roots.items()},
+            targets=targets,
+            repetitions=repetitions,
         )
     except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
         result = {
