@@ -32,6 +32,8 @@ class AttentionOperatorRunnerTests(unittest.TestCase):
     def test_compiler_probe_uses_fixed_corex_toolchain(self) -> None:
         source = Path(runner.__file__).read_text(encoding="utf-8")
         self.assertIn('"/usr/local/corex-3.2.3/bin/clang++"', source)
+        self.assertIn('"runtime_probe.stderr"', source)
+        self.assertIn("if probe.returncode:", source)
 
     def test_reusable_session_preflight_is_fail_closed(self) -> None:
         value = {

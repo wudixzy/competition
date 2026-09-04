@@ -141,8 +141,15 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "'torch':torch.__version__,'vllm':vllm.__version__,"
             "'transformers':transformers.__version__,"
             "'candidate_module':ext.__file__}))",
-        ], check=True, capture_output=True, text=True,
+        ], check=False, capture_output=True, text=True,
             env=self.base_environment())
+        (self.run_root / "runtime_probe.stdout").write_text(
+            probe.stdout, encoding="utf-8")
+        (self.run_root / "runtime_probe.stderr").write_text(
+            probe.stderr, encoding="utf-8")
+        if probe.returncode:
+            raise RuntimeError(
+                f"runtime import probe failed with rc={probe.returncode}")
         versions = json.loads(probe.stdout.strip().splitlines()[-1])
         compiler = subprocess.run(
             ["/usr/local/corex-3.2.3/bin/clang++", "--version"],
