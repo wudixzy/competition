@@ -1,0 +1,173 @@
+{
+  "schema": "bi100-m1-178-fp16-qk-teacher-forced-summary-v1",
+  "version": 1,
+  "date": "2026-09-04",
+  "status": "inconclusive",
+  "classification": "distribution_drift_requires_adjudication",
+  "change_scope": "attention_operator",
+  "evidence_source_revision": "51f6ebeb1c55cdc5c27352d0dc00b3d1b9f5bf5d",
+  "final_harness_revision": "f51655b4e3e718f5bbacd2478d646715ae0768f9",
+  "source_dirty_summary": "clean",
+  "instance": "cc-ce19242b-436f-4141-868b-610eb3ac8cee-0",
+  "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+  "runtime": {
+    "identity": "overlay-44a43f355cfc-torch-2.1.0-vllm-0.6.3",
+    "runtime_overlay": "/tmp/m1-176-focused-runtime.ihZwyu/runtime/site-packages",
+    "python": "3.10.12",
+    "corex": "3.2.3",
+    "compiler": "clang version 16.0.6",
+    "torch": "2.1.0",
+    "vllm": "0.6.3",
+    "transformers": "4.55.3",
+    "candidate_module": "vllm/corex_fused_paged_prefill.so",
+    "relevant_runtime_files_byte_equal": true,
+    "runtime_tree_hash_used": false,
+    "per_file_hashes_used": false
+  },
+  "service_contract": {
+    "tensor_parallel_size": 4,
+    "dtype": "float16",
+    "max_model_len": 262144,
+    "block_size": 16,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 1,
+    "targets": [4096, 16384, 32768, 65536],
+    "positions_per_request": 64,
+    "position_sampling": "uniform_plus_all_available_8192_token_boundaries",
+    "completion_tokens": 1,
+    "temperature": 0,
+    "seed": 20260729,
+    "control_a_selector": 0,
+    "candidate_selector": 1,
+    "control_b_selector": 0,
+    "control_b_triggered": false,
+    "control_b_trigger_reason": "absolute-floor high-margin flips in quick screen",
+    "all_non_selector_launch_and_environment_fields_equal": true
+  },
+  "session_preflight": {
+    "id": "m1-176-focus-preflight-4e2b2e7",
+    "gpu_indices": [0, 1, 2, 3],
+    "gpu_names": [
+      "Iluvatar BI-V100",
+      "Iluvatar BI-V100",
+      "Iluvatar BI-V100",
+      "Iluvatar BI-V100"
+    ],
+    "gpu_health_qualified": true,
+    "fp16_matmul_qualified": true,
+    "collective_qualified": true,
+    "reused_for_unchanged_machine_session": true
+  },
+  "request_population": {
+    "control_a": {"expected": 4, "attempted": 4, "completed": 4, "failed": 0},
+    "candidate": {"expected": 4, "attempted": 4, "completed": 4, "failed": 0},
+    "control_b": {"expected": 0, "attempted": 0, "completed": 0, "failed": 0},
+    "total_teacher_forced_requests": 8,
+    "tokenize_identity_probes_per_arm": 4,
+    "http_200": 8,
+    "response_complete": 8,
+    "usage_complete": 8,
+    "finish_reason_length": 8,
+    "streaming_used": false,
+    "cached_tokens": {
+      "control_a": [0, 0, 0, 0],
+      "candidate": [0, 0, 0, 0]
+    }
+  },
+  "dispatch": {"control_a": 0, "candidate": 4},
+  "quick_screen": {
+    "status": "inconclusive",
+    "classification": "distribution_drift_requires_adjudication",
+    "sampled_positions": 256,
+    "all_observed_logprobs_finite": true,
+    "prompt_position_teacher_identity_matched": true,
+    "top1_agreement": 0.96875,
+    "top1_flip_count": 8,
+    "mutual_topk_coverage": 0.875,
+    "teacher_token_logprob_delta_p99_nats": 5.947510242462158,
+    "shared_token_logprob_delta_p99_nats": 4.349002361297607,
+    "first_divergent_sample_ordinal": 10,
+    "baseline_top1_margin_p99_nats": 13.375000000007276,
+    "quick_high_margin_threshold_nats": 0.1,
+    "high_margin_flip_count": 5,
+    "quick_severe_mean_nll_threshold_nats": 0.05,
+    "paired_mean_nll_difference_nats": -0.00003056163712145121,
+    "paired_nll_one_sided_95_upper_ci_nats": 0.23564995368362318,
+    "severe_mean_nll_stop_triggered": false,
+    "stop_reason": "five top-1 flips exceeded the pre-calibration 0.1-nat margin floor"
+  },
+  "nll_by_length": [
+    {"prompt_tokens": 4096, "positions": 64, "mean_difference_nats": 0.18944695875552497},
+    {"prompt_tokens": 16384, "positions": 64, "mean_difference_nats": 0.2542479503899955},
+    {"prompt_tokens": 32768, "positions": 64, "mean_difference_nats": 0.010701323892085668},
+    {"prompt_tokens": 65536, "positions": 64, "mean_difference_nats": -0.45451847958609193}
+  ],
+  "bootstrap": {
+    "method": "hierarchical request-cluster bootstrap with within-cluster position resampling",
+    "cluster_unit": "teacher_forced_request_length",
+    "cluster_count": 4,
+    "positions_per_cluster": 64,
+    "samples": 20000,
+    "seed": 20260904,
+    "limitation": "only four independent request clusters; interval is a quick-screen diagnostic without A/A calibration"
+  },
+  "aa_calibration": {
+    "status": "not_run",
+    "reason": "adaptive quick screen stopped before control B after obvious high-margin flips",
+    "formal_v2_distribution_decision_available": false
+  },
+  "resource_reduction": {
+    "old_three_arm_requests": 228,
+    "actual_m1_178_requests": 8,
+    "requests_eliminated": 220,
+    "request_reduction_fraction": 0.9649122807017544,
+    "old_service_startups": 3,
+    "actual_service_startups": 2,
+    "service_startups_eliminated": 1
+  },
+  "timing": {
+    "control_a_service_wall_s": 703.608864708,
+    "candidate_service_wall_s": 682.505684481,
+    "total_funnel_wall_s": 1442.0688609851059,
+    "m1_176_or_m1_177_performance_rerun": false
+  },
+  "lifecycle": {
+    "term_first": true,
+    "term_grace_seconds": 60,
+    "control_a_kill_sent": false,
+    "candidate_kill_sent": false,
+    "control_a_final_live_processes": 0,
+    "candidate_final_live_processes": 0,
+    "control_a_postflight_qualified": true,
+    "candidate_postflight_qualified": true,
+    "api_server_residuals": 0,
+    "worker_residuals": 0,
+    "gpu_process_residuals": 0,
+    "fatal_oom_segfault_collective_timeout_worker_loss_counts_all_zero": true
+  },
+  "excluded_invalid_attempt": {
+    "source_revision": "862ee79cd5687160da27bace4fc8c68c1fb61960",
+    "status": "invalid",
+    "reason": "candidate service bind encountered a closed control socket reuse window before any candidate request",
+    "candidate_requests_completed": 0,
+    "fix_revision": "51f6ebeb1c55cdc5c27352d0dc00b3d1b9f5bf5d"
+  },
+  "conclusions": {
+    "operator_numerics": "M1-176 G2 pass retained; not rerun",
+    "kernel_timing": "M1-176 synthetic gains retained; not rerun",
+    "tp4_service_performance": "M1-176 and M1-177 gains retained; not rerun",
+    "distribution": "obvious quick-screen drift observed; formal A/A-calibrated result unavailable and status remains inconclusive",
+    "capability": "not run and no capability conclusion",
+    "promotion": "not authorized"
+  },
+  "evidence_storage": {
+    "raw_observations": "remote /tmp only",
+    "raw_cache_trace_committed": false,
+    "token_keys_committed": false,
+    "prompts_or_outputs_committed": false,
+    "credentials_committed": false,
+    "final_harness_disables_verbose_cache_trace": true
+  },
+  "next_authorized_stage": "reviewer adjudication only",
+  "main_yaml_or_default_selector_change_authorized": false
+}
