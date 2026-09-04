@@ -1,5 +1,28 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-04 精简实验路线
+
+- 开发门禁改为按影响面触发。Attention-only 候选只运行 build/fallback、数值、代表
+  性真实 activation 和精简 TP4 性能；只有 cache、serving 或模型行为相关改动才
+  分别增加 partial-prefix、协议或能力测试。
+- 同机开发不再强制 `/tmp`、0600/0700、逐文件 SHA、HMAC token identity、clean
+  worktree、每 cell 重复 preflight/NCCL 或完整 postflight。Git revision、dirty
+  摘要、版本、命令、关键环境、workload 计数和 dispatch marker 足够。
+- GPU/NCCL preflight 按稳定机器会话复用。完整模型服务仍必须 TERM-first 清理、
+  wait/reap、检查残留进程和 GPU；单卡 operator replay 只需清理本轮资源，失败时再
+  升级检查。
+- M1-176 当前结果改称 TP1-derived real-activation 开发筛选通过，不声称真实 TP4。
+  L3 因错误模型和总体不完整保持 invalid。下一步先修复 qualifier fail-open，再用
+  完整模型运行 control/candidate 两臂的 16K/32K/64K cold 精简矩阵。
+- clear gain `>=5%` 可直接进入长上下文；`2%-5%` 或噪声较大时最多补一次反序 A/B
+  或复用 A/A；低于 2% 停止。Attention-only 路线不再被此前的 partial-prefix
+  sibling timeout 阻塞，该问题作为 baseline cache 诊断单独处理。
+- 完整功能、cache transparency、teacher-forced、能力分层、131K/235K/近 262K 和
+  正式统计仍在最终候选阶段保留，不以精简开发流程替代晋升门禁。
+
+详细规则见 `docs/BI100_VALIDATION_METRICS_V2_20260904.md` 和
+`docs/research/BI100_FRAMEWORK_REVIEW_AND_ROADMAP_20260904.md`。
+
 ## 2026-09-04 轻量开发证据
 
 - 当前主要为单开发者工作流，不再要求每个源码、runtime overlay 文件、临时激活、

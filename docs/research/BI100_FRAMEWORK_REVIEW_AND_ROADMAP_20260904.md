@@ -26,8 +26,8 @@ integration stages:
 - M1-165/M1-167 fix and validate `max_completion_tokens`, but the fix has not
   yet been validated by a new 881-request platform run;
 - M1-109 has strong TP4 prefill evidence and M1-162 adds another 15%-17%
-  operator improvement, but M1-162 still lacks the real-activation and TP4
-  integration layers;
+  operator improvement; M1-176 has added TP1-derived real-activation screening,
+  but a valid full-model TP4 candidate arm has not yet run;
 - long-context decode still gathers the complete K/V state for every generated
   token and is the main unresolved Output TPS bottleneck;
 - the latest platform result completed only 631/881 requests and timed out, so
@@ -44,13 +44,13 @@ kernel variants.
 | OpenAI protocol | M1-165 immutable CoreX overlay probe, 10/10 expected cases; M1-167 field interactions, 18/18 | Qualified on private branch | No fresh platform result and not on formal `main` |
 | Prefix/GDN cache | M1-107 TP4: 18/18 exact outputs, effective hit rate 49.93% to 62.78%, Output TPS P10 21.986 | Correctness baseline retained | Capture overhead and state management, not raw hit-rate headroom |
 | Fused prefill | M1-109 TP4 cold TTFT gains of 17.70%-36.72% at 32K-235K | Mature candidate, default off | Quality adjudication and clean integration |
-| FP16-QK prefill | M1-162/M1-175: 15.3%-17.2% over M1-109 with cross-instance reproduction | Operator-qualified | Same-real-activation TP4 replay and service A/B |
+| FP16-QK prefill | M1-162/M1-176: 15.3%-17.2% synthetic and about 17% on TP1-derived real activations | Development operator screen passed | Valid full-model TP4 service A/B |
 | Long decode | E-ATTN05 exact gather is 1.50x-2.02x over the old path | Production fallback | Output TPS falls to 3.698 at 235K |
 | Decode MoE/GDN | E-MOE20 direct routed MoE, packed GDN decode and IPC all-reduce have positive TP4 evidence | Existing production stack | Re-attest actual Docker activation and interaction |
 | Small-batch MoE | M1-38 reports about 26x-30x at T=2/8/16 | Reopen under layered numeric gate | Real activation, FP32 oracle and model-level quality |
 | Long-prefill MoE | M1-19 W13 reports about 1.70x-1.73x on a real route trace | Bounded reassessment only | W2, GPU-only routing and calibrated numerics |
 | GDN prefill | Historical 235K profile attributed 16.32% of model time | Profile-dependent opportunity | Profile is stale after M1-109 |
-| Experiment funnel | M1-139 compile cache 14.69x, overlay cache 29.08x, parallel preflight at least 2.01x | Implemented | M1-176 capture/replay path is incomplete |
+| Experiment funnel | M1-176 L0-L2 implementation and one invalid L3 attempt | Needs simplification | Over-broad gates and fail-open v2 qualifiers |
 
 ## Platform result interpretation
 
@@ -89,20 +89,17 @@ only evidence-backed, lossless mappings should be added.
 ### 2. Prefill evidence closure
 
 M1-109 has already demonstrated end-to-end value. M1-162 is the strongest
-incremental prefill candidate and reproduced across instances with speedup
-variance below 0.123 percentage points. The immediate blocker is the M1-176
-real-activation path:
+incremental prefill candidate and reproduced across instances. M1-176 completed
+the bounded TP1 capture and four independent rank-shaped replays; this is useful
+development evidence, but it is not a real TP4 model execution and should not
+be described as one.
 
-- TP1 capture has 16 query heads and two KV heads, while the production guard
-  originally accepted only the TP4 rank-local 4/1 shape;
-- the 131K TP1 reference path can materialize an approximately 2 GiB broadcast
-  PV intermediate;
-- a missing capture manifest must remain fail-closed.
-
-Fixing this harness is higher value than designing another synthetic prefill
-kernel. The replay must derive rank-local 4/1 tensors without changing logical
-attention order, compare against a shared FP32 reference, and retain raw
-activations outside Git.
+The attempted L3 run was invalid because it used a reduced diagnostic model and
+the second control arm did not finish. The candidate never started. Review also
+found that the qualifier accepted insufficiently bound distribution evidence
+and ignored the second control in the performance estimate. The next useful
+step is to repair those decisions and run a small full-model TP4 A/B, not to
+expand provenance checks or rebuild a nine-cell activation matrix.
 
 ### 3. Long-context decode
 
@@ -166,18 +163,34 @@ protocol-induced 5xx, worker loss or fatal error.
 
 ### R1: Complete M1-162 prefill qualification
 
-1. Finish M1-176 capture guards and memory-bounded TP1 reference computation.
-2. Capture one baseline bank and derive all four TP4 rank-local replays.
-3. Run calibrated finite/LSE/FP32-rounding checks on the same real activations.
-4. Run one short TP4 A/B per arm containing 4K, 16K, 32K and 64K cold, partial
-   and warm requests.
-5. Record teacher-forced drift as an escalation signal, then run the frozen
-   paired capability non-inferiority gate if the numeric layer passes.
-6. Confirm 131K, 235K and near-262K only after the short TP4 stage qualifies.
+1. Fix the v2 fail-open review findings with focused unit tests: bind and
+   validate distribution evidence, reject empty validity/capability evidence,
+   classify negative performance as a candidate failure, and either use every
+   measured control arm or omit it from the design.
+2. Add an explicit `attention_operator` change scope. Remove same-host `/tmp`,
+   permission, per-file hash, HMAC, clean-tree, repeated preflight and unrelated
+   cache/protocol/capability checks from this development path.
+3. Retain M1-176 L1 and TP1-derived activation results as an operator screen.
+   Head/KV mapping needs one focused unit proof; do not rerun broad reassembly
+   and capture matrices for an unchanged mapping.
+4. Use the fixed full model for one control and one M1-162 candidate TP4 service.
+   Batch 16K, 32K and 64K cold requests, two or three repetitions each, with the
+   same request semantics and a small fixed output budget. Require control
+   selector absence, candidate dispatch, complete requests and clean cleanup.
+5. If gain is at least 5% and buckets are stable, proceed. If it is 2%-5% or
+   noisy, run at most one reversed pair or reusable A/A calibration. Below 2%,
+   stop this incremental candidate unless profile attribution explains a hard
+   metric benefit.
+6. Only a surviving candidate runs 131K and 235K cold confirmation, then focused
+   teacher-forced drift checks. Cache partial-prefix tests are not part of this
+   attention-only path; investigate the prior sibling timeout separately as a
+   baseline cache issue.
+7. Near-262K capacity and the full capability/protocol/cache suite remain final
+   integration gates.
 
-Exit criterion: no real numeric failure, no cache/protocol regression, material
-paired TTFT gain under the v2 confidence rule, and no task-capability
-non-inferiority failure.
+Exit criterion: a valid full-model TP4 candidate dispatch with material TTFT
+gain, finite/calibrated numerics and no observed short-request regression. This
+authorizes long-context confirmation, not main or YAML promotion.
 
 ### R2: Re-profile the accepted stack
 
@@ -230,9 +243,14 @@ Only then may a `main` or formal YAML change be proposed.
 
 ## Experiment budget and stop rules
 
-- L0/L1 may use four independent GPUs; L2 reuses one captured activation bank;
-  L3 uses one TP4 startup per arm and batches all short lengths into that
-  service; L4/L5 are reserved for mature candidates.
+- Route tests by change scope. Operator-only work does not inherit cache, API or
+  capability matrices; those gates are added only when touched code can affect
+  the corresponding behavior. L4/L5 remain cumulative final-candidate stages.
+- Cache build artifacts and overlays by revision/toolchain. Run GPU and NCCL
+  preflight once per stable machine session, not before every replay cell.
+- A short TP4 operator screen starts with two service startups total: one
+  control and one candidate. A/A or an order reversal is conditional on a
+  gray-zone/noisy result, not mandatory overhead for every candidate.
 - A component speedup is not a service claim. A changed greedy suffix is not
   automatically a numeric or capability failure. A failed same-activation
   numeric comparison, nonfinite value, protocol semantic change or invalid
@@ -245,13 +263,13 @@ Only then may a `main` or formal YAML change be proposed.
 - Do not rerun M1-173 batched split PV, M1-174 query-tiled scalar fusion,
   M1-172 unsupported mixed PV, blind ixinfer FMHA configurations, scalar GDN
   variants, or YAML/chunk/threshold sweeps without new profile evidence.
-- Every long runner must own and attest its process group, use TERM with a
+- Every full-model runner must own its process group, use TERM with a
   45-60 second grace period before survivor-only KILL, wait/reap children, and
   require clean GPU/process/fatal postflight.
-- Keep raw prompts, images, tokens and activations out of Git. Commit only
-  privacy-safe manifests, lightweight provenance, summaries and reproducible
-  scripts. Do not make per-file SHA-256 a development gate unless it protects
-  cache identity, external data, a risky transfer or a release binary.
+- Keep credentials, model weights and raw private datasets out of Git. Ordinary
+  same-host development reports and activations may live in gitignored storage;
+  do not add permission, HMAC or per-file checksum gates unless they protect a
+  concrete correctness or transfer boundary.
 
 ## Promotion gates
 

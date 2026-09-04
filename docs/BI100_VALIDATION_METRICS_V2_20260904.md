@@ -21,6 +21,11 @@ No result from one layer answers another. In particular, a different generated
 suffix is not by itself a numerical failure, and a good task score cannot
 waive a non-finite value, invalid cache state or protocol regression.
 
+This policy is change-sensitive. A development candidate runs only the gates
+needed to test the code and behavior it can affect. The complete protocol,
+cache, capability, long-context and release checks are cumulative promotion
+requirements, not a mandatory suite for every implementation edit.
+
 ## Decision states
 
 Every report must use one of four states:
@@ -49,25 +54,33 @@ worker loss or timeout still fails promotion.
 
 ## G0: experiment validity
 
-A run is valid only when all of the following hold:
+The minimum development record is intentionally small:
 
-- source commit and dirty state, package/runtime versions, model/tokenizer
-  paths and configuration, launch command, environment and candidate build
-  provenance are recorded;
-- control and candidate use the same workload order and request semantics;
-- the expected request population is complete, including failed requests;
-- raw timing samples are retained and startup/warmup treatment is explicit;
-- GPU preflight and postflight pass on every participating card;
-- run-owned processes are cleaned with TERM, a 45-60 second grace period,
-  survivor-only KILL and wait/reap;
-- fatal, OOM, segfault, Gloo/NCCL reset, worker-loss and timeout scans are
-  complete;
-- no private prompt, image, token, activation, credential or model weight is
-  committed.
+- Git revision and dirty-state summary;
+- runtime/compiler versions, model path, launch command and relevant selector
+  environment;
+- workload identity, attempted/completed/failed counts and raw timing samples;
+- candidate dispatch evidence for integration tests;
+- process exit status and any observed fatal, OOM, collective or worker-loss
+  event.
 
-An incomplete platform population such as 631/881 is not a performance
-baseline. Throughput and latency calculated only over successful requests may
-be reported diagnostically but cannot qualify a candidate.
+A dirty tree is recorded rather than rejected. Same-host development artifacts
+do not require an exact tree hash, per-file SHA-256, HMAC identity, `/tmp`
+location or a particular file mode. Reports and raw tensors must remain in a
+gitignored location, but storage-policy checks must not decide mathematical or
+performance validity.
+
+GPU health work is amortized by machine session. Run one four-card health and
+collective preflight after allocation, reboot, runtime change or GPU error, then
+reuse it for independent operator experiments. A full model service runner must
+still own its process group, use TERM-first cleanup, reap children and perform a
+postflight. Independent single-GPU replays need only release their own process
+and device allocations unless they fail.
+
+Population completeness is required before making a paired performance or
+promotion conclusion. A partial run may still be retained as diagnostic
+evidence when clearly labelled; it is not automatically discarded merely
+because a later request timed out.
 
 ### Lightweight provenance policy
 
@@ -91,6 +104,22 @@ intermediate extension build. Their checksums may be recorded for debugging,
 but a missing checksum alone does not invalidate a development experiment.
 Runtime activation is proved by Python/module introspection, dispatch markers
 and observed behavior rather than a complete overlay-tree digest.
+
+### Change-impact routing
+
+Before running tests, classify the candidate by the surfaces it changes:
+
+| Scope | Development gates |
+| --- | --- |
+| Attention/MoE/GDN operator only | build and fallback, fixed-shape numerics, representative real activation, focused TP4 performance |
+| Cache or recurrent-state management | operator gates plus cold/warm, partial-prefix, accounting, state identity and isolation |
+| Serving/API/protocol | focused request parsing, streaming, usage and affected tool/reasoning/multimodal paths |
+| Tokenizer, chat template or model behavior | protocol plus teacher-forced and task-capability evaluation |
+| Final integrated candidate | all promotion gates |
+
+Do not run cache branch matrices for an attention-only kernel, full API suites
+for a private operator helper, or capability suites before a candidate has
+shown end-to-end value.
 
 ## G1: protocol, indexing and cache invariants
 
@@ -186,10 +215,14 @@ development and required only by the lightweight provenance policy above.
 ## G3: model-distribution fidelity
 
 Teacher-forced evaluation characterizes error propagation; it is not a second
-operator error norm and is not a standalone capability verdict.
+operator error norm and is not a standalone capability verdict. It is run after
+an operator has passed numerical checks and shown plausible service value, or
+earlier only when the implementation can directly alter model behavior.
 
-Every comparison first runs a control/control A/A calibration on the same
-runtime. Candidate reports then include:
+A control/control A/A calibration may be reused while the host, model, runtime,
+request set and launch configuration remain unchanged. Repeat A/A when the
+candidate lies in the performance gray zone, observed noise exceeds the stored
+envelope, or the runtime identity changes. Candidate reports then include:
 
 - top-1 and mutual top-k agreement;
 - teacher-token and shared-token logprob deltas;
@@ -212,6 +245,11 @@ has no universal 98% hard threshold because near-tied tokens can flip without
 material probability or capability change.
 
 ## G4: capability and behavior
+
+The full stratified capability suite is a final-candidate gate. Development
+candidates run only affected deterministic contracts and a small targeted
+capability sample when G3 detects unexplained drift. Empty strata or aggregate
+statistics without per-stratum counts cannot produce a capability `pass`.
 
 ### Deterministic contracts
 
@@ -246,7 +284,11 @@ the capability decision.
 
 ### Required reporting
 
-Every service candidate reports:
+Report metrics that are meaningful for the active stage. A focused short TP4
+screen requires TTFT samples, request status, selector/dispatch evidence and
+enough output timing to detect a material regression. Cache TPS and warm-state
+metrics are required only when cache behavior is exercised. The final
+integrated candidate reports:
 
 - TTFT, TPOT/ITL and end-to-end latency at P50/P90/P99;
 - Input TPS, Output TPS, Cache TPS and request throughput;
@@ -273,16 +315,18 @@ frozen workload; common request buckets still require explicit protection.
 
 ### Measurement rule
 
-- Operator screens use at least five post-warmup interleaved timing samples per
-  cell and report raw values, median and dispersion.
-- TP4 screens use order-balanced paired arms. Start with three pairs for a
-  large expected effect; add at most two preauthorized pairs when the estimate
-  is useful but its interval remains inconclusive.
-- A private candidate normally advances when the paired end-to-end estimate is
-  at least 3% and its one-sided 95% lower bound is above zero.
+- Operator screens normally use three to five post-warmup interleaved samples
+  per representative cell and report raw values, median and dispersion.
+- An attention-only short TP4 screen starts with one control and one candidate
+  service. Batch 16K, 32K and 64K cold requests with two or three repetitions
+  into each service; add 4K only as a health/short-request regression cell.
+- A clear gain of at least 5% with consistent buckets may proceed directly. A
+  2%-5% result, visible run-order drift or a noisy bucket triggers at most one
+  reversed A/B pair or a reusable A/A calibration. Final promotion still uses
+  the full predeclared paired confidence analysis.
 - A point estimate below 2% stops the direction unless it fixes correctness or
-  a final hard constraint. The 2%-3% interval is `inconclusive` and should be
-  resolved with the bounded extra pairs, not parameter scanning.
+  a final hard constraint. Do not manufacture significance by repeatedly
+  restarting the same candidate.
 - No common workload bucket may show a statistically supported regression
   greater than 5%. A single noisy cell or one platform run is insufficient to
   declare such a regression.
@@ -307,8 +351,8 @@ targets must not be imposed as pass/fail criteria on an isolated L1 kernel.
 
 ## Historical candidate impact
 
-- M1-162 remains qualified for real-activation replay under the calibrated
-  FP16 rule.
+- M1-162 has passed calibrated synthetic and TP1-derived real-activation
+  development screens; a valid full-model TP4 candidate arm is still required.
 - M1-109 remains open for distribution and capability adjudication; its greedy
   divergence alone is not a failure, while its observed teacher-forced drift
   still requires explanation.
@@ -327,6 +371,13 @@ Do not edit them in place. A later implementation change must add versioned v2
 contracts, update validators and unit tests, and prove that historical reports
 are still parsed under v1 semantics. Until that change lands, reports should
 state both the executed machine contract and this review policy.
+
+The first v2 implementation at `2e36f439` is not a frozen promotion contract.
+Review found that its L3 qualifier can accept unbound distribution evidence,
+its generic validity/capability helpers accept structurally empty evidence, and
+its performance calculation does not use the second control arm. These issues
+must be fixed before another result is called machine-qualified. The repair
+should simplify development checks rather than add more provenance machinery.
 
 ## Primary references
 
