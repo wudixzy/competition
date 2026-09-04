@@ -11,7 +11,7 @@ import statistics
 import time
 from typing import Any
 
-from bench_fused_prefill_service import _post_stream
+from bench_fused_prefill_service import _post_stream, stream_timing_metrics
 from long_context_api import build_exact_prompt
 
 
@@ -46,22 +46,20 @@ def _payload(content: str, max_tokens: int) -> dict[str, Any]:
 
 def _summarize_response(raw: dict[str, Any]) -> dict[str, Any]:
     completion = raw["completion_tokens"]
-    tpot = (
-        raw["decode_window_s"] / (completion - 1)
-        if completion > 1 else 0.0
-    )
+    timing = stream_timing_metrics(
+        completion, raw["ttft_s"], raw["last_output_s"])
     return {
         "ok": raw["ok"],
         "elapsed_s": raw["elapsed_s"],
         "ttft_s": raw["ttft_s"],
-        "tpot_s": tpot,
-        "itl_s": tpot,
+        "tpot_s": timing["tpot_s"],
+        "itl_s": timing["tpot_s"],
         "prompt_tokens": raw["prompt_tokens"],
         "cached_tokens": raw["cached_tokens"],
         "completion_tokens": completion,
         "finish_reason": raw["finish_reason"],
         "input_tps": raw["prompt_tokens"] / raw["ttft_s"],
-        "output_tps": raw["output_tps"],
+        "output_tps": timing["output_tps"],
         "cache_tps": raw["cached_tokens"] / raw["ttft_s"],
         "request_throughput_rps": 1.0 / raw["elapsed_s"],
         # These two digests are private transient observations used only to

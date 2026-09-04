@@ -11,6 +11,24 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+
+def stream_timing_metrics(
+    completion_tokens: int,
+    ttft_s: float,
+    last_output_s: float,
+) -> dict[str, float]:
+    """Define decode metrics for the first-token-to-last-token interval."""
+    decode_tokens = max(completion_tokens - 1, 0)
+    decode_window_s = max(last_output_s - ttft_s, 0.0)
+    return {
+        "decode_window_s": decode_window_s,
+        "tpot_s": (decode_window_s / decode_tokens
+                   if decode_tokens and decode_window_s > 0.0 else 0.0),
+        "output_tps": (decode_tokens / decode_window_s
+                       if decode_tokens and decode_window_s > 0.0 else 0.0),
+    }
+
+
 def _percentile(values: list[float], pct: float) -> float:
     ordered = sorted(values)
     if not ordered:
@@ -91,7 +109,8 @@ def _post_stream(
         raise RuntimeError("stream completed without an output delta")
     details = usage.get("prompt_tokens_details") or {}
     completion_tokens = int(usage.get("completion_tokens") or 0)
-    decode_window_s = max(last_output_s - ttft_s, 0.0)
+    timing = stream_timing_metrics(
+        completion_tokens, ttft_s, last_output_s)
     normalized_output = {
         "content": "".join(content_parts),
         "reasoning_content": "".join(reasoning_parts),
@@ -137,10 +156,8 @@ def _post_stream(
         "elapsed_s": elapsed_s,
         "ttft_s": ttft_s,
         "last_output_s": last_output_s,
-        "decode_window_s": decode_window_s,
-        "output_tps": (
-            completion_tokens / decode_window_s
-            if decode_window_s > 0 else 0.0),
+        "decode_window_s": timing["decode_window_s"],
+        "output_tps": timing["output_tps"],
         "prompt_tokens": int(usage.get("prompt_tokens") or 0),
         "cached_tokens": int(details.get("cached_tokens") or 0),
         "completion_tokens": completion_tokens,

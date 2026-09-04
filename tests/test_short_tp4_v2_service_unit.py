@@ -65,6 +65,33 @@ def _report() -> dict:
 
 class ShortTp4V2ServiceTests(unittest.TestCase):
 
+    def test_ttft_tpot_and_output_tps_definitions(self) -> None:
+        raw = {
+            "ok": True, "elapsed_s": 3.0, "ttft_s": 2.0,
+            "last_output_s": 2.7, "decode_window_s": 0.7,
+            "output_tps": 999.0, "prompt_tokens": 16,
+            "cached_tokens": 0, "completion_tokens": 8,
+            "finish_reason": "length", "first_token_sha256": "a" * 64,
+            "output_sha256": "b" * 64,
+        }
+        value = service._summarize_response(raw)
+        self.assertEqual(value["ttft_s"], 2.0)
+        self.assertAlmostEqual(value["tpot_s"], 0.1)
+        self.assertAlmostEqual(value["output_tps"], 10.0)
+
+    def test_single_output_token_has_no_decode_interval(self) -> None:
+        raw = {
+            "ok": True, "elapsed_s": 2.1, "ttft_s": 2.0,
+            "last_output_s": 2.0, "decode_window_s": 0.0,
+            "output_tps": 999.0, "prompt_tokens": 16,
+            "cached_tokens": 0, "completion_tokens": 1,
+            "finish_reason": "length", "first_token_sha256": "a" * 64,
+            "output_sha256": "b" * 64,
+        }
+        value = service._summarize_response(raw)
+        self.assertEqual(value["tpot_s"], 0.0)
+        self.assertEqual(value["output_tps"], 0.0)
+
     def test_fixed_population_passes(self) -> None:
         result = service.evaluate(_report())
         self.assertTrue(result["qualified"], result)

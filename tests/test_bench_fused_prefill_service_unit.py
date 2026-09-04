@@ -42,6 +42,19 @@ class FusedPrefillServiceBenchmarkUnitTest(unittest.TestCase):
         self.assertEqual(module._percentile([2.0], 90), 2.0)
         self.assertAlmostEqual(module._percentile([1.0, 3.0], 10), 1.2)
 
+    def test_decode_metric_uses_inter_token_count(self):
+        spec = importlib.util.spec_from_file_location("m1_47_metrics", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        metrics = module.stream_timing_metrics(8, 2.0, 2.7)
+        self.assertAlmostEqual(metrics["decode_window_s"], 0.7)
+        self.assertAlmostEqual(metrics["tpot_s"], 0.1)
+        self.assertAlmostEqual(metrics["output_tps"], 10.0)
+        single = module.stream_timing_metrics(1, 2.0, 2.0)
+        self.assertEqual(single["tpot_s"], 0.0)
+        self.assertEqual(single["output_tps"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
