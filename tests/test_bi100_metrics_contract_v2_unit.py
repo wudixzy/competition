@@ -48,6 +48,20 @@ def distribution() -> dict:
     }
 
 
+def capability_stratum(*, underpowered: bool = False) -> dict:
+    return {
+        "sample_count": 10,
+        "paired_results": {
+            "both_pass": 8, "baseline_only": 0,
+            "candidate_only": 1, "both_fail": 1,
+        },
+        "paired_lower_ci": -0.01,
+        "paired_bootstrap_reported": True,
+        "exact_mcnemar_reported": True,
+        "underpowered": underpowered,
+    }
+
+
 class BI100MetricsContractV2Tests(unittest.TestCase):
 
     def test_v1_and_v2_contracts_dispatch_without_mutating_v1(self) -> None:
@@ -156,14 +170,59 @@ class BI100MetricsContractV2Tests(unittest.TestCase):
             "paired_bootstrap_reported": True,
             "exact_mcnemar_reported": True,
             "underpowered": True,
-            "strata": {name: {} for name in
-                       LAYERED_V2["paired_task_capability"]["required_strata"]},
+            "strata": {name: capability_stratum(underpowered=True)
+                       for name in LAYERED_V2["paired_task_capability"]
+                       ["required_strata"]},
         }
         self.assertEqual(metrics.classify_capability(
             evidence, LAYERED_V2, phase="development")["status"],
                          "inconclusive")
 
+    def test_empty_capability_stratum_is_invalid(self) -> None:
+        evidence = {
+            "deterministic_baseline_only_failures": 0,
+            "paired_lower_ci": 0.0,
+            "paired_bootstrap_reported": True,
+            "exact_mcnemar_reported": True,
+            "underpowered": False,
+            "strata": {name: capability_stratum() for name in
+                       LAYERED_V2["paired_task_capability"]["required_strata"]},
+        }
+        evidence["strata"]["code"] = {}
+        self.assertEqual(metrics.classify_capability(
+            evidence, LAYERED_V2, phase="development")["status"], "invalid")
+
+    def test_validity_rejects_empty_identity_and_nonfinite_timing(self) -> None:
+        evidence = {
+            name: f"identity-{name}"
+            for name in LAYERED_V2["experiment_validity"]["required_identity"]
+        }
+        evidence.update({
+            "expected_request_count": 2,
+            "attempted_request_count": 2,
+            "completed_request_count": 2,
+            "failed_request_count": 0,
+            "workload_order": "fixed",
+            "workload_identity": "pair-1",
+            "gpu_preflight": True,
+            "gpu_postflight": True,
+            "scoped_cleanup": True,
+            "fatal_scan": True,
+            "timing_samples": [1.0, 2.0],
+        })
+        self.assertEqual(metrics.classify_validity(
+            evidence, LAYERED_V2)["status"], "pass")
+        evidence["runtime_versions"] = ""
+        self.assertEqual(metrics.classify_validity(
+            evidence, LAYERED_V2)["status"], "invalid")
+        evidence["runtime_versions"] = "corex-3.2.3"
+        evidence["timing_samples"] = [float("nan")]
+        self.assertEqual(metrics.classify_validity(
+            evidence, LAYERED_V2)["status"], "invalid")
+
     def test_performance_two_and_three_percent_boundaries(self) -> None:
+        self.assertEqual(metrics.classify_performance(
+            -0.05, -0.10, LAYERED_V2)["status"], "fail")
         self.assertEqual(metrics.classify_performance(
             0.0199, 0.01, LAYERED_V2)["status"], "fail")
         self.assertEqual(metrics.classify_performance(

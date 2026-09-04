@@ -47,6 +47,22 @@ def _number(value: Any, name: str, *, minimum: float = 0.0) -> float:
     return float(value)
 
 
+def _signed_number(value: Any, name: str) -> float:
+    if not _finite(value):
+        raise ContractError(f"{name} must be a finite number")
+    return float(value)
+
+
+def _nonempty_identity(value: Any) -> bool:
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, dict)):
+        return bool(value)
+    return value is not None
+
+
 def contract_identity(contract: Any, family: str) -> tuple[str, int]:
     value = _mapping(contract, "contract")
     schemas = {"layered": LAYERED_SCHEMAS, "funnel": FUNNEL_SCHEMAS}.get(
@@ -154,6 +170,8 @@ def classify_validity(
     if missing:
         return {"status": "invalid", "reasons": [
             f"missing validity evidence: {', '.join(missing)}"]}
+    identity_names = rules["required_identity"] + [
+        "workload_order", "workload_identity"]
     counts = [value.get(name) for name in (
         "expected_request_count", "attempted_request_count",
         "completed_request_count", "failed_request_count")]
@@ -161,8 +179,12 @@ def classify_validity(
             for item in counts)
             or counts[0] != counts[1]
             or counts[1] != counts[2] + counts[3]
+            or any(not _nonempty_identity(value.get(name))
+                   for name in identity_names)
             or not isinstance(value.get("timing_samples"), list)
             or not value["timing_samples"]
+            or any(not _finite(sample) or float(sample) < 0.0
+                   for sample in value["timing_samples"])
             or any(value.get(name) is not True for name in
                    rules["required_lifecycle"])):
         return {"status": "invalid", "reasons": [
@@ -322,16 +344,36 @@ def classify_capability(
         return {"status": "invalid", "reasons": [
             "capability evidence is incomplete"]}
     rules = contract["paired_task_capability"]
+    strata = value.get("strata")
     if (not isinstance(value["deterministic_baseline_only_failures"], int)
             or isinstance(value["deterministic_baseline_only_failures"], bool)
             or not _finite(value["paired_lower_ci"])
             or any(type(value[name]) is not bool for name in (
                 "paired_bootstrap_reported", "exact_mcnemar_reported",
                 "underpowered"))
-            or not isinstance(value["strata"], dict)
-            or set(value["strata"]) != set(rules["required_strata"])):
+            or not isinstance(strata, dict)
+            or set(strata) != set(rules["required_strata"])):
         return {"status": "invalid", "reasons": [
             "capability evidence is malformed or strata are incomplete"]}
+    pair_fields = {"both_pass", "baseline_only", "candidate_only", "both_fail"}
+    for name, stratum in strata.items():
+        if not isinstance(stratum, dict):
+            return {"status": "invalid", "reasons": [
+                f"capability stratum {name} is malformed"]}
+        sample_count = stratum.get("sample_count")
+        pairs = stratum.get("paired_results")
+        if (not isinstance(sample_count, int) or isinstance(sample_count, bool)
+                or sample_count <= 0 or not isinstance(pairs, dict)
+                or set(pairs) != pair_fields
+                or any(not isinstance(item, int) or isinstance(item, bool)
+                       or item < 0 for item in pairs.values())
+                or sum(pairs.values()) != sample_count
+                or not _finite(stratum.get("paired_lower_ci"))
+                or stratum.get("paired_bootstrap_reported") is not True
+                or stratum.get("exact_mcnemar_reported") is not True
+                or type(stratum.get("underpowered")) is not bool):
+            return {"status": "invalid", "reasons": [
+                f"capability stratum {name} lacks valid paired statistics"]}
     if (not value["paired_bootstrap_reported"]
             or not value["exact_mcnemar_reported"]):
         return {"status": "invalid", "reasons": [
@@ -368,7 +410,7 @@ def classify_performance(
     validate_contract(contract, "layered")
     if contract["version"] != 2:
         raise ContractError("new performance classification requires v2")
-    point = _number(point_estimate, "paired gain")
+    point = _signed_number(point_estimate, "paired gain")
     lower = float(one_sided_lower_ci) if _finite(one_sided_lower_ci) else None
     if lower is None:
         return {"status": "invalid", "reasons": ["lower CI is invalid"]}
