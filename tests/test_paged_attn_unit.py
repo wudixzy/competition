@@ -273,6 +273,62 @@ class PagedAttentionUnitTest(unittest.TestCase):
         self.assertIn("head_mapping", parameters)
         self.assertNotIn("num_kv_heads", parameters)
 
+    def test_capture_decode_memory_bound_excludes_gqa_broadcast(self):
+        module = _load_paged_attn()
+        bounded = module.PagedAttention._bounded_decode_temporary_upper_bound_bytes
+        actual = bounded(131073, 2, 16, 256)
+        self.assertEqual(actual, 672699404)
+        materialized_k_broadcast = 16 * 131073 * 256 * 4
+        self.assertLess(actual, materialized_k_broadcast)
+        with self.assertRaises(ValueError):
+            bounded(131073, 2, 15, 256)
+
+    def test_bounded_decode_is_capture_only_and_production_keeps_batched_path(self):
+        source = PAGED_ATTN.read_text(encoding="utf-8")
+        decode = source.index("def _forward_decode_pytorch(")
+        capture_branch = source.index(
+            "if _ACTIVATION_CAPTURE_ENABLED:", decode)
+        bounded_call = source.index(
+            "PagedAttention._forward_decode_gqa_bounded(", capture_branch)
+        production_branch = source.index("else:", bounded_call)
+        production_qk = source.index(
+            "k_t.unsqueeze(1)", production_branch)
+        production_pv = source.index(
+            "attn_w, v_t.unsqueeze(1)", production_qk)
+        helper = source.index("def _forward_decode_gqa_bounded(")
+        helper_end = source.index(
+            "def _bounded_decode_temporary_upper_bound_bytes(", helper)
+        helper_source = source[helper:helper_end]
+        self.assertLess(bounded_call, production_branch)
+        self.assertLess(production_branch, production_qk)
+        self.assertLess(production_qk, production_pv)
+        self.assertIn("for kv_head in range(num_kv_heads):", helper_source)
+        self.assertIn("for query_head in range(gqa_ratio):", helper_source)
+
+    def test_bounded_decode_matches_materialized_small_reference(self):
+        try:
+            import torch as actual_torch
+        except ImportError:
+            self.skipTest("Torch is unavailable in the local test environment")
+        module = _load_paged_attn()
+        module.torch = actual_torch
+        generator = actual_torch.Generator().manual_seed(20260904)
+        query = actual_torch.randn(
+            8, 4, generator=generator, dtype=actual_torch.float16)
+        key = actual_torch.randn(
+            2, 4, 11, generator=generator, dtype=actual_torch.float32)
+        value = actual_torch.randn(
+            2, 11, 4, generator=generator, dtype=actual_torch.float32)
+        scale = 4 ** -0.5
+        grouped = query.float().view(2, 4, 4).unsqueeze(2)
+        weights = actual_torch.softmax(
+            actual_torch.matmul(grouped * scale, key.unsqueeze(1)), dim=-1)
+        expected = actual_torch.matmul(
+            weights, value.unsqueeze(1)).view(8, 4).to(query.dtype)
+        observed = module.PagedAttention._forward_decode_gqa_bounded(
+            query, key, value, scale)
+        actual_torch.testing.assert_close(observed, expected, rtol=0, atol=0)
+
     def test_strict_prefix_segments_match_cache_boundaries(self):
         module = _load_paged_attn()
         segment = module._strict_prefix_query_segments

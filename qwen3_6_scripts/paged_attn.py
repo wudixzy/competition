@@ -1618,24 +1618,27 @@ class PagedAttention:
                            .view(-1, num_kv_heads, head_dim))[:seq_len] \
                           .permute(1, 0, 2).contiguous().float()
 
-                # Reshape Q for lazy GQA: [kv_h, gqa_ratio, 1, d]
-                q_grouped = (query[i].float()
-                             .view(num_kv_heads, gqa_ratio, head_dim)
-                             .unsqueeze(2))
-
-                # [kv_h, gqa_ratio, 1, seq_len]
-                attn_w = torch.matmul(
-                    q_grouped * scale,       # [kv_h, gqa, 1, d]
-                    k_t.unsqueeze(1))        # [kv_h, 1, d, seq_len]
-                attn_w = torch.softmax(attn_w, dim=-1)
-
-                # Avoid CoreX materializing the broadcast V operand. At 131K,
-                # TP1 GQA 8:1 otherwise requests a 2 GiB temporary tensor.
-                out_i = torch.stack([
-                    torch.matmul(attn_w[kv_head], v_t[kv_head])
-                    for kv_head in range(num_kv_heads)
-                ], dim=0)
-                output[i] = out_i.view(num_heads, head_dim).to(orig_dtype)
+                if _ACTIVATION_CAPTURE_ENABLED:
+                    # CoreX materializes a broadcast operand for the batched
+                    # GQA QK (and may do the same for PV).  At the TP1 capture
+                    # shape, expanding K from 2 to 16 query heads is a 2 GiB
+                    # temporary at 131K.  Keep this diagnostic-only path
+                    # bounded by evaluating one query head at a time.
+                    output[i] = PagedAttention._forward_decode_gqa_bounded(
+                        query[i], k_t, v_t, scale)
+                else:
+                    # Preserve the production decode path byte-for-byte when
+                    # activation capture is disabled.
+                    q_grouped = (query[i].float()
+                                 .view(num_kv_heads, gqa_ratio, head_dim)
+                                 .unsqueeze(2))
+                    attn_w = torch.matmul(
+                        q_grouped * scale,
+                        k_t.unsqueeze(1))
+                    attn_w = torch.softmax(attn_w, dim=-1)
+                    output[i] = torch.matmul(
+                        attn_w, v_t.unsqueeze(1)).view(
+                            num_heads, head_dim).to(orig_dtype)
 
         except Exception as e:
             print(f"[decode_pytorch ERROR] {type(e).__name__}: {e}",
@@ -1644,6 +1647,77 @@ class PagedAttention:
             raise
 
         return output
+
+    @staticmethod
+    def _forward_decode_gqa_bounded(
+        query: torch.Tensor,
+        key_transposed: torch.Tensor,
+        value: torch.Tensor,
+        scale: float,
+    ) -> torch.Tensor:
+        """Compute diagnostic TP1 decode without materialized GQA broadcasts.
+
+        The inputs are one sequence: Q is ``[q_heads, d]``, K is
+        ``[kv_heads, d, tokens]`` and V is ``[kv_heads, tokens, d]``.
+        Only the explicit activation-capture path calls this helper.
+        """
+        num_heads, head_dim = query.shape
+        num_kv_heads = key_transposed.shape[0]
+        if (
+            key_transposed.ndim != 3
+            or value.ndim != 3
+            or value.shape[0] != num_kv_heads
+            or key_transposed.shape[1] != head_dim
+            or value.shape[2] != head_dim
+            or key_transposed.shape[2] != value.shape[1]
+            or num_kv_heads <= 0
+            or num_heads % num_kv_heads != 0
+        ):
+            raise RuntimeError("invalid memory-bounded GQA decode shapes")
+        gqa_ratio = num_heads // num_kv_heads
+        q_grouped = query.float().view(
+            num_kv_heads, gqa_ratio, head_dim)
+        result = torch.empty(
+            (num_kv_heads, gqa_ratio, head_dim),
+            dtype=torch.float32,
+            device=query.device,
+        )
+        for kv_head in range(num_kv_heads):
+            for query_head in range(gqa_ratio):
+                scores = torch.matmul(
+                    q_grouped[kv_head, query_head].unsqueeze(0) * scale,
+                    key_transposed[kv_head],
+                )
+                probabilities = torch.softmax(scores, dim=-1)
+                result[kv_head, query_head] = torch.matmul(
+                    probabilities, value[kv_head]).squeeze(0)
+        return result.view(num_heads, head_dim).to(query.dtype)
+
+    @staticmethod
+    def _bounded_decode_temporary_upper_bound_bytes(
+        seq_len: int,
+        num_kv_heads: int,
+        num_heads: int,
+        head_dim: int,
+    ) -> int:
+        """Conservative capture-decode working set, excluding source caches.
+
+        This includes FP32 gathered K/V, one overlapping FP16 gather, three
+        per-head FP32 score-sized buffers, and the FP32 Q/output tensors.  It
+        excludes backend allocator bookkeeping and non-broadcast GEMM
+        workspace, which are checked by the remote allocation postflight.
+        """
+        values = (seq_len, num_kv_heads, num_heads, head_dim)
+        if any(not isinstance(value, int) or value <= 0 for value in values):
+            raise ValueError("decode bound dimensions must be positive integers")
+        if num_heads % num_kv_heads != 0:
+            raise ValueError("query heads must be divisible by KV heads")
+        fp32_kv = 2 * num_kv_heads * seq_len * head_dim * 4
+        overlapping_fp16_gather = num_kv_heads * seq_len * head_dim * 2
+        per_head_scores = 3 * seq_len * 4
+        q_and_output = 2 * num_heads * head_dim * 4
+        return (fp32_kv + overlapping_fp16_gather + per_head_scores
+                + q_and_output)
 
     # paged_attention_v1 on BI-V100 fails for long contexts.
     # Route on actual sequence length (seq_lens.max()), not the max_seq_len
