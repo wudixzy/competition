@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 import run_m1_176_short_tp4_v2 as runner
@@ -35,6 +36,20 @@ def _capture() -> dict:
 
 
 class ShortTp4V2RunnerTests(unittest.TestCase):
+
+    def test_service_environment_binds_teacher_keys(self) -> None:
+        value = runner.ShortTp4V2Runner.__new__(runner.ShortTp4V2Runner)
+        root = Path(__file__).resolve().parents[1]
+        value.root = root
+        value.runtime_site = root
+        value.runtime_install = root / "README.md"
+        value.run_root = Path("/tmp/m1-176-unit")
+        value.model_path = root
+        value.args = SimpleNamespace(selector="control_a")
+        environment = value.service_environment()
+        self.assertEqual(environment["BI100_GDN_CACHE_POLICY"], "admission64")
+        self.assertEqual(environment["BI100_GDN_RESTORE_MODE"], "hybrid64")
+        self.assertEqual(environment["BI100_KV_EVICTION_POLICY"], "lru")
 
     def test_l2_v2_authorizes_fixed_short_tp4_only(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp") as directory:

@@ -80,6 +80,12 @@ def load_runtime_manifest_v2(path: Path, expected: Json) -> Json:
         raise ValueError("runtime manifest fused-prefill selector is invalid")
     if environment.get("BI100_CACHE_TRACE") != "1":
         raise ValueError("runtime manifest must enable cache trace")
+    required_optimization = {
+        "BI100_GDN_CACHE_POLICY", "BI100_GDN_RESTORE_MODE",
+        "BI100_KV_EVICTION_POLICY",
+    }
+    if not required_optimization.issubset(environment):
+        raise ValueError("runtime manifest optimization identity is incomplete")
     return value
 
 

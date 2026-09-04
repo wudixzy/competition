@@ -39,6 +39,9 @@ class TeacherForcedTopkApiTests(unittest.TestCase):
             "environment": {
                 "BI100_ATTN_COREX_FUSED_PREFILL": "0",
                 "BI100_CACHE_TRACE": "1",
+                "BI100_GDN_CACHE_POLICY": "admission64",
+                "BI100_GDN_RESTORE_MODE": "hybrid64",
+                "BI100_KV_EVICTION_POLICY": "lru",
             },
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -46,6 +49,11 @@ class TeacherForcedTopkApiTests(unittest.TestCase):
             path.write_text(json.dumps(value), encoding="utf-8")
             self.assertEqual(
                 api.load_runtime_manifest_v2(path, expected), value)
+            incomplete = json.loads(json.dumps(value))
+            incomplete["environment"].pop("BI100_KV_EVICTION_POLICY")
+            path.write_text(json.dumps(incomplete), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                api.load_runtime_manifest_v2(path, expected)
             value["environment"]["API_TOKEN"] = "redacted"
             path.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaises(ValueError):
