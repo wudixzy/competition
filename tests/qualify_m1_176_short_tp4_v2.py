@@ -104,6 +104,8 @@ def _arm_summary(report: dict[str, Any]) -> dict[str, Any]:
                      / report["metrics"]["slo_total_requests"]),
         },
         "service_population_elapsed_s": report["elapsed_s"],
+        "service_population_throughput_rps": (
+            report["completed_requests"] / report["elapsed_s"]),
     }
 
 
@@ -124,7 +126,13 @@ def _status_reasons(statuses: dict[str, dict[str, Any]]) -> list[str]:
                 or value.get("repetitions") != service.REPETITIONS
                 or value.get("service_startups") != 1
                 or value.get("gpu_count") != 4
-                or value.get("tensor_parallel_size") != 4):
+                or value.get("tensor_parallel_size") != 4
+                or value.get("request_population") != {
+                    "service_expected": 72,
+                    "teacher_forced_expected": 4,
+                    "total_expected": 76,
+                    "total_completed": 76,
+                }):
             reasons.append(f"{selector}: runner identity/population differs")
         artifact = value.get("candidate_artifact") or {}
         if (artifact.get("sha256")
@@ -255,6 +263,18 @@ def qualify(
                 "state": state,
                 "target_prompt_tokens": target,
                 "paired_gains": gains,
+                "control_a_ttft_s": [
+                    primary["control_a"][identity]["ttft_s"]
+                    for identity in bucket_identities
+                ],
+                "control_b_ttft_s": [
+                    primary["control_b"][identity]["ttft_s"]
+                    for identity in bucket_identities
+                ],
+                "candidate_ttft_s": [
+                    primary["candidate"][identity]["ttft_s"]
+                    for identity in bucket_identities
+                ],
                 "mean_gain": bucket_point,
                 "one_sided_95_lower_ci": bucket_lower,
                 "one_sided_95_upper_ci": bucket_upper,
@@ -297,7 +317,11 @@ def qualify(
         "pair_id": statuses["control_a"]["pair_id"],
         "targets": list(service.TARGETS),
         "cache_states": list(STATES),
-        "request_population_per_arm": 72,
+        "request_population_per_arm": {
+            "service": 72,
+            "teacher_forced": 4,
+            "total": 76,
+        },
         "service_startups_per_arm": 1,
         "arm_summaries": {
             name: _arm_summary(measurements[name]) for name in SELECTORS
