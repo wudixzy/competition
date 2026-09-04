@@ -1,11 +1,55 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+import tempfile
 import unittest
 
 import teacher_forced_topk_api as api
 
 
 class TeacherForcedTopkApiTests(unittest.TestCase):
+
+    def test_short_l3_target_parser_is_fixed_and_bounded(self) -> None:
+        self.assertEqual(
+            api.parse_targets("4096,16384,32768,65536"),
+            (4096, 16384, 32768, 65536),
+        )
+        for raw in ("", "4096,4096", "65536,4096", "x", "262144"):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                api.parse_targets(raw)
+
+    def test_lightweight_runtime_manifest_v2(self) -> None:
+        expected = {
+            "source_revision": "a" * 40,
+            "runtime_identity": "overlay:install-byte-equal",
+            "instance": "private-instance",
+            "model_path": "/model",
+            "tokenizer_path": "/model",
+            "gpu_count": 4,
+            "tensor_parallel_size": 4,
+            "max_model_len": 262144,
+            "served_model_name": "llm",
+        }
+        value = {
+            "schema": "bi100-quality-runtime-manifest-v2",
+            "version": 2,
+            **expected,
+            "command": ["launch_service"],
+            "environment": {
+                "BI100_ATTN_COREX_FUSED_PREFILL": "0",
+                "BI100_CACHE_TRACE": "1",
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertEqual(
+                api.load_runtime_manifest_v2(path, expected), value)
+            value["environment"]["API_TOKEN"] = "redacted"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                api.load_runtime_manifest_v2(path, expected)
 
     def test_fixed_sampler_is_stable_and_in_range(self) -> None:
         for token_count in api.TARGETS:

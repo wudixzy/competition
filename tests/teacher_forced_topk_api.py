@@ -28,6 +28,59 @@ TOP_K = 5
 POSITIONS_PER_CASE = 64
 SEED = 20260729
 Json = dict[str, Any]
+RUNTIME_MANIFEST_V2_FIELDS = {
+    "schema", "version", "source_revision", "runtime_identity", "instance",
+    "model_path", "tokenizer_path", "gpu_count", "tensor_parallel_size",
+    "max_model_len", "served_model_name", "command", "environment",
+}
+
+
+def parse_targets(raw: str) -> tuple[int, ...]:
+    try:
+        values = tuple(int(item) for item in raw.split(","))
+    except ValueError as exc:
+        raise ValueError("teacher-forced targets must be integers") from exc
+    if (
+        not values
+        or values != tuple(sorted(set(values)))
+        or any(value <= POSITIONS_PER_CASE + 1 or value > 262143
+               for value in values)
+    ):
+        raise ValueError(
+            "teacher-forced targets must be unique increasing valid lengths")
+    return values
+
+
+def load_runtime_manifest_v2(path: Path, expected: Json) -> Json:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or set(value) != RUNTIME_MANIFEST_V2_FIELDS:
+        raise ValueError("runtime manifest v2 fields are invalid")
+    if (value.get("schema") != "bi100-quality-runtime-manifest-v2"
+            or value.get("version") != 2):
+        raise ValueError("runtime manifest schema/version is invalid")
+    for name, expected_value in expected.items():
+        if value.get(name) != expected_value:
+            raise ValueError(f"runtime manifest {name} differs from the run")
+    command = value.get("command")
+    environment = value.get("environment")
+    if (not isinstance(command, list)
+            or not command
+            or not all(isinstance(item, str) and item for item in command)
+            or not isinstance(environment, dict)
+            or not all(isinstance(name, str) and name
+                       and isinstance(item, str)
+                       for name, item in environment.items())):
+        raise ValueError("runtime command/environment is malformed")
+    blocked = ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH")
+    if any(fragment in name.upper()
+           for name in environment for fragment in blocked):
+        raise ValueError("runtime manifest contains a secret-bearing name")
+    selector = environment.get("BI100_ATTN_COREX_FUSED_PREFILL")
+    if selector not in {"0", "1"}:
+        raise ValueError("runtime manifest fused-prefill selector is invalid")
+    if environment.get("BI100_CACHE_TRACE") != "1":
+        raise ValueError("runtime manifest must enable cache trace")
+    return value
 
 
 def _atomic_write(path: Path, value: Json, mode: int = 0o600) -> None:
@@ -304,19 +357,27 @@ def main() -> int:
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument("--model-path", type=Path, required=True)
     parser.add_argument("--served-model-name", default="llm")
-    parser.add_argument("--runtime-contract", type=Path, required=True)
+    runtime_group = parser.add_mutually_exclusive_group(required=True)
+    runtime_group.add_argument("--runtime-contract", type=Path)
+    runtime_group.add_argument("--runtime-manifest-v2", type=Path)
     parser.add_argument("--runtime-identity", required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--instance", required=True)
     parser.add_argument("--mode", choices=("control", "candidate"),
                         required=True)
     parser.add_argument("--timeout-s", type=float, default=3600.0)
+    parser.add_argument(
+        "--targets", default=",".join(map(str, TARGETS)))
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     if not runtime_contract.is_git_revision(args.source_revision):
         parser.error("--source-revision must be a fixed Git object id")
     if not math.isfinite(args.timeout_s) or args.timeout_s <= 0:
         parser.error("--timeout-s must be finite and positive")
+    try:
+        targets = parse_targets(args.targets)
+    except ValueError as exc:
+        parser.error(str(exc))
     output = args.out.resolve()
     root = Path(__file__).resolve().parents[1]
     if output == root or output.is_relative_to(root):
@@ -344,11 +405,18 @@ def main() -> int:
         "tokenizer_path": model_path,
         "served_model_name": args.served_model_name,
     }
-    contract, _ = runtime_contract.load_runtime_contract(
-        args.runtime_contract,
-        expected_contract,
-        require_cache_trace=True,
-    )
+    if args.runtime_contract is not None:
+        contract, _ = runtime_contract.load_runtime_contract(
+            args.runtime_contract,
+            expected_contract,
+            require_cache_trace=True,
+        )
+    else:
+        try:
+            contract = load_runtime_manifest_v2(
+                args.runtime_manifest_v2, expected_contract)
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            parser.error(str(exc))
     environment = contract["environment"]
     expected_selector = "0" if args.mode == "control" else "1"
     if environment.get("BI100_ATTN_COREX_FUSED_PREFILL") != expected_selector:
@@ -357,7 +425,7 @@ def main() -> int:
     tokenizer = AutoTokenizer.from_pretrained(
         model_path, trust_remote_code=True, local_files_only=True)
     cases = []
-    for target_tokens in TARGETS:
+    for target_tokens in targets:
         started = time.monotonic()
         case = collect_case(
             base=args.base,
