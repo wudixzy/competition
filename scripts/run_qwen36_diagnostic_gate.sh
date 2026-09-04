@@ -586,6 +586,46 @@ if (
 print(tree)
 PY
     ) || exit 4
+    CAPTURE_IDENTITIES=$(python3 - "$MODEL_PATH" "$SOURCE_MODEL_PATH" \
+            "$BI100_RUNTIME_SITE_PACKAGES" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+model = Path(sys.argv[1])
+source_model = Path(sys.argv[2])
+site = Path(sys.argv[3])
+
+def sha(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+config_path = model / "config.json"
+tokenizer_path = source_model / "tokenizer.json"
+artifact_path = site / "vllm" / "attention" / "ops" / "paged_attn.py"
+config = json.loads(config_path.read_text(encoding="utf-8"))
+text_config = config.get("text_config", config)
+layer_types = text_config.get("layer_types")
+if not isinstance(layer_types, list):
+    raise SystemExit("diagnostic model layer_types are unavailable")
+full_layers = [
+    index for index, kind in enumerate(layer_types)
+    if kind == "full_attention"
+]
+if not full_layers:
+    raise SystemExit("diagnostic model has no full-attention layer")
+for path in (tokenizer_path, artifact_path):
+    if not path.is_file():
+        raise SystemExit(f"capture identity file is missing: {path}")
+print(sha(config_path), sha(tokenizer_path), sha(artifact_path), full_layers[0])
+PY
+    ) || exit 4
+    read -r MODEL_CONFIG_SHA TOKENIZER_SHA SOURCE_ARTIFACT_SHA \
+        CAPTURE_LAYER_INDEX <<< "$CAPTURE_IDENTITIES"
     export BI100_ATTN_COREX_FUSED_PREFILL=0
     export BI100_ATTN_COREX_FUSED_PREFILL_SHADOW=0
     export BI100_ATTN_CAPTURE_REPLAY=1
@@ -593,8 +633,13 @@ PY
     export BI100_ATTN_CAPTURE_REPLAY_RUN_ID="m1-176-${SOURCE_REVISION:0:12}"
     export BI100_ATTN_CAPTURE_REPLAY_CONTEXTS=24576,57344,122880
     export BI100_ATTN_CAPTURE_REPLAY_CALL_ORDINALS=0
+    export BI100_ATTN_CAPTURE_REPLAY_LAYER_INDICES="$CAPTURE_LAYER_INDEX"
     export BI100_ATTN_CAPTURE_REPLAY_SOURCE_REVISION="$SOURCE_REVISION"
     export BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY="bare-host-overlay-v1:${RUNTIME_TREE_SHA:0:20}"
+    export BI100_ATTN_CAPTURE_REPLAY_INSTANCE="$INSTANCE"
+    export BI100_ATTN_CAPTURE_REPLAY_MODEL_CONFIG_SHA256="$MODEL_CONFIG_SHA"
+    export BI100_ATTN_CAPTURE_REPLAY_TOKENIZER_SHA256="$TOKENIZER_SHA"
+    export BI100_ATTN_CAPTURE_REPLAY_SOURCE_ARTIFACT_SHA256="$SOURCE_ARTIFACT_SHA"
     export BI100_ATTN_CAPTURE_REPLAY_SYNTHETIC_ATTESTATION=synthetic-exact-prompt-v1
 fi
 
@@ -662,8 +707,13 @@ environment_names = (
     "BI100_ATTN_CAPTURE_REPLAY_RUN_ID",
     "BI100_ATTN_CAPTURE_REPLAY_CONTEXTS",
     "BI100_ATTN_CAPTURE_REPLAY_CALL_ORDINALS",
+    "BI100_ATTN_CAPTURE_REPLAY_LAYER_INDICES",
     "BI100_ATTN_CAPTURE_REPLAY_SOURCE_REVISION",
     "BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY",
+    "BI100_ATTN_CAPTURE_REPLAY_INSTANCE",
+    "BI100_ATTN_CAPTURE_REPLAY_MODEL_CONFIG_SHA256",
+    "BI100_ATTN_CAPTURE_REPLAY_TOKENIZER_SHA256",
+    "BI100_ATTN_CAPTURE_REPLAY_SOURCE_ARTIFACT_SHA256",
     "BI100_ATTN_CAPTURE_REPLAY_SYNTHETIC_ATTESTATION",
 )
 report = {
@@ -810,6 +860,7 @@ if [[ "$ACTIVATION_CAPTURE" == 1 ]]; then
             --max-tokens 2 \
             --timeout-s 1800 \
             --run-id "$BI100_ATTN_CAPTURE_REPLAY_RUN_ID" \
+            --manifest "$RUN_ROOT/activation-bank/rank-0.manifest.json" \
             --out "$RUN_ROOT/activation_capture_requests.json" \
             > "$RUN_ROOT/activation_capture_requests.stdout" \
             2> "$RUN_ROOT/activation_capture_requests.stderr"; then

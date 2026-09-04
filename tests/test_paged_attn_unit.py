@@ -130,10 +130,20 @@ def _load_paged_attn(**env):
                 env.get("capture_contexts")),
             BI100_ATTN_CAPTURE_REPLAY_CALL_ORDINALS=(
                 env.get("capture_ordinals")),
+            BI100_ATTN_CAPTURE_REPLAY_LAYER_INDICES=(
+                env.get("capture_layer_indices")),
             BI100_ATTN_CAPTURE_REPLAY_SOURCE_REVISION=(
                 env.get("capture_source_revision")),
             BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY=(
                 env.get("capture_runtime_identity")),
+            BI100_ATTN_CAPTURE_REPLAY_INSTANCE=(
+                env.get("capture_instance")),
+            BI100_ATTN_CAPTURE_REPLAY_MODEL_CONFIG_SHA256=(
+                env.get("capture_model_config_sha256")),
+            BI100_ATTN_CAPTURE_REPLAY_TOKENIZER_SHA256=(
+                env.get("capture_tokenizer_sha256")),
+            BI100_ATTN_CAPTURE_REPLAY_SOURCE_ARTIFACT_SHA256=(
+                env.get("capture_source_artifact_sha256")),
             BI100_ATTN_CAPTURE_REPLAY_SYNTHETIC_ATTESTATION=(
                 env.get("capture_attestation")),
     ):
@@ -213,6 +223,44 @@ class PagedAttentionUnitTest(unittest.TestCase):
                     capture_request_eligible=False,
                 )
         supported.assert_not_called()
+
+    def test_tp1_capture_shape_is_separate_from_tp4_dispatch_shape(self):
+        module = _load_paged_attn()
+
+        class FakeTensor:
+            def __init__(self, shape, dtype):
+                self.shape = shape
+                self.dtype = dtype
+                self.device = "cuda:0"
+                self.is_cuda = True
+
+            @staticmethod
+            def is_contiguous():
+                return True
+
+        half = module.torch.float16
+        query = FakeTensor((8176, 16, 256), half)
+        key = FakeTensor((8176, 2, 256), half)
+        value = FakeTensor((8176, 2, 256), half)
+        empty_key = FakeTensor((0, 2, 256), half)
+        empty_value = FakeTensor((0, 2, 256), half)
+        key_cache = FakeTensor((16871, 2, 32, 16, 8), half)
+        value_cache = FakeTensor((16871, 2, 256, 16), half)
+        block_tables = FakeTensor((1, 16384), module.torch.int32)
+        args = (
+            query, key, value, empty_key, empty_value,
+            key_cache, value_cache, block_tables,
+            0, 57344, 16, 2, 256, 8, 16,
+        )
+        self.assertTrue(
+            module._is_supported_tp1_activation_capture_segment(*args))
+        self.assertFalse(
+            module._is_supported_corex_fused_paged_prefill_segment(*args))
+
+        bad_query = FakeTensor((8176, 15, 256), half)
+        self.assertFalse(
+            module._is_supported_tp1_activation_capture_segment(
+                bad_query, *args[1:]))
 
     def test_legacy_decode_interface_uses_head_mapping_tensor(self):
         module = _load_paged_attn()
@@ -545,6 +593,10 @@ class PagedAttentionUnitTest(unittest.TestCase):
                 revision,
                 "bare-host-overlay-v1:abc",
                 "synthetic-exact-prompt-v1",
+                "unit-instance",
+                "b" * 64,
+                "c" * 64,
+                "d" * 64,
             )
             self.assertEqual(path, pathlib.Path(directory))
         with self.assertRaisesRegex(RuntimeError, "baseline PyTorch"):

@@ -136,6 +136,103 @@ class ReplayActivationContractTest(unittest.TestCase):
                 [],
             )
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("torch") is not None,
+        "torch is unavailable in the local unit-test environment",
+    )
+    def test_memory_bounded_reference_matches_materialized_gqa(self):
+        import torch
+
+        torch.manual_seed(20260904)
+        for query_len in (3, 16):
+            for block_table in (
+                torch.tensor([0, 1], dtype=torch.int32),
+                torch.tensor([1, 0], dtype=torch.int32),
+            ):
+                query = torch.randn(query_len, 8, 256, dtype=torch.float16)
+                key_new = torch.randn(query_len, 2, 256, dtype=torch.float16)
+                value_new = torch.randn(query_len, 2, 256, dtype=torch.float16)
+                key_cache = torch.randn(2, 2, 32, 16, 8, dtype=torch.float16)
+                value_cache = torch.randn(2, 2, 256, 16, dtype=torch.float16)
+                actual, actual_lse = MODULE.reference_forward(
+                    query, key_new, value_new, key_cache, value_cache,
+                    block_table, 32, 256 ** -0.5)
+                context_key = (key_cache[block_table.long()]
+                               .permute(0, 3, 1, 2, 4).contiguous()
+                               .view(32, 2, 256))
+                context_value = (value_cache[block_table.long()]
+                                 .permute(0, 3, 1, 2).contiguous()
+                                 .view(32, 2, 256))
+                expected = torch.empty_like(actual)
+                expected_lse = torch.empty_like(actual_lse)
+                for token in range(query_len):
+                    for head in range(8):
+                        kv_head = head // 4
+                        keys = torch.cat((
+                            context_key[:, kv_head],
+                            key_new[:token + 1, kv_head]), dim=0).float()
+                        values = torch.cat((
+                            context_value[:, kv_head],
+                            value_new[:token + 1, kv_head]), dim=0).float()
+                        scores = torch.mv(
+                            keys, query[token, head].float()) * 256 ** -0.5
+                        weights = torch.softmax(scores, dim=0)
+                        expected[token, head] = torch.mv(
+                            values.transpose(0, 1), weights)
+                        expected_lse[token, head] = torch.logsumexp(scores, 0)
+                torch.testing.assert_close(actual, expected, rtol=2e-5, atol=2e-5)
+                torch.testing.assert_close(
+                    actual_lse, expected_lse, rtol=2e-5, atol=2e-5)
+
+    def test_tp1_reference_temporary_bound_is_context_independent(self):
+        bound = MODULE.reference_peak_temporary_bytes(8176, 16, 2)
+        self.assertLess(bound, 650 * 1024 * 1024)
+        self.assertGreater(bound, 500 * 1024 * 1024)
+        self.assertGreater(bound, 0)
+        with self.assertRaises(ValueError):
+            MODULE.reference_peak_temporary_bytes(32, 7, 2)
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("torch") is not None,
+        "torch is unavailable in the local unit-test environment",
+    )
+    def test_four_rank_outputs_reassemble_in_global_query_head_order(self):
+        import torch
+
+        torch.manual_seed(176)
+        query = torch.randn(3, 16, 256, dtype=torch.float16)
+        key = torch.randn(3, 2, 256, dtype=torch.float16)
+        value = torch.randn(3, 2, 256, dtype=torch.float16)
+        key_cache = torch.randn(2, 2, 32, 16, 8, dtype=torch.float16)
+        value_cache = torch.randn(2, 2, 256, 16, dtype=torch.float16)
+        for block_table in (
+            torch.tensor([0, 1], dtype=torch.int32),
+            torch.tensor([1, 0], dtype=torch.int32),
+        ):
+            global_output, global_lse = MODULE.reference_forward(
+                query, key, value, key_cache, value_cache,
+                block_table, 32, 256 ** -0.5)
+            rank_outputs = []
+            rank_lses = []
+            for rank in range(4):
+                q_start = 4 * rank
+                kv_head = q_start // 8
+                rank_output, rank_lse = MODULE.reference_forward(
+                    query[:, q_start:q_start + 4],
+                    key[:, kv_head:kv_head + 1],
+                    value[:, kv_head:kv_head + 1],
+                    key_cache[:, kv_head:kv_head + 1],
+                    value_cache[:, kv_head:kv_head + 1],
+                    block_table, 32, 256 ** -0.5)
+                rank_outputs.append(rank_output)
+                rank_lses.append(rank_lse)
+            torch.testing.assert_close(
+                torch.cat(rank_outputs, dim=1), global_output,
+                rtol=2e-5, atol=2e-5)
+            torch.testing.assert_close(
+                torch.cat(rank_lses, dim=1), global_lse,
+                rtol=2e-5, atol=2e-5)
+
 
 if __name__ == "__main__":
     unittest.main()

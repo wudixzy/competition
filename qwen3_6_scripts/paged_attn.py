@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 import hashlib
 import json
@@ -260,6 +261,20 @@ _ACTIVATION_CAPTURE_CALL_ORDINALS = _parse_strict_int_tuple(
     minimum=0,
     maximum=63,
 )
+_ACTIVATION_CAPTURE_LAYER_INDICES = _parse_strict_int_tuple(
+    os.environ.get(
+        "BI100_ATTN_CAPTURE_REPLAY_LAYER_INDICES",
+        ",".join(str(4 * ordinal + 3)
+                 for ordinal in _ACTIVATION_CAPTURE_CALL_ORDINALS),
+    ),
+    name="BI100_ATTN_CAPTURE_REPLAY_LAYER_INDICES",
+    minimum=0,
+    maximum=255,
+)
+if len(_ACTIVATION_CAPTURE_LAYER_INDICES) != len(
+        _ACTIVATION_CAPTURE_CALL_ORDINALS):
+    raise RuntimeError(
+        "capture layer indices must align with full-attention call ordinals")
 
 
 def _validate_activation_capture_configuration(
@@ -270,6 +285,10 @@ def _validate_activation_capture_configuration(
     source_revision: Optional[str],
     runtime_identity: Optional[str],
     attestation: Optional[str],
+    instance: Optional[str] = None,
+    model_config_sha256: Optional[str] = None,
+    tokenizer_sha256: Optional[str] = None,
+    source_artifact_sha256: Optional[str] = None,
 ) -> Optional[Path]:
     if not enabled:
         return None
@@ -279,6 +298,20 @@ def _validate_activation_capture_configuration(
     if attestation != _ACTIVATION_CAPTURE_ATTESTATION:
         raise RuntimeError(
             "activation capture requires the synthetic prompt attestation")
+    if (
+        not instance
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", instance)
+        is None
+    ):
+        raise RuntimeError("activation capture instance identity is invalid")
+    for name, digest in (
+        ("model config", model_config_sha256),
+        ("tokenizer", tokenizer_sha256),
+        ("source artifact", source_artifact_sha256),
+    ):
+        if not digest or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            raise RuntimeError(
+                f"activation capture {name} SHA-256 is invalid")
     if (
         not source_revision
         or re.fullmatch(r"[0-9a-f]{40,64}", source_revision) is None
@@ -334,6 +367,14 @@ _ACTIVATION_CAPTURE_SOURCE_REVISION = os.environ.get(
     "BI100_ATTN_CAPTURE_REPLAY_SOURCE_REVISION")
 _ACTIVATION_CAPTURE_RUNTIME_IDENTITY = os.environ.get(
     "BI100_ATTN_CAPTURE_REPLAY_RUNTIME_IDENTITY")
+_ACTIVATION_CAPTURE_INSTANCE = os.environ.get(
+    "BI100_ATTN_CAPTURE_REPLAY_INSTANCE")
+_ACTIVATION_CAPTURE_MODEL_CONFIG_SHA256 = os.environ.get(
+    "BI100_ATTN_CAPTURE_REPLAY_MODEL_CONFIG_SHA256")
+_ACTIVATION_CAPTURE_TOKENIZER_SHA256 = os.environ.get(
+    "BI100_ATTN_CAPTURE_REPLAY_TOKENIZER_SHA256")
+_ACTIVATION_CAPTURE_SOURCE_ARTIFACT_SHA256 = os.environ.get(
+    "BI100_ATTN_CAPTURE_REPLAY_SOURCE_ARTIFACT_SHA256")
 _ACTIVATION_CAPTURE_DIR = _validate_activation_capture_configuration(
     _ACTIVATION_CAPTURE_ENABLED,
     _ENABLE_COREX_FUSED_PAGED_PREFILL,
@@ -342,6 +383,10 @@ _ACTIVATION_CAPTURE_DIR = _validate_activation_capture_configuration(
     _ACTIVATION_CAPTURE_SOURCE_REVISION,
     _ACTIVATION_CAPTURE_RUNTIME_IDENTITY,
     os.environ.get("BI100_ATTN_CAPTURE_REPLAY_SYNTHETIC_ATTESTATION"),
+    _ACTIVATION_CAPTURE_INSTANCE,
+    _ACTIVATION_CAPTURE_MODEL_CONFIG_SHA256,
+    _ACTIVATION_CAPTURE_TOKENIZER_SHA256,
+    _ACTIVATION_CAPTURE_SOURCE_ARTIFACT_SHA256,
 )
 
 
@@ -427,12 +472,23 @@ def _atomic_write_activation_manifest(records: list) -> None:
     if rank < 0:
         raise RuntimeError("activation capture cannot determine TP rank")
     value = {
-        "schema": "bi100-fused-prefill-activation-bank-v1",
-        "version": 1,
+        "schema": "bi100-fused-prefill-activation-bank-v2",
+        "version": 2,
         "run_id": _ACTIVATION_CAPTURE_RUN_ID,
         "rank": rank,
         "source_revision": _ACTIVATION_CAPTURE_SOURCE_REVISION,
         "runtime_identity": _ACTIVATION_CAPTURE_RUNTIME_IDENTITY,
+        "source_artifact_sha256": (
+            _ACTIVATION_CAPTURE_SOURCE_ARTIFACT_SHA256),
+        "model_identity": {
+            "name": "Qwen3.6-35B-A3B",
+            "config_sha256": _ACTIVATION_CAPTURE_MODEL_CONFIG_SHA256,
+        },
+        "tokenizer_identity": {
+            "sha256": _ACTIVATION_CAPTURE_TOKENIZER_SHA256,
+        },
+        "instance": _ACTIVATION_CAPTURE_INSTANCE,
+        "captured_at_utc": datetime.now(timezone.utc).isoformat(),
         "producer": "baseline-pytorch-fallback",
         "synthetic_prompt_attestation": (
             _ACTIVATION_CAPTURE_ATTESTATION),
@@ -440,6 +496,16 @@ def _atomic_write_activation_manifest(records: list) -> None:
             "context_buckets": list(_ACTIVATION_CAPTURE_CONTEXTS),
             "full_attention_call_ordinals": list(
                 _ACTIVATION_CAPTURE_CALL_ORDINALS),
+        },
+        "capture_topology": {
+            "tensor_parallel_size": 1,
+            "query_heads": 16,
+            "kv_heads": 2,
+            "head_dim": 256,
+            "gqa_ratio": 8,
+            "block_size": 16,
+            "query_head_order": list(range(16)),
+            "kv_head_order": [0, 1],
         },
         "record_count": len(records),
         "records": records,
@@ -459,6 +525,7 @@ def _atomic_write_activation_manifest(records: list) -> None:
         dir=destination.parent,
     )
     try:
+        os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="ascii") as stream:
             json.dump(value, stream, ensure_ascii=True, indent=2,
                       sort_keys=True)
@@ -564,6 +631,10 @@ def _capture_fused_prefill_activation(
         "value_cache": compact_value_cache,
         "block_table": compact_block_table,
     }
+    layer_index = _ACTIVATION_CAPTURE_LAYER_INDICES[
+        _ACTIVATION_CAPTURE_CALL_ORDINALS.index(ordinal)]
+    block_table_digest = hashlib.sha256(
+        compact_block_table.numpy().tobytes(order="C")).hexdigest()
     filename = (
         f"rank-{rank}.bucket-{bucket}.ordinal-{ordinal}."
         f"ctx-{context_tokens}.q-{query.shape[0]}.pt"
@@ -575,13 +646,19 @@ def _capture_fused_prefill_activation(
     os.close(descriptor)
     try:
         torch.save({
-            "schema": "bi100-fused-prefill-activation-case-v1",
-            "version": 1,
+            "schema": "bi100-fused-prefill-activation-case-v2",
+            "version": 2,
             "context_tokens": context_tokens,
             "scale": float(scale),
             "rank": rank,
             "bucket": bucket,
             "call_ordinal": ordinal,
+            "layer_index": layer_index,
+            "head_mapping": {
+                "query_head_indices": list(range(query.shape[1])),
+                "key_value_head_indices": list(range(key.shape[1])),
+                "gqa_ratio": query.shape[1] // key.shape[1],
+            },
             "tensors": tensors,
         }, temporary)
         os.chmod(temporary, 0o600)
@@ -598,6 +675,7 @@ def _capture_fused_prefill_activation(
     state["records"].append({
         "bucket_min_context_tokens": bucket,
         "call_ordinal": ordinal,
+        "layer_index": layer_index,
         "context_tokens": context_tokens,
         "query_length": int(query.shape[0]),
         "file": filename,
@@ -605,6 +683,16 @@ def _capture_fused_prefill_activation(
         "size_bytes": destination.stat().st_size,
         "compact_physical_blocks": len(unique_ids),
         "logical_blocks": len(compact_table),
+        "block_table": {
+            "shape": list(compact_block_table.shape),
+            "sha256": block_table_digest,
+            "logical_order": "preserved_after_first_occurrence_compaction",
+        },
+        "head_mapping": {
+            "query_head_indices": list(range(query.shape[1])),
+            "key_value_head_indices": list(range(key.shape[1])),
+            "gqa_ratio": query.shape[1] // key.shape[1],
+        },
         "tensors": {
             name: _tensor_shape_dtype(tensor)
             for name, tensor in tensors.items()
@@ -1147,7 +1235,7 @@ def _is_single_sequence_fused_prefill_metadata(
     )
 
 
-def _is_supported_corex_fused_paged_prefill_segment(
+def _is_supported_corex_paged_prefill_segment_layout(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
@@ -1163,8 +1251,11 @@ def _is_supported_corex_fused_paged_prefill_segment(
     head_dim: int,
     gqa_ratio: int,
     block_size: int,
+    expected_q_heads: int,
+    expected_kv_heads: int,
+    expected_gqa_ratio: int,
 ) -> bool:
-    """Accept only the fixed M1-47 production shape."""
+    """Validate one fixed paged-prefill head layout."""
     query_len = query.shape[0]
     if (
         query_len <= 16
@@ -1175,26 +1266,28 @@ def _is_supported_corex_fused_paged_prefill_segment(
     ):
         return False
     if (num_q_heads, num_kv_heads, head_dim, gqa_ratio, block_size) != (
-        4,
-        1,
+        expected_q_heads,
+        expected_kv_heads,
         256,
-        4,
+        expected_gqa_ratio,
         16,
     ):
         return False
     if prefix_key.shape[0] != 0 or prefix_value.shape[0] != 0:
         return False
     if (
-        tuple(query.shape) != (query_len, 4, 256)
-        or tuple(key.shape) != (query_len, 1, 256)
-        or tuple(value.shape) != (query_len, 1, 256)
+        tuple(query.shape) != (query_len, expected_q_heads, 256)
+        or tuple(key.shape) != (query_len, expected_kv_heads, 256)
+        or tuple(value.shape) != (query_len, expected_kv_heads, 256)
     ):
         return False
     if (
         len(key_cache.shape) != 5
-        or tuple(key_cache.shape[1:]) != (1, 32, 16, 8)
+        or tuple(key_cache.shape[1:]) != (
+            expected_kv_heads, 32, 16, 8)
         or len(value_cache.shape) != 4
-        or tuple(value_cache.shape[1:]) != (1, 256, 16)
+        or tuple(value_cache.shape[1:]) != (
+            expected_kv_heads, 256, 16)
         or key_cache.shape[0] != value_cache.shape[0]
     ):
         return False
@@ -1220,6 +1313,60 @@ def _is_supported_corex_fused_paged_prefill_segment(
     if any(not tensor.is_contiguous() for tensor in tensors):
         return False
     return True
+
+
+def _is_supported_corex_fused_paged_prefill_segment(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    prefix_key: torch.Tensor,
+    prefix_value: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    block_tables: torch.Tensor,
+    seq_index: int,
+    block_context_len: int,
+    num_q_heads: int,
+    num_kv_heads: int,
+    head_dim: int,
+    gqa_ratio: int,
+    block_size: int,
+) -> bool:
+    """Accept only the fixed M1-47 production TP4 shape."""
+    return _is_supported_corex_paged_prefill_segment_layout(
+        query, key, value, prefix_key, prefix_value,
+        key_cache, value_cache, block_tables,
+        seq_index, block_context_len,
+        num_q_heads, num_kv_heads, head_dim, gqa_ratio, block_size,
+        4, 1, 4,
+    )
+
+
+def _is_supported_tp1_activation_capture_segment(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    prefix_key: torch.Tensor,
+    prefix_value: torch.Tensor,
+    key_cache: torch.Tensor,
+    value_cache: torch.Tensor,
+    block_tables: torch.Tensor,
+    seq_index: int,
+    block_context_len: int,
+    num_q_heads: int,
+    num_kv_heads: int,
+    head_dim: int,
+    gqa_ratio: int,
+    block_size: int,
+) -> bool:
+    """Accept the real-weight TP1 source shape used only for capture."""
+    return _is_supported_corex_paged_prefill_segment_layout(
+        query, key, value, prefix_key, prefix_value,
+        key_cache, value_cache, block_tables,
+        seq_index, block_context_len,
+        num_q_heads, num_kv_heads, head_dim, gqa_ratio, block_size,
+        16, 2, 8,
+    )
 
 
 def _can_use_corex_fused_paged_prefill(
@@ -1482,8 +1629,12 @@ class PagedAttention:
                     k_t.unsqueeze(1))        # [kv_h, 1, d, seq_len]
                 attn_w = torch.softmax(attn_w, dim=-1)
 
-                # [kv_h, gqa_ratio, 1, d] → [num_heads, head_dim]
-                out_i = torch.matmul(attn_w, v_t.unsqueeze(1))
+                # Avoid CoreX materializing the broadcast V operand. At 131K,
+                # TP1 GQA 8:1 otherwise requests a 2 GiB temporary tensor.
+                out_i = torch.stack([
+                    torch.matmul(attn_w[kv_head], v_t[kv_head])
+                    for kv_head in range(num_kv_heads)
+                ], dim=0)
                 output[i] = out_i.view(num_heads, head_dim).to(orig_dtype)
 
         except Exception as e:
@@ -1964,7 +2115,8 @@ class PagedAttention:
         """Run online-softmax attention for one strict-prefix query segment."""
         q_len = query.shape[0]
         supported_segment = False
-        if fused_request_eligible or capture_request_eligible:
+        capture_supported_segment = False
+        if fused_request_eligible:
             supported_segment = (
                 _is_supported_corex_fused_paged_prefill_segment(
                 query,
@@ -1983,6 +2135,25 @@ class PagedAttention:
                 gqa_ratio,
                 block_size,
                 ))
+        if capture_request_eligible:
+            capture_supported_segment = (
+                _is_supported_tp1_activation_capture_segment(
+                    query,
+                    key,
+                    value,
+                    prefix_key,
+                    prefix_value,
+                    key_cache,
+                    value_cache,
+                    block_tables,
+                    seq_index,
+                    block_context_len,
+                    num_q_heads,
+                    num_kv_heads,
+                    head_dim,
+                    gqa_ratio,
+                    block_size,
+                ))
         segment_eligible = bool(
             fused_request_eligible
             and _USE_COREX_FUSED_PAGED_PREFILL
@@ -1990,11 +2161,12 @@ class PagedAttention:
         capture_segment_eligible = bool(
             capture_request_eligible
             and _ACTIVATION_CAPTURE_ENABLED
-            and supported_segment)
+            and capture_supported_segment)
         _log_corex_fused_prefill_diagnostic(
             "segment",
             eligible=segment_eligible,
             request_eligible=fused_request_eligible,
+            capture_eligible=capture_segment_eligible,
             query_shape=tuple(query.shape),
             key_shape=tuple(key.shape),
             value_shape=tuple(value.shape),

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Derive the TP4 rank-0 attention slice from a TP1 activation bank.
+"""Derive one rank-local TP4 attention slice from a TP1 activation bank.
 
 The source remains a private, real-weight TP1 capture. The derived bank is an
-intermediate operator screen only: Q heads 0..3 and KV head 0 match the
-contiguous projection shard assigned to logical TP4 rank 0, but no distributed
-TP4 execution is claimed.
+intermediate operator screen only. Query heads use the contiguous projection
+shards and KV heads follow the model's replicated selection rule; no
+distributed TP4 execution is claimed.
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ import tempfile
 from typing import Any
 
 
-SOURCE_BANK_SCHEMA = "bi100-fused-prefill-activation-bank-v1"
-SOURCE_CASE_SCHEMA = "bi100-fused-prefill-activation-case-v1"
-DERIVED_BANK_SCHEMA = "bi100-m1-176-tp1-derived-tp4-rank0-bank-v1"
-DERIVED_CASE_SCHEMA = "bi100-m1-176-tp1-derived-tp4-rank0-case-v1"
+SOURCE_BANK_SCHEMA = "bi100-fused-prefill-activation-bank-v2"
+SOURCE_CASE_SCHEMA = "bi100-fused-prefill-activation-case-v2"
+DERIVED_BANK_SCHEMA = "bi100-m1-176-tp1-derived-tp4-rank-bank-v2"
+DERIVED_CASE_SCHEMA = "bi100-m1-176-tp1-derived-tp4-rank-case-v2"
 BLOCK_SIZE = 16
 HEAD_DIM = 256
 SOURCE_QUERY_HEADS = 16
@@ -46,26 +46,57 @@ TENSOR_NAMES = {
 }
 SOURCE_MANIFEST_FIELDS = {
     "schema", "version", "run_id", "rank", "source_revision",
-    "runtime_identity", "producer", "synthetic_prompt_attestation",
-    "selection", "record_count", "records", "privacy",
+    "runtime_identity", "source_artifact_sha256", "model_identity",
+    "tokenizer_identity", "instance", "captured_at_utc", "producer",
+    "synthetic_prompt_attestation", "selection", "capture_topology",
+    "record_count", "records", "privacy",
 }
 SOURCE_RECORD_FIELDS = {
-    "bucket_min_context_tokens", "call_ordinal", "context_tokens",
+    "bucket_min_context_tokens", "call_ordinal", "layer_index", "context_tokens",
     "query_length", "file", "sha256", "size_bytes",
-    "compact_physical_blocks", "logical_blocks", "tensors",
+    "compact_physical_blocks", "logical_blocks", "block_table",
+    "head_mapping", "tensors",
 }
 SOURCE_CASE_FIELDS = {
     "schema", "version", "context_tokens", "scale", "rank", "bucket",
-    "call_ordinal", "tensors",
+    "call_ordinal", "layer_index", "head_mapping", "tensors",
 }
-DERIVATION = {
-    "source_tensor_parallel_size": 1,
-    "target_tensor_parallel_size": 4,
-    "target_logical_tp_rank": 0,
-    "query_head_indices": [0, 1, 2, 3],
-    "key_value_head_indices": [0],
-    "projection_partition": "contiguous",
+SOURCE_TOPOLOGY = {
+    "tensor_parallel_size": 1,
+    "query_heads": 16,
+    "kv_heads": 2,
+    "head_dim": 256,
+    "gqa_ratio": 8,
+    "block_size": 16,
+    "query_head_order": list(range(16)),
+    "kv_head_order": [0, 1],
 }
+SOURCE_HEAD_MAPPING = {
+    "query_head_indices": list(range(16)),
+    "key_value_head_indices": [0, 1],
+    "gqa_ratio": 8,
+}
+
+
+def derivation_for_rank(rank: int) -> dict[str, Any]:
+    if not isinstance(rank, int) or isinstance(rank, bool) or rank not in range(4):
+        raise ValueError("logical TP rank must be in [0, 3]")
+    query_start = rank * TARGET_QUERY_HEADS
+    kv_head = query_start // (SOURCE_QUERY_HEADS // SOURCE_KV_HEADS)
+    return {
+        "source_tensor_parallel_size": 1,
+        "target_tensor_parallel_size": 4,
+        "target_logical_tp_rank": rank,
+        "query_head_indices": list(range(
+            query_start, query_start + TARGET_QUERY_HEADS)),
+        "key_value_head_indices": [kv_head],
+        "projection_partition": "contiguous",
+        "kv_partition": "replicated_by_global_gqa_group",
+        "per_rank_gqa_ratio": 4,
+    }
+
+
+DERIVATION = derivation_for_rank(0)
 
 
 def sha256_file(path: Path) -> str:
@@ -144,7 +175,7 @@ def _load_case(path: Path) -> dict[str, Any]:
         not isinstance(value, dict)
         or set(value) != SOURCE_CASE_FIELDS
         or value.get("schema") != SOURCE_CASE_SCHEMA
-        or value.get("version") != 1
+        or value.get("version") != 2
         or not isinstance(value.get("tensors"), dict)
     ):
         raise ValueError("source activation case contract differs")
@@ -218,6 +249,7 @@ def derive(
     *,
     expected_source_revision: str,
     expected_runtime_identity: str,
+    logical_rank: int = 0,
 ) -> dict[str, Any]:
     source_manifest = source_manifest.resolve(strict=True)
     output_dir = output_dir.resolve()
@@ -233,20 +265,34 @@ def derive(
         raise ValueError("expected source revision is invalid")
     if not expected_runtime_identity:
         raise ValueError("expected runtime identity is empty")
+    derivation = derivation_for_rank(logical_rank)
 
     manifest = json.loads(source_manifest.read_text(encoding="ascii"))
     if (
         not isinstance(manifest, dict)
         or set(manifest) != SOURCE_MANIFEST_FIELDS
         or manifest.get("schema") != SOURCE_BANK_SCHEMA
-        or manifest.get("version") != 1
+        or manifest.get("version") != 2
         or manifest.get("rank") != 0
         or manifest.get("source_revision") != expected_source_revision
         or manifest.get("runtime_identity") != expected_runtime_identity
+        or not _hex(manifest.get("source_artifact_sha256"), 64)
+        or not isinstance(manifest.get("model_identity"), dict)
+        or set(manifest["model_identity"]) != {"name", "config_sha256"}
+        or manifest["model_identity"].get("name") != "Qwen3.6-35B-A3B"
+        or not _hex(manifest["model_identity"].get("config_sha256"), 64)
+        or not isinstance(manifest.get("tokenizer_identity"), dict)
+        or set(manifest["tokenizer_identity"]) != {"sha256"}
+        or not _hex(manifest["tokenizer_identity"].get("sha256"), 64)
+        or not isinstance(manifest.get("instance"), str)
+        or not manifest["instance"]
+        or not isinstance(manifest.get("captured_at_utc"), str)
+        or not manifest["captured_at_utc"]
         or manifest.get("producer") != "baseline-pytorch-fallback"
         or manifest.get("synthetic_prompt_attestation")
         != "synthetic-exact-prompt-v1"
         or manifest.get("selection") != FROZEN_SELECTION
+        or manifest.get("capture_topology") != SOURCE_TOPOLOGY
         or manifest.get("privacy") != SOURCE_PRIVACY
         or not isinstance(manifest.get("records"), list)
         or manifest.get("record_count") != len(manifest["records"])
@@ -278,6 +324,9 @@ def derive(
         cell = (value.get("bucket"), value.get("call_ordinal"))
         if (
             value.get("rank") != 0
+            or value.get("layer_index") != source_record.get("layer_index")
+            or value.get("head_mapping") != SOURCE_HEAD_MAPPING
+            or source_record.get("head_mapping") != SOURCE_HEAD_MAPPING
             or value.get("context_tokens") != source_record.get(
                 "context_tokens")
             or cell != (
@@ -294,44 +343,65 @@ def derive(
             name: _tensor_metadata(tensors[name]) for name in sorted(tensors)
         }:
             raise ValueError("source activation tensor metadata differs")
+        block_metadata = source_record.get("block_table")
+        block_table_digest = hashlib.sha256(
+            tensors["block_table"].numpy().tobytes(order="C")).hexdigest()
         if (
             source_record.get("query_length") != tensors["query"].shape[0]
             or source_record.get("compact_physical_blocks")
             != tensors["key_cache"].shape[0]
             or source_record.get("logical_blocks")
             != tensors["block_table"].numel()
+            or not isinstance(block_metadata, dict)
+            or set(block_metadata) != {"shape", "sha256", "logical_order"}
+            or block_metadata.get("shape")
+            != list(tensors["block_table"].shape)
+            or block_metadata.get("sha256") != block_table_digest
+            or block_metadata.get("logical_order")
+            != "preserved_after_first_occurrence_compaction"
         ):
             raise ValueError("source activation record dimensions differ")
 
+        query_indices = derivation["query_head_indices"]
+        kv_index = derivation["key_value_head_indices"][0]
         derived_tensors = {
-            "query": tensors["query"][:, :TARGET_QUERY_HEADS].contiguous(),
-            "key": tensors["key"][:, :TARGET_KV_HEADS].contiguous(),
-            "value": tensors["value"][:, :TARGET_KV_HEADS].contiguous(),
+            "query": tensors["query"][
+                :, query_indices[0]:query_indices[-1] + 1].contiguous(),
+            "key": tensors["key"][:, kv_index:kv_index + 1].contiguous(),
+            "value": tensors["value"][:, kv_index:kv_index + 1].contiguous(),
             "key_cache": tensors["key_cache"][
-                :, :TARGET_KV_HEADS].contiguous(),
+                :, kv_index:kv_index + 1].contiguous(),
             "value_cache": tensors["value_cache"][
-                :, :TARGET_KV_HEADS].contiguous(),
+                :, kv_index:kv_index + 1].contiguous(),
             "block_table": tensors["block_table"].clone().contiguous(),
         }
         derived_name = (
-            f"logical-rank-0.bucket-{cell[0]}.ordinal-{cell[1]}."
+            f"logical-rank-{logical_rank}.bucket-{cell[0]}.ordinal-{cell[1]}."
             f"ctx-{value['context_tokens']}.q-{derived_tensors['query'].shape[0]}.pt"
         )
         destination = output_dir / derived_name
         source_sha = source_record["sha256"]
         _atomic_torch_save(destination, {
             "schema": DERIVED_CASE_SCHEMA,
-            "version": 1,
+            "version": 2,
             "context_tokens": value["context_tokens"],
             "scale": float(value["scale"]),
-            "logical_tp_rank": 0,
+            "logical_tp_rank": logical_rank,
+            "layer_index": value["layer_index"],
+            "head_mapping": {
+                "query_head_indices": derivation["query_head_indices"],
+                "key_value_head_indices": derivation[
+                    "key_value_head_indices"],
+                "gqa_ratio": derivation["per_rank_gqa_ratio"],
+            },
             "source_case_sha256": source_sha,
-            "derivation": DERIVATION,
+            "derivation": derivation,
             "tensors": derived_tensors,
         })
         derived_records.append({
             "bucket_min_context_tokens": cell[0],
             "call_ordinal": cell[1],
+            "layer_index": value["layer_index"],
             "context_tokens": value["context_tokens"],
             "query_length": int(derived_tensors["query"].shape[0]),
             "file": derived_name,
@@ -341,6 +411,13 @@ def derive(
             "compact_physical_blocks": int(
                 derived_tensors["key_cache"].shape[0]),
             "logical_blocks": int(derived_tensors["block_table"].numel()),
+            "block_table": source_record["block_table"],
+            "head_mapping": {
+                "query_head_indices": derivation["query_head_indices"],
+                "key_value_head_indices": derivation[
+                    "key_value_head_indices"],
+                "gqa_ratio": derivation["per_rank_gqa_ratio"],
+            },
             "tensors": {
                 name: _tensor_metadata(derived_tensors[name])
                 for name in sorted(derived_tensors)
@@ -356,14 +433,14 @@ def derive(
         raise ValueError("source activation bank does not cover frozen cells")
     derived_manifest = {
         "schema": DERIVED_BANK_SCHEMA,
-        "version": 1,
-        "run_id": f"{manifest['run_id']}-tp4-rank0",
-        "logical_tp_rank": 0,
+        "version": 2,
+        "run_id": f"{manifest['run_id']}-tp4-rank{logical_rank}",
+        "logical_tp_rank": logical_rank,
         "source_revision": expected_source_revision,
         "runtime_identity": expected_runtime_identity,
         "producer": "tp1-real-weight-contiguous-head-slice",
         "selection": FROZEN_SELECTION,
-        "derivation": DERIVATION,
+        "derivation": derivation,
         "source_manifest": {
             "file": source_manifest.name,
             "sha256": sha256_file(source_manifest),
@@ -384,7 +461,7 @@ def derive(
             "main_or_yaml_change_authorized": False,
         },
     }
-    manifest_path = output_dir / "logical-rank-0.manifest.json"
+    manifest_path = output_dir / f"logical-rank-{logical_rank}.manifest.json"
     _atomic_json(manifest_path, derived_manifest)
     return {
         "qualified": True,
@@ -403,6 +480,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--expected-source-revision", required=True)
     parser.add_argument("--expected-runtime-identity", required=True)
+    parser.add_argument("--logical-rank", type=int, required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     result = derive(
@@ -410,6 +488,7 @@ def main() -> int:
         args.output_dir,
         expected_source_revision=args.expected_source_revision,
         expected_runtime_identity=args.expected_runtime_identity,
+        logical_rank=args.logical_rank,
     )
     _atomic_json(args.report, result)
     print(json.dumps(result, ensure_ascii=True, sort_keys=True))

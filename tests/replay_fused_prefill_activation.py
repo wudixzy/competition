@@ -159,98 +159,112 @@ def reference_forward(
     context_len: int,
     scale: float,
 ) -> tuple[Any, Any]:
-    """Match the production K-major FP32 online-softmax partitioning."""
+    """FP32 online softmax without materializing a broadcast GQA PV.
+
+    Each KV head and its contiguous query-head group are processed separately.
+    The largest score/probability tile is therefore ``gqa * query * 512``
+    FP32 elements for both TP1 (16/2) and TP4 (4/1), rather than a broadcast
+    PV operand proportional to every KV/query-head pair and the full context.
+    """
     import torch
 
     query_len = query.shape[0]
-    query_fp32 = (
-        query.permute(1, 0, 2).float().mul(scale).unsqueeze(0))
-    running_max = torch.full(
-        (1, NUM_QUERY_HEADS, query_len),
-        float("-inf"),
-        dtype=torch.float32,
-        device=query.device,
-    )
-    running_sum = torch.zeros_like(running_max)
-    running_output = torch.zeros(
-        (1, NUM_QUERY_HEADS, query_len, HEAD_DIM),
-        dtype=torch.float32,
-        device=query.device,
-    )
-
-    for token_start in range(0, context_len, TILE_TOKENS):
-        token_end = min(token_start + TILE_TOKENS, context_len)
-        first_block = token_start // BLOCK_SIZE
-        last_block = (token_end + BLOCK_SIZE - 1) // BLOCK_SIZE
-        block_ids = block_table[first_block:last_block]
-        key = (
-            key_cache[block_ids]
-            .permute(0, 3, 1, 2, 4)
-            .contiguous()
-            .view(-1, NUM_KV_HEADS, HEAD_DIM)
-        )[:token_end - token_start]
-        value = (
-            value_cache[block_ids]
-            .permute(0, 3, 1, 2)
-            .contiguous()
-            .view(-1, NUM_KV_HEADS, HEAD_DIM)
-        )[:token_end - token_start]
-        key_matrix = (
-            key.permute(1, 0, 2).unsqueeze(1).transpose(-1, -2).float())
-        value_matrix = value.permute(1, 0, 2).unsqueeze(1).float()
-        _update_online(
-            torch.matmul(query_fp32, key_matrix),
-            value_matrix,
-            running_max,
-            running_sum,
-            running_output,
-        )
-
+    num_query_heads = query.shape[1]
+    num_kv_heads = key_cache.shape[1]
+    if (
+        num_query_heads <= 0
+        or num_kv_heads <= 0
+        or num_query_heads % num_kv_heads
+        or key_new.shape[1] != num_kv_heads
+        or value_new.shape[1] != num_kv_heads
+    ):
+        raise ValueError("reference GQA head layout is invalid")
+    gqa = num_query_heads // num_kv_heads
     key_positions = torch.arange(query_len, device=query.device)
     query_positions = torch.arange(query_len, device=query.device)
-    for key_start in range(0, query_len, TILE_TOKENS):
-        key_end = min(key_start + TILE_TOKENS, query_len)
-        key_matrix = (
-            key_new[key_start:key_end]
-            .permute(1, 0, 2)
-            .unsqueeze(1)
-            .transpose(-1, -2)
-            .float()
-        )
-        value_matrix = (
-            value_new[key_start:key_end]
-            .permute(1, 0, 2)
-            .unsqueeze(1)
-            .float()
-        )
-        scores = torch.matmul(query_fp32, key_matrix)
-        mask = (
-            key_positions[key_start:key_end].unsqueeze(0)
-            > query_positions.unsqueeze(1)
-        )
-        scores.masked_fill_(
-            mask.unsqueeze(0).unsqueeze(0), float("-inf"))
-        _update_online(
-            scores,
-            value_matrix,
-            running_max,
-            running_sum,
-            running_output,
-        )
+    output_fp32 = torch.empty(
+        (query_len, num_query_heads, query.shape[2]),
+        dtype=torch.float32, device=query.device)
+    lse = torch.empty(
+        (query_len, num_query_heads),
+        dtype=torch.float32, device=query.device)
+    for kv_head in range(num_kv_heads):
+        q_start = kv_head * gqa
+        q_end = q_start + gqa
+        query_fp32 = (query[:, q_start:q_end]
+                      .permute(1, 0, 2).float().mul(scale))
+        running_max = torch.full(
+            (gqa, query_len), float("-inf"), dtype=torch.float32,
+            device=query.device)
+        running_sum = torch.zeros_like(running_max)
+        running_output = torch.zeros(
+            (gqa, query_len, query.shape[2]), dtype=torch.float32,
+            device=query.device)
 
-    output_fp32 = (
-        running_output.div(running_sum.unsqueeze(-1))
-        .squeeze(0)
-        .permute(1, 0, 2)
-        .contiguous()
-    )
-    lse = (
-        running_max.add(torch.log(running_sum))
-        .squeeze(0)
-        .transpose(0, 1)
-        .contiguous()
-    )
+        for token_start in range(0, context_len, TILE_TOKENS):
+            token_end = min(token_start + TILE_TOKENS, context_len)
+            first_block = token_start // BLOCK_SIZE
+            last_block = (token_end + BLOCK_SIZE - 1) // BLOCK_SIZE
+            block_ids = block_table[first_block:last_block]
+            key_matrix = (
+                key_cache[block_ids, kv_head]
+                .permute(0, 2, 1, 3).contiguous()
+                .view(-1, query.shape[2])[:token_end - token_start]
+                .transpose(0, 1).float())
+            value_matrix = (
+                value_cache[block_ids, kv_head]
+                .permute(0, 2, 1).contiguous()
+                .view(-1, query.shape[2])[:token_end - token_start]
+                .float())
+            _update_online(
+                torch.matmul(query_fp32, key_matrix), value_matrix,
+                running_max, running_sum, running_output)
+
+        for key_start in range(0, query_len, TILE_TOKENS):
+            key_end = min(key_start + TILE_TOKENS, query_len)
+            key_matrix = (key_new[key_start:key_end, kv_head]
+                          .transpose(0, 1).float())
+            value_matrix = value_new[
+                key_start:key_end, kv_head].float()
+            scores = torch.matmul(query_fp32, key_matrix)
+            mask = (key_positions[key_start:key_end].unsqueeze(0)
+                    > query_positions.unsqueeze(1))
+            scores.masked_fill_(mask.unsqueeze(0), float("-inf"))
+            _update_online(
+                scores, value_matrix,
+                running_max, running_sum, running_output)
+
+        output_fp32[:, q_start:q_end].copy_(
+            running_output.div(running_sum.unsqueeze(-1)).permute(1, 0, 2))
+        lse[:, q_start:q_end].copy_(
+            running_max.add(torch.log(running_sum)).transpose(0, 1))
     return output_fp32, lse
+
+
+def reference_peak_temporary_bytes(
+    query_length: int,
+    num_query_heads: int,
+    num_kv_heads: int,
+    head_dim: int = HEAD_DIM,
+    tile_tokens: int = TILE_TOKENS,
+) -> int:
+    """Conservative FP32 working-set bound, including returned tensors."""
+    if (query_length <= 0 or num_kv_heads <= 0 or num_query_heads <= 0
+            or num_query_heads % num_kv_heads or head_dim <= 0
+            or tile_tokens <= 0):
+        raise ValueError("reference temporary-bound dimensions are invalid")
+    gqa = num_query_heads // num_kv_heads
+    fp32 = 4
+    result = query_length * num_query_heads * (head_dim + 1)
+    score_and_probabilities = 2 * gqa * query_length * tile_tokens
+    running_output = gqa * query_length * head_dim
+    query_copy = running_output
+    matmul_and_division = 2 * running_output
+    key_and_value = 2 * tile_tokens * head_dim
+    running_scalars = 2 * gqa * query_length
+    return fp32 * (
+        result + score_and_probabilities + running_output + query_copy
+        + matmul_and_division + key_and_value + running_scalars)
 
 
 def _load_extension(path: Path, expected_sha256: str) -> tuple[Any, dict]:

@@ -53,18 +53,21 @@ class M1176Tp1Rank0ActivationTest(unittest.TestCase):
             path = root / filename
             torch.save({
                 "schema": MODULE.SOURCE_CASE_SCHEMA,
-                "version": 1,
+                "version": 2,
                 "context_tokens": context,
                 "scale": 256 ** -0.5,
                 "rank": 0,
                 "bucket": bucket,
                 "call_ordinal": 0,
+                "layer_index": 3,
+                "head_mapping": MODULE.SOURCE_HEAD_MAPPING,
                 "tensors": tensors,
             }, path)
             path.chmod(0o600)
             records.append({
                 "bucket_min_context_tokens": bucket,
                 "call_ordinal": 0,
+                "layer_index": 3,
                 "context_tokens": context,
                 "query_length": query_len,
                 "file": filename,
@@ -72,6 +75,15 @@ class M1176Tp1Rank0ActivationTest(unittest.TestCase):
                 "size_bytes": path.stat().st_size,
                 "compact_physical_blocks": 1,
                 "logical_blocks": context // 16,
+                "block_table": {
+                    "shape": list(tensors["block_table"].shape),
+                    "sha256": hashlib.sha256(
+                        tensors["block_table"].numpy().tobytes(
+                            order="C")).hexdigest(),
+                    "logical_order": (
+                        "preserved_after_first_occurrence_compaction"),
+                },
+                "head_mapping": MODULE.SOURCE_HEAD_MAPPING,
                 "tensors": {
                     name: MODULE._tensor_metadata(tensors[name])
                     for name in sorted(tensors)
@@ -79,14 +91,23 @@ class M1176Tp1Rank0ActivationTest(unittest.TestCase):
             })
         manifest = {
             "schema": MODULE.SOURCE_BANK_SCHEMA,
-            "version": 1,
+            "version": 2,
             "run_id": "capture",
             "rank": 0,
             "source_revision": "a" * 40,
             "runtime_identity": "overlay",
+            "source_artifact_sha256": "b" * 64,
+            "model_identity": {
+                "name": "Qwen3.6-35B-A3B",
+                "config_sha256": "c" * 64,
+            },
+            "tokenizer_identity": {"sha256": "d" * 64},
+            "instance": "unit-test",
+            "captured_at_utc": "2026-09-04T00:00:00+00:00",
             "producer": "baseline-pytorch-fallback",
             "synthetic_prompt_attestation": "synthetic-exact-prompt-v1",
             "selection": MODULE.FROZEN_SELECTION,
+            "capture_topology": MODULE.SOURCE_TOPOLOGY,
             "record_count": len(records),
             "records": records,
             "privacy": {
@@ -151,6 +172,56 @@ class M1176Tp1Rank0ActivationTest(unittest.TestCase):
         importlib.util.find_spec("torch") is not None,
         "torch is unavailable in the local unit-test environment",
     )
+    def test_derives_all_four_query_and_replicated_kv_mappings(self):
+        import torch
+
+        expected = {
+            0: ([0, 1, 2, 3], 0),
+            1: ([4, 5, 6, 7], 0),
+            2: ([8, 9, 10, 11], 1),
+            3: ([12, 13, 14, 15], 1),
+        }
+        with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+            root = Path(temporary)
+            root.chmod(0o700)
+            source = self._source_bank(root / "source")
+            source_manifest = json.loads(source.read_text(encoding="ascii"))
+            source_record = source_manifest["records"][0]
+            source_case = torch.load(
+                source.parent / source_record["file"], map_location="cpu")
+            rank_queries = []
+            for rank, (q_indices, kv_index) in expected.items():
+                result = MODULE.derive(
+                    source,
+                    root / f"derived-{rank}",
+                    expected_source_revision="a" * 40,
+                    expected_runtime_identity="overlay",
+                    logical_rank=rank,
+                )
+                manifest = json.loads(Path(result["manifest"]).read_text())
+                self.assertEqual(
+                    manifest["derivation"], MODULE.derivation_for_rank(rank))
+                derived = torch.load(
+                    Path(result["manifest"]).parent
+                    / manifest["records"][0]["file"], map_location="cpu")
+                rank_queries.append(derived["tensors"]["query"])
+                self.assertTrue(torch.equal(
+                    derived["tensors"]["query"],
+                    source_case["tensors"]["query"][:, q_indices]))
+                self.assertTrue(torch.equal(
+                    derived["tensors"]["key"],
+                    source_case["tensors"]["key"][:, kv_index:kv_index + 1]))
+                self.assertTrue(torch.equal(
+                    derived["tensors"]["block_table"],
+                    source_case["tensors"]["block_table"]))
+            self.assertTrue(torch.equal(
+                torch.cat(rank_queries, dim=1),
+                source_case["tensors"]["query"]))
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("torch") is not None,
+        "torch is unavailable in the local unit-test environment",
+    )
     def test_source_rank_and_case_hash_fail_closed(self):
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
             root = Path(temporary)
@@ -182,6 +253,41 @@ class M1176Tp1Rank0ActivationTest(unittest.TestCase):
                     expected_runtime_identity="overlay",
                 )
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("torch") is not None,
+        "torch is unavailable in the local unit-test environment",
+    )
+    def test_source_shape_and_block_table_digest_fail_closed(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+            root = Path(temporary)
+            root.chmod(0o700)
+            source = self._source_bank(root / "source")
+            value = json.loads(source.read_text(encoding="ascii"))
+            value["records"][0]["tensors"]["query"]["shape"][1] = 15
+            source.write_text(
+                json.dumps(value, indent=2, sort_keys=True) + "\n",
+                encoding="ascii")
+            with self.assertRaisesRegex(ValueError, "tensor metadata differs"):
+                MODULE.derive(
+                    source,
+                    root / "derived-shape",
+                    expected_source_revision="a" * 40,
+                    expected_runtime_identity="overlay",
+                )
+
+            value["records"][0]["tensors"]["query"]["shape"][1] = 16
+            value["records"][0]["block_table"]["sha256"] = "0" * 64
+            source.write_text(
+                json.dumps(value, indent=2, sort_keys=True) + "\n",
+                encoding="ascii")
+            with self.assertRaisesRegex(ValueError, "record dimensions differ"):
+                MODULE.derive(
+                    source,
+                    root / "derived-block-table",
+                    expected_source_revision="a" * 40,
+                    expected_runtime_identity="overlay",
+                )
+
     def test_capture_mode_is_opt_in_and_tp1_only(self):
         runner = (ROOT / "scripts" / "run_qwen36_diagnostic_gate.sh").read_text(
             encoding="ascii")
@@ -198,7 +304,7 @@ class M1176Tp1Rank0ActivationTest(unittest.TestCase):
             '"tp4_activation_capture_claim": False', replay)
         self.assertIn(
             '"visible_physical_gpu": args.visible_physical_gpu', replay)
-        self.assertIn('"logical_tp_rank": 0', replay)
+        self.assertIn('"logical_tp_rank": args.logical_tp_rank', replay)
 
 
 if __name__ == "__main__":

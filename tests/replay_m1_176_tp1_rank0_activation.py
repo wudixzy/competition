@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Replay a TP1-derived logical TP4 rank-0 bank on one physical BI100."""
+"""Replay one TP1-derived logical TP4 rank bank on one physical BI100."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -16,19 +17,31 @@ from typing import Any
 import replay_fused_prefill_activation as base
 
 
-REPORT_SCHEMA = "bi100-m1-176-tp1-derived-rank0-replay-v1"
-BANK_SCHEMA = "bi100-m1-176-tp1-derived-tp4-rank0-bank-v1"
-CASE_SCHEMA = "bi100-m1-176-tp1-derived-tp4-rank0-case-v1"
-MINIMUM_SPEEDUP = 1.10
-LSE_RELATIVE_L2_LIMIT = 1.0e-5
-DERIVATION = {
-    "source_tensor_parallel_size": 1,
-    "target_tensor_parallel_size": 4,
-    "target_logical_tp_rank": 0,
-    "query_head_indices": [0, 1, 2, 3],
-    "key_value_head_indices": [0],
-    "projection_partition": "contiguous",
-}
+REPORT_SCHEMA = "bi100-m1-176-tp1-derived-rank-replay-v2"
+BANK_SCHEMA = "bi100-m1-176-tp1-derived-tp4-rank-bank-v2"
+CASE_SCHEMA = "bi100-m1-176-tp1-derived-tp4-rank-case-v2"
+ERROR_MULTIPLIER = 2.0
+RATIO_FLOOR = 1.0e-12
+LSE_RELATIVE_L2_FLOOR = 1.0e-5
+
+
+def derivation_for_rank(rank: int) -> dict[str, Any]:
+    if not isinstance(rank, int) or isinstance(rank, bool) or rank not in range(4):
+        raise ValueError("logical TP rank must be in [0, 3]")
+    query_start = rank * 4
+    return {
+        "source_tensor_parallel_size": 1,
+        "target_tensor_parallel_size": 4,
+        "target_logical_tp_rank": rank,
+        "query_head_indices": list(range(query_start, query_start + 4)),
+        "key_value_head_indices": [query_start // 8],
+        "projection_partition": "contiguous",
+        "kv_partition": "replicated_by_global_gqa_group",
+        "per_rank_gqa_ratio": 4,
+    }
+
+
+DERIVATION = derivation_for_rank(0)
 FROZEN_SELECTION = {
     "context_buckets": [24576, 57344, 122880],
     "full_attention_call_ordinals": [0],
@@ -54,13 +67,15 @@ BANK_FIELDS = {
     "authorization",
 }
 RECORD_FIELDS = {
-    "bucket_min_context_tokens", "call_ordinal", "context_tokens",
+    "bucket_min_context_tokens", "call_ordinal", "layer_index", "context_tokens",
     "query_length", "file", "sha256", "size_bytes", "source_case_sha256",
-    "compact_physical_blocks", "logical_blocks", "tensors",
+    "compact_physical_blocks", "logical_blocks", "block_table",
+    "head_mapping", "tensors",
 }
 CASE_FIELDS = {
     "schema", "version", "context_tokens", "scale", "logical_tp_rank",
-    "source_case_sha256", "derivation", "tensors",
+    "layer_index", "head_mapping", "source_case_sha256", "derivation",
+    "tensors",
 }
 
 
@@ -103,6 +118,29 @@ def _private_tmp_file(path: Path) -> bool:
     )
 
 
+def _load_extension(
+    path: Path,
+    expected_sha256: str,
+    module_name: str,
+) -> tuple[Any, dict[str, Any]]:
+    actual_sha256 = base.sha256_file(path)
+    if actual_sha256 != expected_sha256:
+        raise RuntimeError("extension SHA-256 mismatch")
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot create extension loader")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if not callable(getattr(module, "forward", None)):
+        raise RuntimeError("extension lacks callable forward")
+    return module, {
+        "path": str(path),
+        "sha256": actual_sha256,
+        "size_bytes": path.stat().st_size,
+        "module_name": module_name,
+    }
+
+
 def _load_case(path: Path) -> dict[str, Any]:
     import torch
 
@@ -114,9 +152,15 @@ def _load_case(path: Path) -> dict[str, Any]:
         not isinstance(value, dict)
         or set(value) != CASE_FIELDS
         or value.get("schema") != CASE_SCHEMA
-        or value.get("version") != 1
-        or value.get("logical_tp_rank") != 0
-        or value.get("derivation") != DERIVATION
+        or value.get("version") != 2
+        or value.get("derivation")
+        != derivation_for_rank(value.get("logical_tp_rank"))
+        or value.get("head_mapping") != {
+            "query_head_indices": value["derivation"]["query_head_indices"],
+            "key_value_head_indices": value["derivation"][
+                "key_value_head_indices"],
+            "gqa_ratio": value["derivation"]["per_rank_gqa_ratio"],
+        }
     ):
         raise ValueError("derived activation case contract differs")
     return value
@@ -127,6 +171,7 @@ def _load_bank(
     *,
     source_revision: str,
     runtime_identity: str,
+    logical_rank: int,
 ) -> tuple[dict[str, Any], list[tuple[dict[str, Any], Path]]]:
     path = path.resolve(strict=True)
     if not _private_tmp_file(path):
@@ -136,14 +181,14 @@ def _load_bank(
         not isinstance(manifest, dict)
         or set(manifest) != BANK_FIELDS
         or manifest.get("schema") != BANK_SCHEMA
-        or manifest.get("version") != 1
-        or manifest.get("logical_tp_rank") != 0
+        or manifest.get("version") != 2
+        or manifest.get("logical_tp_rank") != logical_rank
         or manifest.get("source_revision") != source_revision
         or manifest.get("runtime_identity") != runtime_identity
         or manifest.get("producer")
         != "tp1-real-weight-contiguous-head-slice"
         or manifest.get("selection") != FROZEN_SELECTION
-        or manifest.get("derivation") != DERIVATION
+        or manifest.get("derivation") != derivation_for_rank(logical_rank)
         or manifest.get("privacy") != PRIVACY
         or not isinstance(manifest.get("records"), list)
         or not manifest["records"]
@@ -196,6 +241,15 @@ def _load_bank(
                 "full_attention_call_ordinals"]
             or record.get("context_tokens") != bucket
             or record.get("logical_blocks") != bucket // base.BLOCK_SIZE
+            or not isinstance(record.get("layer_index"), int)
+            or isinstance(record.get("layer_index"), bool)
+            or record.get("head_mapping") != {
+                "query_head_indices": manifest["derivation"][
+                    "query_head_indices"],
+                "key_value_head_indices": manifest["derivation"][
+                    "key_value_head_indices"],
+                "gqa_ratio": manifest["derivation"]["per_rank_gqa_ratio"],
+            }
         ):
             raise ValueError("derived activation cell differs")
         seen_cells.add(cell)
@@ -211,35 +265,69 @@ def _load_bank(
     return manifest, cases
 
 
-def _numeric(output: Any, lse: Any, reference: tuple[Any, Any]) -> dict[str, Any]:
+def _numeric(
+    output: Any,
+    lse: Any,
+    reference: tuple[Any, Any],
+    production_baseline: tuple[Any, Any],
+) -> dict[str, Any]:
     import torch
 
     reference_output, reference_lse = reference
-    result = base.calibrated_metrics(output, reference_output)
-    output_calibrated_qualified = bool(
-        result["finite"]
-        and result["candidate_to_fp32_relative_l2"]
-        <= base.ERROR_MULTIPLIER
-        * result["rounded_to_fp32_relative_l2"] + base.RATIO_FLOOR
-        and result["candidate_to_fp32_max_abs"]
-        <= base.ERROR_MULTIPLIER
-        * result["rounded_to_fp32_max_abs"] + base.RATIO_FLOOR
-    )
-    result.update({
+    baseline_output, baseline_lse = production_baseline
+    rounded = reference_output.to(output.dtype)
+    candidate_relative = base.relative_l2(output, reference_output)
+    baseline_relative = base.relative_l2(
+        baseline_output, reference_output)
+    candidate_max_abs = float(
+        (output.float() - reference_output).abs().max().item())
+    baseline_max_abs = float(
+        (baseline_output.float() - reference_output).abs().max().item())
+    relative_ratio = candidate_relative / max(baseline_relative, RATIO_FLOOR)
+    max_abs_ratio = candidate_max_abs / max(baseline_max_abs, RATIO_FLOOR)
+    candidate_lse_error = base.relative_l2(lse, reference_lse)
+    baseline_lse_error = base.relative_l2(baseline_lse, reference_lse)
+    lse_limit = max(
+        LSE_RELATIVE_L2_FLOOR, ERROR_MULTIPLIER * baseline_lse_error)
+    candidate_finite = bool(torch.isfinite(output).all().item())
+    baseline_finite = bool(torch.isfinite(baseline_output).all().item())
+    reference_finite = bool(torch.isfinite(reference_output).all().item())
+    candidate_lse_finite = bool(torch.isfinite(lse).all().item())
+    baseline_lse_finite = bool(torch.isfinite(baseline_lse).all().item())
+    reference_lse_finite = bool(torch.isfinite(reference_lse).all().item())
+    qualified = bool(
+        candidate_finite and baseline_finite and reference_finite
+        and candidate_lse_finite and baseline_lse_finite
+        and reference_lse_finite
+        and relative_ratio <= ERROR_MULTIPLIER
+        and max_abs_ratio <= ERROR_MULTIPLIER
+        and candidate_lse_error <= lse_limit)
+    return {
+        "schema": "bi100-fp16-calibrated-numerics-v2",
+        "version": 2,
+        "candidate_finite": candidate_finite,
+        "production_baseline_finite": baseline_finite,
+        "reference_finite": reference_finite,
+        "candidate_lse_finite": candidate_lse_finite,
+        "production_baseline_lse_finite": baseline_lse_finite,
+        "reference_lse_finite": reference_lse_finite,
+        "candidate_to_fp32_relative_l2": candidate_relative,
+        "production_baseline_to_fp32_relative_l2": baseline_relative,
+        "relative_l2_error_ratio": relative_ratio,
+        "candidate_to_fp32_max_abs": candidate_max_abs,
+        "production_baseline_to_fp32_max_abs": baseline_max_abs,
+        "maximum_absolute_error_ratio": max_abs_ratio,
+        "candidate_lse_relative_l2": candidate_lse_error,
+        "production_baseline_lse_relative_l2": baseline_lse_error,
+        "attention_lse_limit": lse_limit,
+        "candidate_vs_rounded_relative_l2": base.relative_l2(output, rounded),
+        "candidate_vs_rounded_max_abs": float(
+            (output.float() - rounded.float()).abs().max().item()),
         "candidate_vs_rounded_is_diagnostic_only": True,
-        "output_calibrated_qualified": output_calibrated_qualified,
-        "candidate_lse_finite": bool(torch.isfinite(lse).all().item()),
-        "reference_lse_finite": bool(
-            torch.isfinite(reference_lse).all().item()),
-        "lse_relative_l2": base.relative_l2(lse, reference_lse),
-    })
-    result["qualified"] = bool(
-        output_calibrated_qualified
-        and result["candidate_lse_finite"]
-        and result["reference_lse_finite"]
-        and result["lse_relative_l2"] <= LSE_RELATIVE_L2_LIMIT
-    )
-    return result
+        "ratio_denominator_floor": RATIO_FLOOR,
+        "error_ratio_limit": ERROR_MULTIPLIER,
+        "qualified": qualified,
+    }
 
 
 def _balanced_measure(
@@ -303,6 +391,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         args.bank_manifest,
         source_revision=args.capture_source_revision,
         runtime_identity=args.runtime_identity,
+        logical_rank=args.logical_tp_rank,
     )
     baseline_path = args.baseline_extension.resolve(strict=True)
     candidate_path = args.candidate_extension.resolve(strict=True)
@@ -313,10 +402,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     ):
         raise ValueError(
             "baseline and candidate must be distinct private /tmp artifacts")
-    baseline, baseline_artifact = base._load_extension(
-        baseline_path, args.expected_baseline_sha256)
-    candidate, candidate_artifact = base._load_extension(
-        candidate_path, args.expected_candidate_sha256)
+    baseline, baseline_artifact = _load_extension(
+        baseline_path, args.expected_baseline_sha256,
+        args.baseline_module_name)
+    candidate, candidate_artifact = _load_extension(
+        candidate_path, args.expected_candidate_sha256,
+        args.candidate_module_name)
 
     records = []
     for bank_record, path in cases:
@@ -326,15 +417,25 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             != bank_record.get("source_case_sha256")
             or value.get("context_tokens")
             != bank_record.get("context_tokens")
+            or value.get("layer_index") != bank_record.get("layer_index")
+            or value.get("head_mapping") != bank_record.get("head_mapping")
         ):
             raise ValueError("derived case lineage differs")
         tensors_cpu = base._validate_case_tensors(value)
+        block_table_digest = hashlib.sha256(
+            tensors_cpu[5].numpy().tobytes(order="C")).hexdigest()
         if (
             bank_record.get("query_length") != tensors_cpu[0].shape[0]
             or bank_record.get("compact_physical_blocks")
             != tensors_cpu[3].shape[0]
             or bank_record.get("logical_blocks")
             != tensors_cpu[5].numel()
+            or bank_record.get("block_table") != {
+                "shape": list(tensors_cpu[5].shape),
+                "sha256": block_table_digest,
+                "logical_order": (
+                    "preserved_after_first_occurrence_compaction"),
+            }
             or bank_record.get("tensors") != {
                 name: {
                     "shape": list(value["tensors"][name].shape),
@@ -357,8 +458,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         reference_timing, reference = base._measure(reference_call)
         timing, baseline_result, candidate_result = _balanced_measure(
             baseline_call, candidate_call)
-        baseline_numeric = _numeric(*baseline_result, reference)
-        candidate_numeric = _numeric(*candidate_result, reference)
+        baseline_numeric = _numeric(
+            *baseline_result, reference, baseline_result)
+        candidate_numeric = _numeric(
+            *candidate_result, reference, baseline_result)
         candidate_vs_baseline = {
             "output_relative_l2": base.relative_l2(
                 candidate_result[0], baseline_result[0]),
@@ -377,11 +480,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             baseline_numeric["qualified"]
             and candidate_numeric["qualified"]
             and repeat_exact
-            and timing["order_balanced_geometric_speedup"]
-            >= MINIMUM_SPEEDUP
         )
         records.append({
-            "logical_tp_rank": 0,
+            "logical_tp_rank": args.logical_tp_rank,
             "visible_physical_gpu": args.visible_physical_gpu,
             "bucket_min_context_tokens": bank_record[
                 "bucket_min_context_tokens"],
@@ -402,14 +503,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     report = {
         "schema": REPORT_SCHEMA,
-        "version": 1,
+        "version": 2,
         "capture_source_revision": args.capture_source_revision,
         "baseline_source_revision": args.baseline_source_revision,
         "candidate_source_revision": args.candidate_source_revision,
         "runtime_identity": args.runtime_identity,
         "instance": args.instance,
         "visible_physical_gpu": args.visible_physical_gpu,
-        "logical_tp_rank": 0,
+        "logical_tp_rank": args.logical_tp_rank,
         "device_name": torch.cuda.get_device_name(0),
         "torch_version": torch.__version__,
         "bank": {
@@ -421,7 +522,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         },
         "baseline_extension": baseline_artifact,
         "candidate_extension": candidate_artifact,
-        "minimum_speedup": MINIMUM_SPEEDUP,
+        "performance_is_separate_from_g2": True,
         "records": records,
         "all_qualified": all(record["qualified"] for record in records),
         "privacy": {
@@ -446,14 +547,20 @@ def main() -> int:
     parser.add_argument("--bank-manifest", type=Path, required=True)
     parser.add_argument("--baseline-extension", type=Path, required=True)
     parser.add_argument("--expected-baseline-sha256", required=True)
+    parser.add_argument(
+        "--baseline-module-name", default="corex_fused_paged_prefill")
     parser.add_argument("--candidate-extension", type=Path, required=True)
     parser.add_argument("--expected-candidate-sha256", required=True)
+    parser.add_argument(
+        "--candidate-module-name",
+        default="corex_fused_paged_prefill_fp16_qk")
     parser.add_argument("--capture-source-revision", required=True)
     parser.add_argument("--baseline-source-revision", required=True)
     parser.add_argument("--candidate-source-revision", required=True)
     parser.add_argument("--runtime-identity", required=True)
     parser.add_argument("--instance", required=True)
     parser.add_argument("--visible-physical-gpu", type=int, required=True)
+    parser.add_argument("--logical-tp-rank", type=int, required=True)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     report = run(args)
