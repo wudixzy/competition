@@ -158,9 +158,14 @@ def _run_arm(
         "--repetitions", "1",
         "--workload", "teacher_forced",
     ]
-    return subprocess.run(
+    print(json.dumps({"event": "arm_start", "arm": label,
+                      "selector": selector}, sort_keys=True), flush=True)
+    returncode = subprocess.run(
         command, env=environment, cwd=args.run_root / "runtime-workdir",
         check=False).returncode
+    print(json.dumps({"event": "arm_end", "arm": label,
+                      "returncode": returncode}, sort_keys=True), flush=True)
+    return returncode
 
 
 def _base_summary(
@@ -297,6 +302,12 @@ def main() -> int:
             arms["control_a"]["measurement.json"],
             arms["candidate"]["measurement.json"])
     _write(args.run_root / "quick_screen.json", quick)
+    print(json.dumps({
+        "event": "quick_screen",
+        "status": quick["status"],
+        "classification": quick["classification"],
+        "control_b_authorized": quick.get("control_b_authorized", False),
+    }, sort_keys=True), flush=True)
     if quick["status"] != "pass":
         summary = _base_summary(
             args, started, arms, quick, control_b_triggered=False)
@@ -330,6 +341,11 @@ def main() -> int:
         _load(args.contract),
     )
     _write(args.run_root / "distribution.json", formal)
+    print(json.dumps({
+        "event": "formal_distribution",
+        "status": formal["status"],
+        "classification": formal["classification"],
+    }, sort_keys=True), flush=True)
     summary = _base_summary(
         args, started, arms, quick, control_b_triggered=True)
     summary["status"] = formal["status"]
