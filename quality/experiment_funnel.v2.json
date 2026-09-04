@@ -1,0 +1,16 @@
+{
+  "schema": "bi100-experiment-funnel-v2",
+  "version": 2,
+  "policy_date": "2026-09-04",
+  "metrics_contract": {"schema": "bi100-layered-quality-gate-contract-v2", "version": 2},
+  "result_states": ["pass", "fail", "inconclusive", "invalid"],
+  "scope": {"model": "Qwen3.6-35B-A3B", "device": "BI100/CoreX", "tensor_parallel_size": 4, "max_model_len": 262144, "production_yaml_may_change": false, "main_may_change": false},
+  "global_validity": {"g0_required_at_every_gpu_stage": true, "complete_request_population_required_for_performance": true, "postflight_failure_state": "invalid", "unknown_contract_action": "invalid"},
+  "stages": [
+    {"id": "L0", "name": "static_abi_contract_manifest", "gpu_count": 0, "required_evidence": ["source_identity", "syntax_and_unit_tests", "extension_abi_contract", "production_and_capture_dispatch_separation", "manifest_fail_closed_validation", "fallback_present"], "not_claimed": ["operator_numerics", "tp4_performance", "model_capability"]},
+    {"id": "L1", "name": "frozen_synthetic_operator_screen", "gpu_count": 4, "parallelism": "one independent frozen shape per healthy GPU", "fixed_shapes": ["16k_q8176", "32k_q8176", "64k_q8176"], "shape_or_parameter_scan_allowed": false, "required_evidence": ["g0", "candidate_artifact_sha256", "g1_exact_metadata", "g2_calibrated_numerics", "raw_interleaved_timings", "median_and_dispersion"], "not_claimed": ["real_activation_coverage", "tp4_end_to_end_gain", "model_capability"]},
+    {"id": "L2", "name": "real_activation_capture_and_rank_replay", "gpu_count": 4, "capture": {"baseline_candidate_disabled": true, "capture_count": 1, "raw_bank_location": "/tmp", "directory_mode": "0700", "file_mode": "0600", "raw_bank_may_be_committed": false, "private_payload_fields_forbidden": true}, "replay": {"derived_tp4_rank_count": 4, "same_activation_bank_required": true, "parallelism": "one rank per healthy GPU", "numeric_gate": "g2_calibrated_numerics", "synthetic_and_real_results_separate": true}, "required_evidence": ["g0", "capture_manifest_and_sha256", "head_and_kv_mapping_proof", "rank_reassembly_against_tp1_reference", "candidate_artifact_sha256", "g2_calibrated_numerics", "lse", "repeatability", "raw_replay_timings"], "not_claimed": ["tp4_collective_correctness", "end_to_end_ttft", "model_capability"]},
+    {"id": "L3", "name": "short_tp4_paired_screen", "gpu_count": 4, "service_startups_per_arm": 1, "batched_prompt_lengths": [4096, 16384, 32768, 65536], "cache_states": ["cold", "partial_prefix", "full_warm"], "required_evidence": ["g0", "candidate_dispatch_marker", "control_candidate_marker_absent", "complete_request_population", "g1_protocol_and_cache", "g3_aa_calibrated_distribution", "g5_paired_performance"], "not_claimed": ["131k_to_262k_capacity", "full_capability_suite", "official_881_score", "production_promotion"]}
+  ],
+  "transition_rules": {"stages_must_run_in_order": true, "each_stage_authorizes_only_next_stage": true, "l3_requires_l2_pass": true, "fail_may_not_be_waived_by_performance": true, "invalid_may_not_form_candidate_conclusion": true, "inconclusive_may_not_be_called_pass": true, "semantic_score_may_not_waive_numeric_failure": true, "distribution_drift_is_not_operator_failure": true, "tp2_or_tp3_may_not_substitute_for_tp4": true, "l4_l5_authorized": false}
+}

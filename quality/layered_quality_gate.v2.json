@@ -1,120 +1,123 @@
 {
   "schema": "bi100-layered-quality-gate-contract-v2",
   "version": 2,
+  "policy_date": "2026-09-04",
+  "result_states": ["pass", "fail", "inconclusive", "invalid"],
+  "state_semantics": {
+    "pass": "complete evidence satisfies the current layer",
+    "fail": "a candidate-attributable hard gate failed",
+    "inconclusive": "valid evidence is underpowered or lies in a frozen gray zone",
+    "invalid": "experiment identity, population, lifecycle, platform, or evidence is invalid"
+  },
   "evidence_roles": {
+    "experiment_validity": "interpretation_prerequisite",
     "identity_and_protocol": "hard_exact",
-    "cache_transparency": "hard_exact",
-    "operator_shadow_reference": "hard_numeric",
-    "teacher_forced_distribution": "equivalence_or_escalation",
-    "autoregressive_trajectory": "contract_or_diagnostic",
+    "cache_transparency": "class_dependent_hard_gate",
+    "operator_numerics": "hard_calibrated_numeric",
+    "teacher_forced_distribution": "diagnostic_or_escalation",
     "paired_task_capability": "hard_statistical",
     "performance_and_lifecycle": "hard_operational"
   },
+  "experiment_validity": {
+    "required_identity": ["source_commit", "runtime_overlay", "model", "tokenizer", "launch_command", "environment", "candidate_artifact_sha256"],
+    "required_population": ["expected_request_count", "attempted_request_count", "completed_request_count", "failed_request_count", "workload_order_digest", "workload_identity_digest"],
+    "required_lifecycle": ["gpu_preflight", "gpu_postflight", "scoped_cleanup", "fatal_scan"],
+    "raw_timing_samples_required": true,
+    "complete_request_population_required_for_performance": true,
+    "infrastructure_failure_state": "invalid",
+    "postflight_failure_state": "invalid"
+  },
   "identity_and_protocol": {
-    "request_semantics_must_match": true,
-    "tokenizer_and_chat_template_must_match": true,
-    "response_schema_and_streaming_must_match": true,
-    "tool_reasoning_multimodal_and_structured_output_are_hard": true
+    "exact_invariants": ["http_status", "sse_framing", "usage", "finish_reason", "tool_protocol", "reasoning_protocol", "structured_output_protocol", "multimodal_protocol", "tokenizer", "chat_template", "special_tokens", "request_semantics", "tensor_shape", "tensor_dtype", "head_mapping", "causal_mask", "indices", "block_table", "cache_content_identity", "kv_state_identity", "gdn_state_identity", "skipped_tokens", "cached_tokens", "multimodal_isolation"],
+    "missing_state_action": "fail_fast",
+    "max_model_len": 262144,
+    "large_completion_token_budget_required": true,
+    "new_baseline_only_failures_allowed": 0
   },
   "cache_transparency": {
-    "same_arm_cold_warm_exact_required": true,
-    "compare_generated_tokens_and_response_structure": true,
-    "compare_tool_calls_reasoning_content_finish_reason_and_usage": true,
-    "missing_or_mismatched_state_action": "fail_fast",
-    "physical_block_identity_is_not_logical_content_identity": true
+    "wrong_content_key_action": "fail",
+    "physical_block_logical_alias_action": "fail",
+    "missing_gdn_state_with_skipped_tokens_action": "fail",
+    "false_cached_tokens_action": "fail",
+    "cross_image_state_reuse_action": "fail",
+    "invalid_block_table_action": "fail",
+    "pure_byte_copy": {"cache_key_exact": true, "state_bytes_exact": true, "skipped_tokens_exact": true, "short_deterministic_greedy_exact": true},
+    "aligned_recomputation_or_resegmentation": {"logical_cache_and_state_identity_exact": true, "restore_boundary_g2_required": true, "first_token_logits_required": true, "selected_token_required": true, "low_margin_suffix_divergence_action": "g3_review"}
+  },
+  "operator_numerics": {
+    "applies_to": ["fp16_attention", "fp16_moe", "fp16_gdn"],
+    "same_input_tensors_required": true,
+    "references": ["fp32_or_higher", "production_fp16_baseline", "fp32_reference_rounded_to_fp16", "candidate_repeat"],
+    "require_all_finite": true,
+    "relative_l2_error_ratio_limit": 2.0,
+    "maximum_absolute_error_ratio_limit": 2.0,
+    "ratio_denominator_floor": 1e-12,
+    "attention_lse": {"absolute_floor": 1e-05, "baseline_error_multiplier": 2.0},
+    "exact_metadata": ["indices", "mask", "shape", "padding", "discrete_metadata"],
+    "gdn_required_state_checks": ["every_checkpoint", "final_state"],
+    "candidate_vs_rounded_diagnostics": ["relative_l2", "maximum_absolute_error"],
+    "candidate_vs_rounded_is_universal_hard_gate": false
   },
   "operator_shadow_reference": {
+    "role": "legacy_report_adapter_only",
     "reference": "same-real-activation-pytorch-fallback",
     "require_finite_candidate": true,
     "require_finite_reference": true,
     "maximum_relative_l2": 1e-05,
     "maximum_absolute_error": 0.001,
-    "required_ranks": [
-      0,
-      1,
-      2,
-      3
-    ],
-    "required_minimum_context_tokens": [
-      49152,
-      114688
-    ],
+    "fixed_thresholds_are_diagnostic_for_new_results": true,
+    "required_ranks": [0, 1, 2, 3],
+    "required_minimum_context_tokens": [49152, 114688],
     "minimum_observations_per_context_per_rank": 2,
-    "failure_action": "fail_fast",
     "semantic_evidence_may_waive_failure": false
   },
   "teacher_forced_distribution": {
-    "role": "distribution-equivalence-screen-and-escalation-trigger",
+    "role": "distribution_drift_review",
+    "control_control_calibration_required": true,
     "top_k": 5,
-    "required_prompt_tokens": [
-      4096,
-      32768,
-      65536,
-      131072,
-      235000
-    ],
-    "minimum_positions_per_case": 64,
-    "sampling_unit_for_inference": "prompt-case-cluster",
-    "positions_must_not_be_treated_as_independent_samples": true,
-    "control_repeat": {
-      "minimum_top1_agreement": 0.99,
-      "maximum_actual_logprob_absolute_delta_p99": 0.02,
-      "maximum_shared_logprob_absolute_delta_p99": 0.02,
-      "maximum_absolute_mean_teacher_nll_delta": 0.005,
-      "maximum_mutually_uncovered_top1_mismatches": 0
-    },
-    "tight_equivalence": {
-      "minimum_top1_agreement": 0.98,
-      "maximum_actual_logprob_absolute_delta": 0.1,
-      "maximum_actual_logprob_absolute_delta_p99": 0.02,
-      "maximum_shared_logprob_absolute_delta_p99": 0.02,
-      "maximum_mean_actual_nll_regression": 0.005,
-      "maximum_high_margin_top1_mismatches": 0,
-      "maximum_mutually_uncovered_top1_mismatches": 0
-    },
-    "candidate_exceeds_tight_equivalence_action": "escalate",
+    "required_metrics": ["top1_agreement", "mutual_topk_coverage", "teacher_token_logprob_delta", "shared_token_logprob_delta", "paired_nll_difference", "paired_nll_one_sided_95_upper_ci", "first_divergent_token", "baseline_top1_margin", "high_margin_flips"],
+    "high_margin_threshold": {"absolute_floor_nats": 0.1, "aa_p99_shared_logprob_delta_multiplier": 4.0},
+    "maximum_unexplained_high_margin_flips": 0,
+    "nll_regression_upper_ci": {"absolute_floor_nats": 0.01, "aa_upper_ci_multiplier": 2.0},
+    "top1_agreement_role": "diagnostic",
+    "minimum_top1_agreement": null,
+    "threshold_exceedance_state": "inconclusive",
+    "threshold_exceedance_classification": "distribution_drift_requires_adjudication",
     "candidate_exceedance_is_operator_failure": false,
-    "candidate_exceedance_is_capability_failure": false,
-    "candidate_tight_equivalence_authorizes_promotion": false
-  },
-  "autoregressive_trajectory": {
-    "same_arm_repeat_exact_required": true,
-    "cache_cold_warm_exact_required": true,
-    "cross_arm_greedy_token_exact_required": false,
-    "cross_arm_greedy_token_exact_is_diagnostic": true,
-    "cross_arm_suffix_divergence_is_capability_failure": false
+    "candidate_exceedance_is_capability_failure": false
   },
   "paired_task_capability": {
     "confidence": 0.95,
     "comparison_unit": "paired-request-or-task-item",
-    "default_noninferiority_margin": 0.02,
-    "default_zero_regression_minimum_pairs": 149,
+    "deterministic_contract_baseline_only_failures": 0,
+    "critical_contract_baseline_only_failures": 0,
+    "development_noninferiority_margin": 0.05,
+    "promotion_noninferiority_margin": 0.02,
     "small_stratum_noninferiority_margin": 0.05,
+    "default_noninferiority_margin": 0.02,
     "small_stratum_zero_regression_minimum_pairs": 59,
-    "binary_rule": "one-sided-exact-or-paired-bootstrap-upper-bound",
-    "continuous_rule": "paired-cluster-bootstrap-upper-bound",
+    "default_zero_regression_minimum_pairs": 149,
     "bootstrap_samples": 20000,
     "bootstrap_seed": 20260729,
-    "critical_contract_baseline_only_failures": 0,
-    "required_strata": [
-      "tool-calling",
-      "reasoning",
-      "structured-output",
-      "code-and-math",
-      "multimodal",
-      "long-context-recall"
-    ],
+    "paired_bootstrap_required": true,
+    "exact_mcnemar_diagnostic_required": true,
+    "underpowered_state": "inconclusive",
+    "required_strata": ["code", "reasoning", "tools", "structured_output", "multimodal", "long_context"],
+    "aggregate_may_hide_stratum_failure": false,
     "post_hoc_margin_or_sample_selection_forbidden": true
   },
+  "performance_and_lifecycle": {
+    "amdahl_formula": "1 / (1 - f + f / s) - 1",
+    "minimum_projected_end_to_end_gain": 0.02,
+    "hard_metric_fix_exception_requires_justification": true,
+    "short_tp4": {"normal_minimum_paired_gain": 0.03, "one_sided_95_lower_ci_must_exceed": 0.0, "stop_below_point_estimate": 0.02, "gray_zone_lower_inclusive": 0.02, "gray_zone_upper_exclusive": 0.03, "maximum_extra_paired_runs": 2},
+    "maximum_supported_common_bucket_regression": 0.05,
+    "single_noisy_cell_can_fail_candidate": false,
+    "required_metrics": ["ttft_p50_p90_p99", "tpot_or_itl", "e2e_latency", "input_output_cache_tps", "request_throughput", "slo_goodput", "success_error_rate", "cache_state", "length_bucket", "device_memory", "kv_capacity", "raw_paired_samples"]
+  },
   "promotion": {
-    "required_hard_layers": [
-      "identity_and_protocol",
-      "cache_transparency",
-      "operator_shadow_reference",
-      "paired_task_capability",
-      "performance_and_lifecycle"
-    ],
-    "teacher_forced_drift_requires_operator_and_capability_evidence": true,
+    "required_hard_layers": ["experiment_validity", "identity_and_protocol", "cache_transparency", "operator_numerics", "paired_task_capability", "performance_and_lifecycle"],
+    "teacher_forced_drift_requires_adjudication": true,
     "cross_arm_token_identity_alone_can_reject": false,
     "semantic_evidence_can_hide_operator_failure": false,
     "production_promotion_authorized": false,
