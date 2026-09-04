@@ -126,6 +126,18 @@ class M1179ComparatorTests(unittest.TestCase):
         self.assertEqual(result["status"], "inconclusive", result)
         self.assertEqual(result["classification"],
                          "incremental_fp16_qk_distribution_drift")
+        detail = result["incremental"]["flip_details"][0]
+        self.assertEqual(detail["control_top1_rank_in_candidate_topk"], 2)
+        self.assertEqual(detail["candidate_top1_rank_in_control_topk"], 2)
+        self.assertIn(detail["teacher_logprob_change"],
+                      {"higher", "lower", "equal"})
+        self.assertIn("candidate_margin_nats", detail)
+        by_length = result["incremental"]["nll_by_length"][0]
+        self.assertEqual(
+            by_length["candidate_better_count"]
+            + by_length["control_better_count"]
+            + by_length["equal_count"], 64)
+        self.assertIn("median_nll_difference_nats", by_length)
 
     def test_aa_high_margin_flip_blocks_incremental_attribution(self) -> None:
         control_b = _arm("control_b")

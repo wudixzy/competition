@@ -8,6 +8,7 @@ import copy
 import json
 import math
 import random
+import statistics
 from pathlib import Path
 from typing import Any
 
@@ -174,9 +175,11 @@ def _pair(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
                                  for token in shared)
             lhs_top = lhs["top_logprobs"][0]["token_key"]
             rhs_top = rhs["top_logprobs"][0]["token_key"]
-            margin = (float(lhs["top_logprobs"][0]["logprob"])
-                      - float(lhs["top_logprobs"][1]["logprob"]))
-            margins.append(margin)
+            control_margin = (float(lhs["top_logprobs"][0]["logprob"])
+                              - float(lhs["top_logprobs"][1]["logprob"]))
+            candidate_margin = (float(rhs["top_logprobs"][0]["logprob"])
+                                - float(rhs["top_logprobs"][1]["logprob"]))
+            margins.append(control_margin)
             if lhs_top == rhs_top:
                 top1_matches += 1
             else:
@@ -184,7 +187,22 @@ def _pair(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
                     "prompt_tokens": prompt_tokens,
                     "position": position,
                     "sample_ordinal": ordinal,
-                    "control_margin_nats": margin,
+                    "control_margin_nats": control_margin,
+                    "candidate_margin_nats": candidate_margin,
+                    "teacher_is_control_top1": teacher == lhs_top,
+                    "teacher_is_candidate_top1": teacher == rhs_top,
+                    "control_top1_rank_in_candidate_topk": next(
+                        (index + 1 for index, item in enumerate(
+                            rhs["top_logprobs"])
+                         if item["token_key"] == lhs_top), None),
+                    "candidate_top1_rank_in_control_topk": next(
+                        (index + 1 for index, item in enumerate(
+                            lhs["top_logprobs"])
+                         if item["token_key"] == rhs_top), None),
+                    "teacher_logprob_change": (
+                        "higher" if right_values[teacher] > left_values[teacher]
+                        else "lower" if right_values[teacher] < left_values[teacher]
+                        else "equal"),
                 }
                 flip_details.append(detail)
                 if first_divergent is None:
@@ -197,6 +215,10 @@ def _pair(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
             "prompt_tokens": prompt_tokens,
             "sampled_positions": len(nll_values),
             "mean_nll_difference_nats": sum(nll_values) / len(nll_values),
+            "median_nll_difference_nats": statistics.median(nll_values),
+            "candidate_better_count": sum(value < 0 for value in nll_values),
+            "control_better_count": sum(value > 0 for value in nll_values),
+            "equal_count": sum(value == 0 for value in nll_values),
             "position_sampling_one_sided_95_upper_nats": _stratum_upper(
                 nll_values, BOOTSTRAP_SEED + prompt_tokens),
         })

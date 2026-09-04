@@ -9,9 +9,10 @@ from M1-109 at 11 top-1 positions, including eight whose M1-109 margin exceeded
 the calibrated 0.1-nat threshold. This is a material FP16-QK incremental drift,
 not baseline restart noise.
 
-M1-162 promotion stops here. M1-109 remains the retained fused-prefill
-candidate. This is a distribution finding, not an operator-numeric or task
-capability failure. No capability suite, performance rerun, long
+M1-162 production promotion is blocked pending capability adjudication.
+M1-109 remains a retained development candidate, not a production candidate
+that has completed promotion gates. This is a distribution finding, not an
+operator-numeric or task capability failure. No capability suite, performance rerun, long
 teacher-forced workload, formal 881 run, default-selector change, YAML change
 or main merge was performed.
 
@@ -19,6 +20,19 @@ The privacy-safe machine summary is
 `docs/experiments/evidence/M1_179_FP16_QK_INCREMENTAL_DISTRIBUTION_20260905/summary.json`.
 Private token identities and raw service logs remain only in the remote `/tmp`
 experiment root.
+
+## Reviewer addendum for M1-180
+
+The original evidence JSON remains immutable. Review of the private
+observations found that none of the 11 flips demoted a teacher token that had
+been the M1-109 top-1; five flips promoted the teacher token to M1-162 top-1.
+The two largest-margin flips increased teacher logprob by approximately 3.67
+and 11.05 nats. These directional facts motivate paired capability
+adjudication; they are not evidence of capability gain.
+
+M1-180 therefore compares fused-off, M1-109 and M1-162 directly. Until that
+adjudication is complete, “promotion blocked pending capability adjudication”
+is the only promotion decision supported for M1-162.
 
 ## Design and identity
 
@@ -172,7 +186,8 @@ fatal/OOM/segfault/timeout/collective-reset/worker-loss counts were zero.
 - Operator numerics: M1-176 G2 `pass` retained; not rerun and not overridden.
 - Capability: not run; no capability conclusion.
 - Performance: historical M1-176/M1-177 gains retained; not rerun.
-- Promotion: M1-162 stopped. M1-109 retained as the next candidate; no further
-  experiment is automatically authorized by this result.
+- Promotion: M1-162 production promotion is blocked pending capability
+  adjudication. M1-109 is retained only as a development candidate; neither
+  variant is production-qualified by this result.
 
 Work stops here for reviewer review.

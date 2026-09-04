@@ -1,5 +1,16 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-05 M1-179 reviewer addendum / M1-180 前置裁决
+
+M1-179 的正式含义修正为：M1-162 的 production promotion 因分布漂移被阻塞，
+等待配对能力裁决；该结果不是能力回退，也不是算子数值失败。M1-109 只是保留的
+开发候选，尚未完成生产晋升门禁。历史 M1-179 evidence JSON 保持不变。
+
+对私有 observation 的方向复核显示，11 个 flip 中没有 teacher token 从 M1-109
+top-1 被降级，5 个 flip 将 teacher token 提升为 M1-162 top-1；最大两个 flip 的
+teacher logprob 约提高 3.67 与 11.05 nats。这些事实只解释为何需要 M1-180 三臂
+能力裁决，不构成能力提升结论。
+
 ## 2026-09-05 M1-179 FP16-QK 增量分布归因
 
 M1-179 使用同一完整模型 TP4 runtime 完成
