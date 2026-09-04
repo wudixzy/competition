@@ -116,7 +116,12 @@ def _validate_arm(
     for case in cases:
         if (
             not isinstance(case, dict)
-            or set(case) != {"id", "prompt_tokens", "positions"}
+            or set(case) not in (
+                {"id", "prompt_tokens", "positions"},
+                {"id", "prompt_tokens", "cached_tokens", "positions"},
+                {"id", "prompt_tokens", "cached_tokens", "request",
+                 "positions"},
+            )
             or not isinstance(case.get("id"), str)
             or not case["id"]
             or case["id"] in seen_ids
@@ -128,6 +133,17 @@ def _validate_arm(
         ):
             reasons.append(f"{label}: case structure is invalid")
             continue
+        if ("cached_tokens" in case
+                and case.get("cached_tokens") != 0):
+            reasons.append(f"{label}: cached token count is nonzero")
+        if "request" in case and case.get("request") != {
+                "http_status": 200,
+                "stream": False,
+                "response_complete": True,
+                "usage_complete": True,
+                "finish_reason": "length",
+        }:
+            reasons.append(f"{label}: request completion contract differs")
         seen_ids.add(case["id"])
         seen_positions = set()
         for position in case["positions"]:

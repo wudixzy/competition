@@ -41,6 +41,14 @@ def _report(mode: str) -> dict:
         cases.append({
             "id": f"length_{target}",
             "prompt_tokens": target,
+            "cached_tokens": 0,
+            "request": {
+                "http_status": 200,
+                "stream": False,
+                "response_complete": True,
+                "usage_complete": True,
+                "finish_reason": "length",
+            },
             "positions": [_position(offset + index) for index in range(64)],
         })
         offset += 64
@@ -86,7 +94,33 @@ class TeacherForcedV2Tests(unittest.TestCase):
         self.assertEqual(result["runtime_identity"],
                          "overlay-install-44a-byte-equal")
         self.assertEqual(result["aa"]["sampled_positions"], 256)
+        self.assertEqual(result["bootstrap"]["cluster_count"], 4)
+        self.assertEqual(
+            result["bootstrap"]["cluster_unit"],
+            "teacher_forced_request_length")
+        self.assertEqual(len(result["candidate"]["nll_by_length"]), 4)
         self.assertEqual(result["arm_binding"]["candidate"], "candidate")
+
+    def test_quick_screen_authorizes_control_b_only_without_clear_drift(self) -> None:
+        passed = comparison.quick_screen(
+            _report("control"), _report("candidate"))
+        self.assertEqual(passed["status"], "pass", passed)
+        self.assertTrue(passed["control_b_authorized"])
+
+        candidate = _report("candidate")
+        for case in candidate["cases"]:
+            for position in case["positions"]:
+                for item in position["top_logprobs"]:
+                    item["logprob"] -= 0.1
+        stopped = comparison.quick_screen(_report("control"), candidate)
+        self.assertEqual(stopped["status"], "inconclusive", stopped)
+        self.assertFalse(stopped["control_b_authorized"])
+
+    def test_cached_observation_is_invalid(self) -> None:
+        candidate = _report("candidate")
+        candidate["cases"][0]["cached_tokens"] = 1
+        result = comparison.quick_screen(_report("control"), candidate)
+        self.assertEqual(result["status"], "invalid", result)
 
     def test_high_margin_flip_requires_adjudication(self) -> None:
         candidate = _report("candidate")
@@ -120,6 +154,14 @@ class TeacherForcedV2Tests(unittest.TestCase):
         result = comparison.compare(
             _report("control"), _report("control"), candidate, CONTRACT)
         self.assertEqual(result["status"], "invalid")
+
+    def test_cluster_bootstrap_resamples_request_then_position(self) -> None:
+        comparison.BOOTSTRAP_SAMPLES = 200
+        value = comparison._cluster_bootstrap_upper([
+            [0.0] * 64, [0.01] * 64, [0.02] * 64, [0.03] * 64,
+        ])
+        self.assertGreaterEqual(value, 0.015)
+        self.assertLessEqual(value, 0.03)
 
     def test_output_strips_private_token_keys(self) -> None:
         candidate = _report("candidate")

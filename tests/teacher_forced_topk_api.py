@@ -89,6 +89,37 @@ def load_runtime_manifest_v2(path: Path, expected: Json) -> Json:
     return value
 
 
+def load_attention_runtime_manifest(path: Path, expected: Json) -> Json:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(value, dict)
+            or value.get("schema") != "bi100-attention-operator-runtime-v1"
+            or value.get("version") != 1
+            or value.get("change_scope") != "attention_operator"
+            or value.get("workload_mode") != "teacher_forced"
+            or value.get("dtype") != "float16"
+            or value.get("block_size") != 16):
+        raise ValueError("attention runtime manifest identity is invalid")
+    for name, expected_value in expected.items():
+        if value.get(name) != expected_value:
+            raise ValueError(f"attention runtime manifest {name} differs")
+    command = value.get("command")
+    environment = value.get("environment")
+    if (not isinstance(command, list) or not command
+            or not all(isinstance(item, str) and item for item in command)
+            or not isinstance(environment, dict)):
+        raise ValueError("attention runtime command/environment is malformed")
+    selector = environment.get("BI100_ATTN_COREX_FUSED_PREFILL")
+    if selector not in {"0", "1"}:
+        raise ValueError("attention runtime selector is invalid")
+    required = {
+        "BI100_GDN_CACHE_POLICY", "BI100_GDN_RESTORE_MODE",
+        "BI100_KV_EVICTION_POLICY", "BI100_CACHE_TRACE",
+    }
+    if not required.issubset(environment):
+        raise ValueError("attention runtime environment is incomplete")
+    return value
+
+
 def _atomic_write(path: Path, value: Json, mode: int = 0o600) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(
@@ -263,7 +294,7 @@ def _response_prompt_logprobs(
     response: Any,
     *,
     expected_prompt_tokens: int,
-) -> list[Any]:
+) -> tuple[list[Any], int, str]:
     if not isinstance(response, dict):
         raise ValueError("response root is not an object")
     choices = response.get("choices")
@@ -272,6 +303,8 @@ def _response_prompt_logprobs(
     if (
         not isinstance(choices, list)
         or len(choices) != 1
+        or not isinstance(choices[0], dict)
+        or choices[0].get("finish_reason") != "length"
         or not isinstance(usage, dict)
         or usage.get("prompt_tokens") != expected_prompt_tokens
         or usage.get("completion_tokens") != 1
@@ -280,9 +313,10 @@ def _response_prompt_logprobs(
     ):
         raise ValueError("teacher-forced response contract differs")
     details = usage.get("prompt_tokens_details") or {}
-    if details.get("cached_tokens", 0) != 0:
+    cached_tokens = details.get("cached_tokens", 0)
+    if cached_tokens != 0:
         raise ValueError("teacher-forced request was not cold")
-    return prompt_logprobs
+    return prompt_logprobs, cached_tokens, choices[0]["finish_reason"]
 
 
 def collect_case(
@@ -338,11 +372,19 @@ def collect_case(
         "bi100_prompt_logprobs_sample_positions": sampled,
     }
     response = _post(base, "/v1/chat/completions", payload, timeout_s)
-    prompt_logprobs = _response_prompt_logprobs(
+    prompt_logprobs, cached_tokens, finish_reason = _response_prompt_logprobs(
         response, expected_prompt_tokens=target_tokens)
     return {
         "id": f"length_{target_tokens}",
         "prompt_tokens": target_tokens,
+        "cached_tokens": cached_tokens,
+        "request": {
+            "http_status": 200,
+            "stream": False,
+            "response_complete": True,
+            "usage_complete": True,
+            "finish_reason": finish_reason,
+        },
         "positions": [
             summarize_position(
                 prompt_logprobs[position],
@@ -366,6 +408,7 @@ def main() -> int:
     runtime_group = parser.add_mutually_exclusive_group(required=True)
     runtime_group.add_argument("--runtime-contract", type=Path)
     runtime_group.add_argument("--runtime-manifest-v2", type=Path)
+    runtime_group.add_argument("--attention-runtime-manifest", type=Path)
     parser.add_argument("--runtime-identity", required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--instance", required=True)
@@ -417,10 +460,16 @@ def main() -> int:
             expected_contract,
             require_cache_trace=True,
         )
-    else:
+    elif args.runtime_manifest_v2 is not None:
         try:
             contract = load_runtime_manifest_v2(
                 args.runtime_manifest_v2, expected_contract)
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            parser.error(str(exc))
+    else:
+        try:
+            contract = load_attention_runtime_manifest(
+                args.attention_runtime_manifest, expected_contract)
         except (json.JSONDecodeError, OSError, ValueError) as exc:
             parser.error(str(exc))
     environment = contract["environment"]
