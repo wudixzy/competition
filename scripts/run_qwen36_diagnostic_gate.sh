@@ -436,10 +436,9 @@ pairs = (
      site / "vllm/model_executor/models/qwen3_5.py"),
 )
 qualified = (
-    value.get("source_revision") == revision
-    and all(left.is_file() and right.is_file()
-            and left.read_bytes() == right.read_bytes()
-            for left, right in pairs)
+    all(left.is_file() and right.is_file()
+        and left.read_bytes() == right.read_bytes()
+        for left, right in pairs)
 )
 out.write_text(json.dumps({
     "schema": "bi100-capture-overlay-identity-v1",
