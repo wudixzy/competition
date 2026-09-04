@@ -1,5 +1,17 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-04 M1-176 完整模型精简 TP4 结果
+
+M1-162 FP16-QK 在源码 `4d79d00fce24aa1ba6a515870653341f608242ff`
+取得有效完整模型 TP4 短筛选：control/candidate 各 9/9 个 16K/32K/64K
+cold 请求，配对 TTFT gain 35.56%，单侧 95% lower CI 30.66%，三个长度
+均稳定；dispatch 为 0/4，cleanup、postflight、fatal scan 全通过。
+
+该 `attention_operator` 结果未运行 distribution、capability、cache branch、
+长上下文或正式评分。它只授权 131K/235K cold 确认及后续 focused
+teacher-forced。详见
+`docs/experiments/M1_176_FP16_QK_FOCUSED_TP4_RESULT_20260904.md`。
+
 ## 2026-09-04 精简实验路线
 
 - 开发门禁改为按影响面触发。Attention-only 候选只运行 build/fallback、数值、代表

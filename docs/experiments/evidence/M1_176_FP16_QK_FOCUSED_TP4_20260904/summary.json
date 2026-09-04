@@ -1,0 +1,119 @@
+{
+  "schema": "bi100-m1-176-fp16-qk-focused-tp4-summary-v1",
+  "version": 1,
+  "date": "2026-09-04",
+  "status": "pass",
+  "classification": "focused_tp4_gain_pass",
+  "change_scope": "attention_operator",
+  "source_revision": "4d79d00fce24aa1ba6a515870653341f608242ff",
+  "final_harness_revision": "e75470bad717b9216b325200ea4f20dc9fb9907b",
+  "source_dirty_summary": "clean",
+  "instance": "cc-ce19242b-436f-4141-868b-610eb3ac8cee-0",
+  "model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+  "runtime": {
+    "identity": "overlay-44a43f355cfc-torch-2.1.0-vllm-0.6.3",
+    "python": "3.10.12",
+    "corex": "3.2.3",
+    "torch": "2.1.0",
+    "vllm": "0.6.3",
+    "transformers": "4.55.3",
+    "compiler": "clang version 16.0.6",
+    "candidate_module": "corex_fused_paged_prefill",
+    "sha256_used": false
+  },
+  "service_contract": {
+    "tensor_parallel_size": 4,
+    "dtype": "float16",
+    "max_model_len": 262144,
+    "block_size": 16,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 1,
+    "greedy_seed": 20260904,
+    "completion_tokens": 8,
+    "targets": [16384, 32768, 65536],
+    "repetitions_per_target": 3,
+    "cache_scenarios": ["cold"],
+    "service_startups_per_arm": 1,
+    "control_selector": 0,
+    "candidate_selector": 1,
+    "all_other_launch_and_environment_fields_equal": true
+  },
+  "session_preflight": {
+    "id": "m1-176-focus-preflight-4e2b2e7",
+    "gpu_indices": [0, 1, 2, 3],
+    "gpu_names": ["Iluvatar BI-V100", "Iluvatar BI-V100", "Iluvatar BI-V100", "Iluvatar BI-V100"],
+    "free_bytes": [34057748480, 34057748480, 34057748480, 34057748480],
+    "fp16_matmul_checksums": [1073741824.0, 1073741824.0, 1073741824.0, 1073741824.0],
+    "nccl_all_reduce_values": [10.0, 10.0, 10.0, 10.0],
+    "nccl_reaped": true,
+    "qualified": true
+  },
+  "request_population": {
+    "control": {"expected": 9, "attempted": 9, "completed": 9, "failed": 0},
+    "candidate": {"expected": 9, "attempted": 9, "completed": 9, "failed": 0},
+    "http_200": 18,
+    "sse_complete": 18,
+    "usage_complete": 18,
+    "finish_reason_length": 18
+  },
+  "raw_ttft_seconds": {
+    "control": {
+      "16384": [29.478534309, 26.374024252, 28.238450867],
+      "32768": [56.245242103, 56.0642867, 56.171495807],
+      "65536": [102.649314625, 101.13918239, 101.557641497]
+    },
+    "candidate": {
+      "16384": [22.54019987, 19.592821023, 19.468188812],
+      "32768": [38.840473063, 38.919993938, 38.599381263],
+      "65536": [81.349909883, 81.511389136, 81.303669319]
+    }
+  },
+  "paired_performance": {
+    "estimator": "mean_of_nine_paired_control_over_candidate_ttft_gains",
+    "aggregate_gain": 0.3555566862,
+    "one_sided_95_lower_ci": 0.3065824423,
+    "bootstrap_samples": 20000,
+    "bucket_mean_gains": {
+      "16384": 0.3681396369,
+      "32768": 0.4479511419,
+      "65536": 0.2505792798
+    },
+    "all_buckets_stable": true,
+    "extra_control_or_reversed_pair_used": false
+  },
+  "reporting_metrics": {
+    "ttft_definition": "request_start_to_first_output_token",
+    "tpot_definition": "first_to_last_output_time_divided_by_completion_tokens_minus_one",
+    "output_tps_definition": "completion_tokens_minus_one_divided_by_first_to_last_output_time",
+    "decode_sample_role": "short_error_and_reporting_diagnostic_only"
+  },
+  "dispatch": {"control": 0, "candidate": 4},
+  "operator_development_screen": {
+    "l1_synthetic_g2": "pass",
+    "l2_tp1_derived_rank_local_g2": "pass",
+    "real_tp4_model_numerics_claimed": false
+  },
+  "lifecycle": {
+    "term_first": true,
+    "term_grace_seconds": 60,
+    "kill_sent": false,
+    "control_final_live_processes": 0,
+    "candidate_final_live_processes": 0,
+    "api_server_residuals": 0,
+    "worker_residuals": 0,
+    "gpu_process_residuals": 0,
+    "fatal_oom_collective_worker_loss_counts_all_zero": true,
+    "postflight_qualified": true
+  },
+  "not_run": [
+    "partial_prefix_or_cache_matrix",
+    "full_protocol_matrix",
+    "capability_strata",
+    "teacher_forced_distribution",
+    "131k_235k_long_context_confirmation",
+    "near_262k_capacity",
+    "formal_881_workload"
+  ],
+  "next_authorized_stage": "131k_235k_cold_confirmation_then_focused_teacher_forced_distribution",
+  "promotion_authorized": false
+}
