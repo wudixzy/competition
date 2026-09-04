@@ -1,0 +1,229 @@
+{
+  "schema": "bi100-m1-176-final-summary-v2",
+  "version": 2,
+  "date": "2026-09-04",
+  "source": {
+    "starting_revision": "597c991f54aeef6c0aff1107728c37da26a3d26f",
+    "l2_revision": "fb6eb1164ef3e44fc4d6462f90c040a382879dec",
+    "l3_attempt_revision": "e4510563559b1fcf056f942008285f14201b8b86",
+    "branch": "exp/M1-132-layered-quality-gate-20260729"
+  },
+  "sha256_policy": {
+    "purpose": "large-private-tensor integrity and candidate binary loading only",
+    "source_tree_hashed": false,
+    "runtime_tree_hashed": false,
+    "reports_hashed": false,
+    "model_outputs_hashed_in_safe_evidence": false
+  },
+  "l0": {
+    "status": "pass",
+    "local_available_unit_tests": {
+      "passed": 1552,
+      "skipped": 20,
+      "excluded_foreign_test": "test_m1_164_mixed_pv_source_unit.py"
+    },
+    "submission_preflight": {
+      "passed": 10,
+      "failed": 0
+    },
+    "remote_l3_focused_tests": {
+      "passed": 24,
+      "failed": 0
+    },
+    "python_syntax": "pass",
+    "shell_syntax": "pass",
+    "diff_check": "pass"
+  },
+  "l1_synthetic": {
+    "status": "pass",
+    "fixed_query_length": 8176,
+    "cells": [
+      {
+        "label": "16K",
+        "baseline_ms": [72.101105, 72.102783, 72.211533, 72.127968, 72.060081],
+        "candidate_ms": [62.652340, 62.605629, 62.723370, 62.511658, 62.588055],
+        "baseline_median_ms": 72.102783,
+        "candidate_median_ms": 62.605629,
+        "speedup": 1.1516981,
+        "relative_l2_error_ratio": 1.0000069270,
+        "maximum_absolute_error_ratio": 1.0,
+        "candidate_lse_relative_l2": 3.6617e-8
+      },
+      {
+        "label": "32K",
+        "baseline_ms": [136.035583, 136.183487, 136.146469, 136.101288, 136.069733],
+        "candidate_ms": [116.820084, 116.909950, 116.755119, 116.735725, 116.686806],
+        "baseline_median_ms": 136.101288,
+        "candidate_median_ms": 116.755119,
+        "speedup": 1.1656987,
+        "relative_l2_error_ratio": 1.0000068436,
+        "maximum_absolute_error_ratio": 1.0007326007,
+        "candidate_lse_relative_l2": 3.3837e-8
+      },
+      {
+        "label": "64K",
+        "baseline_ms": [264.660828, 264.141205, 264.146759, 264.172638, 264.125824],
+        "candidate_ms": [225.400864, 225.166779, 225.296783, 225.240982, 225.370407],
+        "baseline_median_ms": 264.146759,
+        "candidate_median_ms": 225.296783,
+        "speedup": 1.1724391,
+        "relative_l2_error_ratio": 1.0000074376,
+        "maximum_absolute_error_ratio": 1.0,
+        "candidate_lse_relative_l2": 3.2596e-8
+      }
+    ],
+    "finite": true,
+    "candidate_repeat_exact": true
+  },
+  "l2_real_activation": {
+    "status": "pass",
+    "capture": {
+      "producer": "baseline-pytorch-fallback",
+      "tensor_parallel_size": 1,
+      "query_heads": 16,
+      "kv_heads": 2,
+      "gqa_ratio": 8,
+      "head_dim": 256,
+      "layer_index": 3,
+      "call_ordinal": 0,
+      "request_population": {
+        "expected": 3,
+        "completed": 3
+      },
+      "capture_inclusive_wall_s": 94.0283,
+      "capture_overhead_delta": null,
+      "capture_overhead_note": "no paired no-capture arm; pure capture overhead is not identifiable",
+      "large_activation_files": [
+        {
+          "context_tokens": 24576,
+          "query_length": 8176,
+          "size_bytes": 134063632,
+          "sha256": "2ebfc9f68fa776ffecf5c7ecc7522c5beb33a2b523afe1c5a6379d9360f3e852"
+        },
+        {
+          "context_tokens": 57344,
+          "query_length": 8176,
+          "size_bytes": 201180688,
+          "sha256": "e0a45dcab451625f08862a187d40b40b2172e662f2076b7708082d24aaa9caaf"
+        },
+        {
+          "context_tokens": 122880,
+          "query_length": 8176,
+          "size_bytes": 335414820,
+          "sha256": "30d56f5c29cdf1dea0a987bb925c0e2001ac20c3c9f275fdcf29fe0a12ef5477"
+        }
+      ]
+    },
+    "mapping": [
+      {"rank": 0, "query_heads": [0, 1, 2, 3], "kv_head": 0},
+      {"rank": 1, "query_heads": [4, 5, 6, 7], "kv_head": 0},
+      {"rank": 2, "query_heads": [8, 9, 10, 11], "kv_head": 1},
+      {"rank": 3, "query_heads": [12, 13, 14, 15], "kv_head": 1}
+    ],
+    "rank_local_gqa_ratio": 4,
+    "memory_bounded_reference": {
+      "rank_local_working_bound_bytes": 302841088,
+      "tp1_equivalent_working_bound_bytes": 671873024,
+      "context_independent": true,
+      "full_gqa_broadcast_materialized": false
+    },
+    "replay": {
+      "rank_count": 4,
+      "cell_count": 12,
+      "qualified_cells": 12,
+      "parallel_process_elapsed_s": [27.0420123, 27.0399710, 27.0378932, 27.0358001],
+      "runner_wall_s": 69.4716899,
+      "median_speedup": 1.170684,
+      "minimum_speedup": 1.165356,
+      "maximum_speedup": 1.171184,
+      "maximum_relative_l2_error_ratio": 1.0000122711,
+      "maximum_absolute_error_ratio": 1.0017094017,
+      "candidate_lse_relative_l2_range": [4.9166759e-8, 1.8395226e-7],
+      "all_finite": true,
+      "all_repeats_exact": true
+    },
+    "candidate_artifact": {
+      "size_bytes": 247256,
+      "sha256": "d02678baddb560da2633dd63a39f47b421e87ee710cde13f5ce3d09fbcd8bc07"
+    }
+  },
+  "l3_short_tp4": {
+    "status": "invalid",
+    "classification": "invalid_experiment_identity_and_incomplete_control_population",
+    "candidate_started": false,
+    "candidate_dispatch_observed": false,
+    "invalid_reasons": [
+      "the retry used the four-layer diagnostic checkpoint instead of the fixed full-model path",
+      "control_b partial-prefix first-sibling SSE stream timed out after 1800 seconds",
+      "control_b completed only 30 of 72 service requests and zero of four teacher-forced requests"
+    ],
+    "initial_invalid_attempt": {
+      "status": "invalid",
+      "reason": "teacher-forced report finalization lacked the fixed KV eviction policy key",
+      "candidate_started": false,
+      "cleanup_postflight_passed": true
+    },
+    "retry": {
+      "source_revision": "e4510563559b1fcf056f942008285f14201b8b86",
+      "recorded_model_path": "/tmp/m1-176-checkpoint.UmD9Hb/model",
+      "required_model_path": "/root/public-storage/models/Qwen/Qwen3.6-35B-A3B",
+      "control_a": {
+        "runner_status": "pass",
+        "completed_requests": 76,
+        "expected_requests": 76,
+        "candidate_dispatch_count": 0,
+        "service_population_elapsed_s": 253.9358650,
+        "runner_wall_s": 806.4483933,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "slo_goodput": "48/48",
+        "ttft_s": {"p50": 0.9006651, "p90": 5.9422831, "p99": 12.7835791},
+        "tpot_s": {"p50": 0.0275724, "p90": 0.0384642, "p99": 0.0411401},
+        "itl_s": {"p50": 0.0275724, "p90": 0.0384642, "p99": 0.0411401},
+        "e2e_latency_s": {"p50": 1.0745584, "p90": 6.1576747, "p99": 13.0620511},
+        "input_tps": {"p50": 8271.8336, "p90": 55246.6846, "p99": 87339.6796},
+        "output_tps": {"p50": 40.6944, "p90": 50.1166, "p99": 52.5028},
+        "cache_tps": {"p50": 8239.5218, "p90": 55219.7086, "p99": 87318.3565},
+        "request_throughput_rps": {"p50": 0.809256, "p90": 1.382617, "p99": 1.486295},
+        "population_throughput_rps": 0.2835362
+      },
+      "control_b": {
+        "runner_status": "invalid",
+        "service_requests_completed": 30,
+        "service_requests_expected": 72,
+        "teacher_forced_completed": 0,
+        "teacher_forced_expected": 4,
+        "terminal_stage": "request_population"
+      }
+    },
+    "paired_performance": null,
+    "teacher_forced_distribution": null,
+    "capability": null,
+    "note": "control-only diagnostics are not candidate or full-model conclusions"
+  },
+  "conclusions": {
+    "experiment_validity": "L0-L2 pass; L3 invalid",
+    "operator_numerics": "pass for frozen synthetic and real activation replay",
+    "distribution": "invalid: A/A and candidate comparison not completed",
+    "capability": "inconclusive: full capability suite was outside scope and candidate was not run",
+    "kernel_performance": "pass as an operator diagnostic only",
+    "tp4_service_performance": "invalid: no complete A/A/candidate population",
+    "promotion_authorized": false
+  },
+  "lifecycle": {
+    "l2_cleanup_postflight": "pass",
+    "l3_cleanup_postflight": "pass",
+    "final_gpu_processes": [],
+    "final_free_bytes_per_gpu": [34057748480, 34057748480, 34057748480, 34057748480],
+    "final_fp16_matmul": "pass",
+    "final_tp4_nccl_all_reduce": "pass",
+    "fatal_oom_segfault_worker_collective_timeout_scan": "pass except the explicitly classified control_b request timeout"
+  },
+  "privacy": {
+    "contains_raw_activations": false,
+    "contains_prompts": false,
+    "contains_model_outputs": false,
+    "contains_token_ids": false,
+    "contains_credentials": false
+  }
+}
