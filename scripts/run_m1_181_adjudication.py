@@ -121,7 +121,7 @@ def validate_arm(args: argparse.Namespace, label: str) -> tuple[list[str], dict[
 
 def validate_inputs(args: argparse.Namespace) -> None:
     for path in (args.session_preflight, args.m1_109_extension,
-                 args.numeric_summary):
+                 args.numeric_summary, args.ifeval_env / "install.json"):
         if not path.is_file():
             raise ValueError(f"required input missing: {path}")
     numeric = _load(args.numeric_summary)
@@ -143,6 +143,7 @@ def main() -> int:
     parser.add_argument("--m1-109-extension", type=Path, required=True)
     parser.add_argument("--m1-109-sha256", required=True)
     parser.add_argument("--numeric-summary", type=Path, required=True)
+    parser.add_argument("--ifeval-env", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     args.run_root = args.run_root.resolve()
@@ -177,6 +178,7 @@ def main() -> int:
         f"{ROOT / 'tests'}:{ROOT / 'scripts'}:"
         f"{environment.get('PYTHONPATH', '')}")
     environment["BI100_TEACHER_FORCED_HMAC_KEY"] = key
+    environment["BI100_IFEVAL_ENV"] = str(args.ifeval_env)
     started = time.monotonic()
     launched = 0
     arms: dict[str, dict[str, Any]] = {}

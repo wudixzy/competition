@@ -81,6 +81,13 @@ def smoke_baseline_only(baseline: dict[str, Any],
 
 
 def run_ifeval(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    environment_root = Path(os.environ.get("BI100_IFEVAL_ENV", ""))
+    site = environment_root / "site-packages"
+    nltk_data = environment_root / "nltk_data"
+    if not site.is_dir() or not nltk_data.is_dir():
+        raise ValueError("offline IFEval environment is missing")
+    sys.path.insert(0, str(site))
+    os.environ["NLTK_DATA"] = str(nltk_data)
     manifest, manifest_sha, rows = ifeval.load_manifest(args.manifest)
     if len(rows) != 64:
         raise ValueError("M1-181 requires the frozen IFEval-64 subset")
@@ -176,6 +183,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "runtime_identity": args.runtime_identity,
         "instance": args.instance, "model_path": str(args.model_path),
         "workload_id": args.workload_id,
+        "ifeval_environment": os.environ.get("BI100_IFEVAL_ENV"),
         "ifeval": ifeval_result, "teacher_forced": teacher_forced,
         "request_population": {"attempted": count, "completed": count,
                                "failed": 0},
