@@ -83,6 +83,32 @@ class M1181Tests(unittest.TestCase):
                          "inconclusive")
         self.assertFalse(result["fused_off_vs_m1_109_distribution"]["calibrated"])
 
+    def test_length_limited_reasoning_only_response_is_scoreable_failure(self) -> None:
+        body = {
+            "choices": [{"finish_reason": "length", "message": {
+                "content": None, "reasoning_content": "unfinished reasoning",
+                "tool_calls": None}}],
+            "usage": {"prompt_tokens": 7, "completion_tokens": 8192,
+                      "total_tokens": 8199,
+                      "prompt_tokens_details": {"cached_tokens": 0}},
+        }
+        normalized = workload.normalize_capability_response(body, 12.5)
+        self.assertEqual(normalized["content"], "")
+        self.assertTrue(normalized["empty_final_content"])
+        self.assertEqual(normalized["finish_reason"], "length")
+
+    def test_empty_final_content_is_invalid_without_length_limited_reasoning(self) -> None:
+        body = {
+            "choices": [{"finish_reason": "stop", "message": {
+                "content": "", "reasoning_content": "reasoning",
+                "tool_calls": None}}],
+            "usage": {"prompt_tokens": 7, "completion_tokens": 1,
+                      "total_tokens": 8,
+                      "prompt_tokens_details": {"cached_tokens": 0}},
+        }
+        with self.assertRaisesRegex(ValueError, "nonempty text"):
+            workload.normalize_capability_response(body, 1.0)
+
     def test_fused_off_b_calibrates_only_fused_off_comparison(self) -> None:
         result = comparison.compare(
             _arm("fused_off"), _arm("m1_109"), _arm("fused_off_b"))

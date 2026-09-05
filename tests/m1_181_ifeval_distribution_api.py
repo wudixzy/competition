@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 from pathlib import Path
@@ -53,6 +54,7 @@ def _case(row: dict[str, Any], response: dict[str, Any],
         "finish_reason": response["finish_reason"],
         "usage": response["usage"],
         "elapsed_s": response["elapsed_s"],
+        "empty_final_content": response.get("empty_final_content", False),
         "all_values_finite": True,
     }
 
@@ -78,6 +80,43 @@ def smoke_baseline_only(baseline: dict[str, Any],
         strict += int(all(lhs["strict"]) and not all(right["strict"]))
         loose += int(all(lhs["loose"]) and not all(right["loose"]))
     return {"strict": strict, "loose": loose}
+
+
+def normalize_capability_response(body: dict[str, Any],
+                                  elapsed_s: float) -> dict[str, Any]:
+    """Validate an IFEval response without treating length truncation as invalid.
+
+    Qwen may exhaust the frozen completion budget while still in
+    ``reasoning_content`` and consequently return no final ``content``.  That is
+    a completed, scoreable IFEval failure, not malformed experiment evidence.
+    All other response-contract checks remain delegated to the established
+    normalizer.
+    """
+    try:
+        normalized = ifeval.normalize_response(body, elapsed_s)
+        normalized["empty_final_content"] = False
+        return normalized
+    except ValueError as exc:
+        if str(exc) != "response content must be nonempty text":
+            raise
+
+    choices = body.get("choices") if isinstance(body, dict) else None
+    choice = choices[0] if isinstance(choices, list) and len(choices) == 1 else None
+    message = choice.get("message") if isinstance(choice, dict) else None
+    content = message.get("content") if isinstance(message, dict) else object()
+    reasoning = (message.get("reasoning_content")
+                 if isinstance(message, dict) else None)
+    if (content not in (None, "") or not isinstance(reasoning, str)
+            or not reasoning or choice.get("finish_reason") != "length"):
+        raise ValueError("response content must be nonempty text")
+
+    validated_body = copy.deepcopy(body)
+    validated_body["choices"][0]["message"]["content"] = (
+        "__M1_181_CONTRACT_VALIDATION_PLACEHOLDER__")
+    normalized = ifeval.normalize_response(validated_body, elapsed_s)
+    normalized["content"] = ""
+    normalized["empty_final_content"] = True
+    return normalized
 
 
 def run_ifeval(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
@@ -106,7 +145,7 @@ def run_ifeval(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         body, elapsed = ifeval.post(
             args.base, ifeval.request_payload(row["prompt"], "llm", manifest),
             args.timeout_s)
-        normalized = ifeval.normalize_response(body, elapsed)
+        normalized = normalize_capability_response(body, elapsed)
         responses[row["key"]] = normalized
         _atomic_json(checkpoint, {
             "schema": "bi100-m1-181-private-ifeval-checkpoint-v1",
