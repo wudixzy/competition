@@ -9,6 +9,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import struct
 import subprocess
 import sys
@@ -184,13 +185,17 @@ def _run_code(client: quality.Client, ordinal: int) -> dict[str, Any]:
 def _run_reasoning(client: quality.Client, ordinal: int) -> dict[str, Any]:
     question, expected = REASONING_CASES[ordinal]
     prompt = (f"M1-180 reasoning case {ordinal}. {question} "
-              f"End with FINAL={expected}.")
+              "Solve it independently and end with FINAL=<your answer>.")
     data, elapsed = _response(client, _payload(prompt, 256, True))
-    combined = _reasoning(data) + "\n" + _content(data)
-    passed = f"FINAL={expected}".lower() in combined.replace(" ", "").lower()
+    reasoning = _reasoning(data).strip()
+    content = _content(data).strip()
+    reasoning_protocol_valid = bool(reasoning and content)
+    passed = (reasoning_protocol_valid
+              and f"FINAL={expected}".casefold()
+              in re.sub(r"\s+", "", content).casefold())
     result = _summary(f"reasoning_{ordinal:02d}", "reasoning", ordinal,
                       data, elapsed, passed, "independent_answer")
-    result["reasoning_protocol_valid"] = isinstance(_reasoning(data), str)
+    result["reasoning_protocol_valid"] = reasoning_protocol_valid
     return result
 
 
@@ -262,10 +267,31 @@ def _run_multimodal(client: quality.Client, ordinal: int) -> dict[str, Any]:
             f"M1-180 image case {ordinal}. State only the dominant color.")},
     ]}]
     data, elapsed = _response(client, payload)
-    text = _content(data).strip().lower()
-    passed = any(item.lower() in text for item in accepted)
+    passed = _matches_color_answer(_content(data), accepted)
     return _summary(f"multimodal_{ordinal:02d}", "multimodal", ordinal,
                     data, elapsed, passed, f"dominant_color_{name}")
+
+
+def _matches_color_answer(text: str, accepted: tuple[str, ...]) -> bool:
+    """Match normalized whole color terms, never arbitrary substrings."""
+    normalized = text.casefold().strip()
+    english_words = set(re.findall(r"[a-z]+", normalized))
+    chinese_aliases = {
+        "红": ("红", "红色"), "蓝": ("蓝", "蓝色"),
+        "绿": ("绿", "绿色"), "黄": ("黄", "黄色"),
+        "黑": ("黑", "黑色"), "白": ("白", "白色"),
+        "紫": ("紫", "紫色"), "橙": ("橙", "橙色"),
+        "灰": ("灰", "灰色"), "粉": ("粉", "粉色"),
+    }
+    compact = re.sub(r"[\s\W_]+", "", normalized, flags=re.UNICODE)
+    for item in accepted:
+        expected = item.casefold()
+        if expected.isascii() and expected in english_words:
+            return True
+        if not expected.isascii() and compact in chinese_aliases.get(
+                expected, (expected,)):
+            return True
+    return False
 
 
 def _long_prompt(tokenizer: Any, ordinal: int) -> tuple[str, int, str]:

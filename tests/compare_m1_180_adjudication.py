@@ -22,6 +22,9 @@ ARMS = {
 }
 STRATA = ("code", "reasoning", "tools", "structured_output",
           "multimodal", "long_context")
+STATISTICAL_STRATA = ("code", "reasoning")
+DETERMINISTIC_STRATA = ("tools", "structured_output", "multimodal",
+                        "long_context")
 BOOTSTRAP_SAMPLES = 20000
 BOOTSTRAP_SEED = 20260905
 DEVELOPMENT_MARGIN = -0.05
@@ -92,6 +95,10 @@ def arm_reasons(value: Any, label: str) -> list[str]:
                 or not isinstance(case.get("completion_tokens"), int)
                 or not isinstance(case.get("cached_tokens"), int)):
             reasons.append(f"{label}: invalid case {case.get('case_id')}")
+        if (case.get("stratum") == "reasoning"
+                and case.get("reasoning_protocol_valid") is not True):
+            reasons.append(
+                f"{label}: reasoning protocol invalid {case.get('case_id')}")
     population = value.get("request_population")
     if (not isinstance(population, dict)
             or population.get("attempted") != population.get("completed")
@@ -188,6 +195,7 @@ def capability_pair(left: dict[str, Any], right: dict[str, Any],
     aggregate = {"both_pass": 0, "baseline_only": 0,
                  "candidate_only": 0, "both_fail": 0}
     differences = []
+    statistical_differences = []
     for stratum in STRATA:
         counts = {"both_pass": 0, "baseline_only": 0,
                   "candidate_only": 0, "both_fail": 0}
@@ -203,46 +211,88 @@ def capability_pair(left: dict[str, Any], right: dict[str, Any],
             aggregate[key] += 1
             difference = int(rhs) - int(lhs)
             differences.append(difference)
+            if stratum in STATISTICAL_STRATA:
+                statistical_differences.append(difference)
             stratum_differences.append(difference)
         sample_count = sum(counts.values())
-        strata[stratum] = {
+        gate_type = ("statistical_capability" if stratum in STATISTICAL_STRATA
+                     else "deterministic_contract")
+        item = {
             "sample_count": sample_count, **counts,
+            "gate_type": gate_type,
             "paired_pass_rate_difference": (
                 sum(stratum_differences) / sample_count if sample_count else None),
-            "paired_bootstrap_one_sided_95_lower": (
-                _bootstrap_lower(stratum_differences,
-                                 BOOTSTRAP_SEED + STRATA.index(stratum))
-                if stratum_differences else None),
             "exact_mcnemar": _mcnemar(
                 counts["baseline_only"], counts["candidate_only"]),
-            "underpowered_for_stratum_promotion": sample_count < 59,
         }
+        if gate_type == "statistical_capability":
+            item["paired_bootstrap_one_sided_95_lower"] = (
+                _bootstrap_lower(stratum_differences,
+                                 BOOTSTRAP_SEED + STRATA.index(stratum))
+                if stratum_differences else None)
+            item["underpowered_for_development_noninferiority"] = (
+                sample_count < 59)
+            item["status"] = (
+                "inconclusive" if sample_count < 59 else
+                "pass" if item["paired_bootstrap_one_sided_95_lower"]
+                > DEVELOPMENT_MARGIN else "fail")
+        else:
+            item["status"] = (
+                "fail" if counts["baseline_only"] else "pass")
+            item["zero_new_baseline_only_required"] = True
+        strata[stratum] = item
+
     sample_count = len(differences)
-    lower = (_bootstrap_lower(differences, BOOTSTRAP_SEED)
-             if differences else float("nan"))
-    critical = aggregate["baseline_only"] > 0
-    development_status = (
-        "fail" if critical else
-        "pass" if sample_count >= 60 and lower > DEVELOPMENT_MARGIN
+    statistical_count = len(statistical_differences)
+    lower = (_bootstrap_lower(statistical_differences, BOOTSTRAP_SEED)
+             if statistical_differences else float("nan"))
+    deterministic_fail = any(
+        strata[name]["status"] == "fail" for name in DETERMINISTIC_STRATA)
+    statistical_status = (
+        "fail" if any(strata[name]["status"] == "fail"
+                      for name in STATISTICAL_STRATA) else
+        "pass" if statistical_count >= 118 and lower > DEVELOPMENT_MARGIN
         else "inconclusive")
+    development_status = (
+        "fail" if deterministic_fail or statistical_status == "fail"
+        else "pass" if statistical_status == "pass" else "inconclusive")
     return {
         "comparison": name, "sample_count": sample_count, **aggregate,
         "paired_pass_rate_difference": sum(differences) / sample_count,
-        "paired_bootstrap_one_sided_95_lower": lower,
-        "development_margin": DEVELOPMENT_MARGIN,
+        "statistical_capability": {
+            "strata": list(STATISTICAL_STRATA),
+            "sample_count": statistical_count,
+            "paired_bootstrap_one_sided_95_lower": lower,
+            "development_margin": DEVELOPMENT_MARGIN,
+            "status": statistical_status,
+        },
+        "deterministic_contracts": {
+            "strata": list(DETERMINISTIC_STRATA),
+            "zero_new_baseline_only_required": True,
+            "status": "fail" if deterministic_fail else "pass",
+        },
         "development_screen_status": development_status,
         "exact_mcnemar": _mcnemar(
             aggregate["baseline_only"], aggregate["candidate_only"]),
         "strata": strata,
-        "all_strata_underpowered_for_promotion": all(
-            item["underpowered_for_stratum_promotion"]
-            for item in strata.values()),
+        "statistical_strata_underpowered": all(
+            strata[name]["underpowered_for_development_noninferiority"]
+            for name in STATISTICAL_STRATA),
     }
 
 
 def _distribution_pair(left: dict[str, Any], right: dict[str, Any],
-                       name: str, aa: dict[str, Any]) -> dict[str, Any]:
+                       name: str,
+                       aa: dict[str, Any] | None) -> dict[str, Any]:
     result = distribution._pair(left["teacher_forced"], right["teacher_forced"])
+    result["comparison"] = name
+    if aa is None:
+        result["status"] = "inconclusive"
+        result["classification"] = "uncalibrated_distribution_diagnostic"
+        result["calibrated"] = False
+        result["aa_control_variant"] = None
+        result["thresholds"] = None
+        return result
     high_threshold = max(0.1, 4 * aa[
         "shared_token_abs_logprob_delta_p99_nats"])
     nll_threshold = max(0.01, 2 * max(
@@ -250,7 +300,8 @@ def _distribution_pair(left: dict[str, Any], right: dict[str, Any],
     result["high_margin_flip_count"] = sum(
         item["control_margin_nats"] > high_threshold
         for item in result["flip_details"])
-    result["comparison"] = name
+    result["calibrated"] = True
+    result["aa_control_variant"] = "m1_109_fp32_qk"
     result["thresholds"] = {
         "high_margin_nats": high_threshold,
         "nll_regression_nats": nll_threshold,
@@ -299,7 +350,11 @@ def _performance(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
             "gain": gain,
         })
     return {
-        "status": "pass" if sum(gains) / len(gains) > 0 else "fail",
+        "status": ("inconclusive" if sum(gains) / len(gains) > 0
+                   else "fail"),
+        "classification": ("positive_diagnostic_underpowered"
+                           if sum(gains) / len(gains) > 0
+                           else "candidate_performance_regression"),
         "samples": rows,
         "paired_mean_gain": sum(gains) / len(gains),
         "sample_count": len(gains),
@@ -341,11 +396,11 @@ def compare(fused_off: Any, m1_109: Any, m1_162: Any,
         try:
             distributions = {
                 "fused_off_vs_m1_109": _distribution_pair(
-                    fused_off, m1_109, "fused_off_vs_m1_109", reused_aa),
+                    fused_off, m1_109, "fused_off_vs_m1_109", None),
                 "m1_109_vs_m1_162": _distribution_pair(
                     m1_109, m1_162, "m1_109_vs_m1_162", reused_aa),
                 "fused_off_vs_m1_162": _distribution_pair(
-                    fused_off, m1_162, "fused_off_vs_m1_162", reused_aa),
+                    fused_off, m1_162, "fused_off_vs_m1_162", None),
             }
         except (KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
             return {"schema": SCHEMA, "version": VERSION,
@@ -353,11 +408,11 @@ def compare(fused_off: Any, m1_109: Any, m1_162: Any,
                     "reasons": [str(exc)], "promotion_authorized": False}
 
     incremental = capability["m1_109_vs_m1_162"]
-    critical_fail = incremental["baseline_only"] > 0
+    critical_fail = incremental["deterministic_contracts"]["status"] == "fail"
     status = "fail" if critical_fail else "inconclusive"
     classification = (
-        "m1_162_capability_regression" if critical_fail else
-        "development_capability_screen_passed_but_strata_underpowered")
+        "m1_162_deterministic_contract_regression" if critical_fail else
+        "deterministic_contracts_passed_statistical_capability_not_established")
     return {
         "schema": SCHEMA, "version": VERSION,
         "status": status, "classification": classification,

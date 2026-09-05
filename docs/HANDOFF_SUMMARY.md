@@ -1,5 +1,24 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-05 M1-181 reviewer correction before new GPU work
+
+M1-180's immutable evidence is retained, but its gate interpretation is
+corrected. The self-built 60-case population passed basic deterministic
+functional contracts; it did not establish statistical task capability because
+the reasoning prompt leaked the expected answer, most strata were exact
+contracts, and long context stopped at 16K. The fused-off→M1-109 and
+fused-off→M1-162 teacher-forced comparisons are uncalibrated diagnostics because
+there is no fused-off A/A. Only M1-109→M1-162 is validly calibrated by the
+M1-109 A/A envelope. The historical six-pair +2.2763% incremental TTFT result is
+`positive_diagnostic_underpowered/inconclusive`, not a machine `pass`.
+
+Future harnesses now keep deterministic contracts separate from statistical
+capability, hide independent reasoning answers from prompts, validate real
+reasoning/content structure, use whole normalized color terms, and require the
+A/A left-control variant to match. M1-109 is the primary candidate for the
+M1-181 lean numeric and frozen IFEval-64 adjudication; M1-108 remains the
+conservative fallback and M1-162 is parked without further expensive expansion.
+
 ## 2026-09-05 M1-180 三臂能力裁决与基线分解
 
 M1-180 在有效 r3 中顺序运行 fused-off、M1-109 FP32-QK 和 M1-162

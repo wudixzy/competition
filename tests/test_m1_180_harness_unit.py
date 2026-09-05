@@ -3,12 +3,24 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 import m1_180_capability_distribution_api as workload
 import run_m1_180_three_arm_adjudication as orchestrator
 
 
 class M1180HarnessTests(unittest.TestCase):
+
+    @staticmethod
+    def _reasoning_response(reasoning: str, content: str) -> dict:
+        return {
+            "choices": [{"message": {"content": content,
+                                       "reasoning_content": reasoning},
+                         "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 20, "completion_tokens": 4,
+                      "total_tokens": 24,
+                      "prompt_tokens_details": {"cached_tokens": 0}},
+        }
 
     def test_frozen_population_has_ten_cases_per_stratum(self) -> None:
         self.assertEqual(len(workload.CODE_CASES), 10)
@@ -52,6 +64,35 @@ class M1180HarnessTests(unittest.TestCase):
         self.assertIn("if extended:", source)
         self.assertIn("SMOKE_PER_STRATUM, FULL_PER_STRATUM", source)
         self.assertNotIn("retain-raw-responses", source)
+
+    def test_reasoning_prompt_does_not_contain_expected_answer(self) -> None:
+        captured = {}
+
+        def response(_client, payload, timeout=900):
+            captured["prompt"] = payload["messages"][0]["content"]
+            return self._reasoning_response("worked independently", "FINAL=91"), 1.0
+
+        with mock.patch.object(workload, "_response", side_effect=response):
+            result = workload._run_reasoning(object(), 0)
+        self.assertTrue(result["pass"])
+        self.assertTrue(result["reasoning_protocol_valid"])
+        self.assertNotIn("91", captured["prompt"])
+        self.assertNotIn("FINAL=91", captured["prompt"])
+
+    def test_reasoning_protocol_requires_reasoning_and_content(self) -> None:
+        with mock.patch.object(
+                workload, "_response",
+                return_value=(self._reasoning_response("", "FINAL=91"), 1.0)):
+            result = workload._run_reasoning(object(), 0)
+        self.assertFalse(result["reasoning_protocol_valid"])
+        self.assertFalse(result["pass"])
+
+    def test_multimodal_color_uses_whole_normalized_terms(self) -> None:
+        self.assertTrue(workload._matches_color_answer(
+            "The dominant color is red.", ("red", "红")))
+        self.assertTrue(workload._matches_color_answer("红色", ("red", "红")))
+        self.assertFalse(workload._matches_color_answer(
+            "The region is predominant.", ("red", "红")))
 
 
 if __name__ == "__main__":

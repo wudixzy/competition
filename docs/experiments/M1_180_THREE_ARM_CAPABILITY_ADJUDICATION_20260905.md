@@ -1,5 +1,34 @@
 # M1-180 three-arm capability adjudication and baseline decomposition
 
+## M1-181 reviewer addendum
+
+The historical M1-180 evidence JSON is retained byte-for-byte, but four gate
+interpretations in the original report are superseded:
+
+- The 60-case population establishes only that the basic deterministic
+  functional contracts exercised by that harness did not regress. It does not
+  establish statistical task capability. In particular, the reasoning prompt
+  disclosed its expected `FINAL` answer, most strata were simple exact
+  contracts, and long-context coverage stopped at 16K.
+- Fused-off versus M1-109 and fused-off versus M1-162 have no independently
+  started fused-off A/A control. They remain useful uncalibrated distribution
+  diagnostics, but the M1-109 A/A envelope cannot calibrate a comparison whose
+  left control is fused-off.
+- M1-109 versus M1-162 remains a valid A/A-calibrated incremental distribution
+  drift result because its left control is M1-109 and the reused M1-179 A/A is
+  identity-matched to M1-109.
+- The six-pair M1-109-to-M1-162 TTFT mean of +2.2763%, with no run-level CI and
+  one negative 16K pair, is
+  `positive_diagnostic_underpowered / inconclusive`. The historical machine
+  field `incremental_performance.status=pass` must not be interpreted as a
+  performance gate pass.
+
+Future harness output separates zero-regression deterministic contracts from
+statistical capability, validates the reasoning/content protocol without
+putting the answer in the prompt, uses whole-term multimodal color matching,
+and binds every distribution calibration envelope to the comparison's left
+control variant.
+
 ## Decision
 
 The valid three-arm result is

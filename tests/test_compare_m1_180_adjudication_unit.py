@@ -52,6 +52,8 @@ def _arm(label: str, *, complete: bool = True) -> dict:
                 "prompt_tokens": 100, "cached_tokens": 0,
                 "completion_tokens": 2, "elapsed_s": 1.0,
                 "all_values_finite": True,
+                **({"reasoning_protocol_valid": True}
+                   if stratum == "reasoning" else {}),
             })
     teacher = _teacher(label) if complete else None
     performance = (_performance() if label in ("m1_109", "m1_162")
@@ -102,13 +104,16 @@ class M1180ComparatorTests(unittest.TestCase):
             _arm("fused_off"), _arm("m1_109"), _arm("m1_162"), AA)
         self.assertEqual(result["status"], "inconclusive", result)
         self.assertEqual(result["capability"]["m1_109_vs_m1_162"]
-                         ["development_screen_status"], "pass")
+                         ["development_screen_status"], "inconclusive")
         self.assertTrue(result["capability"]["m1_109_vs_m1_162"]
-                        ["all_strata_underpowered_for_promotion"])
+                        ["statistical_strata_underpowered"])
+        self.assertEqual(result["capability"]["m1_109_vs_m1_162"]
+                         ["deterministic_contracts"]["status"], "pass")
 
     def test_capability_pair_reports_all_four_cells_and_strata(self) -> None:
         candidate = _arm("m1_162")
-        candidate["capability"]["cases"][0]["pass"] = False
+        next(case for case in candidate["capability"]["cases"]
+             if case["case_id"] == "tools_00")["pass"] = False
         result = comparison.compare(
             _arm("fused_off"), _arm("m1_109"), candidate, AA)
         pair = result["capability"]["m1_109_vs_m1_162"]
@@ -119,7 +124,8 @@ class M1180ComparatorTests(unittest.TestCase):
 
     def test_smoke_regression_is_valid_early_capability_failure(self) -> None:
         candidate = _arm("m1_162", complete=False)
-        candidate["capability"]["cases"][0]["pass"] = False
+        next(case for case in candidate["capability"]["cases"]
+             if case["case_id"] == "tools_00")["pass"] = False
         result = comparison.compare(
             _arm("fused_off"), _arm("m1_109"), candidate, AA)
         self.assertEqual(result["status"], "fail", result)
@@ -159,6 +165,30 @@ class M1180ComparatorTests(unittest.TestCase):
             _arm("fused_off"), _arm("m1_109"), candidate, AA)
         self.assertAlmostEqual(
             result["incremental_performance"]["paired_mean_gain"], 0.25)
+        self.assertEqual(result["incremental_performance"]["status"],
+                         "inconclusive")
+        self.assertEqual(result["incremental_performance"]["classification"],
+                         "positive_diagnostic_underpowered")
+
+    def test_aa_is_bound_only_to_matching_left_control(self) -> None:
+        result = comparison.compare(
+            _arm("fused_off"), _arm("m1_109"), _arm("m1_162"), AA)
+        fused = result["distribution"]["fused_off_vs_m1_109"]
+        incremental = result["distribution"]["m1_109_vs_m1_162"]
+        self.assertFalse(fused["calibrated"])
+        self.assertEqual(fused["classification"],
+                         "uncalibrated_distribution_diagnostic")
+        self.assertTrue(incremental["calibrated"])
+        self.assertEqual(incremental["aa_control_variant"],
+                         "m1_109_fp32_qk")
+
+    def test_deterministic_stratum_does_not_use_statistical_floor(self) -> None:
+        pair = comparison.capability_pair(_arm("m1_109"), _arm("m1_162"),
+                                          "m1_109_vs_m1_162")
+        tools = pair["strata"]["tools"]
+        self.assertEqual(tools["gate_type"], "deterministic_contract")
+        self.assertEqual(tools["status"], "pass")
+        self.assertNotIn("underpowered_for_stratum_promotion", tools)
 
 
 if __name__ == "__main__":
