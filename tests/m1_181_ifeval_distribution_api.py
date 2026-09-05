@@ -164,8 +164,7 @@ def run_ifeval(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 break
     completed_rows = [row for row in rows if row["key"] in responses]
     cases = _score(completed_rows, responses)
-    checkpoint.unlink(missing_ok=True)
-    return ({
+    result = {
         "manifest_name": args.manifest.name,
         "manifest_sha256": manifest_sha,
         "evaluator_revision": manifest["evaluator"]["revision"],
@@ -179,7 +178,13 @@ def run_ifeval(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "selected": 64, "completed": len(cases),
         "complete": len(cases) == 64,
         "checkpoint_deleted": True,
-    }, len(cases))
+    }
+    # Preserve the privacy-safe capability result before the optional
+    # teacher-forced phase.  A later focused-probe failure must not discard a
+    # completed multi-hour IFEval population.
+    _atomic_json(args.out.with_name("ifeval_safe_checkpoint.json"), result)
+    checkpoint.unlink(missing_ok=True)
+    return result, len(cases)
 
 
 def run_teacher(args: argparse.Namespace) -> dict[str, Any]:

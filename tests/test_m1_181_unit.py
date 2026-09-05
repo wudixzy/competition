@@ -10,6 +10,7 @@ import compare_m1_181_ifeval as comparison
 import m1_181_ifeval_distribution_api as workload
 import run_m1_181_adjudication as orchestrator
 import run_m1_181_m1_109_numeric as numeric_runner
+import teacher_forced_topk_api as teacher
 from test_compare_teacher_forced_logprobs_v2_unit import _report
 
 
@@ -108,6 +109,35 @@ class M1181Tests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "nonempty text"):
             workload.normalize_capability_response(body, 1.0)
+
+    def test_teacher_forced_accepts_m1_181_attention_manifest(self) -> None:
+        expected = {
+            "source_revision": "a" * 40, "runtime_identity": "runtime",
+            "instance": "instance", "gpu_count": 4,
+            "tensor_parallel_size": 4, "max_model_len": 262144,
+            "model_path": "/model", "tokenizer_path": "/model",
+            "served_model_name": "llm",
+        }
+        manifest = dict(expected)
+        manifest.update({
+            "schema": "bi100-attention-operator-runtime-v1", "version": 1,
+            "change_scope": "attention_operator", "workload_mode": "m1_181",
+            "dtype": "float16", "block_size": 16,
+            "command": ["python3", "-m", "vllm"],
+            "environment": {
+                "BI100_ATTN_COREX_FUSED_PREFILL": "0",
+                "BI100_GDN_CACHE_POLICY": "admission64",
+                "BI100_GDN_RESTORE_MODE": "hybrid64",
+                "BI100_KV_EVICTION_POLICY": "lru",
+                "BI100_CACHE_TRACE": "0",
+            },
+            "fused_variant": None, "extension_identity": None,
+        })
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "runtime.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            loaded = teacher.load_attention_runtime_manifest(path, expected)
+        self.assertEqual(loaded["workload_mode"], "m1_181")
 
     def test_fused_off_b_calibrates_only_fused_off_comparison(self) -> None:
         result = comparison.compare(
