@@ -137,7 +137,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             self.extension_path = None
             self.extension_sha256 = None
         else:
-            if (self.workload_mode not in ("teacher_forced", "m1_180")
+            if (self.workload_mode not in (
+                    "teacher_forced", "m1_180", "m1_181")
                     or extension_path is None
                     or not extension_path.is_absolute()
                     or not extension_path.is_file()
@@ -151,7 +152,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
                     "explicit fused variant extension identity is invalid")
             self.extension_path = extension_path.resolve()
             self.extension_sha256 = extension_sha256
-        if (self.workload_mode in ("teacher_forced", "m1_180")
+        if (self.workload_mode in (
+                "teacher_forced", "m1_180", "m1_181")
                 and (self.targets != TEACHER_FORCED_TARGETS
                      or self.repetitions != 1)):
             raise ValueError(
@@ -199,6 +201,20 @@ class AttentionOperatorTp4Runner(CaptureRunner):
                              self.args.reference_m1_109):
                     if path is None or not path.is_file():
                         raise ValueError("M1-180 candidate references are missing")
+        if self.workload_mode == "m1_181":
+            expected = {
+                "fused_off": ("control", None),
+                "m1_109": ("control", "m1_109_fp32_qk"),
+                "fused_off_b": ("control", None),
+            }
+            if (self.arm_label not in expected
+                    or expected[self.arm_label]
+                    != (self.args.selector, self.fused_variant)):
+                raise ValueError("M1-181 arm/selector/variant binding differs")
+            if (self.arm_label == "m1_109"
+                    and (self.args.reference_fused_off is None
+                         or not self.args.reference_fused_off.is_file())):
+                raise ValueError("M1-181 candidate baseline is missing")
 
     def prepare(self) -> None:
         self.run_root.mkdir(parents=True)
@@ -433,6 +449,30 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             ]
             environment = self.base_environment()
             environment["BI100_TEACHER_FORCED_HMAC_KEY"] = key
+        elif self.workload_mode == "m1_181":
+            key = os.environ.get("BI100_TEACHER_FORCED_HMAC_KEY", "")
+            if (len(key) != 64 or any(character not in "0123456789abcdef"
+                                      for character in key)):
+                raise RuntimeError("teacher token identity key is unavailable")
+            command = [
+                sys.executable,
+                str(self.root / "tests/m1_181_ifeval_distribution_api.py"),
+                "--base", "http://127.0.0.1:8000",
+                "--model-path", str(self.model_path),
+                "--attention-runtime-manifest",
+                str(self.run_root / "runtime_manifest.json"),
+                "--runtime-identity", self.runtime_identity,
+                "--source-revision", self.source_revision,
+                "--instance", self.args.instance,
+                "--arm", self.arm_label,
+                "--workload-id", self.args.pair_id,
+                "--out", str(self.run_root / "measurement.json"),
+            ]
+            if self.args.reference_fused_off is not None:
+                command.extend(["--baseline",
+                                str(self.args.reference_fused_off)])
+            environment = self.base_environment()
+            environment["BI100_TEACHER_FORCED_HMAC_KEY"] = key
         else:
             key = os.environ.get("BI100_TEACHER_FORCED_HMAC_KEY", "")
             if (len(key) != 64 or any(character not in "0123456789abcdef"
@@ -575,7 +615,8 @@ class AttentionOperatorTp4Runner(CaptureRunner):
             "gpu_count": 4,
             "tensor_parallel_size": 4,
             "request_population": {
-                "expected": (attempted if self.workload_mode == "m1_180"
+                "expected": (attempted if self.workload_mode in (
+                                 "m1_180", "m1_181")
                              else len(self.targets) * self.repetitions),
                 "attempted": attempted,
                 "completed": completed,
@@ -593,7 +634,7 @@ class AttentionOperatorTp4Runner(CaptureRunner):
                     "postflight_after.json", "fatal_scan.json",
                     "timeline_report.json")},
             "hashes_required": False,
-            "capability_run": self.workload_mode == "m1_180",
+            "capability_run": self.workload_mode in ("m1_180", "m1_181"),
             "cache_matrix_run": False,
         })
 
@@ -637,13 +678,13 @@ def main() -> int:
     parser.add_argument("--targets", default=",".join(map(str, TARGETS)))
     parser.add_argument("--repetitions", type=int, default=REPETITIONS)
     parser.add_argument("--workload", choices=(
-        "performance", "teacher_forced", "m1_180"),
+        "performance", "teacher_forced", "m1_180", "m1_181"),
                         default="performance")
     parser.add_argument("--fused-variant", choices=FUSED_VARIANTS)
     parser.add_argument("--extension-path", type=Path)
     parser.add_argument("--extension-sha256")
     parser.add_argument("--arm-label", choices=(
-        "fused_off", "m1_109", "m1_162"))
+        "fused_off", "m1_109", "m1_162", "fused_off_b"))
     parser.add_argument("--reference-fused-off", type=Path)
     parser.add_argument("--reference-m1-109", type=Path)
     args = parser.parse_args()
