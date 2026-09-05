@@ -1,5 +1,27 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-06 M1-181 M1-109 快速裁决
+
+M1-109 使用 M1-176 四 rank activation bank 在 65K/131K 代表形状完成 v2
+G2 replay：8/8 cells finite 且 repeat exact，relative-L2 ratio 最大
+`1.0000002123`、max-abs ratio 最大 `1.0`、LSE relative-L2 最大
+`1.83418e-8`，因此 operator numerics 为 `pass`。这是 rank-local
+real-activation screen，不是新完整模型 TP4 通过。
+
+IFEval 能力裁决为 `invalid`。首个尝试把达到 8192-token 上限且只有 reasoning
+的响应误判 invalid；修复后的唯一完整重试完成 fused-off 64 个 HTTP 200 请求，
+但在首个 teacher-forced 请求前因 loader 未允许 `m1_181` manifest 而停止，且
+IFEval 安全汇总尚未持久化。M1-109 与 fused-off control B 均未启动，因此没有
+配对 counts、bootstrap、McNemar 或 calibrated distribution 结论。按一次完整
+重试上限停止，不再占用 GPU。
+
+后续 harness 已允许 `m1_181` teacher-forced manifest，并在进入附加 probe 前先
+写 privacy-safe IFEval checkpoint，避免再次丢弃数小时结果。两次实际 TP4 服务
+均 TERM-first 清理、无需 KILL；最终 API/worker/GPU 残留为零，fatal/OOM/
+collective/worker-loss 均为零。M1-109 仍是当前主候选但阻塞于有效配对 IFEval；
+M1-108 为保守 fallback；M1-162 停放且不再扩大昂贵能力实验。详见
+`docs/experiments/M1_181_M1_109_ADJUDICATION_20260906.md`。
+
 ## 2026-09-05 M1-181 reviewer correction before new GPU work
 
 M1-180's immutable evidence is retained, but its gate interpretation is
