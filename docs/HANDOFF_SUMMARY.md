@@ -1,5 +1,27 @@
 # EngineX vLLM BI100 Qwen3.6-35B-A3B 交接总结
 
+## 2026-09-05 M1-180 三臂能力裁决与基线分解
+
+M1-180 在有效 r3 中顺序运行 fused-off、M1-109 FP32-QK 和 M1-162
+FP16-QK 三个完整模型 TP4 服务。每臂 60 个冻结能力样本覆盖 code、reasoning、
+tools、structured output、multimodal 和 long context；三组配对均为 60/60
+both-pass、零 baseline-only/candidate-only/both-fail，aggregate paired bootstrap
+下界为 0 pp、McNemar p=1.0。每层只有 10 对，仍不足以形成晋升结论，因此能力
+分类为 `inconclusive`，不是正式 `pass`。
+
+复用 M1-179 完全匹配的 M1-109 A/A 零噪声包络后，fused-off→M1-109 有
+9 个 top-1 flip（5 个 high-margin），M1-109→M1-162 有 11 个 flip（8 个
+high-margin）；两级增量都是真实的 distribution drift。由此可知 M1-178 的组合
+路径差异并非只来自 FP16-QK：M1-109 已相对 fused-off 漂移，M1-162 又增加一层
+漂移。该结论不是算子数值或能力失败。
+
+同轮 M1-109→M1-162 的 16K/32K/64K 各两次 cold TTFT 平均改善 2.2763%，
+但 16K 含一个负样本且没有 run-level CI，只作正向诊断。M1-176 G2 数值通过继续
+有效。M1-162 和 M1-109 均保留为开发候选，M1-162 production promotion 继续
+阻塞，等待 reviewer 决定是否扩大分层能力样本；不授权默认开关、YAML、`main`
+或正式评测。详见
+`docs/experiments/M1_180_THREE_ARM_CAPABILITY_ADJUDICATION_20260905.md`。
+
 ## 2026-09-05 M1-179 reviewer addendum / M1-180 前置裁决
 
 M1-179 的正式含义修正为：M1-162 的 production promotion 因分布漂移被阻塞，
