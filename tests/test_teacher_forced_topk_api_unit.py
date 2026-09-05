@@ -93,6 +93,10 @@ class TeacherForcedTopkApiTests(unittest.TestCase):
             path.write_text(json.dumps(value), encoding="utf-8")
             self.assertEqual(
                 api.load_attention_runtime_manifest(path, expected), value)
+            value["workload_mode"] = "m1_180"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertEqual(
+                api.load_attention_runtime_manifest(path, expected), value)
             value["workload_mode"] = "performance"
             path.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaises(ValueError):

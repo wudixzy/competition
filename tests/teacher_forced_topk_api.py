@@ -98,7 +98,7 @@ def load_attention_runtime_manifest(path: Path, expected: Json) -> Json:
             or value.get("schema") != "bi100-attention-operator-runtime-v1"
             or value.get("version") != 1
             or value.get("change_scope") != "attention_operator"
-            or value.get("workload_mode") != "teacher_forced"
+            or value.get("workload_mode") not in ("teacher_forced", "m1_180")
             or value.get("dtype") != "float16"
             or value.get("block_size") != 16):
         raise ValueError("attention runtime manifest identity is invalid")
